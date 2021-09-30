@@ -1,0 +1,2619 @@
+Geoinformatica (2011) 15:455–496
+DOI 10.1007/s10707-010-0110-7
+
+A data model and query language for spatio-temporal
+decision support
+
+Leticia Gómez · Bart Kuijpers · Alejandro Vaisman
+
+Received: 7 November 2008 / Revised: 19 January 2010 /
+Accepted: 27 May 2010 / Published online: 17 June 2010
+© Springer Science+Business Media, LLC 2010
+
+Abstract In recent years, applications aimed at exploring and analyzing spatial
+data have emerged, powered by the increasing need of software that integrates
+Geographic Information Systems (GIS) and On-Line Analytical Processing (OLAP).
+These applications have been called SOLAP (Spatial OLAP). In previous work, the
+authors have introduced Piet, a system based on a formal data model that integrates
+in a single framework GIS, OLAP (On-Line Analytical Processing), and Moving
+Object data. Real-world problems are inherently spatio-temporal. Thus, in this paper
+we present a data model that extends Piet, allowing tracking the history of spatial
+data in the GIS layers. We present a formal study of the two typical ways of intro-
+ducing time into Piet: timestamping the thematic layers in the GIS, and timestamping
+the spatial objects in each layer. We denote these strategies snapshot-based and
+timestamp-based representations, respectively, following well-known terminology
+borrowed from temporal databases. We present and discuss the formal model for
+both alternatives. Based on the timestamp-based representation, we introduce a
+formal First-Order spatio-temporal query language, which we denote Lt, able to
+express spatio-temporal queries over GIS, OLAP, and trajectory data. Finally, we
+discuss implementation issues, the update operators that must be supported by the
+
+L. Gómez
+Instituto Tecnológico de Buenos Aires,
+Av. Madero 399, Buenos Aires, Argentina
+e-mail: lgomez@itba.edu.ar
+
+B. Kuijpers
+Hasselt University and Transnational University of Limburg,
+Gebouw D, 3590, Diepenbeek, Belgium
+e-mail: bart.kuijpers@uhasselt.be
+
+A. Vaisman (B)
+Universidad de Buenos Aires, Ciudad Universitaria,
+Pabellon I, Buenos Aires, 1428, Argentina
+e-mail: avaisman@dc.uba.ar
+
+456
+
+Geoinformatica (2011) 15:455–496
+
+model, and sketch a temporal extension to Piet-QL, the SQL-like query language
+that supports Piet.
+
+Keywords OLAP · Spatio-temporal databases · GIS · SOLAP
+
+1 Introduction
+
+Geographic Information Systems (GIS) have been extensively used in various appli-
+cation domains, ranging from economical, ecological and demographic analysis, to
+city and route planning [52, 69]. Spatial information in a GIS is typically stored in
+different so-called thematic layers (also called themes). Information in themes can be
+stored in different data structures according to different data models, the most usual
+ones being the raster model and the vector model. In a thematic layer, spatial data
+are typically annotated with classical relational attribute information of (in general)
+numeric or string type. While spatial data are stored in suitable data structures,
+associated attributes are usually stored in conventional relational databases. Spatial
+data in the different thematic layers of a GIS can be mapped univocally to each other
+using a common frame of reference, like a coordinate system. These layers can be
+overlayed to obtain an integrated spatial view.
+
+On the other hand, OLAP (On-Line Analytical Processing) [29, 30] provides a set
+of tools and algorithms that allow efficiently querying multidimensional data reposi-
+tories usually called Data Warehouses, containing large amounts of data. In OLAP,
+data are organized as a set of dimensions and fact tables. In this multidimensional
+model, data can be perceived as a data cube, where each cell contains a measure
+or set of (probably aggregated) measures of interest. OLAP dimensions are further
+organized in hierarchies that favor the data aggregation process [10].
+
+1.1 GIS-OLAP decision support
+
+Different data models have been proposed for representing objects in a GIS. The
+Reference Model proposed by the Open Geospatial Consortium1 supports the idea
+of the Coverage data model. The Coverage data model, introduced by ESRI,2 and
+extensively studied by the GIS community, binds spatial objects to non-spatial
+attributes that describe them. This model was later extended with object-oriented
+support, in a way that behavior can be defined for geographic features [70]. In spite of
+the model of choice, there is always the underlying idea of associating spatial objects
+with objects or attributes stored in object-relational databases.
+
+Nowadays, organizations need sophisticated GIS-based Decision Support System
+(DSS) to analyze their data with respect to geographic information represented
+not only as attribute data, but also in maps, probably in different thematic layers.
+In this sense, OLAP and GIS vendors are increasingly integrating their products.3
+
+1http://www.opengeospatial.org
+2http://www.esri.com
+3See Microstrategy and MapInfo integration in http://www.microstrategy.com/, http://www.mapinfo.
+com/solutions/capabilities/business-intelligence.
+
+Geoinformatica (2011) 15:455–496
+
+457
+
+In this scenario, aggregate queries are central to DSSs. Thus, classical aggregate
+queries (like “Total sales of cars in California”), and aggregation combined with
+complex queries involving spatial elements (“Total sales in all villages crossed by the
+Mississippi river within a radius of 100 km around New Orleans”) must be efficiently
+supported. Moreover, navigation of the results using typical OLAP operations
+like roll-up or drill-down is also required. These operations are not supported by
+commercial GIS in a straightforward way. The main reason for this is that the
+GIS data models discussed above were developed with ‘transactional’ queries in
+mind. Thus, the databases storing non-spatial attributes or objects are designed to
+support those (non-aggregate) kinds of queries. Decision support systems need a
+different data model, where non-spatial data, consolidated from different sectors in
+an organization are stored in a data warehouse. For instance, if we were interested
+in the sales of certain products in stores in a given region, we may consider the
+sales amounts in a fact table over the three dimensions Store, Time and Product.
+Dimensions in a data warehouse are usually organized into aggregation hierarchies.
+For example, stores can aggregate over cities which in turn can aggregate into
+regions and countries. Each of these aggregation levels can also hold descriptive
+attributes like city population, the area of a region, etc. Another reason for the lack
+of OLAP support in commercial GIS is that system integration is not an easy task,
+and requires a formal data model behind. To fulfill the requirements for integrating
+GIS and DSS, warehouse data must be linked to geographic data. For instance, a
+polygon representing a region must be associated with the region identifier in the
+warehouse. This approach also allows to integrate warehouse data with pre-existing
+GIS data (or viceversa), designed and implemented independently from each other
+(we denote this approach as loosely coupled). The problem of integrating OLAP-
+centric systems and GIS-centric systems, has been called SOLAP [6, 7]. However,
+not many proposals have formally addressed the problem of modeling and querying
+a GIS-OLAP scenario. One of such works is the Piet system [16, 19].4 In Piet, spatial,
+spatio-temporal, and non-spatial data (stored in a data warehouse and/or in the GIS)
+are integrated in a single framework. To the best of our knowledge, Piet is the only
+proposal that provides a formal data model and query language for such integration.
+Moreover, recently, an SQL-like query language for Piet, denoted Piet-QL, has been
+presented [18].
+
+Tryfona et al. [62, 63] classify spatio-temporal applications according with the
+kind of support of the changes occurring in the spatial objects. They distinguish
+between objects with continuous motion (e.g., a car moving in a highway), objects
+with discrete changes (e.g, parcels changing boundaries), and objects combining
+continuous motion and changing shapes, for instance, a storm, or a stain in a river.
+That means, spatial objects in thematic layers can be added, removed, split, merged,
+or their shape may change. In [17, 32] the authors show that the Piet framework
+supports continuous motion, following the classification above. However, Piet works
+under the assumption that all objects in a layer remain unchanged across time, i.e.,
+neither does Piet support objects with discrete changes nor objects combining contin-
+uous motion and changing shapes. For example, Piet supports queries like “Total
+number of objects going from a three-star hotel to a cheap restaurant on Monday
+
+4A description and demo of Piet can be found at http://piet.exp.dc.uba.ar/piet.
+
+458
+
+Geoinformatica (2011) 15:455–496
+
+mornings in Antwerp”, but not queries like “Number of airports in England in 1998”.
+Addressing discrete changes, continuous motion, and changing shapes, requires a
+temporal data model and query language. We show below that only few proposals
+address the problem of time-varying geometric objects, and, to the best of our
+knowledge, none of them is oriented to GIS-OLAP integration. For example,
+Hermes, a system introduced by Pelekis et al. [46, 48], supports changing objects,
+although it lacks GIS-OLAP integration capabilities.
+
+In the present paper we extend Piet to support the three types of spatio-temporal
+data defined in [62] in addition to provide a GIS-OLAP integration framework. This
+extension positions Piet in the ST-OLAP class, according to the classification given
+in [65] (see Section 2).
+
+1.2 Two motivating examples
+
+Let us assume the following GIS-OLAP scenario about land property information. In
+Fig. 1 we show four parcels of land, P1 through P4. They could be characterized, for
+example, by attributes like type of soil, depth of underground water availability, and
+vegetation. The parcels are subject to change in shape, area, and in the value of their
+attributes, and we consider them as composing a single layer denoted Lland. Other
+layers may contain, for instance, airports represented as points, in a layer denoted
+La. We assume, without loss of generality, that each layer contains only one kind of
+geometry, meaning that for representing rivers (as polylines), we must use a different
+layer. To complete the picture, there is a layer containing rivers (Lr).
+
+There is also non-spatial information stored in a conventional data warehouse. In
+this data warehouse, dimension tables contain information about stores, schools, and
+other demographic data. In particular, a dimension Land stores information related
+to the parcels on the left hand side of the figure. The bottom level of this dimension
+contains the parcel identifiers (p1 through p4). These id’s aggregate over a level
+denoted region, which, in turn, aggregates over a level province. There is a mapping
+
+Fig. 1 Motivating example:
+initial situation. a Land
+partition; b land dimension
+hierarchy
+
+(a)
+
+(b)
+
+Geoinformatica (2011) 15:455–496
+
+459
+
+(not shown in the figure) defined between spatial objects in Lland and members of the
+bottom level (parcelId) of the dimension Land. In this case, the mapping is complete,
+but this is not mandatory. (The mapping associates each Pi object in the left hand side
+to the corresponding dimension level member pi in the right hand side).
+
+The scenario above could be represented in Piet in a straightforward way. We
+remark that integration of GIS and warehouse data could also be possible with
+existing technologies, through ad-hoc solutions, which would require data exchange
+between GIS and OLAP applications to be performed. For example, the output of a
+GIS query must be exported as a dimension of a data cube, and merged for further
+analysis. However, these solutions, besides requiring many lines of complex coding,
+are hardly portable. On the contrary, using a system that naturally integrates GIS
+and OLAP information, a user would only need to bind geographic elements in the
+maps to the data cube(s) that represent aggregated organizational information, and
+the system will be ready to work.
+
+Time management requirements appear when, at a certain moment, John, the
+owner of P3, acquires P4. Then, parcels P3 and P4 must be merged. The new situation
+is depicted in Fig. 2 (changes have also been performed at the data warehouse, as we
+can see on the right hand side of the figure). Other changes may occur afterwards,
+for example, P2 may grow if John decides to sell part of P3-4 in Fig. 2 to the owner
+of P2. We are now in a discrete changes scenario, where, for instance, we may want
+to know the history of P3-4, or the production of each existing parcel as of the year
+2006, or more complex queries like “Total production by year per square mile for
+each parcel of land, for the parcels in Antwerp” (note that non-spatial information
+resides in the data warehouse).
+
+The next example presents a different kind of problem involving continuous
+motion plus changes in spatial objects, in terms of the classification proposed in [62].
+Many industrial processes generate polluting clouds as a side-effect. These clouds
+are, of course, dynamic: according to the weather conditions, they can move forward
+
+Fig. 2 Motivating example:
+situation after merging P3 and
+P4. a Changes in spatial
+objects; b changes in the
+dimension hierarchy
+
+(a)
+
+(b)
+
+460
+
+Geoinformatica (2011) 15:455–496
+
+or backward, grow and/or shrink (or even disappear), split into two or more, or merge
+with other ones. Environmental control agencies monitor these changes in order
+to keep the situation within certain limits. These limits, of course, depend on the
+countries involved. Figure 3 shows a typical situation: a polluting cloud denoted C1 is
+moving forward (in this case, to the right hand side of the figure). The cloud has first
+increased its size and changed its shape; it later split into two smaller clouds. Each
+one of the new clouds further split into two new ones. Finally, C5 and C6 merged
+again into a cloud we denote C7. This evolution occurs in a certain geographic space
+(represented in thematic layers, not shown in the figure). Interesting information can
+be obtained in this scenario, as long as we have a data model and query language
+allowing representing a dynamic setting. For instance, the evolution of the cloud
+across time, how far from a school it had passed, how many people were exposed
+to the effect of the polluting cloud, or how does the total polluting load vary over
+time, are some of the queries a user may pose. These queries may also involve
+dimensional information in the warehouse. This evolution is generally recorded
+through snapshots taken at regular intervals. Figure 4 depicts two such snapshots.
+
+An even more involved situation could be addressed if we consider that, concur-
+rently with the evolution of these polluting clouds, trajectories of moving objects (like
+cars, or pedestrians) are registered, typically through electronic devices. A user could
+be interested in asking, for instance, how many persons moved below a polluting
+cloud for more than one hour without interruption. In this case the answers could
+only be approximate (through the use of linear interpolation, for instance), since we
+assume that the information is given in the form of snapshots.
+
+In summary, addressing situations like the ones we have just described requires
+extending non-temporal SOLAP data models and query languages with temporal
+capabilities. The reader may ask herself why we need yet another data model and
+
+Fig. 3 A pollution cloud
+changing shape
+
+Geoinformatica (2011) 15:455–496
+
+461
+
+Fig. 4 Snapshot at instant t = t1 (left); Snapshot at instant t = t2 (right)
+
+system, instead of using existing ones. We argue that this could not be possible
+because, among other reasons:
+
+•
+
+It is likely that in the scenarios we presented above, data warehouses and GIS
+maps will be built and maintained in an autonomous way (i.e., independently
+from each other). That is:
+
+– The GIS existed before the warehouse information was available, or
+viceversa, the warehouse existed before a GIS was implemented. This means
+that flexible tools are needed to integrate these pre-existing systems (loosely-
+coupled approach). Existing SOLAP models and tools are based on the
+assumption that the system is built as a whole (a tightly-coupled approach).
+– Changes may occur in one or more layers in the map while the data ware-
+
+house remains unchanged;
+
+– The problem may appear the other way around: the warehouse dimensions
+
+may change, and the GIS layers remain the same.
+
+To handle this problem, we need to provide an updatable mapping procedure
+that binds members in the warehouse dimensions to geometric objects in the
+GIS layers.
+
+• Even if updates in the warehouse and the GIS were synchronized, not many
+implementations of temporal warehouses exist [36, 64]. Moreover,
+it is a
+well-known fact in OLAP that standard applications have limited updating
+capabilities.
+
+In Section 7 we discuss the issues above in more detail. In this paper we focus on
+updates and temporal issues on the GIS side.
+
+1.3 Contributions and paper organization
+
+In this paper we extend the Piet data model with temporal capabilities. The new
+model supports objects that change across time while maintaining the GIS-OLAP
+integration paradigm. We first present a brief, although comprehensive overview of
+the efforts regarding GIS, OLAP and Moving Object data integration (Section 2).
+
+462
+
+Geoinformatica (2011) 15:455–496
+
+Following a brief overview of the Piet data model (Section 3), we formally define
+a simplified (also, non-temporal) version of such model, closer to the actual system
+implementation, that also makes the presentation clearer. In addition, we discuss the
+implications of these changes over the query language (Section 4). We then study two
+ways of introducing time in the data model, following standard temporal database
+literature: snapshot-based representation and timestamp-based representation. In
+the former, snapshots of the content of the GIS layers are recorded and (most
+likely, though not mandatory) regular intervals. In the latter, objects in the layers
+are timestamped with their validity intervals. We present the formal definitions of
+the temporal model in both cases, in order to support the choice for the timestamp-
+based approach (Section 5). We then formally present a first-order query language
+supporting the model and give the intuition of its expressive power through a set of
+comprehensive examples (Section 6). Finally, we discuss implementation issues. This
+involves the data structure to support the temporal extension, and how this structure
+supports the update operators required to give functionality to the model. Also,
+a temporal extension to Piet-QL is presented, although a formal definition of the
+syntax and semantics of this language is beyond the scope of this paper (Section 7).
+We conclude in Section 8.
+
+2 Related work
+
+2.1 Spatial data warehousing and SOLAP
+
+Although some authors have pointed out the benefits of combining GIS and OLAP,
+not much work has been done in this field. Vega López et al. [34] present a com-
+prehensive survey on spatio-temporal aggregation that includes a section on spatial
+aggregation. Also, Bédard et al. [7] present a review of the efforts for integrating
+OLAP and GIS.
+
+Stefanovic et al. [58] and Bédard et al. [6], classify spatial dimension hierarchies
+according to their spatial references in: (a) non-geometric; (b) geometric to non-
+geometric; and (c) fully geometric. Malinowski and Zimányi [35] later extend this
+classification to consider that even in the absence of several related spatial levels, a
+dimension can be considered spatial. Pourabbas [50] introduces a conceptual model
+that uses binding attributes to bridge the gap between spatial databases and a data
+cube. This approach relies on the assumption that all the cells in the cube contain
+a value, which is not the usual case in practice, as the author expresses. Also, the
+model requires modifying the structure of the spatial data, and no implementation is
+reported.
+
+Rivest et al. [53] introduced the concept of SOLAP (standing for Spatial OLAP),
+a paradigm aimed at being able to explore spatial data by drilling on maps, in a
+way analogous to what is performed in OLAP with tables and charts. They describe
+the desirable features and operators a SOLAP system should have. Although they
+do not present a formal model for this, the SOLAP concepts and operators have
+been recently implemented in a commercial tool called JMAP.5 The authors propose
+
+5JMAP was developed by the Centre for Research in Geomatics and KHEOPS, http://www.
+kheops-tech.com/en/jmap/solap.jsp.
+
+Geoinformatica (2011) 15:455–496
+
+463
+
+three types of spatial measures: (a) A geometrical shape or set of shapes obtained by
+the combination of multiple geometric spatial dimensions, for example, via a spatial
+merge or spatial intersection. (b) A spatial measure resulting from the computation
+of spatial metric or topological operators. The results of this computation are stored
+in the data cube cell. Examples of this type of spatial measure are ‘area’ and
+‘distance’. (c) A set of pointers stored in the cube cells, to the geometric shapes stored
+in another structure or software. As the authors point out, current technologies only
+allow this type of spatial measure. In addition, the authors define a set of topological
+and metric operators allowing selecting database subsets based on topological and/or
+geometrical constraints, and spatial roll-up and drill-down operations.
+
+Shekhar et al. [56] presented Map Cube, an operator that, given a so-called base
+map, cartographic preferences and an aggregation hierarchy, produces an album of
+maps that can be navigated via roll-up and drill-down operations. The map cube
+operator extends the notion of data cube operator introduced by Gray et al. [20].
+The latter generates all possible (2n) so-called cuboids that can be obtained from a
+base fact table with n dimensions. The extension basically consists in adding to each
+element in the cuboid, the geometric extent associated with each group. Thus, the
+queries corresponding to each cuboid are of the form
+
+SELECT A,B,..,AGG(C), AGG_g(Geom)
+FROM Base_Fact_Table
+GROUP BY A,B,..;
+
+Here, A and B are non-spatial dimensions, C is a numeric measure, Geom
+represents a spatial dimension, AGG is an aggregation function (e.g., SUM), and
+AGG_g is a geometric aggregation function, for instance the geometric union. In
+summary, the proposal does not really define a language in the sense of, for example
+Piet-QL (see below), but defines an operator that can be expressed as a collection
+of SQL queries. This operator can be used (in conjunction with view materialization
+techniques) by a visualization tool in order to efficiently roll-up and drill-down along
+an aggregation hierarchy.
+
+The Spatio Temporal Relational data Model (STRM), introduced by Tryfona and
+Hadzilacos [61], provides a set of constructs consisting in relations, layers, virtual
+layers, object classes, and constraints, all with spatial and temporal extent, on top of
+well-established models. In this model, like in Piet (which we detail in Section 3), a
+layer is a set of geometric figures like points, lines, regions or combinations of them
+(although in Piet only one kind of figure is allowed in a layer) with associated values.
+If a layer represents derived information, it is called virtual. The authors define a
+layer algebra based of four operations over layers, the main ones being the layer
+overlay and reclassification. The latter is relevant to SOLAP, since it computes the
+geometric union of adjacent figures if their ranges (i.e., the associated non-geometric
+attributes) are identical. In other words, the reclassification operation provides the
+semantics for the cuboids discussed above [56].
+
+Vaisman and Zimányi [65] recently proposed a comprehensive and formal clas-
+sification for spatio-temporal data warehousing, that goes beyond the informal
+notion of SOLAP. Using an extended relational calculus supporting aggregation,
+based on the calculus first introduced by Klug [31] and the abstract data types of
+Güting et al. [21], define a taxonomy of queries. For example, the SOLAP class
+of queries is defined as the class containing the queries that can be expressed in
+
+464
+
+Geoinformatica (2011) 15:455–496
+
+Klug’s calculus extended with the spatial data types defined in [21]. Analogously, the
+ST-OLAP class of queries is the class containing the queries that can be expressed in
+the calculus extended with spatial and moving types defined in [21].
+
+Piet, named after the Dutch painter Piet Mondrian, Mondrian being the OLAP
+engine used for the implementation, has been introduced in [16] and [19]. Piet
+is based on a solid formal model, and the integration between GIS and OLAP
+is materialized through a function that maps elements in the data warehouse to
+elements in the GIS layers. A formal (based on first-order logic) query language is
+also part of the proposal. Piet comes equipped with a query language, Piet-QL [18],
+that supports the operators proposed by the Open Geospatial Consortium for SQL,
+adding the necessary syntax to integrate OLAP operations through the OLAP
+standard MDX.6 Based on the analysis of the needs of GIS-DSS users, Piet-QL is
+designed to support basically four kinds of queries: (a) GIS queries filtered using
+spatial conditions, like “Regions of Belgium which contain cities crossed by rivers”;
+(b) OLAP queries filtered using OLAP conditions, like “Total sales of products
+in cities with sales higher than 5000 units”; (c) GIS queries filtered using OLAP
+conditions, like “Name of the cities with total sales higher that 5000 units”; (d)
+OLAP queries filtered by spatial conditions, like “Total sales in cities within 100Km
+from Nijvel”. Queries of the first two kinds allow GIS and OLAP users to query
+maps and warehouses in the usual way. Queries of type (c) and (d) characterize
+integrated GIS-OLAP queries. The filtering is materialized through a predicate
+denoted IN. To give an idea of how a Piet-QL query looks like, let us consider a
+query of type (c): “Parcels crossed by the Dÿle river, with production sales greater
+than 5000 units”, which reads in Piet-QL:
+
+SELECT GIS l.id
+FROM land l, rivers lr
+WHERE intersects(l, lr) AND lr.name = "Dÿle"
+AND l IN(
+
+SELECT CUBE
+filter([Land].[Land parcelId].Members,
+[Measures].[Parcel Sales] > 5000)
+FROM [Sales]);
+
+Here, ‘land’ and ‘rivers’ represent two thematic layers containing spatial objects
+(the parcel subdivision of a given region, and the rivers, respectively). The OLAP
+subquery (identified with the keyword CUBE) is linked to the outer query by the
+predicate IN. We give more detail in Section 7, although a full study of Piet-QL
+is beyond the scope of this paper. Note that unlike [56], we support external data
+cubes. However, we cannot build a spatial data cube in the sense of the work by
+Shekhar et al. Piet-QL could build the cuboids if the non-spatial information resides
+in the GIS part of the system, although non-spatial information in the external data
+warehouse and spatial information in the GIS cannot appear together in the SELECT
+
+6MDX is a query language initially proposed by Microsoft as part of the OLEDB for OLAP
+specification, and later adopted as a standard by most OLAP vendors. See http://msdn2.microsoft.
+com/en-us/library/ms145506.aspx.
+
+Geoinformatica (2011) 15:455–496
+
+465
+
+clause. In other words, the cuboid shown above could only be written in Piet-QL if
+the numeric information is stored in the GIS part; nevertheless, aggregations like
+the following are supported:
+
+SELECT GIS p.name,sum(d.area)
+FROM district d, province p
+WHERE inside(d,p) AND d.pop > 10000
+GROUP BY p.name
+
+Finally, let us briefly comment on continuous f ields, a topic not covered in the
+present paper but which we plan to address in future research (see Section 8). In GIS,
+continuous fields (from now on, f ields) model phenomena that can be represented
+as a function of space and time [28]. A field is formally defined as composed of
+[39]: (a) a domain D which is a continuous set; (b) a range of values R; and (c)
+a mapping function f from D to R. The joint contribution of the GIS and OLAP
+communities to the study of models involving OLAP and continuous fields has
+been quite limited. In a first approach to the problem, Shanmugasundaram et al.
+[55] propose a data cube representation that deals with continuous dimensions not
+needing a predefined discrete hierarchy. More recently, Ahmed et al. proposed
+to use interpolation methods to estimate (continuous) values for dimension levels
+and measures, based on existing sample data values [2, 3]. Vaisman and Zimányi
+recently proposed a conceptual model addressing GIS-OLAP scenarios that include
+fields [66].
+
+2.2 Implementation
+
+From an implementation point of view, Han et al. [24] use OLAP techniques for
+materializing selected spatial objects and introduce a so-called Spatial Data Cube.
+This model only supports aggregation of such spatial objects (i.e., integration with
+external warehouses is not studied). Pedersen and Tryfona [45] propose to pre-
+aggregate spatial facts. First, they pre-process these facts, computing their disjoint
+parts in order to be able to aggregate them later. That means, pre-aggregation works
+if the spatial properties of the objects are distributive over some aggregate function.
+Since this proposal does not consider the geometry, queries like “Give me the total
+population of cities crossed by a river” are not supported. Other works addressing
+implementation issues for spatial OLAP (based on indexing and pre-aggregation)
+are [40, 41, 51, 71].
+
+2.3 Spatio-temporal databases
+
+Many proposals study moving object databases. However, the topic of moving
+shapes (the issue we address in this paper) has received less attention. The Hermes
+system [38, 46, 48] provides the functionality needed for handling two-dimensional
+objects that change location, shape and size, through four kinds of data types: (a)
+static basic; (b) static temporal; (c) static spatial; (d) moving. Data of type (a) are
+the standard DBMS data types (integer, real, etc.). Data of type (b) are supported
+through a library denoted TAU-TLL [46]. Temporal data types supported (extending
+the ODMG data model) are Timepoint, Period, and Temporal Element. The spatial
+
+466
+
+Geoinformatica (2011) 15:455–496
+
+data types (c) are provided by the Oracle Spatial library. The object type defined
+in Oracle, and used by Hermes, is called Sdo_Geometry. The Moving data type
+(d) encapsulates semantics and functionality of different data types: moving point,
+linestring, circle, rectangle, polygon, and moving collection. Below these types, a class
+hierarchy is defined. The basic type is called moving point, defined as a sequence
+of different types of simple functions. It is based on the sliced representation
+proposed by Güting et al. [21]. Here, a temporal development of a moving object is
+decomposed in slices such that between each slice, a simple function is defined. The
+idea is to decompose the definition of each moving type into several definitions, one
+for each function. The composition of these sub-definitions defines a moving type.
+Moving point is the basis for the other types, like moving circle or moving polygon.
+These data types are discussed in detail by Pelekis et al. [48]. Objects are provided
+with a set of operations: (a) topological and distance predicates, like within_distance;
+(b) temporal functions, like add_unit (adds a new unit of movement), and at_instant
+(returns the union of the projection of a moving object at a given time instant); (c)
+distance and direction operators (e.g., the distance between two moving objects);
+(d) set relationships (e.g., intersection). Also numeric operations on objects are
+supported, like area or length. In consequence, it would be easy to compute, for
+instance, the area of an object at a given time instant.
+
+SECONDO [22] is another system supporting the model of Güting et al. [21].
+SECONDO is an extensible DBMS platform for building research prototypes,
+consisting in three major components which can be used together or independently:
+(i) the kernel, which offers query processing over a set of implemented algebras, each
+offering some type constructors and operators, (ii) the optimizer, which implements
+the essential part of an SQL-like language, and (iii) the graphical user interface which
+is extensible by viewers for new data types. In spite of their ability to handle spatio-
+temporal data, neither SECONDO, nor Hermes, are oriented toward addressing the
+problem of integrating GIS, OLAP and Moving Object data.
+
+Remark 1 At the end of Section 5 we complete the discussion above, providing an
+analysis of the spatio-temporal data models based on snapshots and timestamping.
+In Section 7 we also comment on spatial integrity constraints.
+
+In summary, although the proposals above address particular problems, as far as
+we are aware of, Piet is the first work to address the problem as a whole, from a
+formal study of the problem of integrating spatial and warehousing information in a
+single framework that allows obtaining the full potential of this integration, to the
+implementation of the proposal. Given these features, we believe that Piet is an
+appropriate starting point for extending SOLAP with temporal capabilities. In the
+next section we give a brief, yet comprehensive, overview of Piet.
+
+3 Piet data model overview
+
+In this section we provide a short description of Piet, only aimed at making the paper
+self-contained. The interested reader is referred to [16, 19] for a detailed study.
+In the Piet conceptual data model, spatial and non-spatial data are integrated in a
+single framework. The model introduces the concept of GIS dimension. As usual in
+
+Geoinformatica (2011) 15:455–496
+
+467
+
+databases, a GIS dimension has a schema and associated instances. A GIS dimension
+schema is a collection of graphs such that for each layer there is a graph where (a)
+there is a node for each kind of geometry, call it Gi; (b) there is an edge between
+two nodes Gi and Gj if Gj is composed by geometries of type Gi (i.e., the granularity
+of Gj is coarser than that of Gi); (c) there is a distinguished member All that has no
+outgoing edges; (d) there is exactly one node representing the geometry point with
+no incoming edges. Figure 5 shows the schema of a GIS dimension. At the bottom
+level of each hierarchy there is the Algebraic part. Its associated instances contain
+the infinite points in a layer, and could be described by means of linear algebraic
+equalities and inequalities [44]. Above this part there is the Geometric part, whose
+instances contain the identifiers of the geometric elements (i.e., the spatial objects) in
+the GIS layers and is used to solve the geometric part of a query (e.g., intersections
+between rivers and parcels). Each point in the Algebraic part may correspond to
+one or more elements in the Geometric part (e.g., if two or more polylines intersect
+each other, the same point—in the Algebraic part—is associated with two different
+polylines in the Geometric part). At the GIS dimension instance level, two kinds of
+rollup relations are defined:
+
+–
+
+–
+
+ralg, a 5-ary relation representing the rollup between the algebraic and geometric
+parts. For instance, ralg(Lland, Pg, x, y, pg1) says that in the layer Lland, a point
+(x, y) corresponds to a polygon identified by pg1 in the Geometric part.
+r, a rollup relation representing the rollup between any two levels in the
+geometric part. For example r(Lland, Li, Pl, lid, plid) means that in layer Lland,
+a line identified by lid corresponds to a polyline identified by plid.
+
+Fig. 5 An example of a GIS
+dimension schema
+
+All
+
+province
+
+region
+
+parcelId
+
+All
+
+All
+
+All
+
+polyline
+
+polygon
+
+OLAP part
+
+node
+
+line
+
+month
+
+Geometric part
+
+week
+
+point
+
+point
+
+point
+
+Algebraic part
+
+minute
+
+Lr (rivers)
+
+La (airports)
+
+Lland (Parcels)
+
+All
+
+river
+
+OLAP part
+
+All
+
+year
+
+day
+
+hour
+
+second
+
+A Time Dimension
+
+468
+
+Geoinformatica (2011) 15:455–496
+
+Finally, there is the OLAP part for storing non-spatial data. This part contains
+the conventional OLAP structures, as defined by Hurtado and Mendelzon [26, 27].
+Dimension levels in the OLAP are associated with geometric objects in maps via
+a function, denoted α(L, D, dimLevel, m), where L is a layer in the GIS part, D
+is a dimension in the OLAP part, dimLevel is a level in D, and m is a member in
+dimLevel. The range of α is the set of identifiers of the spatial objects in L. For
+instance, α(Lr, Rivers, riverId, r) maps an identifier of a river r in the OLAP part
+(in the dimension level riverId, of the dimension Rivers) to the identifier of the
+spatial object (a polyline in Lr) in the Geometric part associated with r. The following
+example is adapted from [19].
+
+Example 1 In Fig. 5, the level parcelId in dimension Land is associated with a poly-
+gon geometry in layer Lland. Note that parcel Id → region, and region → province
+in this example (“A → B” means that there is a functional dependency from level
+A to level B in the OLAP part [10]). Each dimension level may have attributes
+associated, like population or number of schools. There is also an OLAP hierarchy
+associated with the layer Lr at the level of polyline. Notice that since dimension
+levels are associated with geometries, it is straightforward to associate facts stored in
+a data warehouse in the OLAP part, in order to aggregate these facts along geometric
+dimensions.
+
+The association between dimension levels in the OLAP part and levels in the
+geometric part, i.e., the α function, is actually implemented as a relational table, and
+any matching algorithm can be used to automatically perform the mapping. This is
+described in Section 7. We have developed an algorithm based on weighted bipartite
+graphs matching to perform this mapping in a semi-automatic way.
+
+Figure 6 shows a portion of a GIS dimension instance for the layer Lr in the
+dimension schema of Fig. 5. We can see that an instance of a GIS dimension in the
+OLAP part (corresponding to the Schelde river, in Antwerp) is associated via the α
+function, to the polyline pl1. For clarity, we only show four different points at the
+point level {(x1, y1), . . . , (x4, y4)}. There is a relation ralg(Lr, line, x, y, lid) contain-
+ing the association of (x, y) points to the corresponding objects in the line level.
+Analogously, there is a relation r(Lr, line, polyline, lid, plid) between the line and
+
+Fig. 6 A GIS dimension
+instance for Fig. 5
+
+all
+
+pl1
+
+r(Lr,line,polyline,l   ,pl    )
+
+id id
+
+Schelde
+
+l1
+
+l2
+
+r     (Lr,line,x,y,l    )
+alg
+
+id
+
+α
+
+(Lr,Rivers,Ri,polyline,’Schelde’) 
+
+x4,y4
+
+x3,y3
+
+x2,y2
+
+x1,y1
+
+Layer  Lr
+
+Geoinformatica (2011) 15:455–496
+
+469
+
+polyline levels, in the same layer. Note that the relation representing the association
+between the algebraic and the geometric parts only has the target level as argument
+(line in this case). For the relation in the geometric part, both, source and target levels
+are required as attributes (in this example, line and polyline).
+
+Spatial objects in the Geometric part can be associated with facts, each fact being
+quantified by one or more measures, not necessarily a numeric value. Consider for
+instance, a fact table with schema ( polyId, Lland, grossProduct), where grossProduct
+is the measure. Other OLAP fact tables can be defined, also including standard
+OLAP dimensions. For example, the information above can also be stored in a fact
+table with schema ( parcel Id, grossProduct), where the dimension parcelId contains
+parcel identifiers in the OLAP part.
+
+3.1 Query language
+
+Based on the data model described above, the notion of Spatial aggregation is
+defined. Spatial aggregation queries are hard to evaluate, since they require the
+computation of a double integral representing the area where some condition is
+satisfied. For example, the query “Total gross product of the parcels crossed by the
+‘Schelde’ river” would read:
+
+Q ≡
+
+f t prd(x, y, Lc) dx dy,
+
+(cid:2) (cid:2)
+
+C
+
+C = {(x, y) ∈ R2 | (∃x(cid:6))( ∃y(cid:6))( ∃ pg1)(∃c)
+
+(ralg(Lc, Pl, x(cid:6), y(cid:6), α(Lr, Rivers, Ri, Pl, ‘Schelde’)) ∧
+α(Lc, Land, parcelId, Pg, c) = pg1 ∧ ralg(Lc, Pg, x(cid:6), y(cid:6), pg1) ∧
+
+ralg(Lc, Pg, x, y, pg1))}.
+
+(cid:4)
+
+Piet addresses a class of queries denoted summable. Summable queries can be
+rewritten as sums of functions of the spatial objects returned by the condition ‘C’.
+(cid:3) (cid:3)
+C h(x, y) dx dy (C ∈ R2) is summable if
+More formally, a query of the form Q =
+C =
+g∈G ext(g), where G is a set of spatial objects, and ext(g) means the geometric
+extension of g (i.e., the subset of R2 that g occupies), and there exists a function h(cid:6),
+(cid:3) (cid:3)
+such that Q =
+C h(x, y) dx dy.7 Here S = {gid|ϕ(x, y)},
+where ϕ is an FO-formula in a multi-sorted logic L over the reals, geometric objects,
+and dimension level members (see Section 4). The vocabulary of L also contains
+function names, together with the binary functions + and × on real numbers,
+the binary predicate < on real numbers and the real constants 0 and 1. Further,
+also constants for layers and attributes may appear in L.8 Atomic formulas in L
+
+g∈S h(cid:6)(g), with h(cid:6)(g) =
+
+(cid:5)
+
+7A more complete definition of summable queries can be found in [19].
+8For simplicity, we do not quantify over layers, although the language could be extended to support
+this.
+
+470
+
+Geoinformatica (2011) 15:455–496
+
+(basically, syntactic elements for the relations and functions described in the data
+model) are combined with the standard logical operators ∧, ∨ and ¬, and existential
+and universal quantifiers over real variables and attribute variables. A detailed
+description can be found in [19].
+
+Remark 2 If a query is not summable there is no way of getting rid of the task of
+computing the integral, since ϕ can define any semi-algebraic set. For example, the
+query “Total population endangered by a poisonous cloud described by ϕ, a formula
+in first-order logic over (R, +, ×, <, 0, 1))”, is not summable. The simplified model
+we propose in Section 4.1 cannot express a query like the above, but actually, the
+Piet-QL language neither supports it.
+
+We now provide an example that gives the flavor of the language.
+
+Example 2 Let us go back to the query “Total gross product of the parcels crossed
+by the ‘Schelde’ river”:
+
+Q ≡
+
+f t prd(gid, Lland).
+
+(cid:6)
+
+gid∈C
+
+C = {gid | (∃x)( ∃y)( ∃ pl1)(∃ p)
+
+(α(Lr, Rivers, riverId, Pl, ‘Schelde’) = pl1 ∧ ralg(Lr, Pl, x, y, pl1) ∧
+
+α(Lland, Land, parcelId, Pg, p) = gid ∧ ralg(Lland, Pg, x, y, gid))}.
+
+The meaning of the query is the following: α(Lr, Rivers, riverId, Pl, ‘Schelde’) =
+pl1 returns, in the variable pl1, the identifier of the polyline representing the
+Schelde river in layer Lr. The relation ralg(Lr, Pl, x, y, pl1) contains the x, y co-
+ordinates that correspond to the polyline identified with pl1 (in terms of the
+model of Fig. 5, the x, y points that roll-up to pl1 in the Geometric part). Fur-
+ther, ralg(Lland, Pg, x, y, gid) contains the association between these coordinates and
+gid, the variable associated with the identifier of the parcel p by the function
+α(Lland, Land, parcelId, Pg, p). Note that the only free (i.e., not quantified) variable
+is, precisely, gid. Then, the expression C returns the gid values that make the
+formula for C true for any instantiation of the quantified variables with values in the
+database (i.e., we work with the notion of active domain). The sum of f t prd (which
+represents the gross product associated with a polygon gid) over these objects, is then
+performed.
+
+Considering the classification proposed in [47], in addition to aggregation, classic
+attribute, point, range, distance-based, nearest neighbor and topological queries are
+supported by the language (in some cases, provided that we add some additional
+functions). A formal language allows studying a language’s properties, but is not,
+in general, user-friendly. Therefore, based on this language, Piet-QL, the SQL-like
+query language described in Section 2 was introduced [18].
+
+Geoinformatica (2011) 15:455–496
+
+471
+
+4 Problem statement and preliminaries
+
+In the remainder of this paper we address the problem of adding temporal ca-
+pabilities to Piet. More specifically, we study how the Piet data model and the
+formal FO-query language can be extended to support temporal semantics. A key
+difference between our approach and typical GIS-oriented ones, is that the model
+we present is not based upon the object-relational paradigm, that is, we do not
+provide functionality and semantics through complex data types: they are embedded
+in the model and query language. This way, the theoretical framework is general
+enough to be implemented in many ways. We have shown in previous work [19]
+that this approach can deliver good results for query aggregation, a key issue in data
+warehousing.
+
+In what follows we restrict ourselves to the Geometric part of the data model
+introduced in Section 3. We can perform this simplification due to the fact that, in
+practice, we work with object identifiers. Actually, the Piet-QL language works at
+this level of abstraction. We also consider, without loss of generality, that the GIS
+dimension is composed of a set of layers, each of them containing a single geometry
+(e.g., point, polyline). In this way, the clarity of the presentation is enhanced and
+the formal language becomes more friendly to the reader, while keeping its essence.
+Moreover, the expressive power is not affected by this simplification, meaning that
+all summable queries that can be expressed in the full model and language, can also
+be expressed in the simplified one. In the next sections we give the formal definition
+of the new (non-temporal) data model and query language.
+
+4.1 A simplified non-temporal data model
+
+We first formally define the simplified non-temporal data model, (based on [19]),
+since it implies relevant changes to the original work. We then show how these
+changes impact on the query language.
+
+We have the following sets: a set of layer names L, a set of attribute and dimension
+level names A, a set of OLAP dimension names, called D, and a set of geometry
+names, denoted G. There is also a set of function names, called F. Each element a of
+A has an associated set of values dom(a). We assume that G contains the following
+elements (geometries): point, node, line, polyline, and polygon. Each geometry G
+of G has an associated domain dom(G), composed of a set of geometry identifiers
+gid. In other words, gid are identifiers of geometry instances (for example, polylines
+or polygons). Also, each gid is associated with a list of coordinates that defines the
+geometric element. We denote this list the extension of gid, ext(gid).
+
+Deﬁnition 1 (GIS-OLAP Dimension Schema) There is a set of layers L1, ..., Lk ∈ L,
+such that for each Li there is an associated kind of geometry Gi ∈ G (e.g., a layer
+can only contain points, polylines, or polygons, but it cannot contain combinations
+of them). We denote H the (total) function defining this mapping, with signature
+L → G.
+
+There is also a set of dimension schemas D defined as in Hurtado and Mendelzon
+[26, 27], where each dimension D ∈ D is a tuple of the form (cid:9)dname, A, (cid:10)(cid:11), such that
+dname ∈ D, A ∈ A, is a set of dimension levels, and (cid:10) is a partial order between
+levels.
+
+472
+
+Geoinformatica (2011) 15:455–496
+
+We also define a set A of partial functions Att with signature A × D → L mapping
+
+attributes in OLAP dimensions to layers (see also Definition 2).
+A GIS-OLAP dimension schema is the tuple Gsch = (cid:9)H, A, D(cid:11)
+
+Example 3 The GIS-OLAP dimension corresponding to Fig. 5 has the schema:
+
+H(Lr) = polyline, H(La) = node, H(Lland) = polygon.
+
+Following our running example, in the OLAP part we have dimensions Rivers,
+
+Airports, and Land. The Att functions are:
+
+Att1(parcelId, Land) = Lland, Att2(riverId, Rivers) = Lr, and Att3(airportId,
+
+Airport) = La. Thus, A = (cid:9)Att1, Att2, Att3(cid:11).
+
+In dimension Land, it holds that parcelId (cid:10) region, and region (cid:10) province. We
+
+omit the complete schema for the dimensions in the set D.
+
+Deﬁnition 2 (GIS-OLAP Dimension Instance) Let Gsch = (cid:9)H, A, D(cid:11) be a GIS-
+OLAP dimension schema. A GIS-OLAP dimension instance is a tuple (cid:9)Gsch, I, Ainst,
+Dinst(cid:11), where I is a set of binary relations rLi
+, containing the identifiers of the
+geometric objects (and their extensions), in each layer Li, such that H(Li) = G.
+
+Associated with each function Att such that Att(A, D) = L, there is a function
+α ∈ Ainst. The arguments of this function are a dimension name (in the OLAP part)
+D, a layer L, a dimension level l ∈ L, and a member m belonging to l. Note that
+the kind of geometry for L is uniquely determined by H(L), meaning that we do not
+need the kind of geometry as an argument. Intuitively, α maps m to the identifier gid
+of a spatial object belonging to a geometry G, thus binding a data warehouse instance
+to an instance of a geometry (i.e., a spatial object) in a given layer.
+
+Finally, for each dimension schema D ∈ D there is a dimension instance in Dinst,
+defined as in [26, 27], which is a tuple (cid:9)D, RU P(cid:11), where RU P is a set of rollup
+functions that relate elements in the different dimension levels (intuitively, these
+rollup functions indicate how the attribute values in the OLAP part are aggregated).
+We omit the details, which are studied in the works in the references.
+
+Note that in Definition 2 there is a relation rL for each layer L, instead of a generic
+relation r like in the original model. This decision obeys to practical reasons. The
+simplified model is closer to an actual implementation that the full model. From this
+point of view, a normalized set of relations seems more appropriate than a single
+relation. We further illustrate this in Section 7, where we show the data structure for
+the implementation.
+
+Example 4 For the instance of Fig. 1, we have:
+
+I = {rLland
+rLa
+
+= {(cid:9)P1, ext(P1)(cid:11), (cid:9)P2, ext(P2)(cid:11), (cid:9)P3, ext(P3)(cid:11), (cid:9)P4, ext(P4)(cid:11)},
+= {(cid:9)A1, ext(A1)(cid:11), (cid:9)A2, ext(A2)(cid:11)}, rLr
+
+= {(cid:9)R1, ext(R1)(cid:11), ...}}.
+
+In this example, P1 is the identifier of the spatial object representing a parcel,
+and ‘p1’ is the identifier of a parcel in the data warehouse dimension level parcelId.
+
+Geoinformatica (2011) 15:455–496
+
+473
+
+A curator has determined that both of them represent an abstraction of the same
+physical object. Associated with Att1 in Example 3 we have:
+
+{α(Lland, Land, parcelId, ‘p1’) = P1, α(Lland, Land, parcelId, ‘p2’) = P2, ...}.
+Analogously, there are α functions associated with Att2 and Att3.
+
+The data model allows to seamlessly introduce other kinds of external informa-
+tion. For example, moving object data can be associated with geographic information,
+to produce information of interest about the trajectories followed by moving objects
+registered, for instance, through GPS or GSM devices (following [62] we denote this
+as continuous motion). Geographic information is stored in the GIS layers, using the
+data structures described in the present section. Trajectories are given as samples of
+the form (Oid, x, y, t), stating that an object Oid is at the coordinate x, y, at an instant
+t. They are stored in a table denoted MOFT (moving object fact table). These new
+structures can be easily introduced into the query language described below. We give
+examples in Sections 6 and 7.
+
+4.2 Query language for the simplified Piet data model
+
+Leaving out the algebraic part of the formal data model implies that we must
+modify the FO-language L in two ways: first, the terms corresponding to the rollup
+relations must be removed; second, the binary relations in I must be added to the
+syntax, together with the topological predicates and functions that operate over the
+extensions of the geometric objects. A substantial change to the original language
+is the introduction of variables for the extensions of the geometric objects. These
+variables can also be existentially or universally quantified, and they provide a direct
+link between theory and implementation, since these extensions can be mapped to
+data of the types supported by standard GIS languages. The introduction of the
+extensions, topological predicates and functions, allow preserving the expressive
+power of the language. Using these three features we can define the same sets ‘C’ as
+in the original model. We give the intuition of this by means of an example. Consider
+again the query “Total gross product of the parcels crossed by the ‘Schelde’ river”.
+In the simplified model, it reads:
+
+Q ≡
+
+f t prd(gid, Lland).
+
+(cid:6)
+
+gid∈C
+
+C = {gid | ( ∃ pl)(∃ p)( ∃ pl)( ∃e p)( ∃eg)
+
+(α(Lr, Rivers, riverId, ‘Schelde’) = pl ∧
+α(Lland, Land, parcelId, p) = gid ∧
+( pl, e p) ∧ rLr
+
+rLland
+
+(gid, eg) ∧ intersects(e p, eg))}.
+
+The semantics is analogous to the one explained in Example 2. However, two
+facts should be noted in the expressions above: (a) the extensions of pl and gid
+(denoted, respectively, e p and eg) are of a different kind: one is a polyline (in postGIS
+terminology, a Linestring type) and the other one is a polygon; (b) the conjunction
+
+rLland
+
+( pl, e p) ∧ rLr
+
+(gid, eg) ∧ intersects(e p, eg)
+
+474
+
+Geoinformatica (2011) 15:455–496
+
+replaces the expression:
+
+ralg(Lland, Pg, x, y, gid)∧α(Lland, Land, parcelId, Pg, p) = gid ∧ralg(Lr, Pl, x, y, pl1)}.
+
+that computes the geometries that intersect each other. The set of function names F
+defined above, allows the introduction of these functions in the FO-language. The
+simplified data model has the same expressiveness of the general model, provided
+that the set F contains the appropriate functions. That is, the set F allows the
+implementation of a flexible, extendible language.
+
+We are now ready to define the temporal data model. We do this in the next
+
+section.
+
+5 Introducing time into Piet
+
+A large number of temporal data models can be found in the relational database
+literature [59]. Among them, the most popular ones are the snapshot and the
+timestamp models. In the former, there is a function from the time domain to the
+database such that, for each instant t, we have a set of timestamped relations of arity
+two where the first attribute is t, and the second one is a set of tuples valid at t. In
+the timestamp model, each relation is timestamped at the tuple or attribute level.
+Based on the above, in this section we study two alternative ways of introducing time
+into the data model: (a) A snapshot-based representation, where a temporal label is
+attached to the layers in the GIS; (b) A timestamp-based representation, where the
+objects in the different GIS layers are timestamped with their validity time instants.
+We give the formal definition for both alternatives and discuss them. First, we need
+some preliminary definitions and assumptions.
+
+5.1 Representation of time
+
+We consider Time as a new sort (domain) in our model. Toman [60] showed the
+equivalence between abstract and concrete temporal databases. The former are
+point-based structures, independent from the database’s actual implementation. The
+latter are efficient (interval-based) encodings of the abstract databases. The author
+also shows that there is an efficient translation from abstract to concrete temporal
+databases. The point-based representation leads to a clean and elegant syntax and
+semantics for temporal query languages. In the sequel, we work with point-based
+temporal domains, although in the implementation, of course, we use interval-based
+domains (see Section 7).
+
+Deﬁnition 3 (cf. [60]—Point-based Temporal Domain) Let T be a set, and < a
+discrete linear order without endpoints on T. Then, the structure T P = (T, <) is the
+Point-based Temporal Domain.
+
+The elements in the carrier of T model the individual time instants, and the linear
+order < models the succession of time. We consider the set T to be N, standing for
+the natural numbers. Unless noted, we work with the former, like in most temporal
+database applications.
+
+Geoinformatica (2011) 15:455–496
+
+475
+
+In temporal databases, the concepts of valid and transaction times refer to the
+instants when data are valid in the real world, and when data are recorded in the
+database, respectively [59]. We assume valid time support in this paper. Also, as usual
+in temporal databases, a distinguished variable Now represents the (moving) current
+time instant.
+
+5.2 Model requirements
+
+Our model must manage the types of changes described in [47], namely: changes
+in attribute, geometry, topology (and all possible combinations of the three). We
+assume that spatial objects in a layer can be: created, deleted, modified, merged
+with other ones, and split into several ones, although the formal temporal model
+is independent of these operations. We discuss these operations in Section 7. Note
+that analogous operations have been defined for temporal data warehousing [25, 64].
+Further, we are aimed at supporting spatio-temporal queries with or without aggre-
+gation. In this way, we address, among other ones, the following kinds of queries,
+discussed by Pelekis et al. [47]:
+
+–
+
+Spatio-temporal queries about locations. For example: (a) Who is the current
+owner of parcel p1? (b) Who was its owner in 1997? (c) Parcels crossed by rivers;
+(d) parcels limiting with P1; (e) total number of airports in P1 in 2006.
+
+– Queries about temporal relationships. For example: (a) average cereal produc-
+tion in parcel P2 the year it was sold to its current owner; (b) Total sales in gas
+stations the year when airport A1 was opened.
+
+– Queries about moving regions (changing shapes) and trajectories (continuous
+motion), like “number of people exposed to a polluting cloud in November,
+2006”.
+
+In other words, we want to keep Piet’s expressive power, while adding temporal
+support. Also, note that some of the queries above do not even require the presence of
+a data warehouse, and are still supported by our proposal.
+
+Remark 3 We do not discuss the temporal aspects of the data warehouse except
+when necessary for the presentation. A study of this problem can be found, among
+others, in [14, 36, 37]. Besides, supporting spatio-temporal data warehousing requires
+that each time an update is produced on one side of the system (i.e., the OLAP or GIS
+parts), the other side must be updated accordingly, as well as the mapping function α.
+We comment on this in Section 7.2 below, and assume that the update of α is
+performed as required.
+
+Remark 4 We assume that no structural changes occur at the GIS or at the data
+warehouses, meaning that a layer containing polygons at its creation instant will
+contain polygons throughout its lifespan (nevertheless, the extension of a geometric
+object p can change, and its given, at a given instant, by ext( p)). This assumption also
+implies that an OLAP dimension schema remains unchanged throughout its lifespan,
+i.e., its attributes and levels do not change. However, the values of the geometric
+features in the layers and the members of the OLAP dimensions can change (i.e., we
+support changes in the instances) and these changes may also impact the mapping
+functions. From the point of view of the classification proposed in [65], we can say
+
+476
+
+Geoinformatica (2011) 15:455–496
+
+that our proposal falls somewhere in between of the ST-OLAP and ST-TOLAP
+classes (spatio-temporal OLAP and spatio-temporal TOLAP, respectively), since
+there is no full support of temporal data warehouses.
+
+Now, we present the two alternative data models in a formal way. We first
+introduce the snapshot-based temporal extension for Piet, and then the timestamp-
+based one. In both cases we work with the point-based temporal domain T P. We also
+define a time dimension DT and denote μ, a level in this dimension, the granularity
+of a GIS temporal schema.
+
+5.3 Snapshot-based representation
+
+In this representation, the mechanism we use for adding the time dimension to
+GIS layers consists in labeling the layer with intervals. A set of intervals is called
+a temporal element, following standard temporal database notation. First, we need to
+define the concept of lifespan.
+
+Deﬁnition 4 (Lifespan) The lifespan of a GIS thematic layer L, denoted li f espan(L),
+is the collection of all the time instants where the layer is valid.
+
+The lifespan of a set of layers L in a GIS, denoted li f espan(L), is the union of the
+
+lifespans of all the layers in L.
+
+Deﬁnition 5 (GIS-OLAP Dimension Schema) A snapshot-based GIS-OLAP dimen-
+sion schema TGsch is the tuple (cid:9)H, A, D, λ, μ(cid:11), where μ is a level in the Time
+dimension DT as defined above, λ is a relation in dom(μ) × L, where each tuple
+(t, Li) indicates that there exists a snapshot of L taken at instant t, and H, A, and D,
+are the ones of Definition 1, satisfying the following constraints:
+
+– H is constant throughout the lifespan of the GIS.
+–
+
+For each layer L ∈ L, the functions Att are defined only in li f espan(L). where
+li f espan(L) is the collection of all the instants corresponding to the snap-
+shots of L.
+
+– Once a layer is created, the functions Att ∈ A do not change. For example,
+Att1( parcel Id, Land) returns Lland throughout the complete lifespan of Lland.
+– The schema of the dimensions in D is constant during the lifespan of the GIS.
+
+Remark 5 Theoretically, for each time unit there is a snapshot of the database (the
+set of layers, in this case). However, in practice, it suffices to assume that a snapshot
+of the database is taken each time an update occurs. Thus, between two consecutive
+snapshots we can assume that no changes occurred.
+
+Deﬁnition 6 (GIS-OLAP Dimension Instance) Let TGsch be a Temporal GIS-
+OLAP dimension schema. A snapshot-based temporal GIS-OLAP dimension in-
+stance is a tuple (cid:9)TGsch, I t, At
+(cid:11), where:
+
+, Dt
+
+inst
+
+inst
+
+–
+
+I t is a family of sets of relations rLi,t containing the geometric elements (and
+their extensions) in Li at an instant t. Thus, I t contains, for each layer Li, a
+set of snapshots at instants t1, ....tm, such that each one of these instants is in
+li f espan(Li).
+
+Geoinformatica (2011) 15:455–496
+
+477
+
+– Associated with each function Att such that Att(A, D) = L, there is a set of
+, containing the function α[T] as of the time instants T = {t|t ∈
+inst is a family of sets of snapshots (one set
+
+functions α ∈ At
+(t1, ....tn) ∧ t ∈ li f espan(L)}. Thus, At
+for each function α).
+
+inst
+
+– Dt
+
+inst is a family of sets of dimension instances, one set for each dimension schema
+D ∈ D in TGsch. Each set contains the snapshots of the dimension instances at
+instants t1, ....tm, such that each one of these instants is in li f espan((L)).
+
+Example 5 Let us suppose that layer Lland has the lifespan {0, 5, 10, 20, 40}. If the
+instance of Fig. 1 corresponds to the situation at t = 5, and the instance of Fig. 2
+corresponds to the current situation, and there was only one airport at t = 5, we may
+have, for example:
+
+I t = {rLland,5 = {(cid:9)P1, ext(P1)(cid:11), (cid:9)P2, ext(P2)(cid:11), (cid:9)P3, ext(P3)(cid:11), (cid:9)P4, ext(P4)(cid:11)}, ...,
+
+rLland,40 = {(cid:9)P1, ext(P1)(cid:11), (cid:9)P2, ext(P2)(cid:11), (cid:9)P3 − 4, ext(P3 − 4)(cid:11)},
+
+rLa,5 = {(cid:9)A1, ext(A1)(cid:11)}, ...}.
+Analogously, for the function in At
+
+inst associated with Att1 in Example 3.
+
+{α(Lland, Land, parcelId, ‘p1’)[5] = P1, . . . , α(Lland, Land, parcelId, ‘p3-4’)
+
+[Now] = P3-4, ...}.
+
+5.4 Timestamp-based representation
+
+We now discuss how we can introduce time into the data model by means of object
+timestamping. That is, instead of working with a set of layer snapshots, we associate a
+time instant to each object in a layer (recall that we work with the abstract temporal
+database concept, although for efficiency reasons, actual implementations usually
+encode these instants in intervals). Thus, the lifespan of a layer is implicit in the
+lifespan of the objects composing it. The definitions of temporal schema and instance
+change accordingly.
+
+Deﬁnition 7 (Timestamp-based GIS-OLAP Dimension Schema) A timestamped
+temporal GIS-OLAP dimension schema TGsch is the tuple (cid:9)H, A, D, μ(cid:11), where μ
+is a level in the Time dimension as defined above, and H, A, and D are the ones of
+Definition 1, satisfying the following conditions:
+
+– A layer is created when the first object is added to it.
+– H is constant throughout the lifespan of the GIS.
+–
+
+For each layer L ∈ L, the function Att is defined only in li f espan(L), where
+li f espan(L) is the collection of all the time instants associated with the geometric
+objects in L.
+
+– The functions Att ∈ A do not change with time. This means that, for example,
+
+Att1( parcel Id, Land) will always return Lland.
+
+– The schema of the dimensions in D is constant during the lifespan of the GIS.
+
+Note that we do not need the relation λ because the lifespan of a layer is
+
+determined by the lifespan of its objects.
+
+478
+
+Geoinformatica (2011) 15:455–496
+
+Deﬁnition 8 (GIS-OLAP Dimension Instance) Let TGsch be a Temporal GIS-
+OLAP dimension schema. A timestamped temporal GIS-OLAP dimension instance
+is a tuple (cid:9)TGsch, I t, At
+
+(cid:11), where:
+
+, Dt
+
+inst
+
+inst
+
+–
+
+I t is a set of sets of relations rt
+such that each tuple (cid:9)gi, ext(gi), t)(cid:11) in rt
+Li
+Li
+represents the existence of an object gi (and its extension) in Li at the instant t.
+– Associated with each function Att such that Att(A, D) = L, there is a set of
+, with signature L × D × A × dom(A) × dom(μ) →
+
+functions α ∈ At
+dom(G), where A ∈ A, and G is such that H(L) = G in TGsch.
+
+inst
+
+,
+
+inst is a set of sets of dimension instances, one set for each dimension schema
+D ∈ D in TGsch. Each set contains the dimension instances represented in the
+timestamp model (see [36] for details).
+
+– Dt
+
+Definitions 7 and 8 assume that the attributes associated with each GIS layer are
+invariant, i.e., if the polygons representing parcels in Lland have the same attributes
+throughout their lifespan, which is a reasonable assumption in practice. For instance,
+a designer may define that a parcel has attributes associated with land use or land
+ownership, and in case part of this information is missing, this will occur at the
+instance level, but the attributes will still be present in the schema of the layer.
+
+Example 6 Consider again the layer Lland, with lifespan {[0, 5], [10, 20], [40, 80]},
+and the situation in Example 5. We instantiate the current instant with the value
+‘80’ to be consistent with the definition of the time domain T P. In an actual
+implementation, the distinguished variable Now is used. Then,
+
+I t = {rt
+
+Lland
+
+= {(cid:9)P1, ext(P1), 0(cid:11), (cid:9)P1, ext(P1), 1(cid:11), (cid:9)P1, ext(P1), 2(cid:11), (cid:9)P1, ext(P1), 3(cid:11),
+
+(cid:9)P1, ext(P1), 4(cid:11), (cid:9)P1, ext(P1), 5(cid:11), (cid:9)P1, ext(P1), 10(cid:11), ...,
+(cid:9) p3 − 4, ext( p3 − 4), 80(cid:11), ...}, ...,
+
+rt
+La
+
+= {(cid:9)A1, ext(A1), 0(cid:11), (cid:9)A1, ext(A1), 1(cid:11), ..}, ...}.
+
+In a concrete temporal database, the former could be encoded in the form:
+
+I t = {rt
+
+Lland
+
+= {(cid:9)P1, ext(P1), {[0, 5], [10, 20], [40, 80]}(cid:11), ...},
+
+rt
+La
+
+= {(cid:9)A1, ext(A1), {[0, 5], [10, 20], [40, Now]}(cid:11), (cid:9)
+
+A2, ext(A2), {[10, 20], [40, 80]}(cid:11), ...}}
+
+Analogously, for At
+
+,
+
+inst
+
+{{(cid:9)α(Lland, Land, parcelId, ‘p1’, 0) = P1(cid:11), . . . ,
+
+α(Lland, Land, parcelId, ‘p1’, 80) = P1(cid:11)}, ...}.
+
+In a concrete temporal database, the former would be encoded in the form:
+
+{[(cid:9)α(Lland, Land, parcelId, ‘p1’, [0, 5]) = P1(cid:11), ...,
+
+(cid:9)α(Lland, Land, parcelId, ‘p1’, [10, 20]) = P1(cid:11)....]}.
+
+The fact tables are defined analogously to the non-temporal case, and we omit
+
+details to avoid redundancy.
+
+Geoinformatica (2011) 15:455–496
+
+479
+
+5.5 Discussion
+
+Technically, the snapshot and timestamp models have the same expressiveness. This
+means, we can switch between each other and still be able to represent the same
+situation. This happens if there is a snapshot (or an encoding of a snapshot) for
+every time instant in T P. In a real-world situation this cannot be guaranteed, since
+snapshots are generated, in the best case, at regular time intervals. Therefore, in
+practice, we cannot guarantee the equivalence between the two models, and we need
+to choose one of them as the basis of our spatio-temporal data model.
+
+The snapshot model supports essentially transaction time. On the other hand, the
+timestamp model favors the valid time approach, allowing retroactive updates. Also,
+for the timestamp model, time is added to the model just as a new data type, whereas
+in the snapshot-based model this requires different data structures to be added. In
+this sense, two typical representations exist: the first normal form (1NF) and the
+non-1NF timestampings. In the first one, a new tuple is generated each time an object
+changes (this is also called tuple timestamping). In the latter, there is always a unique
+tuple for each object, and attributes are temporally ordered lists containing the value
+of the attribute in different intervals. This is also called attribute-timestamping.
+
+With respect to querying, it is a well-known fact that the snapshot model makes it
+difficult to evaluate queries of the form “give me all the time instants where a formula
+ϕ holds in the database”.
+
+Examples of both kinds of models discussed here exist (not for SOLAP, but for
+spatio-temporal GIS). Space-time composite (STC) is a model based on attribute
+timestamping proposed by Langran and Chrisman [33]. The model represents the
+world as a set of spatially homogenous objects in a layer. Every space-time composite
+has its unique temporal course of changes in attributes, and attribute changes are
+recorded at discrete times. The model does not capture temporality among attributes
+across space, and updating the database requires reconstruction of the STC units.
+Therefore, the database needs to be re-organized when geometric and topological
+relationships among STC units change. On the other hand, a model based on
+snapshots has been proposed by Armstrong [5], with the problems already discussed,
+common to the general snapshot approach.
+
+Other spatio-temporal data models exist, based on the Object-oriented para-
+digm [67, 68] (some of them were discussed in Section 2) or Event-Oriented data
+models [49]. However, since Piet is based on the relational model, we do not consider
+those models in this discussion. Pelekis et al. [47] give a comprehensive overview of
+spatio-temporal models.
+
+We conclude that in order to extend Piet with spatio-temporal GIS-OLAP
+capabilities, the timestamp-based model fulfills the requirements stated in Section
+5.2 better than the snapshot-based model. Thus, in what follows, we work with the
+former.
+
+6 Query language
+
+We now study the temporal extension of the language L introduced in Section 3.
+We denote this language Lt. Recall that in Section 4 we introduced the temporal
+domain T P. To support temporal queries we need to add this sort, and the relations
+
+480
+
+Geoinformatica (2011) 15:455–496
+
+studied in Section 5, to the FO-language of Section 4.2. We stress the fact that
+the FO-language is not aimed at being a working query language for Piet, given
+that no many regular users could be able to write queries in this language, but
+it is a clean and formal tool for gaining insight on what could be expressed in
+FO. Further, in databases, formal languages can be the basis of more user-friendly
+query languages. Finally, note that in this simplified version of the data model, each
+structure can be almost straightforwardly mapped to a construct in a language like
+postGIS.
+
+6.1 Lt syntax and semantics
+
+In the Lt-definable sets considered in the previous section, we can see that there
+are variables of different kinds, like Oid, t, x, y and gid (actually, Lt is a multi-sorted
+first-order logic). We now define Lt formally.
+
+Deﬁnition 9 (The Lt Query Language) The first-order query language Lt has the fol-
+lowing types of variables: real variables x, y, z... . . . , ranging over R; name variables
+Oid, ..., ranging over Object identifiers in the database; geometric identif ier variables
+gid, ..., ranging over identifiers of geometric objects in the database; variables for
+members of dimension levels, a, b , c, ..., (which are also used for dimension level
+attributes), ranging over members in the dimension levels in the data warehouse;
+temporal variables defined over T P, denoted t, . . . , ti, . . . tn; and extension variables,
+ei, e j, which range over geometric data in the database (e.g., in a sense, these are
+a kind of second order variables). Atomic formulas in Lt are built via existential
+and universal quantification over these variables, and the usual logical connectives
+∧, ∨, ¬, plus a set of functions and relations. We now define how these atomic
+formulas are formed.
+
+Terms The following are the only terms in the language.
+
+li→l j
+D
+
+– A function symbol f
+
+(t), where li and l j are levels in the dimension D, and
+t is a temporal variable, is a term; There is one function symbol for each rollup
+function in the OLAP part.
+
+– A function symbol β A→B
+
+that maps elements of A to elements of B in dimension
+D (in the OLAP part), is a term; for every dimension level A, and every attribute
+B of A, denoted A.B, there is one function symbol.
+
+D
+
+– A function symbol α(L, D, Ai, a, t), where Ai is a level in dimension D, L is a
+layer, a is a variable for a dimension level member, and t is a temporal variable,
+is a term; There us one function symbol for every α function in At
+inst associating
+the OLAP and GIS parts.
+
+– Metric functions, e.g., distance(e1, e2) where e1 and e2 are extension variables, are
+
+terms;
+
+– There are functions that can be applied to the alpha-numeric data in the OLAP
+part (for instance, the function concat on string values); these functions are also
+terms in the language.
+
+In Lt we have arithmetic operations + and ×, the constants 0 and
+Atomic Formulas
+1, and the relation < for real numbers and temporal variables. We also assume the
+
+Geoinformatica (2011) 15:455–496
+
+481
+
+equality relation for all types of variables. There are numeric, string, and temporal
+constants. Atomic formulas are formed as follows.
+
+–
+
+L in I t, we have a relation symbol rt
+(g, e, t), where g is a
+For every relation rt
+geometric identifier variable for a geometry in L, e is an extension variable, and
+L in I t is a formula.
+t is a temporal variable; thus, rt
+
+– There are topological relations rtop(e1, e2) (e.g., intersects, adjacent, touches),
+
+L
+
+where ei are extension variables; thus, rtop(e1, e2) is a formula.9
+For every external fact table of arity n, like, for instance, the MOFT mentioned
+in Section 4, we have an n-ary relation Mi; Mi is a formula.
+If v is a variable of one of the sorts defined above, (∃v) and (∀v) are formulas.
+If term1 and term2 are terms, term1 = term2 is a formula.
+If F1 and F2 are formulas, F1 ∧ F2 and F1 ∨ F2 are formulas. Also, if F is a
+formula, ¬F is a formula.
+Parentheses are also allowed, with the usual precedence.
+
+–
+
+–
+–
+–
+
+–
+– Nothing else is a formula.
+
+The Lt language could be used in two ways: (a) As a language to define the
+aggregation region C of Example 2; (b) As a query language in itself. Also in this
+case, aggregation could be applied. For example, the Count, Max and Min operators
+could be applied to sets of the form {t | φ(t)}, when the Lt-definable condition φ
+defines a finite set of time instants. Or the TimeSpan operator could be applied when
+φ defines an infinite, but bounded set of time instants. The semantics of Count,
+Max and Min is clear and TimeSpan returns the difference between the maximal
+and minimal moments in the set. Other (temporal and non-temporal) aggregate
+operators can be applied in analogous way.
+
+Example 7 Let us start with the query “Total production of the parcels crossed by
+the river ‘Schelde’ in 2004”:
+
+(cid:6)
+
+Q ≡
+
+f t prd(gid, Lc, 2004).
+
+gid∈C
+C = {gid | (∃ p)( ∃ pl)( ∃ p1)( ∃eg)( ∃er)
+
+(α(Lr, Rivers, Ri, p1, 2004) = pl ∧ p1.name = ‘Schelde’ ∧
+α(Lland, Land, parcelId, p, 2004) = gid ∧
+
+rt
+Lland
+
+(gid, eg, 2004) ∧ rt
+Lr
+
+( pl, er, 2004) ∧ intersects(eg, er))}.
+
+Here, we do not use temporal variables. The example is aimed at showing that the
+model supports these kinds of historical queries. The fact table stores, for each tuple
+(cid:9)gid, ext(gid), t(cid:11) in Lc, the production associated with gid at instant t. For example, if
+(cid:9)g1, ext(g1), 2004(cid:11) is a tuple in I t for Lc, there is an attribute population associated
+with g1. Besides, rt
+( pl, er, 2004) represent the geometric
+extensions as of 2004 of the spatial objects identified by gid and pl (parcels and rivers,
+respectively). Thus, if in 2004 pl and gid intersected, the latter contributes to the
+
+(gid, eg, 2004) and rt
+Lr
+
+Lland
+
+9Egenhofer and Herring defined the 9-intersection model for binary topological relations [15], where
+every set of 9-intersections, represented as a 3 × 3 matrix, describes a binary topological relation.
+
+482
+
+Geoinformatica (2011) 15:455–496
+
+aggregation. Note that intersects(eg, er) is not explicitly a function of time, because
+eg and er correspond to the year 2004. Finally, note that the geometric identifiers are
+unique at a given time instant (in the granularity of the layer).
+
+Remark 6 We do not get into granularity details, which have been extensively
+studied in the temporal database literature. We assume that the necessary functions
+for date conversion would be available [8, 13, 57], if needed, for handling different
+temporal granularities between the warehouse and GIS historical data, or even
+between different layers in the GIS.
+
+Definition 9 describes the syntax of the language Lt. The interpretation of all
+variables, functions, relations, and constants is standard, as well as that of the
+logical connectives and quantifiers. We illustrate the semantics through a series of
+examples. These examples are also aimed at showing that the four kinds of queries
+supported by Piet-QL are also supported in our temporal query language: GIS,
+OLAP, GIS filtered by OLAP cubes (or fact tables), and OLAP queries filtered by
+GIS constraints (see [18] for details), now including the time dimension.
+
+The following queries refer to our first running example, introduced in Section 1,
+namely the Land Information System. Recall that we have thematic layers containing
+information about land use, rivers, and airports, labeled Lland and Lr, and La,
+respectively. Historical data recording the gross product for each parcel in Lland is
+stored in a fact table f t prd. Unless indicated, we assume granularity year. We start
+with an aggregate query over a fact table defined over attributes in the map layers.
+This query also includes attributes and distance computation.
+
+Q1: Total production in parcels within 100 KM from Brussels, in 2006
+(cid:6)
+
+Q1 ≡
+
+f t prd(gid, Lc, 2006).
+
+gid∈C
+
+C = {gid | (∃ pg1)(∃eg)(∃e p)(∃c)
+
+(α(Lcities, Cities, cityId, c, 2006) = pg1 ∧ c.name = ‘Brussels’ ∧
+∧ α(Lland, Land, parcelId, p, 2006) = gid ∧ rt
+
+( pg1, e p, 2006) ∧
+
+Lland
+
+rt
+Lland
+
+(gid, eg, 2006) ∧ distance(e p, eg) < 100)}
+Here, we added a layer Lcities, linked to a dimension Cities by the α function. The
+variable c ranges over the dimension level cityId, and c.name represents the name
+of the city corresponding to the identifier that instantiates c when evaluating the
+expression (this is actually an attribute of the dimension level cityId). The problem
+of how the distance is computed is beyond the scope of this work, although it is easy
+to see that it is computable. The expression α(Lland, Land, parcelId, p, 2006) = gid
+returns true if the function α maps the dimension member p in level parcelId, to the
+polygon gid in layer Lland in 2006. The semantics is similar to the one explained in
+Example 2: the only free variable in C is gid; thus, for a given instantiation of the
+quantified variables, C returns the values of the gid’s in the database that make the
+formula true.
+
+The next query includes topological relations, and temporal relationships. In the
+terms of Piet-QL, it is an OLAP query filtered with a GIS condition. Also, in this
+
+Geoinformatica (2011) 15:455–496
+
+483
+
+query we assume a granularity of month, in order to show OLAP capabilities. We
+use the rollup function for this.
+
+Q2: Number of airports currently located in parcels that were adjacent to parcel p3
+in November, 2004
+
+This is expressed by:
+
+Q2 ≡
+
+(cid:6)
+
+gid∈C
+
+1,
+
+where C is defined by the expression:
+
+C = {gid | (∃t1)( ∃ p)( ∃ p1)(∃ea)(∃e p)( ∃e p1
+(α(Lland, Land, parcelId, ‘p3’, t1) = p ∧ rt
+
+)
+
+Lland
+
+Time
+
+rt
+Lland
+
+( p1, e p1
+
+(gid, ea, Now) ∧
+
+, t1) ∧ f day→month
+
+Time
+adjacent(e p1
+
+The predicate adjacent(ep1
+
+( p, e p, Now) ∧ rt
+La
+(t1) = ‘November’ ∧ f day→year
+(t1) = ‘2004’ ∧
+, e p) ∧ within(e p, ea))}
+, ep) returns true if e p1 and e p are instantiated with
+extensions that correspond to parcels adjacent to each other in November, 2004.
+Analogously, within(ep, ea) returns true if an instantiation of e p and ea is such that
+currently the latter is inside the former. We also assume that ‘p3’ is the identifier of
+the parcel in the data warehouse (dimension level parcelId), so we used the mapping
+function to find the corresponding identifier of the spatial object in layer Lland,
+. They allow to tell
+represented by the variable p. Note the use of the relations rt
+Li
+the state of each object at a given time; thus, the topological functions are exactly the
+same as in the non-temporal case. The terms f day→month
+represent the
+rollup functions over the Time dimension in the warehouse. As a final observation,
+note that in case ‘P3’ would have been the identifier of the corresponding spatial
+object, we would not have needed the α function.
+
+and f day→year
+
+Time
+
+Time
+
+The next query includes a rollup function over an external warehouse, filtered
+by both, a GIS condition and aggregated data in an external fact table (in Piet-QL
+terminology).
+
+Q3: How many parcels currently located in the province of Antwerp, with more than
+600mm of annual rain in 2006, are crossed by the Schelde river?
+
+(to simplify presentation, we go back to the use of granularity year).
+
+Q3 ≡
+
+(cid:6)
+
+gid∈C
+
+1.
+
+C = {gid | ( ∃ p)( ∃ p1)( ∃rid)( ∃erid
+)( ∃rain)
+(α(Lland, Land, parcelId, p, Now) = gid ∧ α(Lr, Rivers, riverId, p1, Now) = rid ∧
+(gid, egid
+
+, 2006) ∧
+
+(rid, erid
+
+, 2006) ∧ rt
+Lr
+
+)(∃egid
+
+Lland
+
+p1.name = ‘Schelde’ ∧ rt
+f parcel Id→ province
+
+Land
+
+[Now]( p) = ‘Antwerp’ ∧ intersects(egid
+
+, erid
+
+) ∧
+
+WeatherFacts( p, 2006, rain) ∧ rain ≥ 600)}
+
+484
+
+Geoinformatica (2011) 15:455–496
+
+Here, the expression f parcel Id→ province
+
+[Now]( p) = ‘Antwerp’ represents the rollup
+function in dimension Land, such that it returns true if parcel p currently rolls up to
+the province of Antwerp. There is a fact table in the warehouse, denoted Weather-
+Facts in the warehouse, with measure rain (the annual average precipitation).
+
+Land
+
+The next one is a non-aggregate query, using only the relations rt
+Li
+
+.
+
+Q4: Parcels having an area larger than 100 Ha in 1996, and currently larger than they
+were at that time.
+
+Q4 = { p | (∃e p)( ∃e p1
+
+)(∃a)
+( p, e p1
+
+(rt
+
+Lland
+
+, 1996) ∧ rt
+area(e p1
+
+( p, e p, Now) ∧
+
+Lland
+) = a ∧ a > 100 ∧ area(e p) > a)}.
+
+This query does not mention warehouse data. Here, rt
+
+holds the parcels existing
+in 1996 and today, and their areas. This relation refers to two different time instants,
+indicated as constants (note that variable p is used in both cases). The function area
+is similar to the function extent in postGIS.
+
+Lland
+
+The second motivating example in Section 1 allows to show some more involved
+temporal queries. We want to assess the effect of the polluting clouds over people.
+Thus, we are interested to know how many people were exposed to this cloud
+for some time. For this, we combine trajectory information and moving regions.
+Trajectories are given as samples of the form (Oid, x, y, t), stating that an object Oid is
+at the coordinate x, y at an instant t, stored, as we explained above, in a table denoted
+MOFT (standing for Moving Object Fact Table, although this is a special kind of -
+measureless- fact table). We assume that the trajectory of the cloud is recorded as a
+. For example, satellite images are recorded at regular intervals
+‘temporal’ layer rt
+Lc
+and stored in a thematic layer.
+
+Q5: Objects whose trajectories had passed below a polluting cloud
+
+{Oid | (∃c)( ∃ec)( ∃t)( ∃x)( ∃y)
+
+(c, ec, t) ∧
+(rt
+Lc
+MOFT(Oid, x, y, t) ∧ within((cid:9)x, y(cid:11), ec))}
+
+Q6: Objects that remained below a polluting cloud for more than fifteen consecutive
+minutes.
+
+{Oid | (∃c)( ∃ec)(∃c1)( ∃ec1
+
+)(∃c2)( ∃ec2
+
+)
+
+( ∃t1)( ∃t2)( ∃x)( ∃y)( ∃x1)( ∃y1)( ∃x2)( ∃y2)
+
+(rt
+Lc
+
+(c, ec1
+
+, t1) ∧ rt
+Lc
+
+(c2, ec2
+
+, t2) ∧
+
+MOFT(Oid, x1, y1, t1) ∧ MOFT(Oid, x2, y2, t2) ∧
+
+∧ within((cid:9)x1, y1(cid:11), ec1
+
+) ∧ within((cid:9)x2, y2(cid:11), ec2
+(c, ec, t) ∧ ¬(within((cid:9)x, y(cid:11), ec))) ∧
+
+)
+
+¬(∃t)¬(∃c)¬(∃ec)(rt
+Lc
+
+t2 ≥ t1 + 15 ∧ t1 ≤ t ≤ t2)}
+
+Geoinformatica (2011) 15:455–496
+
+485
+
+Note that we need three variables for the object c, because the object can change
+between t1 and t2. The only free variable is Oid. Since we use the notion of active
+domain [1], xi, yi and ti are instantiated only with values in the MOFT.
+
+Complexity Although a thorough study of complexity of Lt is a topic of further
+research, we now briefly comment on this issue. A particularity of our language
+(which we characterized according to [66] as falling in-between the ST-OLAP and
+ST-TOLAP classes of queries), is that it involves aggregation, spatial objects, and
+temporal variables. Thus, we start analyzing known results in the field of query
+languages. First, Lt could be seen as a FO language over R with the addition of aggre-
+gation, spatial data and topological relations, and it has been proved that FO queries
+have data complexity QLOGSPACE [1]. With respect to the impact of aggregation,
+it is well-known that non-recursive stratified datalog (SNR-DATALOG) expresses
+exactly FO queries, and in [12] it is shown that SNR-DATALOG extended with
+aggregate functions (SNR-DATALOGAGG) is equivalent to the relational algebra
+with aggregate functions defined by Klug [31] (in turn, equivalent to relational
+calculus with aggregate functions), denoted FOAGG (the calculus over which the
+AGGL ⊆ QLOGSPACE,
+classification in [66] is built). The authors show that FO
+where AGGL is the set of aggregate functions such that the decision problem
+associated with the evaluation of the aggregate operations is in LOGSPACE (the set
+AGG, composed of the five classic aggregate functions MAX, MIN, SUM, COUNT,
+AVG, is strictly contained in AGGL). In light of these discussion, the complexity
+AGGL affected by the impact of
+of Lt can be assessed as the complexity of FO
+computing the binary topological relations rtop.
+
+7 Implementation, updates and TPiet-QL
+
+In this section we sketch how the ideas in the previous sections are implemented in
+Piet. We first give an overview of the data structure of Piet, and then we discuss how
+we add temporal support.
+
+7.1 Piet data structure
+
+The data structure for the current Piet implementation is organized in:
+
+– Application information. This is the data warehouse structure, which can be
+
+navigated with OLAP tools.
+
+– GIS information. Corresponds to the data structure for the map layers, including
+
+the spatial (geometric) objects in each layer, and associated attributes.
+
+– GIS-OLAP mapping information. These are the data structures for storing the
+relationship between geometric and application information. (Actually these
+structures store the α functions).
+
+– There are also data structures to store precomputed information containing
+the overlay of different layers. We do not discuss this issue in this paper. The
+interested reader is referred to [16].
+
+In Fig. 7, the “Application Information” part contains the warehouse dimensions
+and fact tables (we show portions of schemas of the dimensions Land and Airports,
+
+486
+
+Fig. 7 Piet data structure
+
+Geoinformatica (2011) 15:455–496
+
+and the fact table WeatherFacts). The “GIS Information” part contains a table for
+each layer in the system (we show Land, Rivers and Airports). Each table schema
+has, at least, a unique layer identifier, and the extension of the geometric objects.
+There is additional information (not shown in the picture, since we do not use it for
+the temporal extension) used to compute the overlay when needed. The tables also
+contain non-spatial attributes (e.g., area). Finally, there is the GIS-OLAP mapping
+part. There, elements in the OLAP dimensions are matched with elements in the
+GIS. This matching is performed in a semi-automatic fashion. First, a program based
+on weighted bipartite matching ir run. A curator should later verify the accuracy of
+this matching, and make the necessary changes.
+
+7.2 Implementing the temporal extension: updates
+
+The system must be able to manage changes to the geometric objects. We are aimed
+at supporting the following changes, usually found in the literature [47] (a full study
+of the implementation of these operators is outside the scope of this paper):
+
+– Creation;
+– Update (e.g., a change in the object’s extension, or in the object’s location in
+
+space);
+
+– Deletion (in the temporal sense, i.e., without losing the object’s history);
+– Reincarnation (an object is deleted, and then re-created)
+–
+– Merge (two or more objects are merged into a new one, and deleted)
+
+Split (an object generates two or more new ones, and then it is deleted).
+
+The different states are materialized as usual in temporal databases, adding two
+attributes (denoted FROM and TO) of temporal type, to each one of the tables in
+the GIS-OLAP and GIS information parts. Let us briefly explain how the operators
+above are implemented. When a new object is created at instant t1, say, in the layer
+
+Geoinformatica (2011) 15:455–496
+
+487
+
+Land (e.g., a new parcel is added), a tuple is inserted in the Land table, with the
+corresponding parcel information. The attributes FROM and TO are set to t1 and
+the distinguished value Now, respectively. Analogously, if this parcel, call it p1, is
+split into p2 and p3 at instant t2, the tuple for p1 is deleted in the temporal database
+sense, that is, it is timestamped with TO=t2 − 1 (i.e., an instant immediately before
+t2 in the object’s granularity); in addition, two tuples are created for p2 and p3, with
+FROM=t2, and TO=Now. Later, at t4, two parcels, p5 and p6 are merged into a single
+one, call it p56. The former two tuples are deleted as before (i.e., timestamped with
+TO=t4 − 1), and p56 is created with FROM=t4 and TO=Now. The update operation
+at instant t is equivalent to the deletion of a tuple (i.e., a timestamping with t − 1),
+and the insertion, at instant t, of a new one (keeping the same identifier). The
+reincarnation operator is analogous to an update, except for the fact that the instants
+of deletion and insertion are not consecutive.
+
+Note that we have not said anything yet about the data warehouse side. One of the
+premises of our model is to allow autonomous maintenance of warehouse and GIS
+information, i.e., that OLAP data could be managed independently from the GIS
+information. There are at least two possible situations here: (a) The data warehouse
+and associated data cubes are the usual ones, where fact tables are updated off-
+line (usually, only data insertion is allowed), and the dimensions are static, i.e., the
+history of the dimension members and hierarchies is not kept, and only the last
+state of the dimension data is available. In other words, the data warehouse is non-
+temporal. (b) A temporal warehouse is available, i.e., dimensions are updated and
+their history is preserved. We adopt here the concept of slowly changing dimensions
+[29], where a new dimension tuple is added when an update occurs (dimension tables
+are extended with FROM/TO attributes). More sophisticated solutions can be found
+in the literature [14, 36, 37]. In the former case, the expressive power of the query
+language may be reduced, as we explain below (Section 7.3). In both cases, some the
+update operations described above should also include the update of the mapping
+tables between the GIS and the OLAP parts, and consistency checking against the
+warehouse. This occurs when the operations require creating new identifiers. For
+example, in the creation, split, and merge operations, new objects are introduced
+in the GIS; thus, the objects should be inserted in the warehouse dimensions and
+new mappings must be defined. However, note that an update has no impact on the
+data warehouse or in the mapping, since the object identifier does not change in
+this case. Note that the mentioned insertions can be performed without impacting
+the warehouse or the mapping function, although this could produce incomplete
+answers to some queries (the ones that involve accessing the warehouse), due to the
+incomplete mapping (i.e., the object would only be in one of the parts of the system).
+
+7.3 Temporal extension to Piet-QL
+
+We now sketch an extension to the Piet-QL query language, based on the formal
+language of Section 6. We denote this extension TPiet-QL.
+
+Let us start with a brief overview of Piet-QL (see [18] for a detailed study). We
+present the flavor of the language through an example. We have already said that
+Piet-QL supports four basic kinds of queries: (a) standard GIS queries; (b) standard
+OLAP queries; (c) GIS queries, filtered with an aggregation (i.e., filtered using a
+data cube); (d) OLAP queries filtered with a GIS condition. To begin with, let us
+
+488
+
+Geoinformatica (2011) 15:455–496
+
+show an example of a Piet-QL query of type (d). There is a data cube (denoted
+Sales), containing the aggregation (at different granularity levels) of the sales of
+the production of the parcels in different regions in Belgium. There is also a layer
+containing the cities in Belgium. Consider now the following query: “Production
+cost and parcel sales, for parcels crossed by rivers”. This query reads, in Piet-QL:
+
+SELECT CUBE [Measures].[Production Cost],
+[Measures].[Parcel Sales] ON COLUMNS,
+Product.[All_Products] ON ROWS
+FROM [Sales]
+WHERE [Land].[All Land] IN(
+
+SELECT GIS land
+FROM land, river
+WHERE intersects(river,land);
+
+This query returns, for each parcel and product, the corresponding production
+costs and sales of the parcels that verify the geometric condition. The result can
+be navigated in the usual OLAP fashion. The FROM clause of the outer query
+indicates the data cube (Sales) from which aggregated non-spatial information is
+extracted. In the inner query, land and river are GIS layers. Now, let us suppose that
+we have stored the history of the parcels and the rivers. We extend Piet-QL to be
+able to query such history. This way, the query: “Production cost and parcel sales,
+for the parcels crossed by rivers in 2005”, would read in TPiet-QL:
+
+SELECT CUBE [Measures].[Production Cost],
+[Measures].[Parcel Sales] ON COLUMNS,
+Product.[All_Products] ON ROWS
+FROM [Sales]
+WHERE [Land].[All Land] IN(
+
+SELECT GIS land
+FROM land, river
+WHERE intersects(river,land) AND
+land.FROM < 2005 AND land.TO > 2005 AND
+river.FROM < 2005 AND river.TO > 2005;
+
+Note the similarity between this query and the expressions in the formal query
+
+language of Section 6.
+
+Let us now consider the following query, of type (c): “Parcels crossed by the Dÿle
+river, with production sales greater than 5,000 units” (i.e., a GIS query, filtered by
+aggregated values). In Piet-QL the query reads:
+
+SELECT GIS l.id
+FROM land l, rivers lr
+WHERE intersects(l, lr) AND lr.name = "Dÿle"
+AND l.interval overlaps lr.interval
+AND l IN(
+
+SELECT CUBE
+filter([Land].[Land parcelId].Members,
+
+Geoinformatica (2011) 15:455–496
+
+489
+
+[Measures].[Parcel Sales] > 5000)
+FROM [Sales]);
+
+In this query, l and lr range over the elements in the layers. For each layer
+identifier in the GIS, the subquery is run over the data cube. We have included the
+overlaps interval operator, but any interval operation defined in the seminal work of
+Allen [4] can be used. Since the predicate intersects is time-independent, the interval
+operator defines the semantics of the intersection (e.g., in the query above, intersects
+will return true if the river crossed the parcel at least during some time interval). Also
+note that, for the inner query, the semantics implies that all the history is accounted
+for, meaning for example, that if there are several tuples for the same parcel identifier
+(due to successive updates) all of them will be checked against the data cube.
+
+Note that if dimension updates were supported in the warehouse, more powerful
+queries could be supported, meaning that temporal queries could be posed in the
+inner query above, along the lines of [36, 37]. Otherwise, queries cannot include
+temporal conditions over the warehouse dimensions. However, temporal conditions
+in queries just involving the dimension identifiers can be expressed in TPiet-QL,
+even if the warehouse does not support temporal semantics. More precisely, let
+us assume a parcel p1 was created in 1995, and split in 2004 into p11 and p12.
+Production sales were recorded for all these years in a fact table, at the level of
+parcel identifier, i.e., tuples in this fact table are of the form (cid:9) p1, 1995, 1000(cid:11),...
+(cid:9) p11, 2007, 800(cid:11),..(cid:9) p12, 2007, 900(cid:11).
+
+Querying moving object data, like in Q5 and Q6 in Section 6, requires that the
+language supports external tables (currently this is not handled by Piet-QL). For
+example, “Objects (and the instants) whose trajectories had passed below a polluting
+cloud” (query Q5 in Section 6), would read in TPiet-QL:
+
+SELECT DISTINCT m.Oid,m.t
+FROM MOFT m, GIS cloud c,
+WHERE contains(c,m.p) AND
+m.t ≥ c.FROM AND m.t ≤ c.TO;
+
+Recall that the structure of the MOFT is (Oid, point, t), where point indicates the
+x, y coordinates of the object’s position at time t. Variable m ranges over the MOFT
+(Moving Object Fact Table) and c ranges over the objects is the layer cloud.
+
+7.4 Spatio-temporal integrity constraints
+
+There exists extensive literature on the topic of integrity constraints in spatial
+databases. Cockcroft [11] proposed a taxonomy for these kinds of constraints that
+also includes the traditional (non-spatial) referential integrity constraints present
+in relational database systems. The author defines a hierarchy of spatial integrity
+constraints which includes the traditional ones, plus the new classes: topological,
+semantic and user-defined constraints. The topological class includes the constraints
+studied by Hadzilacos and Tryfona [23]. Semantic constraints in this taxonomy
+are concerned with the meaning of geographical features. An example is a a
+constraint stating that a user cannot enter a road running through a lake. Finally,
+user-defined constraints resemble more classic database rules. For example, a rule
+
+490
+
+Geoinformatica (2011) 15:455–496
+
+can state that gas stations cannot be located closer than a given distance from a
+school. The author also suggests technologies that could be used to implement the
+spatial constraints. Later, Tryfona and Hadzilacos [61] introduce a spatio-temporal
+data model (denoted STRM) that includes a language to define spatio-temporal
+integrity constraints, based in a predicate calculus that includes atomic formulas,
+negation conjunction, disjunction, and (universal and existential) quantification. This
+allows expressing complex spatiotemporal integrity constraints, using a DEFINE
+CONSTRAINT statement. The statement includes the layers and objects involved,
+and the specification of the constraint as an FO-formula. Borges et al. [9] propose
+OMT-G, an extension of the OMT model for geographic applications for the
+specification of integrity constraints in spatial databases. The model provides a col-
+lection of primitives for representing spatial data, supporting topological, semantic
+and user-defined integrity rules to be specified in the database schema, based on the
+taxonomy defined by Cockcroft. More recently, Rodriguez et al. [54] define a repair
+semantics for spatial databases with respect to spatial semantic integrity constraints
+which impose semantics on topologies, in particular for binary spatial predicates
+that represent topological relations between regions. In short, a repair semantics
+defines admissible and consistent alternative instances to for an inconsistent spatial
+database.
+
+The formal language we propose in this paper and its implementation TPiet-QL,
+can be used to specify constraints not only over the GIS layers, but also over the data
+warehouse. STRM defines constraints as FO-formulas, like Lt does. In addition, the
+Piet data model (and its associated language Lt) supports GIS-OLAP integration, a
+feature not present in other proposals. Thus, it would be straightforward to extend
+TPiet-QL (which we already commented is strongly based on Lt) to be a constraint
+definition language (note that this is a concept already used in relational databases
+where SQL is used a a basis for defining triggers).
+
+8 Conclusion and future work
+
+Based on an existing formal data model (Piet) we have discussed two ways of
+introducing time into SOLAP. We first present a modified Piet conceptual model,
+keeping its features while making it simpler and closer to the implementation layer.
+Then, we studied two ways of adding temporal semantics to Piet, based on two
+temporal database paradigms: the snapshot and the timestamp data models. We
+developed a formal model for each of these alternatives and discussed their features,
+showing that the timestamp model better fulfills the SOLAP requirements. We then
+defined a temporal First-Order query language, providing comprehensive examples
+that illustrate its use. We finally moved on to implementation issues. First, we
+discussed how the data structure of Piet is modified to support temporality. Second,
+how this structure supports typical updates on the GIS side and the implications of
+the existence or not of a warehouse with temporal semantics. Finally, we sketched an
+extension of Piet-QL (the query language of Piet), with temporal semantics.
+
+Future work regarding TPiet-QL includes an ongoing real world case study over
+river pollution in the cost of Uruguay, and the study of query optimization tech-
+niques. In particular, we are planning to study mechanisms that can take advantage
+of the fact that historical information can be aggregated and stored as materialized
+
+Geoinformatica (2011) 15:455–496
+
+491
+
+views that will not have to be further updated as new information arrives. Techniques
+of this kind have been applied in temporal data warehousing [64], and we think
+that some of these ideas could be adapted to be applied in spatio-temporal query
+processing. Finally, extending the language to allow the definition of constraints as
+explained in Section 7.4 is another promising line of work.
+
+Open research issues We commented in Section 2 that the contribution of the
+GIS and OLAP communities to the study of models involving together OLAP and
+continuous f ields has been rather limited so far. Given this, and given that the study
+of continuous fields is increasingly gaining attention from the GIS practitioners,
+we believe that integrating continuous fields and OLAP applications is a relevant
+research topic. In this sense, one of our future research directions is oriented to
+extend TPiet-QL to support not only spatial objects as we discussed in the present
+paper, but continuous fields as well. This requires extending the data model and the
+formal query language supporting TPiet-QL, and the implementation of the latter to
+support fields. One possible approach could be to add a new f ield data type (and its
+associated lifted moving type à la Güting et al. [21]). This is the approach proposed by
+Vaisman and Zimányi [66], who proposed a conceptual model for multidimensional
+analysis of continuous fields. This work extends the classification of spatial OLAP
+queries proposed in [65] with two new query classes: SOLAP-CF and STOLAP-
+CF. The former is the class containing the queries that can be expressed using the
+Klug’s relational calculus [31] augmented with spatial and field types. The latter is
+the class containing the queries that can be expressed using the Klug’s relational
+calculus augmented with spatial types, field types, and moving spatial types.
+
+There is also room for research on the theoretical side, as commented in
+Section 6. A thorough study of the complexity and expressiveness of the formal
+language presented in this paper has not yet been performed. For this, theoretical
+results in spatial databases (see for example [42] and [43]) can be applied and
+extended.
+
+References
+
+1. Abiteboul S, Hull R, Vianu V (1995) Foundations of databases. Addison-Wesley, Reading, MA
+2. Ahmed TO, Miquel M (2005) Multidimensional structures dedicated to continuous spatiotempo-
+ral phenomena. In: 22nd British national conference on databases (BNCOD). Sunderland, UK,
+pp 29–40
+
+3. Ahmed TO (2008) Continuous spatial data warehousing. In: International Arab conference on
+
+4. Allen J (1983) Maintaining knowledge about temporal intervals. Commun ACM 26(11):832–843
+5. Armstrong MP (1988) Temporality in spatial databases. In: GIS/LIS. San Antonino, Texas, USA,
+
+information technology
+
+pp 880–889
+
+6. Bédard Y, Merret T, Han J (2001) Fundamentals of spatial data warehousing for geographic
+
+knowledge discovery, chap 3. Taylor & Francis, pp 53–73
+
+7. Bédard Y, Rivest S, Proulx MJ (2007) Spatial Online Analytical Processing (SOLAP): concepts,
+architectures, and solutions from a geomatics engineering perspective, chap 13. IGI Global,
+pp 298–319
+
+8. Bettini C, Dyreson C, Evans W, Snodgrass R, Sean Wang X (1998) A glossary of time granularity
+
+concepts. Temporal databases: research and practice. Lect Notes Comput Sci 1399:406–411
+
+9. Borges C, Laender AHF, Davis CA (1999) Piet-QL: spatial data integrity constraints in object
+oriented geographic data modeling. In: 7th ACM SIGSPATIAL international symposium on
+advances in geographic information systems (ACM-GIS). Kansas City, USA, pp 1–6
+
+492
+
+Geoinformatica (2011) 15:455–496
+
+10. Cabibbo L, Torlone R (1997) Querying multidimensional databases. In: Database programming
+
+languages. Lecture notes in computer science, vol 1369. Springer, pp 319–335
+
+11. Cockcroft S (1997) A taxonomy of spatial data integrity. Geoinformatica 1(4):327–343
+12. Consens M, Mendelzon A (1990) Low complexity aggregation in graphlog and datalog. In: Third
+
+international conference on database theory (ICDT). Paris, France, pp 379–394
+
+13. Dyreson C, Evans W, Lin H, Snodgrass R (2000) Efficiently supporting temporal granularities.
+
+IEEE transactions on data and knowledge engineering (TKDE), vol 12(4), pp 568–587
+
+14. Eder J, Koncilia C, Morzy T (2002) The comet metamodel for temporal data warehouses. In:
+
+CAiSE. Toronto, Canada, pp 83–99
+
+15. Egenhofer M, J. Herring J (1991) Categorizing binary topological relationships between regions,
+lines, and points in geographic databases. Technical report, Department of Surveying Engineer-
+ing, University of Maine
+
+16. Escribano A, Gomez L, Kuijpers B, Vaisman AA (2007) Piet: a gis-olap implementation. In:
+ACM 10th international workshop on data warehousing and OLAP (DOLAP). ACM, pp 73–80
+17. Gómez L, Kuijpers B, Vaisman AA (2008) Aggregation languages for moving object and places
+of interest. In: ACM symposium on applied computing SAC. Fortaleza, Ceara, Brazil, pp 857–
+862
+
+18. Gómez L, Vaisman A, Zich S (2008) Piet-QL: a query language for GIS-OLAP integration.
+In: 16th ACM SIGSPATIAL international symposium on advances in geographic information
+systems (ACM-GIS), 27. Irvine, CA, USA
+
+19. Gómez L, Haesevoets S, Kuijpers B, Vaisman AA (2009) Spatial aggregation: data model and
+
+implementation. Inf Syst 34(6):551–576
+
+20. Gray J, Bosworth A, Layman A, Pirahesh H (1997) Data cube: a relational operator generalizing
+
+group-by, cross-tab and sub-totals. Data Mining and Knowledge Discovery (1):29–53
+
+21. Güting RH, Böhlen M, Jensen C, Lorentzos N, Schneider M, Vazirgiannis M (2000) A founda-
+
+tion for representing and quering moving objects. ACM Trans Database Syst 25(1):1–42
+
+22. Güting RH, de Almeida VT, Ansorge D, Behr T, Ding Z, Höse T, Hoffmann F, Spiekermann
+M, Telle U (2005) SECONDO: an extensible dbms platform for research prototyping and
+teaching. In: 21st international conference on data engineering (ICDE). Tokyo, Japan, pp 1115–
+1116
+
+23. Hadzilacos T, Tryfona N (1996) Logical data modelling for geographical applications. Int J Geogr
+
+Inf Sci 10(2):179–203
+
+24. Han J, Stefanovic N, Koperski K (1998) Selective materialization: an efficient method for spatial
+data cube construction. In: Research and development in knowledge discovery and data mining
+(PAKDD). Lecture notes in computer science, vol 1394. Springer, pp 144–158
+
+25. Hurtado C, Mendelzon A, Vaisman A (1999) Maintaining data cubes under dimension updates.
+In: 15th international conference on data engineering (IEEE/ICDE). Sydney, Australia, pp 346–
+355
+
+26. Hurtado CA, Mendelzon AO (2001) Reasoning about summarizability in heterogeneous multi-
+dimensional schemas. In: International conference of database theory (ICDT), pp 375–389
+27. Hurtado CA, Mendelzon AO (2002) OLAP dimension constraints. In: 21st ACM SIGACT-
+SIGMOD-SIGART symposium on principles of database system (PODS). Madison, Wisconsin,
+USA, pp 169–179
+
+28. Kemp KK (1997) Fields as a framework for integrating gis and environmental process models.
+
+Trans GIS 1(3):219–246
+
+29. Kimball R (1996) The data warehouse toolkit. Wiley, New York
+30. Kimball R, Ross M (2002) The data warehouse toolkit: the complete guide to dimensional
+
+31. Klug A (1982) Equivalence of relational algebra and relational calculus query languages having
+
+modeling, 2nd edn. Wiley, New York
+
+aggregate functions. J ACM 29(3):699–717
+
+32. Kuijpers B, Vaisman A (2007) A data model for moving objects supporting aggregation. In:
+Proceedings of the first international workshop on spatio-temporal data mining (STDM’07).
+Istambul, Turkey
+
+33. Langran G, Chrisman NR (1988) A framework for temporal geographic information systems.
+
+34. López IFV, Snodgrass R, Moon B (2005) Spatiotemporal aggregate computation: a survey. IEEE
+
+Cartographica 25(3):1–14
+
+Trans Knowl Data Eng 17(2):271–286
+
+35. Malinowski E, Zimányi E (2004) Representing spatiality in a conceptual multidimensional
+model. In: 12th ACM international workshop on geographic information systems(GIS).
+Washington, DC, USA, pp 12–22
+
+Geoinformatica (2011) 15:455–496
+
+493
+
+36. Mendelzon AO, Vaisman AA (2000) Temporal queries in OLAP. In: 26th international confer-
+
+ence on very large data base (VLDB). Cairo, Egypt, pp 242–253
+
+37. Mendelzon AO, Vaisman AA (2003) Time in multidimensional databases. In: Multidimensional
+
+databases. IDEA Group, pp 166–199
+
+38. Orlando S, Orsini R, Raffaetà A, Roncato A, Silvestri C (2007) Spatio-temporal aggregations in
+trajectory data warehouses. In: Data warehousing and knowledge discovery (DaWak). Lecture
+notes in computer science, vol 4654. Springer, Regensburg, Germany, pp 66–77
+
+39. Paolino L, Tortora G, Sebillo M, Vitiello G, Laurini R (2003) Phenomena: a visual query
+language for continuous fields. In: 11th ACM international workshop on geographic information
+systems (GIS). New Orleans, LA, USA, pp 147–153
+
+40. Papadias D, Kalnis P, Zhang J, Tao Y (2001) Efficient OLAP operations in spatial data ware-
+houses. In: Advances in spatial and temporal databases (SSTD). Lecture notes in computer
+science, vol 2121. Springer, pp 443–459
+
+41. Papadias D, Tao Y, Kalnis P, Zhang J (2002) Indexing spatio-temporal data warehouses. In: 18th
+
+international conference on data engineering (ICDE). San Jose, CA, USA, pp 166–175
+
+42. Papadimitriou CH, Suciu D, Vianu V (1996) Topological queries in spatial databases. In: Pro-
+ceedings 15th ACM SIGACT-SIGMOD-SIGART symposium on principles of database system
+(PODS). Montreal, Canada, pp 81–92
+
+43. Paredaens J, den Bussche JV, Gucht DV (1994) Towards a theory of spatial database queries.
+In: 13th ACM SIGACT-SIGMOD-SIGART symposium on principles of database systems,
+(PODS). Minneapolis, USA, pp 279–288
+
+44. Paredaens J, Kuper G, Libkin L (eds) (2000) Constraint databases. Springer, Berlin Heidelberg
+
+New York
+
+45. Pedersen TB, Tryfona N (2001) Pre-aggregation in spatial data warehouses. In: Advances in
+
+spatial and temporal databases (SSTD), pp 460–480
+
+46. Pelekis N (2002) Stau: a spatio-temporal extension to ORACLE DBMS. Ph.D thesis, UMIST
+
+Department of Computation
+
+47. Pelekis N, Theodoulidis B, Kopanakis Y, Theodoridis Y (2004) Literature review of spatio-
+
+temporal database models. The Knowledge Engineering Review Journal 19(3):235–274
+
+48. Pelekis N, Theodoridis Y, Vosinakis S, Panayiotopoulos T (2006) Hermes—a framework for
+location-based data management. In: 10th international conference on extending database tech-
+nology. Munich, Germany, pp 1130–1134
+
+49. Peuquet D, Duan N (1995) An event-based spatiotemporal data model (estdm) for temporal
+
+analysis of geographical data. Int J Geogr Inf Syst 9(1):7–24
+
+50. Pourabbas E (2003) Cooperation with geographic databases. In: Multidimensional databases:
+
+problems and solutions. Idea group, pp 393–432
+
+51. Rao F, Zhang L, Yu X, Li Y, Chen Y (2003) Spatial hierarchy and OLAP-favored search in
+spatial data warehouse. In: ACM 6th international workshop on data warehousing and OLAP
+(DOLAP). New Orleans, LA, USA, pp 48–55
+
+52. Rigaux P, Scholl M, Voisard A (2001) Spatial databases: with application to GIS. Data manage-
+
+ment systems. Morgan Kaufmann, San Mateo, CA
+
+53. Rivest S, Bédard Y, Marchand P (2001) Towards better support for spatial decision mak-
+ing: defining the characteristics of spatial on-line analytical processing (SOLAP). Geomatica
+55(4):539–555
+
+54. Rodriguez A, Bertossi L, Caniupan M (2008) An inconsistency tolerant approach to querying
+spatial databases. In: 16th ACM SIGSPATIAL international symposium on advances in geo-
+graphic information systems (ACM-GIS), 36. Irvine, CA, USA
+
+55. Shanmugasundaram J, Fayyad UM, Bradley PS (1999) Compressed data cubes for olap aggregate
+query approximation on continuous dimensions. In: 5th ACM SIGKDD international conference
+on knowledge discovery and data mining (KDD). San Diego, CA, USA, pp 223–232
+
+56. Shekhar S, Lu CT, Tan X, Chawla S, Vatsavai RR (2001) Map Cube: a visualization tool for
+
+spatial data warehouses, chap 4. Taylor and Francis, pp 73–108
+
+57. Snodgrass R (ed) (1995) The TSQL2 temporal query language. Kluwer, Boston, MA
+58. Stefanovic N, Han J, Koperski K (2000) Object-based selective materialization for efficient
+
+implementation of spatial data cubes. IEEE Trans Knowl Data Eng 12(6):938–958
+
+59. Tansel A, Clifford J, Gadia S (eds) (1993) Temporal databases: theory, design and implementa-
+
+tion. Benjamin Cummings, Redwood City, CA
+
+60. Toman D (1996) Point vs. interval-based query languages for temporal databases. In: 15th ACM
+SIGACT-SIGMOD-SIGART symposium on principles of database system (PODS). Montreal,
+Canada, pp 58–67
+
+494
+
+Geoinformatica (2011) 15:455–496
+
+61. Tryfona N, Hadzilacos Th (1998) Logical data modelling of spatio temporal applications:
+definitions and a model. In: International database engineering and applications sympo-
+sium(IDEAS). Cardiff, Wales, UK, pp 14–23
+
+62. Tryfona N, Jensen C (1999) Conceptual data modeling for spatiotemporal applications. Geoin-
+
+formatica 3(3):245–268
+
+63. Tryfona N, Price R, Jensen C (2003) Conceptual models for spatiotemporal applications. Spatio-
+
+temporal databases: the CHOROCHRONOS approach, pp 79–116
+
+64. Vaisman AA, Izquierdo A, Ktenas M (2008) A web-based architecture for temporal olap. Int J
+
+Web Eng Technol 4(4):465–494
+
+65. Vaisman A, Zimányi E (2009) What is spatiotemporal data warehousing? Data warehousing and
+
+knowledge discovery (DaWak). In: Proceedings of DaWaK, pp 9–23
+
+66. Vaisman A, Zimányi E (2009) A multidimensional model representing continuous fields in
+
+spatial data warehouses. In: Proceedings of ACM-SIGSPATIAL, pp 168–177
+
+67. Wachowicz M, Healey R (1994) Towards temporality in GIS. In: Innovation in GIS, vol I. Taylor
+
+& Francis, pp 105–115
+
+68. Worboys MF (1992) A model for spatio-temporal information. In: Proceedings of the 5th inter-
+
+national symposium on spatial data handling. Charleston, South Carolina, pp 602–611
+
+69. Worboys MF (1995) GIS: a computing perspective. Taylor & Francis, New York
+70. Zeiler M (1999) Modeling our world: the ESRI guide to geodatabase design. ESRI Press
+71. Zhang L, Li Y, Rao F, Yu X, Chen Y, Liu D (2003) An approach to enabling spatial OLAP
+by aggregating on spatial hierarchy. In: Data warehousing and knowledge discovery (DaWak).
+Lecture notes in computer science, vol 2737. Springer, Prague, Czech Republic, pp 35–44
+
+Leticia Gómez was born in Buenos Aires, Argentina. She has received a bachelor degree in
+Computer Science from the University of Buenos Aires. She is a PhD candidate at the Instituto
+Tecnológico de Buenos Aires. Her research interests are in the field of databases, particularly in
+OLAP and data mining, and their use in the field of spatiotemporal databases, and Geographic
+Information Systems (GIS). She has several publications in referred international conferences and
+journals. She is currently a professor with the Software Engineering Departament at Instituto
+Tecnólogico de Buenos Aires.
+
+Geoinformatica (2011) 15:455–496
+
+495
+
+Bart Kuijpers is a professor in the Theoretical Computer Science group at Hasselt University and the
+Transnational University of Limburg in Belgium. He has a Master degree in Mathematics from the
+University of Leuven and a Doctoral degree in Computer Science from the University of Antwerp.
+His PhD dissertation won the IBM-Belgium Prize for Computer Science awarded by the Research
+Foundation of Flanders and IBM. He was Researcher at the Universities of Leuven and Antwerp and
+was a Post-Doctoral Researcher of the Research Foundation of Flanders before becoming professor
+of Theoretical Computer Science at Hasselt University. He has several publications on database
+theory and GIS in leading journals and conference proceedings. He has organized, among others, the
+1st International Symposium on Constraint Databases in 2004 and the Dagstuhl seminar “Constraint
+Databases, Geometric Elimination and Geographic Information Systems” in 2007. He studies query
+evaluation and the expressive power of database query languages for (possibly infinite) database
+systems that are described by constraints. The main motivation for constraint databases and their
+most important application domain are spatial databases and geographic information systems (GIS).
+His interests also include data models and query languages for spatio-temporal data. More recently
+he also studies spatial and spatio-temporal data mining. He is participating in national and European
+research projects and in a research collaboration between Argentina and Belgium.
+
+Alejandro Vaisman was born in Buenos Aires (UBA), Argentina. He received a BA degree in Civil
+Engineering, a BA in Computer Science, and a PhD in Computer Science from UBA, and he has
+been a post-doctoral researcher at the University of Toronto. He is a Professor at the UBA since
+1994. He was an invited professor at the Universidad Politecnica de Madrid in 1997. In 2001 he was
+
+496
+
+Geoinformatica (2011) 15:455–496
+
+appointed Vice-Dean of the School of Engineering and Information Technology at the University
+of Belgrano, in Argentina. He was a visiting researcher at the University of Toronto, University of
+Hasselt and Universidad de Chile. His research interests are in the field of databases, particularly in
+OLAP, Datawarehousing, Data Mining, P2P databases, XML, the Semantic Web, and Geographic
+Information Systems In 2004 he was appointed Vice- Head of the Department of Computer Science,
+and Chair of the Graduate Program in Data Mining at the Computer Science Department, UBA.
+He is the main responsible of the project “Using OLAP Techniques in Geographical Information
+Systems”, funded by the Argentinian Scientific Agency. While writing this paper he was on leave
+from UBA, at the Theoretical Computer Science Group, Hasselt University, Belgium.
+
+

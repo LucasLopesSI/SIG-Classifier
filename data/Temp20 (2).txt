@@ -1,0 +1,2929 @@
+Geoinformatica
+DOI 10.1007/s10707-014-0204-8
+
+Efficient continuous top-k spatial keyword queries
+on road networks
+
+Long Guo · Jie Shao · Htoo Htet Aung · Kian-Lee Tan
+
+Received: 25 July 2013 / Revised: 15 October 2013 / Accepted: 14 January 2014
+© Springer Science+Business Media New York 2014
+
+Abstract With the development of GPS-enabled mobile devices, more and more pieces of
+information on the web are geotagged. Spatial keyword queries, which consider both spa-
+tial locations and textual descriptions to find objects of interest, adapt well to this trend.
+Therefore, a considerable number of studies have focused on the interesting problem of
+efficiently processing spatial keyword queries. However, most of them assume Euclidean
+space or examine a single snapshot query only. This paper investigates a novel problem,
+namely, continuous top-k spatial keyword queries on road networks, for the first time. We
+propose two methods that can monitor such moving queries in an incremental manner and
+reduce repetitive traversing of network edges for better performance. Experimental eval-
+uation using large real datasets demonstrates that the proposed methods both outperform
+baseline methods significantly. Discussion about the parameters affecting the efficiency of
+the two methods is also presented to reveal their relative advantages.
+
+Keywords Top-k spatial keyword queries · Continuous queries · Road networks
+
+1 Introduction
+
+With the rapid development of GPS-enabled mobile devices, there is a prevalent trend that
+web content is increasingly being geotagged, such as messages on Facebook and Twitter.
+
+L. Guo ((cid:2)) · J. Shao · H. H. Aung · K.-L. Tan
+School of Computing, National University of Singapore, 13 Computing Drive,
+Singapore 117417, Singapore
+e-mail: guolong@comp.nus.edu.sg
+
+J. Shao
+e-mail: shaojie@comp.nus.edu.sg
+
+H. H. Aung
+e-mail: h2aung@comp.nus.edu.sg
+
+K.-L. Tan
+e-mail: tankl@comp.nus.edu.sg
+
+Geoinformatica
+
+Spatial keyword queries, which find best objects of interest in terms of both spatial proxim-
+ity to query location and textual relevance to query keywords, adapt well to this trend, and
+thus, become a new interest of the research community. Most of the existing studies on this
+topic [4, 7, 8, 17, 20, 21, 23–26] are restricted to Euclidean space only. In many applications,
+position and accessibility of spatial-textual objects are constrained by network connectivity,
+and spatial proximity should be determined by shortest path distance (rather than Euclidean
+distance, which may be inappropriate especially in urban areas). Recently, Rocha-Junior
+and Nørv˚ag [18] studied static top-k spatial keyword queries on road networks and pro-
+posed algorithms conducted in the spatial and textual domains alternately to constrain the
+search region. However, there is still no research effort on continuous monitoring of spa-
+tial keyword queries on road networks. In location-based services, besides snapshot queries
+that are evaluated only once, continuous queries are also very appealing, since queries can
+be evaluated on dynamic settings more realistically. Consider a scenario that Alice and Bob
+are visiting a foreign city. When Bob intends to find a buffet seafood restaurant for lunch,
+a spatial keyword query can be submitted to obtain information about some buffet seafood
+restaurants opening for lunch nearest to them. However, Alice is not satisfied with these
+results. With continuous spatial keyword queries, they can just keep traveling and up-to-date
+results will be reported to let them choose from, until an attractive one appears.
+
+In this paper, we study how to efficiently process continuous top-k spatial keyword
+queries when query and objects of interest are on a road network. Although continuous
+queries with network distance can provide up-to-date and accurate results as query point
+moves, it is often costly to monitor such moving queries. A straightforward solution is to
+traverse the road network to find the top-k results every time the query is evaluated. How-
+ever, such a scheme will lead to lots of unnecessary repetitive traversing of network edges.
+Many proposals for moving queries in Euclidean space such as [3, 10, 14, 21] unitize the
+concept of safe region. In response to a query, its result can be computed together with a safe
+region within which the result remains valid. Only when the query exits its safe region will
+a new query (additional processing) be invoked, which repeats the above process. However,
+query processing on road networks is fundamentally different. Compared with previously
+proposed continuous spatial queries on road networks such as [5, 6, 13], how to exploit
+the opportunities of simultaneously using spatial proximity and textual relevancy for joint
+pruning brings new challenges to query optimization of our problem.
+
+We propose two methods that traverse the network in an incremental manner, namely,
+query-centric algorithm (QCA) and object-centric algorithm (OCA). In principle, both
+methods benefit from the reduction of the problem from finding the objects of interest for
+moving queries to examining static network nodes. QCA starts traversing the network from
+an end node of the edge on which the query location lies, until it finds the top-k results.
+Meanwhile, it maintains an expansion tree to avoid unnecessary traversing of some network
+edges for subsequent processing. OCA takes a different approach and starts the traversing
+from objects which are relevant to the query keywords. In this way, after the initial process-
+ing, an order-k shortest path tree is constructed and subsequent processing can use this tree
+to significantly reduce the number of edges traversed.
+Our contributions are summarized as follows.
+
+– We formalize the problem of continuous top-k spatial keyword queries in the domain of
+road networks. To the best of our knowledge, this is the first attempt on this important
+problem with real-world applications.
+
+Geoinformatica
+
+– We propose two algorithms that incrementally expand the network from the query loca-
+tion and objects relevant to the query keywords respectively. Both of them can reduce
+lots of unnecessary repetitive traversing of network edges for continuous monitoring.
+
+– We report an extensive set of experiments conducted with real road network datasets to
+compare our algorithm performance with three baseline methods. In some settings, the
+cost saving can be as much as one order of magnitude. Results reveal that each of the
+proposed methods may perform best under different parameter settings.
+
+The rest of this paper is organized as follows. First, we present formal definition of
+the problem in Section 2. Then, we describe the query-centric algorithm in Section 3, fol-
+lowed by the object-centric algorithm in Section 4. We report the experimental evaluation in
+Section 5. Finally, we discuss related work in Section 6 and conclude the paper in Section 7.
+
+2 Problem statement
+
+Table 1 summarizes the notations frequently used in the paper.
+
+Road network A road network is generally represented by a connected and undirected pla-
+nar graph G(N, E), where N is the set of nodes and E is the set of edges. In this work, we
+treat any road segment with multiple edges whose (i) two endpoints are intersection nodes
+(with degree above 2) or terminal nodes (with degree 1) and (ii) intermediate nodes all have
+degree 2 as a single edge. For convenience, in the following context when we use edge, it
+indicates that this edge has two endpoints, which are either intersections or terminal nodes.
+
+Object set Let O represent a set of spatial-textual objects on the edges E of G, where each
+object o ∈ O has a spatial location o.l and a textual description (or called document) o.d.
+Denote |o, n| and |o, n(cid:3)| as the distances between an object o and two end nodes of the edge
+(n, n(cid:3)) on which it lies. The shortest path distance between two objects o and o(cid:3) on G is
+defined as d(o, o(cid:3)).
+
+Top-k spatial keyword query on a road network Define q =< q.l, q.d, q.k, q.r > to be
+a top-k spatial keyword query on a road network G, where q.l is the query location, q.d
+is the set of query keywords, q.k is the number of requested results and q.r is the moving
+direction of q.1 Given a set O of spatial-textual objects on G, a top-k spatial keyword query
+q returns q.k objects from O in ascending order of score τ , which is defined as
+
+τ (q, o) = α · δ(q.l, o.l) + (1 − α) · [1 − θ ((q.d, o.d)],
+
+(1)
+
+where δ(q.l, o.l) reflects spatial proximity of o.l from the query location q.l, and
+θ (q.d, o.d) reflects textual relevance of o.d with respect to the query keywords q.d. Like
+other typical work of spatial keyword queries such as [7], a preference parameter α ∈ (0, 1)
+is used to define relative importance of one measure over the other. For example, α < 0.5
+increases the weight of textual relevance over spatial proximity.
+
+1In this paper, we use an undirected graph G(N, E) and transmit the direction of q explicitly. We cannot
+model the road network as a directed graph and get the direction of q from the directed graph. The reason is
+that if one road is bidirectional, the direction cannot be obtained.
+
+Table 1 Frequently used notations
+
+Symbol
+
+G(N, E)
+edge(ni ,nj )
+T
+
+O
+Or
+Ore
+O(ni ,nj )
+oi
+q
+
+τ
+
+δ
+
+θ
+Rq
+Rni
+Od1, Od2
+Or1, Or2
+d(p1, p2)
+|p1, p2|
+
+Geoinformatica
+
+Description
+
+the graph model of road network
+the edge that connects ni to nj
+the expansion tree
+
+the set of spatial-textual objects on G
+
+the set of objects relevant with the query keywords
+
+the set of relevant objects in the expansion tree
+the set of objects lying on the edge(ni ,nj )
+a spatial-textual object
+
+a top-k spatial-keyword query
+
+the score which is used to rank the objects
+
+spatial proximity
+
+textual relevance
+
+the top-k results of query q
+the top-k results of node ni
+the set of objects in Rq that can be replaced
+the set of objects that can replace the objects in Rq
+the shortest path distance between two points p1 and p2
+the length of the segment between p1 and p2
+
+Spatial proximity (δ) Spatial proximity measure can be defined as
+
+δ(q.l, o.l) = d(q.l, o.l)
+
+,
+
+dmax
+
+(2)
+
+where dmax is the largest network distance between any object and any location in G. dmax
+can be obtained by traversing the network from each object until the entire network is
+expanded and keeping the maximum distance. δ is in the range of [0,1].
+
+Textual relevance (θ ) Textual relevance measure can be captured by any information
+retrieval model. In this work, cosine similarity [18, 27] is used to evaluate the similarity
+between q.d and o.d, which is defined as
+
+θ (q.d, o.d) =
+
+(cid:3)(cid:2)
+
+,
+
+(3)
+
+(cid:2)
+
+t∈q.d ωt,q.d · ωt,o.d
+
+(cid:2)
+
+t∈q.d (ωt,q.d)2 ·
+
+t∈o.d (ωt,o.d)2
+
+(cid:4)
+1 + |O|
+df t
+
+(cid:5)
+, where |O| is the number of objects in O and df t is
+the weight ωt,q.d = ln
+the number of objects with t in their descriptions (document frequency); and the weight
+ωt,o.d = 1 + ln (ft,o.d ), where ft,o.d is the number of occurrences (frequency) of term t in
+o.d. θ is in the range of [0,1] (property of cosine).
+
+For simplicity of computation, Eq. 3 can be rewritten in the impact form as
+
+θ (q.d, o.d) =
+
+λt,q.d · λt,o.d,
+
+(4)
+
+(cid:6)
+
+t∈q.d
+
+where the impact λt,d =
+
+(cid:3)(cid:2)
+
+is normalized weight of the term in the document,
+
+ωt,d
+t∈d (ωt,d )2
+
+by taking document length into account [1, 19].
+
+Geoinformatica
+
+A lower score τ means the object is better. In this paper, we study the efficient processing
+of continuous top-k spatial keyword (CkSK) queries on road networks which is defined as
+follows.
+
+Definition 1 (CkSK queries on road networks) Given a set O of spatial-textual objects
+and a moving query q on a road network G, CkSK queries continuously return k ranked
+objects in ascending order of score τ .
+
+3 Query-centric algorithm
+
+In this section, we present our first method named query-centric algorithm (QCA). We start
+with the basic idea of our query processing in Section 3.1, followed by the snapshot query
+algorithm in Section 3.2. We present the usage of expansion tree in Section 3.3 and show
+how the top-k results can be derived and safe segment can be computed in Section 3.4.
+Finally, we give complete QCA monitoring algorithm in Section 3.5.
+
+3.1 Basic idea
+
+To solve the CkSK queries, we examine result updates for intersections along the trajectory
+which the query point moves. Specifically, our method is based on the following lemma:
+
+Lemma 1 The top-k results Rq of any spatial keyword query q whose query location q.l lies
+on an edge(ni, nj ) are in the union of (i) the set of relevant objects O(ni ,nj ) on the edge, and
+(ii) the top-k results Rni and Rnj of the end nodes of the edge, which can be formulated as:
+
+Rq ⊆ (O(ni ,nj ) ∪ Rni
+
+∪ Rnj ),
+
+where relevant object refers to object that matches at least one of the query keywords in its
+description.
+
+Proof We prove this lemma by contradiction. First assume that there exists an object o
+satisfying o ∈ Rq and o /∈ (O(ni ,nj ) ∪Rni
+∪Rnj ). Since o /∈ O(ni ,nj ), o is not on the edge. The
+shortest path from the query location q.l to o then must go through either ni or nj . Without
+loss of generality, assume o is closer to ni. Let o(cid:3) be any one of the objects in Rni . Since
+o /∈Rni , we know that τ (ni, o) > τ (ni , o(cid:3)). Because |q.l, ni | can be added to the spatial
+proximity part of both sides of the above inequality and the textual relevance part remains
+constant, we have τ (q, o) > τ (q, o(cid:3)). This means that all of the top-k results in Rni have a
+lower score than o with respect to q.l. Thus, o should not be in the top-k results Rq . This is
+contradictory to the initial assumption that o ∈ Rq .
+
+We adopt a client-server architecture along with safe segment. When a top-k spatial key-
+word query q is submitted by a client, the edge on which it lies can be located and the result
+sets of the two end nodes of this edge are computed first. Then, the top-k results of q can be
+derived from the result sets of the end nodes, which are sent back to the client. Only when
+the client exits the safe segment will it send a location update to the server, which repeats
+the above process.
+
+Geoinformatica
+
+3.2 Snapshot query algorithm
+
+Our work focuses on continuous monitoring, and in QCA, we employ a method similar to
+the algorithm named enhanced presented in [18] as our underlying snapshot query algorithm
+for a single spatial keyword query on a road network. It incrementally expands the network
+from a query node which is similar in spirit to Dijkstra’s algorithm, but it further uses a pair
+of upper and lower bounds to exploit both spatial and textual domains for joint pruning.
+Besides the basic steps used in [18], our QCA maintains an expansion tree in T while
+traversing the network edges (these steps are underlined in Algorithm 1). The expansion
+tree is a critical component that is necessary to facilitate efficient processing of moving
+queries. We defer the discussion of the expansion tree and the related algorithms to the next
+subsection. First, we briefly introduce the indexing structure the snapshot algorithm used
+(refer to [18] for more details).
+
+–
+Spatial component. This component is used to locate the edge on which the query lies.
+– Adjacency component. This component points to adjacent nodes of a given node per-
+mitting traversing the network from node to node. We use a B-tree to point to the block
+in the adjacency file where the adjacent nodes of a given node are. The adjacency file
+stores for each node: (i) the id of each edge, and (ii) the length of the edge.
+
+– Mapping component. We also use a B-tree that maps a key composed of the pair of
+edge id and term id to the inverted list that contains the objects lying on the edge with
+the term in their descriptions. This component contains also the maximum impact of a
+given term t among the descriptions of the objects lying on a given edge. The maximum
+impact is an upper-bound impact for any object on the edge that contains t. Therefore,
+the inverted list of a term t on an edge is accessed only if the lower-bound score derived
+by minimum distance and maximum impact may turn an object, present on the edge,
+inside the top-k objects found so far.
+Inverted file component. This component contains inverted lists and a vocabulary.
+Each inverted list stores the objects lying on an edge with a term in their descriptions.
+For each object, the inverted list stores: (i) the distance between the object and the ref-
+erence node of the edge, and (ii) the impact of the term in the description of the object.
+The vocabulary file stores the document frequency df t of each term. This information
+is used to compute textual relevance of the object for a given query.
+
+–
+
+Algorithm 1 provides detailed steps of how snapshot query results can be obtained. The
+algorithm receives a query node s whose result set is to be computed and the edge e on
+which s lies as input, and returns a result set Rq of k ranked objects in ascending order of
+score τ . A priority queue (implemented as min-heap) N , which is initially empty, is used to
+organize the encountered nodes in increasing order of distance from s. First, the algorithm
+updates (cid:8), which is the score of the current kth object in Rq (line 1). Then, it locates the
+other end node n(cid:3) of e and sets s as the root of T with child n(cid:3) (lines 2–3). Next, s and
+n(cid:3) are inserted into N and marked as visited (line 4). After that, it uses a FindCandidates
+procedure to retrieve candidate objects C lying on the edge(s, n(cid:3)) with score lower than
+(cid:8), and updates Rq and (cid:8) using the objects in C (lines 5–6). Subsequently, the algorithm
+dequeues the nearest node n from s in N (line 7), and processes non-visited adjacent nodes
+of n (lines 9–13). The algorithm terminates when the entire network is expanded, or the
+minimum network distance to any remaining object produces a lower-bound score higher
+or equal to the score of the kth object already found (line 8). The lower-bound score of a
+node n is obtained through the network distance between s and n and the maximum textual
+relevance (θ = 1). Therefore, if the lower-bound score of a node is higher than or equal
+
+Geoinformatica
+
+to (cid:8), it means that even if there is a non-visited object o matching all the query keywords
+with maximum textual relevance, its ranking cannot be better than the kth object in Rq , as
+δ(s, o.l) ≥ δ(s, n). This is guaranteed by the fact that the algorithm strictly expands the
+node with minimum distance from s.
+
+Algorithm 2 provides detailed steps of the FindCandidates procedure. It first computes
+a maximum textual relevance θmax using the maximum impact λmax of each term t ∈ q.d
+stored in the mapping component, and then a lower-bound score τmin using the minimum
+network distance between the edge and the query node s and the maximum textual relevance
+θmax (line 1). Only if the lower-bound score τmin is smaller than (cid:8) will it compute exact
+scores of the objects on the edge and returns a candidate set C of objects with scores lower
+than (cid:8) (lines 7–12).
+
+Geoinformatica
+
+3.3 Using expansion tree
+
+When we need to obtain the top-k results of the end node of an edge, we can use Algorithm 1
+described above. However, after getting the result set of one end node n, if we retraverse the
+network from the other end point n(cid:3) for its result set, potentially there are many redundant
+operations here. This is the reason why we maintain the expansion tree. The sub-tree of n(cid:3) of
+the expansion tree rooted at n is actually still valid when computing the result set of n(cid:3) and
+thus, we can reuse this information to avoid repetitive traversing of some network edges.
+
+Figure 1 shows an example of top-2 spatial keyword query on a road network at q.l with
+q.d = {c}. For ease of description, we only mark the objects that contain the term ‘c’, and
+assume that the textual relevance θ is the number of occurrences of the query keywords
+in the description of an object o.d divided by the number of keywords in the document.
+For example, textual relevance θ of o1 whose o1.d = {a, c} is 0.5. In addition, we assume
+the maximum distance used to normalize spatial proximity δ is 30 units and the preference
+parameter α is 0.5.
+
++ 0.5 × (1 − 1) = 0.28 and the score of o1 is 0.5 × 3
+30
+
+First, we can get the result set of n1 by using Algorithm 1, which is {o9, o1}. The score of
+= 0.3.
+o9 is 0.5 × 17
+30
+The expansion tree of n1 is shown in Fig. 2, where the valid sub-tree of n2 is shown in
+the ellipse. The part which is not included in the ellipse is invalid because there may be an
+optimal path from n2 to the nodes in the invalid part. For example, path {n2 → n4 → n6}
+is shorter than path {n2 → n1 → n6}. We use a tree structure T to maintain the expansion
+tree. For each node, if it is a non-leaf node, we preserve a child list for it (line 3 & 10).
+
+(cid:4)
+1 − 1
+2
+
++ 0.5 ×
+
+(cid:5)
+
+–
+
+In order to get the result set of n2, we use the following steps.
+First, we update the expansion tree T by removing the invalid part. This can be achieved
+by removing the nodes which are not descendants of n2. We first build a new tree root
+using n2. Then we remove the ancestors of n2 and their children.
+
+Fig. 1 Graph representing a road network and objects
+
+Geoinformatica
+
+Fig. 2 Valid part when computing the result set of n2 (the sub-tree of n2) of the expansion tree rooted at n1
+
+–
+
+–
+
+Second, we insert the objects lying on the valid sub-tree whose textual relevance θ
+is larger than zero into the current result set Rn2 of n2 (with updated scores). A key
+observation here is that we need to consider all the relevant objects in Ore belonging
+to the valid sub-tree rather than only considering the results of n1 that fall in the valid
+sub-tree. The reason is that the distances from the query node (which is n2 now) to
+the objects in Ore become smaller, which makes it possible for the objects to replace
+the top-k results of n1 which belong to the invalid part. For example, we need to insert
+o4 and o9 into Rn2 rather than just o9. We need to consider o4 because it can replace
+o1. The top-2 results of n2 are {o9, o4} with scores of 0.13
+and
+
++ 0.5 × 0
+
+(cid:4)
+0.5 × 8
+30
+
+(cid:5)
+
+(cid:4)
+0.5 × 5
+30
+
+0.33
+
+(cid:5)
+
++ 0.5 × 1
+2
+(cid:4)
+0.5 × 6
+30
+
+respectively. As can be seen, o4 has a score of 0.33 lower
+
+(cid:5)
+
++ 0.5 × 1
+2
+
+of o1 and replaces o1, which demonstrates
+than the score 0.35
+the observation. Although o4 is not a result of n1, it has a probability to be a result of
+n2. Therefore, we need to preserve the qualifying objects (θ > 0) in O(n,n(cid:3)) when the
+FindCandidates procedure is called, which can be found in Algorithm 2 (lines 4–6).
+o.parent is used to tell whether object o belongs to the valid sub-tree.
+Finally, we compute the remaining top-k results of n2 with Algorithm 1 by initializing
+N to contain the leaves of the valid sub-tree and n2 (with updated distances from s). Let
+us consider the leaves of the valid sub-tree. They consist of two node types: (i) the node
+that does not have adjacent nodes or whose adjacent nodes have all been visited, and
+(ii) the node n with α · δ(n, s) ≥ (cid:8) that stops Algorithm 1. After adding these two types
+of nodes to N , the algorithm can start from the leaves to further traverse the network,
+in order to get remaining results.
+
+Geoinformatica
+
+3.4 Deriving top-k results and safe segment
+
+We have shown that the top-k results of any query location are contained in the union of the
+relevant objects on the edge on which the query location lies and the result sets of two end
+nodes of this edge (Lemma 1). In this subsection, we present how to analytically derive the
+top-k results of any location on an edge from this union.
+
+Top-k results We use Fig. 3 to illustrate how the top-k results can be derived from the the
+union based on Lemma 1. Let d denote the distance from n1 to q.l along the edge (n1, n2).
+In the example, the query point is on edge (n1, n2) with d of 5 units, and length = |n1, n2|
+of 9 units. We have known from the above subsection that the top-2 results of n1 and n2
+are {o9, o1} and {o9, o4} respectively. For each object o from the results of both nodes that
+does not lie on the edge on which the query location lies, we set d(q.l, o.l) to the minimum
+distance of (d(n1, o.l)+d) and (d(n2, o.l)+length−d) and update o.score using δ(q.l, o.l).
+For the objects lying on the edge, we compute their scores directly. Then, we select the top-k
+objects with the lowest scores. Applying this principle to o1, o2, o4, o9, we can see that:
+
+–
+
+–
+
+–
+
+30 ; τ (q, o1) = 0.5 × 2
+30
+30 ; τ (q, o2) = 0.5 × 2
+30
+
+δ(q.l, o1.l) = 2
+δ(q.l, o2.l) = 2
+δ(q.l, o4.l) = min{14+5,5+9−5}
+δ(q.l, o9.l) = min{17+5,8+9−5}
+
+30
+
+–
+30
+Therefore, the top-2 results of q should be {o9, o1}.
+
+; τ (q, o4) = 0.5 × 9
+30
+; τ (q, o9) = 0.5 × 12
+30
+
++ 0.5 ×
+
++ 0.5 ×
+
+(cid:5)
+
+(cid:5)
+
+= 0.28
+
+(cid:4)
+1 − 1
+2
+(cid:4)
+1 − 1
+3
+= 0.4
++ 0.5 ×
++ 0.5 × (1 − 1) = 0.2
+
+= 0.37
+(cid:4)
+
+1 − 1
+2
+
+(cid:5)
+
+Safe segment A straightforward solution to the continuous monitoring of spatial keyword
+queries on road networks is to periodically invoke the snapshot query algorithm (we use this
+method as a comparative method in the experiments). However, this method can yield exces-
+sive costs. In this work, we adopt a standard server-client architecture with safe segment [9,
+22], which is defined as follows.
+
+Definition 2 (safe segment) A safe segment is a portion of an edge which can guarantee
+that as long as the client stays in it, its top-k results remain valid.
+
+In the following, we introduce how a safe segment can be computed. Assume we know
+the moving direction of the client, as depicted in Fig. 4. There are two key observations that
+support for the computation of the safe segment, which are introduced as follows.
+
+Observation 1 (the ‘replaced’ rule) When the client moves towards the direction within
+the edge(n1,n2), only two parts of the top-k results Rq can be replaced, which are (i) the
+objects lying on the left of q.l, and (ii) the objects lying between q.l and n2. We use Od1 to
+denote the first part of objects and Od2 to denote the second part of objects.
+
+Fig. 3 Derivation of top-k results
+
+Geoinformatica
+
+Fig. 4 Derivation of safe segment
+
+Proof An example of Od1 and Od2 is shown in Fig. 4. When the client moves from q.l
+toward n2, some objects in Rq may be replaced by other objects. The object o in Rq may
+be replaced only when the distance from the new query location to o becomes larger. In
+this case, the score τ (q, o) becomes larger. Thus, o may be replaced by other objects whose
+score τ becomes smaller. The part of Rq that satisfy the larger distance condition are Od1
+and Od2. For other objects in Rq lying on the right of n2, such as o6, the distance becomes
+smaller, resulting in a smaller score τ . Thus, we only need to consider Od1 and Od2, which
+may be replaced.
+
+Observation 2 (the ‘replace’ rule) When the client moves towards the direction within
+the edge(n1,n2), only two parts of objects can replace some objects in the top-k results Rq ,
+which are (i) the objects lying on the right of n2 which belong to the top-k results of n2, and
+(ii) the objects lying between q.l and n2. We use Or1 to denote the first part of objects and
+Or2 to denote the second part of objects.
+
+Proof An example of Or1 and Or2 is shown in Fig. 4. When the client moves from q.l
+toward n2, some objects may replace the objects in Rq . The object o may replace some
+object in Rq only when the distance from the new query location to o becomes smaller. In
+this case, the score τ (q, o) becomes smaller. Thus, o may replace some object in Rq whose
+score τ becomes larger. The objects that satisfy the smaller distance condition are Or1 and
+Or2. According to Lemma 1, we do not need to consider the objects lying on the right of n2
+which do not belong to the top-k results of n2.
+
+According to the two observations, we compute the safe segment in the following two
+
+steps.
+
+First, we consider the objects in Od1 and the objects in Or1 and Or2. For every object od1
+belonging to Od1 and object or belonging to Or1 or Or2, the distance from the new query
+location to od1 becomes larger and the distance from the new query location to or becomes
+smaller. Thus, we can compute a candidate safe segment D using Eq. 5. Note that D should
+be normalized when added to δ(q.l, o.l).
+(cid:8)
+
+α ·
+
+(cid:7)
+δ(q.l, od1.l) + D
+dmax
+(cid:7)
+δ(q.l, or .l) − D
+dmax
+
+= α ·
+
+(cid:8)
+
++ (1 − α) · [1 − θ (q.d, od1.d)]
+
++ (1 − α) · [1 − θ (q.d, or .d)]
+
+(5)
+
+Second, we consider the objects in Od2 and the objects in Or1 and Or2. We need to be
+more careful here. For every object od2 belonging to Od2 and object or belonging to Or1 or
+Or2, only when the client moves to the right of od2 will it possible for od2 to be replaced,
+since the distance from od2 to the new query location will become larger from then on.
+
+Geoinformatica
+
+Therefore, we first compute a offset D(cid:3) that indicates how far the client moves to the right
+of od2 when od2 is replaced using Eq. 6. An example is shown in Fig. 4. We then get a
+candidate safe segment D using Eq. 7 which simply adds the offset D(cid:3) to the distance of q
+and od2.
+
+α · D
+
+(cid:3) + (1 − α) · [1 − θ (q.d, od2.d)]
+= α · [δ(q.l, or .l) − δ(q.l, od2.l) − D(cid:3)] + (1 − α) · [1 − θ (q.d, or .d)]
+
+D = [δ(q.l, od2.l) + D
+
+(cid:3)] · dmax
+
+(6)
+
+(7)
+
+If or belongs to Or2, only the positive D value smaller than |q.l, or .l| is valid. This is
+because after the client moves to the right of or , the distance between the new query location
+and or will become larger. Thus, or loses the ability to replace some object in Rq . If or
+belongs to Or1, only the positive D value smaller than |q.l, n2| is valid. After the above two
+steps, we calculate the minimum distance dmin from the valid candidate safe segments and
+dmin is the safe segment obtained. What can happen is that there is no valid safe segment at
+last, which indicates that before the client reaches n2, the top-k results remain valid. In this
+case, the length of safe segment is |q.l, n2|. Note that as we have reduced the problem to
+examining static network nodes (Lemma 1), the safe segment does not contribute much to
+computation cost reduction. However, it can greatly reduce the communication cost between
+client and the server.
+
+3.5 Complete QCA monitoring
+
+In this subsection, we describe the complete QCA monitoring. A standard server-client
+architecture is adopted to monitor the moving queries. There are four types of messages: (i)
+M1 that a client first submits a query, (ii) M2 that the client exits a safe segment, (iii) M3
+that the client exits an edge and (iv) M4 that the client changes direction. In the following,
+we introduce how the server responses to each message type.
+
+Algorithm 3 provides the steps of how the server responses to different messages sent
+from the client. There are four types of messages: (i) M1 that a client first submits a query
+(line 2), (ii) M2 that the client exits a safe segment (line 15), (iii) M3 that the client exits an
+edge (line 17) and (iv) M4 that the client changes direction (line 30). In the following, we
+introduce how the server responses to each message type.
+
+–
+
+–
+
+For M1, the server takes some initialization steps. First, the spatial component is used
+to find the edge on which q.l lies (line 3). Then, the moving direction q.r of the client
+is used to locate the next encountered node (lines 4–5). Finally, polyline of the edge is
+used to compute network distances between q.l and the end nodes of the edge (line 6).
+After the initialization steps, the server computes the result sets of the two end nodes
+and then gets safe segment as described in the last subsection. The server sends the
+top-k results and safe segment to the client (line 14).
+It is easy for the server to process M2. As the client does not leave the edge, the server
+just recomputes the top-k results and safe segment (line 16).
+
+– When the client moves out of the edge, there are two cases. If the new edge is adjacent
+with the old edge (line 22), the result set of their intersecting node does not need to
+be recomputed. The server can just reuse the result set it computed last time. In order
+to guarantee the reuse, when processing M1 and M3, the server locates the intersecting
+node using the moving direction of the client (lines 4–5 and lines 19–20). Then the
+server reuses the result set of the intersecting node and computes the result set of the
+
+Geoinformatica
+
+other node (lines 23–24). There is also possibility that the client moves to a new edge
+which is not adjacent with the old edge due to some unpredictable factor, such as the fast
+speed of the client or the communication problem between the client and the sever. In
+this case, the server recomputes the result set of the two end nodes using the expansion
+tree T (lines 26–29).
+
+–
+
+The algorithm can also process the situation when the client changes moving direction.
+The server first relocates the next encountered node (lines 31–32), and then recomputes
+the top-k results and safe segment (line 33) due to the fact that the client still moves on
+the same edge.
+
+4 Object-centric algorithm
+
+In this section, we present our second method named object-centric algorithm (OCA). We
+start with the basic idea of our query processing in Section 4.1, and then in Section 4.2 we
+
+Geoinformatica
+
+introduce the network additively weighted Voronoi diagram which can be used for moni-
+toring continuous spatial keyword queries. To support obtaining top-k results instead of a
+single result, we present the order-k shortest path tree (kSPT) used in OCA in Section 4.3
+and show how a kSPT can be incrementally constructed in Section 4.4. Finally, we give
+complete OCA monitoring algorithm in Section 4.5.
+
+4.1 Basic idea
+
+A shortcoming of using QCA for the CkSK queries is that it has to reevaluate the query
+results of each unvisited node encountered by the moving query point, since a new node
+may make some shortest paths invalid. Although it can avoid repetitive traversing of some
+network edges using expansion tree, QCA still has to traverse many edges that belong to
+the invalid part of the expansion tree. In this section, we introduce a different approach
+that applies a special property of the studied continuous monitoring problem: the textual
+relevance θ is independent of the query point movement. This motivates us to utilize the
+concept of network additively weighted Voronoi diagram (NAWVD) for monitoring spatial
+keyword queries.
+
+At the beginning, OCA loads relevant objects that match at least one of the query key-
+words in their descriptions. Instead of traversing from the end nodes of the edge on which
+the query location lies, OCA starts traversing the network from a relevant object and con-
+structs a shortest path tree. We get the results of the two end nodes of the edge on which
+the query location lies using the shortest path tree. Moreover, the incremental shortest path
+tree construction is characterized by allowing the construction process to halt when the top-
+k results of the requested node are found and to resume when more results are required.
+OCA does not suffer from repetitive result evaluation, since query results of each node
+are obtained via object-centric expansion, where the shortest paths remain valid. More-
+over, when constructing the shortest path tree, OCA also obtains results or partial results of
+surrounding nodes, which makes it suitable for the CkSK queries.
+
+4.2 Network AW-Voronoi diagram
+
+Ordinary Voronoi diagram over a set of n points (or called generators) is a partition of
+the space into n disjoint Voronoi cells, where the nearest neighbor of any point inside a
+Voronoi cell is the generator of that Voronoi cell. Network Voronoi diagram [11, 15] can be
+analogously constructed to partition the space into network Voronoi cells (or Voronoi edge
+sets), by restricting objects on edges that connect nodes and considering network distance.
+The weighted Voronoi diagram family (including multiplicatively, additively, com-
+poundly, etc.) differs from the ordinary Voronoi diagram in that the generators do not have
+the same weight, reflecting their variable properties [15]. In our problem, in order to find
+the result for each individual query q, we consider not only the spatial proximity measure
+δ(q.l, o.l) but also the textual relevance measure θ (q.d, o.d), and the latter can be regarded
+as a weight to be considered in addition to the former. Thus, we can utilize additively
+weighted Voronoi diagram (or in short, AW-Voronoi diagram) for processing the CkSK
+queries. By regarding the set of objects Or = {o1, . . . , on} where oi (cid:8)= oj for i (cid:8)= j , i, j
+
+Geoinformatica
+
+∈ In = {1, . . . , n} as weighted generators,2 additively weighted distance between a point p
+and one of the generators oi can be written as
+
+DAW (p, oi) = D(p.l, oi.l) + ωi
+
+= δ(p.l, oi.l) + 1 − α
+
+α
+
+[1 − θ (q.d, oi.d)]
+
+(8)
+
+where ωi is the designated weight of the generator oi, corresponding to (1 − α)/α[1 −
+θ (q.d, oi.d)] (which is a non-spatial attribute associated with oi, and independent of the
+query point movement).
+
+Given a road network G(N, E), a set of edges E = {e1, . . . , em} connect the nodes N
+in G. For j ∈ In − {i}, the dominance region of oi over oj on edges specifies all locations
+on the edges in E that are closer to oi or of equal distance to oj with additively weighted
+network distance, which is
+
+(cid:11)
+
+Dom(oi, oj ) =
+
+p|p ∈
+
+el, DAW (p, oi) ≤ DAW (p, oj )
+
+.
+
+(9)
+
+(cid:9)
+
+m(cid:10)
+
+l=1
+
+The network Voronoi cell generated by oi is the closures of these regions and can be
+defined as
+(cid:12)
+
+Vedge(oi) =
+
+Dom(oi, oj ).
+
+(10)
+
+j ∈In\{i}
+The network AW-Voronoi diagram over a set of generators O partitions E, and each network
+Voronoi cell Vedge(oi) includes edges or portions of edges. A network AW-Voronoi cell
+Vedge(oi) specifies all the locations on the network where oi should be the top ranked object
+of the spatial keyword query. This is because the generator oi of the network AW-Voronoi
+cell that contains the query location q.l has the smallest value of DAW (q, o) among all
+generators, while DAW (q, o) = τ (q, o)/α according to Eqs. 1 and 8.
+
+Next, we briefly describe how a network AW-Voronoi diagram can be constructed based
+on a technique using the extended shortest path trees [16]. The shortest path tree (SPT),
+defined as the set of edges connecting all nodes such that the sum of the edge lengths from
+a given root to each node is minimum. A simple example is shown in Fig. 5a, where a
+network, and the SPT rooted at T, SPT(T), are signified by the line segments and thick line
+segments, respectively. The edges signified by the dotted line segments which are referred
+to as uncovered edges are not included in the SPT. To cover the whole network, the shortest
+path tree is extended as shown in Fig. 5b in the following manner. On each uncovered edge,
+we first find a break point, bi, such that the shortest path distance from the point bi to the
+root node through one end node of the uncovered edge is equal to the shortest path distance
+to the root node through the other end node, as signified by the small black dots in the figure.
+We then cut the network at these break points and add nodes on both cut ends. For this
+modified network, we again construct the ordinary SPT. The result is called the extended
+shortest path tree (ESPT). It gives the information on the shortest path from any arbitrary
+point on the network to a given root node. Given a road network G = (N, E), the network
+AW-Voronoi diagram can be obtained using the ESPT. First, we assume a dummy node T
+as the root node and join T to each generator oi with the length (1−α)
+[1 − θ (p.d, oi.d)] as
+α
+the weight. Then, we construct the extended shortest path tree of T.
+
+2Note that for the CkSK queries, the generators are the relevant objects in Or that match at least one of the
+query keywords in their descriptions.
+
+Geoinformatica
+
+(a)
+
+(b)
+
+Fig. 5 Network AW-Voronoi diagram construction using the extended shortest path tree technique
+
+There are two major limitations of using the above NAWVD construction technique for
+the CkSK queries. First, it can only handle a single object (top ranked) but cannot support
+top-k results. Second, it requires to construct the whole network AW-Voronoi diagram. In
+the following, we generalize the SPT technique to the order-k SPT (kSPT), and show how
+kSPT can be constructed in an incremental manner.
+
+4.3 Order-k shortest path tree
+
+In order to support obtaining top-k results, we can extend SPT by introducing overlaps
+between branches. The kSPT branches are overlapped in such a way that each node appears
+in the tree exactly k times, in k different branches. We first introduce the data structure used
+by our algorithm of constructing kSPT.
+
+Indexing structure OCA uses the spatial component and the adjacency component (intro-
+duced in Section 3.2) to locate the edges on which the objects lie and to get the adjacent
+nodes of a given node, respectively. Besides, our algorithm uses an inverted index to load
+some objects, which match at least one of the query keywords in their descriptions, at the
+beginning of the algorithm. We use a B-tree that maps the term id to the inverted list that
+contains the objects with term t in their documents.
+
+Node structure The structure of a node ni contains the following attributes:
+
+–
+–
+
+–
+
+ID: the node identification;
+LabelList: a list of (at most) k labels. For each label (o, d) in the label list of ni, o
+represents an object, and labeling distance d represents τ (q,o)
+Type: a node type is ‘Labelable’ by default and becomes ‘Permanent’ upon completion
+of k labels.
+
+α
+
+;
+
+Geoinformatica
+
+Figure 6 shows the order-2 shortest path tree for the network shown in Fig. 1, where the
+X coordinate represents the labeling distance d. T is the dummy root node as illustrated in
+Fig. 5. We construct the order-k shortest path tree similar with SPT, but we stop the con-
+struction until each node in the network appears in the tree exactly twice, in two different
+branches. Each generator (i.e., o9, o4 and o1) has a branch. The first label indicates the
+labeling distance between the corresponding node and the generator whose branch the node
+locates on is the shortest, while the second label indicates a second shortest labeling dis-
+tance. For example, n1 first appears in the branch of o9 and then in the branch of o1. Thus,
+the top-2 results of n1 should be o9 and o1.
+
+We describe kSPT construction steps in Algorithm 4. The algorithm receives a query
+q and a set Or of relevant objects that match at least one of the query keywords in their
+descriptions as input. The output kSPT is provided as G(N, E) with top-k result information
+embedded. Specifically, we obtain k labels for each ni in N. The initialization (lines 1–10)
+includes the following steps.
+
+–
+
+–
+
+–
+
+First, a priority queue PQ is initialized. An entry of PQ is a tuple (n, o, d), where n
+is the node to which the entry corresponds, and the other two elements o and d form
+a labeling candidate for an entry in n.LabelList. Entries in PQ are ranked according to
+the labeling distance d.
+Second, for each object o ∈ Or , we create a node entry no and insert it into
+G(N, E) where affected edges in E are accordingly modified (lines 3–4). We cre-
+ate an entry of PQ for no with the associated object o and the labeling distance d of
+1−α
+α
+
+[1 − θ (q.d, o.d)] (lines 5–7).
+
+Third, for each network node, we create an empty label list and set the node type to
+‘Labelable’ (lines 8–10).
+
+Fig. 6 Order-2 shortest path tree for the network in Fig. 1
+
+Geoinformatica
+
+Best-first search is handled by the while loop (lines 11–20). The first step of each
+iteration is to dequeue the head entry (n, o, d) from PQ (line 12). Since we are interested in
+only the first k labels of each node, the entry is ignored if the label list of the node already
+contains k labels, i.e., the node is ‘Permanent’. In addition, to ensure that each node is
+associated with k unique results, the entry is also ignored if there exists an entry with object
+o as the associated object in the label list. Otherwise, a label (o, d) is added to the label list
+of the node (line 14). The node type becomes ‘Permanent’ if this label is the kth entry in the
+label list (lines 15–16). In lines 18–20, for each node na adjacent to n, we create a PQ entry
+ea, (na, o, d + ω), where
+
+–
+–
+–
+
+na is the node to which this entry corresponds;
+o is the associated object;
+(d + ω) is the labeling distance calculated by adding the current labeling distance d to
+the normalized weight of edge (i.e., divided by dmax) between n and na.
+
+The entry ea is then inserted into PQ. The while loop continues until PQ is exhausted,
+i.e., every node is labeled k times.
+
+Let us consider the first few steps of the algorithm, using the network in Fig. 1. Likewise,
+we also assume the maximum distance dmax used to normalize δ is 30 units and α is 0.5.
+After the initialization steps, the priority queue PQ has the following initial entries:
+(cid:14)
+
+(cid:14)(cid:8)
+
+(cid:13)
+
+(cid:13)
+
+(cid:14)
+
+(cid:13)
+
+(cid:7)
+
+(o9, o9, 0),
+
+o4, o4,
+
+,
+
+o1, o1,
+
+,
+
+o2, o2,
+
+.
+
+1
+2
+
+1
+2
+
+2
+3
+
+Then the first entry (o9, o9, 0) is dequeued from PQ. As a result, node o9 is labeled with o9
+itself as the first object of interest and the labeling distance of 0, which is obtained using
+
+Geoinformatica
+
+1−α
+α
+
+[1 − θ (q.d, o9.d)]. Next, two entries
+
+are created using
+the two nodes adjacent to o9, n4 and n9, respectively. These entries are then inserted into
+PQ, resulting in the following entries in PQ:
+(cid:14)
+
+and
+
+(cid:14)(cid:8)
+
+(cid:7)(cid:13)
+
+(cid:14)
+
+(cid:13)
+
+(cid:13)
+
+(cid:14)
+
+(cid:13)
+
+(cid:14)
+
+(cid:13)
+
+(cid:5)
+
+(cid:4)
+n4, o9, 1
+30
+
+(cid:5)
+
+(cid:4)
+n9, o9, 2
+30
+
+,
+
+1
+30
+
+n9, o9,
+
+n4, o9,
+
+2
+30
+(cid:4)
+n4, o9, 1
+The entry that is dequeued next is
+30
+same process continues until PQ is exhausted.
+
+,
+
+(cid:5)
+
+1
+2
+
+o4, o4,
+
+,
+
+o1, o1,
+
+,
+
+o2, o2,
+
+.
+
+1
+2
+
+2
+3
+(cid:5)
+
+(cid:4)
+o9, 1
+30
+
+, so we apply the label
+
+to n4. The
+
+A drawback of Algorithm 4 is that it requires global access to all nodes, which can be
+disadvantageous especially in a large network. Next, we show how this drawback can be
+alleviated.
+
+4.4 Incremental kSPT construction
+
+We now present our OCA approach which incrementally retrieves objects and computes
+node labels as the monitoring process progresses. The cost of order-k shortest path tree
+construction can be greatly reduced by exploiting the fact that the offset assigned to each
+object o corresponds to the textual relevance 1−α
+[1−θ (q.d, o.d)]. Thus, objects that are not
+α
+very relevant to q.d are likely to be involved in the computation later than objects relevant
+to q.d. Based on this property, we devise a mechanism which is incremental (it halts when
+a desired label list is obtained and resumes when more label lists are required). Incremental
+kSPT construction usually requires only local information. As a result, we can eliminate
+the global access requirement of the network nodes and limit the search region to a much
+smaller size.
+
+As the labeling process progresses, objects are incrementally retrieved according to their
+textual relevance to q.d (the most relevant object is first retrieved). The scope of this object
+retrieval is denoted as a search radius r, where r is set to 1−α
+[1 − θ (q.d, o.d)]. Whenever
+α
+a new object o is retrieved, r is updated. The value of r indicates whether a node is safe to
+label or more objects are needed.
+
+Algorithm 5 provides detailed steps of how the label list of a node is obtained. The first
+step is to check whether the k labels of the node already exist, in which case the labels are
+returned straightaway without further traversal of the network (lines 1–2). If the requested
+label list is otherwise incomplete, we proceed to the main while loop (lines 3–25). The
+while loop in Algorithm 5 is similar to that in Algorithm 4. The following modifications
+are applied to make Algorithm 5 incremental.
+
+–
+
+–
+–
+
+The first modification is the search radius check (lines 5–11), which ensures that the
+value of r is not smaller than the labeling distance d. Specifically, until r is larger than
+or equal to d, the following steps are repeated:
+
+–
+–
+
+–
+
+retrieving the next relevant object with respect to q.d (line 6),
+performing graph modification and priority queue insertion (lines 7–10)
+similar to Algorithm 4,
+setting the search radius r to 1−α
+α
+
+[1 − θ (q.d, o.d)] of object o (line 11);
+
+The second modification is deferral of node initialization (lines 14–16);
+The third modification is a halt to the node labeling process after the requested node
+has k labels (lines 24–25).
+
+Geoinformatica
+
+Figure 7 presents a stepped explanation of how the k labels of n1 can be computed though
+
+incremental object retrieval and incremental node labeling.
+
+–
+
+–
+
+–
+
+The first retrieved object (the object most relevant with the query keywords) is o9. The
+search radius r is set to 1−α
+[1 − θ (q.d, o9.d)] = 0. The only node that can be labeled
+α
+with this r value is o9 itself. After the labeling, we proceed to consider the next object.
+The next retrieved object is o4. The search radius r is updated to 1
+2 , which allows
+the nodes belonging to r = 1
+2 and o4 itself to be labeled. After that, the object o1 is
+retrieved. As the search radius r remains to be 1
+2 , only o1 is labeled.
+Then o2 is retrieved. The search radius r is updated to 2
+3 , which allows the nodes belong-
+ing to r = 2
+3 to be labeled. The labeling process halts upon completion of the second
+label of n1. From the figure, we can see that n1 appears first in the branch of o9 and
+again in the branch of o1. We can therefore infer that the top-2 result set of n1 is {o9, o1}.
+
+Compared with Fig. 6 where the whole order-2 shortest path tree is built, Fig. 7 only
+need to build a part of the order-2 shortest path tree, and thus can reduce the edge traversing
+cost especially in a large network.
+
+Figure 8 shows how a subsequent top-2 result set of the other end node n2 of the edge on
+which the query location lies can be obtained. As can be seen, the second label of n2 can be
+obtained by resuming the labeling process halted after the completion of the second label
+
+Geoinformatica
+
+Fig. 7 kSPT constructed when getting the top-2 results of n1
+
+of n1. The figure also shows that we only need to label o2, n3 and n2 before obtaining the
+second label of n2. Likewise, we know the top-2 result set of n2 is {o9, o4}.
+
+4.5 Complete OCA monitoring
+
+In this subsection, we describe the complete OCA monitoring. The OCA algorithm
+has the following parameters as input: a network graph G and a set of objects O.
+
+Fig. 8 kSPT constructed when getting the top-2 results of n2
+
+Geoinformatica
+
+The initialization steps (lines 2–8) include:
+
+–
+
+–
+
+–
+
+loading the relevant objects into a priority queue Or , which is accomplished by first
+computing the textual relevance θ for the relevant objects using the inverted index and
+then inserting them into Or ;
+retrieving the most relevant object to q.d as the initial object o which provides a bound
+of search space, and inserting it into G(N, E) and PQ;
+setting the search radius r to 1−α
+α
+
+[1 − θ (q.d, o.d)].
+
+After the initialization steps, the OCA algorithm enters the monitoring stage (lines 9–
+15). Once it receives the message from the client when the client first submits a query or
+exits the safe segment, it locates the edge on which q.l lies and obtains the top-k result sets
+for the two end nodes using Algorithm 5 (lines 11–12). Since OCA uses shortest path tree
+instead of expansion tree as used in QCA, the server does not need the direction information
+of the client. Note that only if the client enters a new edge, do the top-k result sets for the
+two end nodes need to be recomputed. Moreover, with the help of shortest path tree, only a
+few more edges need to be traversed. Similar to QCA, OCA also makes use of Lemma 1 to
+examine network nodes. From the labels of two end nodes of the edge on which the query
+location lies, we can derive query results easily using the method presented in Section 3.4
+(line 13). OCA computes the safe segment using the same method as used in QCA (line
+14). To provide a more comprehensive cost comparison of the above mentioned methods,
+experimental results are reported in the next section.
+
+5 Experimental evaluation
+
+In this section, we evaluate the efficiency of QCA and OCA. To test the advantage of using
+expansion tree in QCA, we implement a baseline method called incremental network expan-
+sion (INE), which is essentially QCA without using expansion tree. To test the advantage
+of incrementally constructing the shortest path tree used in OCA, we implement a baseline
+
+Geoinformatica
+
+method called order-k shortest path tree (kSPT), which corresponds to the non-incremental
+Algorithm 4 in Section 4.3. We also implement a straightforward method (STM) for CkSK
+queries on road networks that computes query results from scratch at every timestamp using
+the snapshot query algorithm similar to Algorithm 1 (the snapshot query algorithm does not
+maintain the expansion tree, and can start a query from any location on the network). We
+can understand the effect of using Lemma 1 and safe segment by comparing STM and INE.
+These five methods return the same result set for a query and are all implemented in Java.
+
+5.1 Experimental setup
+
+We use three real datasets, Singapore, London and Australia, for evaluation. Singapore is
+obtained from the Land Transport Authority, Singapore. The original road network has
+57,138 edges. We reformatted the network to make the endpoints of its edges have degree
+equal to 1 or larger than 2, resulting in a network with 15,076 edges. London and Australia
+datasets are obtained from [18], and the formats already satisfy our requirement. Table 2
+presents some characteristics of each dataset.
+
+We use Brinkhoff’s generator [2] to generate the trajectories of moving queries. The
+input of the generator is the road network of the dataset used. The output is a set of objects
+(e.g., cars or pedestrians) moving on the network, where each object is represented by its
+location at consecutive timestamps. An object appears on a network node, completes the
+shortest path to a random destination, and then disappears. We generate each trajectory with
+100 points, where each location is generated per timestamp (second), i.e., we monitor each
+trajectory for 100 seconds. The keyword set of each query is generated based on the word
+distribution of the vocabulary dataset used. Each experiment has 100 moving queries with
+such trajectories and the average result is reported.
+
+Table 3 shows the main parameters and values used throughout the experiments (default
+
+values are in bold). In the experiments, we measure the following metrics:
+
+(i)
+
+(ii)
+
+execution time, which is the amount of time an algorithm runs to process a query
+trajectory;
+edges expanded, which is the number of edges expanded before an algorithm finishes
+processing;
+
+(iii) memory cost, which is the memory space consumed to process a query trajectory;
+
+Table 2 Characteristics of the datasets
+
+Attribute
+
+Total size
+
+Total no. of nodes
+
+Total no. of edges
+
+Avg. no. of lines per edge
+
+Avg. edge length (m)
+
+Total no. of objects
+
+Avg. no. of objects per edge
+
+Total no. of words
+
+Total no. of distinct words
+
+Avg. no. of distinct words
+
+per object
+
+Singapore
+
+5 MB
+
+13,023
+
+15,076
+
+3.79
+
+175.00
+
+5,387
+
+0.35
+
+17,049
+
+1,007
+
+0.20
+
+London
+
+51 MB
+
+203,383
+
+274,947
+
+5.79
+
+105.12
+
+34,162
+
+0.12
+
+121,049
+
+12,551
+
+3.35
+
+Australia
+
+560 MB
+
+1,181,142
+
+1,631,421
+
+13.65
+
+740.47
+
+69,884
+
+0.04
+
+225,865
+
+18,875
+
+3.04
+
+Table 3 Parameters evaluated in the experiments
+
+Parameter
+
+Monitoring length l
+
+Number of keywords n
+
+Number of results k
+Preference parameter α
+
+Dataset
+
+Geoinformatica
+
+Values
+
+0, 20, 40, 60, 80
+
+1, 2, 3, 4, 5
+
+5, 15, 25, 35, 45
+
+0.1, 0.3, 0.5, 0.7, 0.9
+
+Singapore, London, Australia
+
+(iv)
+
+(v)
+
+communication cost, which is the total number of objects transferred by the server to
+the client;
+communication frequency, which is the probability of sending a request to the server,
+and can be computed by the ratio of the number of messages sent to the server by the
+client to the number of timestamps of the query trajectory.
+
+As a remark, the main memory cost for QCA is the maintaining of the expansion tree,
+and the main memory cost for kSPT and OCA is the maintaining of the relevant objects and
+the order-k shortest path tree. For other algorithms, the memory cost is low. Thus, we only
+test the memory cost for QCA, kSPT and OCA. In addition, since all testing algorithms
+except STM use safe segments and have the same communication cost and communication
+frequency, we only test one of these algorithms and compare the results with those of STM.
+Note that for STM, the communication frequency is always 1, since the client will send a
+location update message to the server at each timestamp. Our experiments are conducted on
+a 3.20 GHz Intel Core i5 machine with 4 GB of RAM.
+
+5.2 Experimental results
+
+In this subsection, we report the experiment results of STM, INE, kSPT, QCA and OCA
+methods.
+
+Effect of l In this experiment, we evaluate the effect of the monitoring length l, as shown in
+Fig. 9. The value of l is ranged from 0 to 80 points. The value of 0 corresponds to the situa-
+tion when the query is used as a snapshot query. As can be seen in Fig. 9a and b, when used
+as snapshot query, STM, INE and QCA behave better than kSPT and OCA. However, as l
+increases, execution time and edges expanded of these three methods consistently increase.
+INE has a better performance than STM, because it does not have to reevaluate the query
+and retraverse the network at each timestamp by using safe segment and Lemma 1, respec-
+tively. QCA behaves better than INE as QCA can avoid some repetitive traversing using
+expansion tree, which can be seen in Fig. 9b. In spite of this, it is still outperformed by OCA.
+This is because QCA has to reevaluate the query results of each unvisited node encountered
+by the query point. Although it can avoid repetitive traversing of some network edges using
+expansion tree, QCA still has to traverse the edges which belong to the invalid part of the
+tree. For kSPT, both execution time and edges expanded remain unchanged, because kSPT
+computes the k results for all nodes on the network. For OCA, changes in l do not produce
+a noticeable effect on both cost measures, because when computing the top-k results of the
+initial query node, OCA also obtains results or partial results of its surrounding nodes. Thus,
+the incremental cost of computing subsequent nodes can be negligible. OCA behaves much
+better than kSPT, because OCA adopts an incremental version of kSPT and halts when top-k
+
+QCA
+kSPT
+OCA
+
+100K
+
+)
+s
+e
+t
+y
+B
+K
+
+(
+ 
+e
+c
+a
+p
+s
+
+10K
+
+1K
+
+(a) Execution time
+
+(b) Edges expanded
+
+(c) Memory cost
+
+ 80
+
+100
+
+ 0
+
+ 20
+
+ 80
+
+100
+
+ 0
+
+ 20
+
+ 40
+l
+
+ 60
+
+ 80
+
+Geoinformatica
+
+100
+
+10
+
+)
+d
+n
+o
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+
+1
+
+ 0
+
+STM
+INE
+QCA
+kSPT
+OCA
+
+ 60
+
+ 20
+
+ 40
+l
+
+10K
+
+d
+e
+r
+r
+e
+f
+s
+n
+a
+r
+t
+ 
+s
+t
+c
+e
+j
+b
+o
+
+1K
+
+100
+
+10
+
+100K
+
+10K
+
+1K
+
+)
+s
+e
+g
+d
+e
+ 
+0
+0
+0
+1
+×
+(
+ 
+d
+e
+d
+n
+a
+p
+x
+e
+ 
+s
+e
+g
+d
+e
+
+STM
+OCA
+
+STM
+INE
+QCA
+kSPT
+OCA
+
+ 60
+
+ 40
+l
+
+1
+
+0.1
+
+y
+c
+n
+e
+u
+q
+e
+r
+f
+ 
+n
+o
+i
+t
+a
+c
+i
+n
+u
+m
+m
+o
+c
+
+1
+
+ 0
+
+ 20
+
+ 60
+
+ 80
+
+0.01
+
+ 0
+
+ 20
+
+ 40
+l
+
+ 40
+l
+
+ 60
+
+ 80
+
+(d) Communication cost
+
+(e) Communication frequency
+
+Fig. 9 Effect of the monitoring length (l)
+
+results of the requested nodes are found. The experimental results show that both QCA and
+OCA perform much better than STM, while OCA is the best method when used for longer
+query trajectories. For the memory cost, Fig. 9c shows that OCA consumes more space than
+QCA. This is because QCA only needs to preserve the node information for the expansion
+tree, while OCA has to preserve not only the node information but also the label information
+for each node. In addition, OCA also has to preserve the relevant objects. Note that com-
+pared with the order-k shortest path tree preserved by OCA, the relevant objects consume
+rather low memory. On the other hand, OCA consumes much less space than kSPT, since
+OCA adopts an incremental version of kSPT. Actually, the memory consumed by kSPT is
+
+QCA
+kSPT
+OCA
+
+100K
+
+)
+s
+e
+t
+y
+B
+K
+
+(
+ 
+e
+c
+a
+p
+s
+
+10K
+
+1K
+
+100K
+
+10K
+
+1K
+
+)
+s
+e
+g
+d
+e
+ 
+0
+0
+0
+1
+×
+(
+ 
+d
+e
+d
+n
+a
+p
+x
+e
+ 
+s
+e
+g
+d
+e
+
+STM
+OCA
+
+100
+
+10
+
+)
+d
+n
+o
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+
+1
+
+ 1
+
+STM
+INE
+QCA
+kSPT
+OCA
+
+ 4
+
+ 2
+
+ 3
+n
+
+10K
+
+d
+e
+r
+r
+e
+f
+s
+n
+a
+r
+t
+ 
+s
+t
+c
+e
+j
+b
+o
+
+1K
+
+100
+
+10
+
+STM
+INE
+QCA
+kSPT
+OCA
+
+ 4
+
+ 3
+n
+
+y
+c
+n
+e
+u
+q
+e
+r
+f
+ 
+n
+o
+i
+t
+a
+c
+i
+n
+u
+m
+m
+o
+c
+
+1
+
+0.1
+
+(a) Execution time
+
+(b) Edges expanded
+
+(c) Memory cost
+
+ 5
+
+100
+
+ 1
+
+ 2
+
+ 5
+
+100
+
+ 1
+
+ 2
+
+ 3
+n
+
+ 4
+
+ 5
+
+1
+
+ 1
+
+ 2
+
+ 4
+
+ 5
+
+0.01
+
+ 1
+
+ 2
+
+ 3
+n
+
+ 3
+n
+
+ 4
+
+ 5
+
+(d) Communication cost
+
+(e) Communication frequency
+
+Fig. 10 Effect of the number of keywords (n)
+
+Geoinformatica
+
+an upper bound for OCA. However, as can be seen, the incremental method is very effec-
+tive and OCA consumes only a small part of the memory. For the communication cost and
+communication frequency, we can see that with the help of safe segment, all four methods
+have a very low cost compared with STM. The communication frequency is insensitive to l.
+
+Effect of n In this experiment, we evaluate the effect of n, the number of query keywords, as
+shown in Fig. 10. As can be seen in Fig. 10a and b, there is a slight increase of execution time
+and edges expanded when n increases. This is because the larger the number of keywords in
+the query, the larger the number of objects that may be relevant for the query. For STM, INE
+and QCA, more objects need to be examined during the expansion phase of the snapshot
+query algorithm. While for kSPT and OCA, more relevant objects have to be taken into
+account and loaded into the object heap at the beginning of the algorithm and more edges
+have to be expanded before terminating the algorithm. QCA and OCA still perform much
+better than STM, while OCA remains to be the best method. Fig. 10c shows that the memory
+cost increases slightly with the number of query keywords. Fig. 10d and e show that the
+communication cost and communication frequency increases slightly with the number of
+query keywords. This is because larger query keyword sets increase the possibility of top-k
+objects to be replaced by other candidate objects, which yields shorter safe segments.
+
+Effect of k In this experiment, we evaluate the effect of k, the number of requested results.
+Fig. 11a and b show that k has no noticeable effect on the execution time or edges expanded
+of STM, INE and QCA. This is because when running the snapshot query algorithm, the
+algorithms also considers some relevant objects that are not in the final results. However,
+they may fall in the results when k increases. Therefore, although k increases, these methods
+consider similar number of relevant objects and do not induce much additional processing
+cost. On the other hand, kSPT and OCA are more sensitive to the parameter k. This is
+because k determines the number of labels for each node. For kSPT, more edges need to
+be expanded to complete k labels of each node. For OCA, the larger the number of results,
+
+QCA
+kSPT
+OCA
+
+100K
+
+)
+s
+e
+t
+y
+B
+K
+
+(
+ 
+e
+c
+a
+p
+s
+
+10K
+
+1K
+
+100K
+
+10K
+
+1K
+
+)
+s
+e
+g
+d
+e
+ 
+0
+0
+0
+1
+×
+(
+ 
+d
+e
+d
+n
+a
+p
+x
+e
+ 
+s
+e
+g
+d
+e
+
+STM
+OCA
+
+100
+
+10
+
+)
+d
+n
+o
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+
+1
+
+ 5
+
+STM
+INE
+QCA
+kSPT
+OCA
+
+ 35
+
+ 15
+
+ 25
+k
+
+10K
+
+d
+e
+r
+r
+e
+f
+s
+n
+a
+r
+t
+ 
+s
+t
+c
+e
+j
+b
+o
+
+1K
+
+100
+
+10
+
+STM
+INE
+QCA
+kSPT
+OCA
+
+ 35
+
+ 25
+k
+
+1
+
+0.1
+
+y
+c
+n
+e
+u
+q
+e
+r
+f
+ 
+n
+o
+i
+t
+a
+c
+i
+n
+u
+m
+m
+o
+c
+
+(a) Execution time
+
+(b) Edges expanded
+
+(c) Memory cost
+
+ 45
+
+100
+
+ 5
+
+ 15
+
+ 45
+
+100
+
+ 5
+
+ 15
+
+ 25
+k
+
+ 35
+
+ 45
+
+1
+
+ 5
+
+ 15
+
+ 35
+
+ 45
+
+0.01
+
+ 5
+
+ 15
+
+ 25
+k
+
+ 25
+k
+
+ 35
+
+ 45
+
+(d) Communication cost
+
+(e) Communication frequency
+
+Fig. 11 Effect of the number of results (k)
+
+Geoinformatica
+
+the later OCA terminates when requested nodes are complete, which means more edges
+need to be expanded and longer execution time. These can also explain the results shown in
+Fig. 11c. As k increases, the memory cost for kSPT and OCA increase quickly, while the
+memory cost for QCA has no noticeable increase. In this case, QCA scales better than OCA
+when k increases. Fig. 11d and e show that the communication cost and communication
+frequency increase when k increases. This is because more objects need to be considered
+due to a larger k, which yields shorter safe segments. In addition, for the communication
+cost, a larger k means the server needs to send more objects to the client.
+
+Effect of α In this experiment, we evaluate the effect of the query preference parameter α,
+as shown in Fig. 12. A small value of α gives more preference to the textual description of
+the objects, while a large value of α gives more preference to the network proximity. As
+can be seen, kSPT and OCA are not sensitive to α. This is because α has little influence
+on the node labeling process of the requested nodes. All the other three methods perform
+slightly better for larger values of α. This is reasonable as the objects near the query location
+have a lower score when α increases, and thus, STM, INE and QCA can process fewer
+edges or terminates the algorithm earlier. Fig. 12c shows that the memory cost behaves
+similarly as the execution time. As can be seen in Fig. 12d and e, the communication cost
+and communication frequency are insensitive to α.
+
+Effect of different datasets In this experiment, we study the total running time and the num-
+ber of edges expanded for three real road network datasets of different sizes, as shown
+in Fig. 13a and b. As can be seen, OCA scales well when the dataset size increases. The
+OCA method is more than one order of magnitude better than baseline methods STM and
+INE in terms of execution time for the Australia dataset. Fig. 13c shows that QCA con-
+sumes the least space among the three methods, while OCA consumes much less space than
+kSPT. We also test the communication cost and communication frequency for these three
+datasets, as shown in Fig. 13d and e. All four methods have a low communication cost and
+communication frequency compared with STM due to the use of safe segments.
+
+QCA
+kSPT
+OCA
+
+100K
+
+)
+s
+e
+t
+y
+B
+K
+
+(
+ 
+e
+c
+a
+p
+s
+
+10K
+
+1K
+
+100
+
+)
+d
+n
+o
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+
+10
+
+1
+
+100K
+
+10K
+
+1K
+
+)
+s
+e
+g
+d
+e
+ 
+
+0
+0
+0
+1
+×
+(
+ 
+d
+e
+d
+n
+a
+p
+x
+e
+ 
+s
+e
+g
+d
+e
+
+STM
+INE
+QCA
+kSPT
+OCA
+
+ 0.7
+
+STM
+OCA
+
+STM
+INE
+QCA
+kSPT
+OCA
+
+ 0.7
+
+ 0.5
+α
+
+1
+
+0.1
+
+y
+c
+n
+e
+u
+q
+e
+r
+f
+ 
+
+n
+o
+i
+t
+a
+c
+i
+n
+u
+m
+m
+o
+c
+
+10K
+
+d
+e
+r
+r
+e
+f
+s
+n
+a
+r
+t
+ 
+s
+t
+c
+e
+j
+b
+o
+
+1K
+
+100
+
+10
+
+ 0.1
+
+ 0.3
+
+ 0.5
+α
+
+ 0.9
+
+100
+
+ 0.1
+
+ 0.3
+
+ 0.9
+
+100
+
+ 0.1
+
+ 0.3
+
+ 0.5
+α
+
+ 0.7
+
+ 0.9
+
+(a) Execution time
+
+(b) Edges expanded
+
+(c) Memory cost
+
+1
+ 0.1
+
+ 0.3
+
+ 0.7
+
+ 0.9
+
+0.01
+
+ 0.1
+
+ 0.3
+
+ 0.5
+α
+
+ 0.5
+α
+
+ 0.7
+
+ 0.9
+
+(d) Communication cost
+
+(e) Communication frequency
+
+Fig. 12 Effect of the preference parameter (α)
+
+Geoinformatica
+
+1K
+
+100
+
+STM
+INE
+QCA
+kSPT
+OCA
+
+)
+d
+n
+o
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+
+10
+
+1
+
+100K
+
+10K
+
+STM
+INE
+QCA
+kSPT
+OCA
+
+)
+s
+e
+g
+d
+e
+ 
+0
+0
+0
+1
+×
+(
+ 
+d
+e
+d
+n
+a
+p
+x
+e
+ 
+s
+e
+g
+d
+e
+
+1K
+
+100
+
+10
+
+100K
+
+10K
+
+QCA
+kSPT
+OCA
+
+)
+s
+e
+t
+y
+B
+K
+
+(
+ 
+e
+c
+a
+p
+s
+
+1K
+
+100
+
+10
+
+Singapore
+
+Australia
+
+Singapore
+
+Australia
+
+Singapore
+
+Australia
+
+London
+dataset
+
+(a) Execution time
+
+(b) Edges expanded
+
+(c) Memory cost
+
+STM
+OCA
+
+London
+dataset
+
+d
+e
+r
+r
+e
+f
+s
+n
+a
+r
+t
+ 
+s
+t
+c
+e
+j
+b
+o
+
+10K
+
+1K
+
+100
+
+10
+
+1
+
+London
+dataset
+
+1
+
+0.1
+
+y
+c
+n
+e
+u
+q
+e
+r
+f
+ 
+n
+o
+i
+t
+a
+c
+i
+n
+u
+m
+m
+o
+c
+
+Singapore
+
+Australia
+
+London
+dataset
+
+0.01
+
+Singapore
+
+London
+dataset
+
+Australia
+
+(d) Communication cost
+
+(e) Communication frequency
+
+Fig. 13 Performance on different datasets
+
+5.3 Discussion
+
+We have tested the effect of different parameters about CkSK queries. QCA behaves bet-
+ter than STM and INE because of using Lemma 1 with safe segment and expansion tree,
+while OCA behaves better than kSPT because of incremental order-k shortest path tree con-
+struction. OCA scales better than QCA as the monitoring length l increases, while QCA
+scales better than OCA as the number of results k increases. Thus, this provides an insight
+on which method should be used in the realistic monitoring applications. If the number of
+results k required by the client is large, it is better to use QCA to answer the query. Other-
+wise, it is better to use OCA. Overall, OCA behaves better than QCA for CkSK queries with
+a realistic parameter setting. One disadvantage of OCA is that it consumes more memory
+than QCA, which makes it be able to support less clients simultaneously than QCA. How-
+ever, this disadvantage can be alleviated by the fact that the order-k shortest path tree is valid
+for all the queries with the same query keywords, since OCA starts traversing the network
+from the relevant objects rather than the query location. Thus, for the queries with the same
+keywords which are submitted to the server during the same period, the server only needs
+to build one order-k shortest path tree. By this way, both the execution time and the memory
+cost can be reduced dramatically, and the server can support more clients simultaneously. In
+addition, the server can cache the order-k shortest path tree built for the frequent keywords,
+which can be used for the subsequent queries with these frequent keywords. QCA also has
+a potential advantage that other optimized snapshot query algorithms for top-k spatial key-
+word queries on road networks (such as the overlay method in [18]) could be employed to
+further improve the performance, which is orthogonal to our work. Moreover, with the help
+of safe segment, QCA and OCA can have a rather low communication frequency, which is
+very important in the realistic monitoring applications.
+
+Geoinformatica
+
+6 Related work
+
+6.1 Spatial keyword queries
+
+In this section, we discuss some related studies of spatial keyword query, and continuous
+monitoring of moving queries.
+
+Spatial keyword queries have drawn lots of attention in recent years. Zhou et al. [26] evalu-
+ate three different hybrid indexing structures of integrating inverted files and R∗-trees. Their
+experiment shows that building an inverted index on top of R∗-tree is the best scheme. The
+IR-tree [7] also incorporates the inverted files and R∗-trees to answer a top-k spatial key-
+word query. Unlike the method in [26] which first uses one index to filter web documents
+and then uses the other index to process the query, the IR-tree combines these two indexes
+to jointly prune the search space. In [20], the IR-tree is further extended with multiple query
+optimization for a group of top-k spatial keyword queries to simultaneously prune the search
+space. Felipe et al. [8] propose an index called IR2-tree which integrates an R-tree and sig-
+nature files to answer a top-k spatial keyword query. Rocha-Junior et al. [17] propose the
+S2I index which uses textual-first partition and splits the database into inverted lists. If a
+keyword is frequent, an aggregated R-tree is built. Otherwise, the infrequent keywords are
+stored in a flat file. Zhang et al. [25] propose the I 3 index which also uses textual-first
+partition. Unlike the S2I in [17], I 3 maps a keyword to a list of keyword cells which are
+generated using Quadtree. Zhang et al. [24] propose an m-closest keywords (mCK) query
+that retrieves the spatially closest objects which match m user-specified keywords. An index
+called bR∗-tree is devised to augment each node with a bitmap for query processing. These
+studies all assume Euclidean space and are not applicable to road networks.
+
+The only work that supports spatial keyword query on road networks is reported in [18],
+where the authors describe the indexing structure and utilize overlay network for efficient
+query processing. However, the problem of processing continuous queries has not been
+addressed in the literature, which arises naturally in a travel environment.
+
+6.2 Continuous monitoring
+
+In this paper, we consider the setting of moving query and stationary objects. In the fol-
+lowing, we review related work under this setting. Kolahdouzan and Shahabi [12] propose
+an upper bound algorithm for continuous k nearest neighbor queries in spatial networks.
+Their algorithm retrieves (k + 1) objects given a query location and calculates an upper
+bound, which is used to eliminate the computation of kNN queries between locations that
+the result does not change. Cho and Chung [6] propose a continuous kNN technique that
+performs snapshot kNN queries at intersections along the query trajectory. Conceptually,
+the basic idea of our two methods is similar to this. However, in addition to performing
+snapshot queries at the intersections, we maintain an expansion tree to further reduce the
+number of edges traversed. Moreover, none of the studies on continuous spatial queries on
+road network consider textual relevancy of objects.
+
+Recently, Wu et al. [21] and Huang et al. [10] both study continuously moving top-k
+spatial keyword queries. They propose different algorithms for computing safe zones that
+guarantee correct results. However, their algorithms are restricted to Euclidean space, and
+thus, cannot be applied to our problem where query and objects of interest are constrained
+on a road network.
+
+Geoinformatica
+
+7 Conclusion
+
+In this paper, we investigated the problem of continuous top-k spatial keyword (CkSK)
+queries on road networks, and proposed two efficient methods for query processing. QCA
+monitors the top-k results of the moving point by examining the intersections the query
+encounters. It uses expansion tree to avoid repetitive traversing of some network edges.
+OCA incrementally retrieves the top-k results according to textual relevance first and
+computes all or partial top-k results of a subset of nodes on the network. We compared
+the proposed methods with three baseline methods. Experimental results confirmed the
+superiority of our two methods and revealed their relative advantages.
+
+Acknowledgments This work is funded by the NExT Search Centre (grant R-252-300-001-490), which
+is supported by the Singapore National Research Foundation under its International Research Centre @
+Singapore Funding Initiative and administered by the IDM Program Office.
+
+References
+
+SIGIR. pp 35–42
+
+6(2):153–180
+
+1. Anh VN, de Kretser O, Moffat A (2001) Vector-space ranking with effective early termination. In:
+
+2. Brinkhoff T (2002) A framework for generating network-based moving objects. GeoInformatica
+
+3. Cheema MA, Brankovic L, Lin X, Zhang W, Wang W (2011) Continuous monitoring of distance-based
+
+range queries. IEEE Trans Knowl Data Eng 23(8):1182–1199
+
+4. Chen L, Cong G, Jensen CS, Wu D (2013) Spatial keyword query processing: an experimental evaluation.
+
+5. Chen Z, Shen HT, Zhou X, Yu JX (2009) Monitoring path nearest neighbor in road networks. In:
+
+6. Cho HJ, Chung CW (2005) An efficient and scalable approach to cnn queries in a road network. In:
+
+7. Cong G, Jensen CS, Wu D (2009) Efficient retrieval of the top-k most relevant spatial web objects.
+
+In: VLDB. pp 217–228
+
+SIGMOD conference. pp 591–602
+
+VLDB. pp 865–876
+
+PVLDB 2(1):337–348
+
+8. Felipe ID, Hristidis V, Rishe N (2008) Keyword search on spatial databases. In: ICDE. pp 656–665
+9. Hu H, Xu J, Lee DL (2005) A generic framework for monitoring continuous spatial queries over moving
+
+objects. In: SIGMOD conference. pp 479–490
+
+10. Huang W, Li G, Tan KL, Feng J (2012) Efficient safe-region construction for moving top-k spatial
+
+11. Kolahdouzan MR, Shahabi C (2004) Voronoi-based k nearest neighbor search for spatial network
+
+keyword queries. In: CIKM. pp 932–941
+
+databases. In: VLDB. pp 840–851
+
+12. Kolahdouzan MR, Shahabi C (2005) Alternative solutions for continuous k nearest neighbor queries in
+
+spatial network databases. GeoInformatica 9(4):321–341
+
+13. Nutanong S, Tanin E, Shao J, Zhang R, Ramamohanarao K (2012) Continuous detour queries in spatial
+
+networks. IEEE Trans Knowl Data Eng 24(7):1201–1215
+
+14. Nutanong S, Zhang R, Tanin E, Kulik L (2008) The v∗-diagram: a query-dependent approach to moving
+
+15. Okabe A, Boots B, Sugihara K, Chiu SN (2000) Spatial tessellations: concepts and applications of
+
+knn queries. PVLDB 1(1):1095–1106
+
+Voronoi diagrams, 2nd edn. Wiley, Chichester
+
+16. Okabe A, Satoh T, Furuta T, Suzuki A, Okano K (2008) Generalized network voronoi diagrams:
+
+concepts, computational methods, and applications. Int J Geogr Inf Sci 22(9):965–994
+
+17. Rocha-Junior JB, Gkorgkas O, Jonassen S, Nørv˚ag K (2011) Efficient processing of top-k spatial
+
+keyword queries. In: SSTD. pp 205–222
+
+18. Rocha-Junior JB, Nørv˚ag K (2012) Top-k spatial keyword queries on road networks. In: EDBT. pp
+
+19. Salton G, Buckley C (1988) Term-weighting approaches in automatic text retrieval. Inf Process Manage
+
+168–179
+
+24(5):513–523
+
+Geoinformatica
+
+20. Wu D, Yiu ML, Cong G, Jensen CS (2012) Joint top-k spatial keyword query processing. IEEE Trans
+
+21. Wu D, Yiu ML, Jensen CS, Cong G (2011) Efficient continuously moving top-k spatial keyword query
+
+22. Wu W, Guo W, Tan KL (2007) Distributed processing of moving k-nearest-neighbor query on moving
+
+23. Zhang C, Zhang Y, Zhang W, Lin X (2013) Inverted linear quadtree: efficient top k spatial keyword
+
+Knowl Data Eng 24(10):1889–1903
+
+processing. In: ICDE. pp 541–552
+
+objects. In: ICDE. pp 1116–1125
+
+search. In: ICDE
+
+24. Zhang D, Chee YM, Mondal A, Tung AKH, Kitsuregawa M (2009) Keyword search in spatial databases:
+
+towards searching by document. In: ICDE. pp 688–699
+
+25. Zhang D, Tan KL, Tung AKH (2013) Scalable top-k spatial keyword search. In: EDBT. pp 359–370
+26. Zhou Y, Xie X, Wang C, Gong Y, Ma WY (2005) Hybrid index structures for location-based web search.
+
+In: CIKM. pp 155–162
+
+27. Zobel J, Moffat A (2006) Inverted files for text search engines. ACM Comput Surv 38(2)
+
+Long Guo is currently a PhD Candidate at School of Computing, National University of Singapore. He
+received his Bachelor of Computer Science degree from HuaZhong Universiy of Science and Technology,
+China. Long Guo’s research interests include spatial data mining, spatial query processing and location based
+services. He has been awarded the President’s Graduate Fellowship from 2011 to now.
+
+Jie Shao received a PhD degree from The University of Queensland in 2009, and a bachelor degree from
+Southeast University, China in 2004, both in Computer Science. Currently, he is working as a research fel-
+low at School of Computing, National University of Singapore. His research interests include multimedia
+information retrieval as well as spatial databases and their applications.
+
+Geoinformatica
+
+Htoo Htet Aung completes his PhD in Computer Science from National University of Singapore in 2013.
+He received his Bachelor of Computer Science degree from University of Computer Studies, Yangon. His
+research interests include data mining and query processing in moving object databases, spatial-temporal
+databases and other non-traditional databases such as graph data, multimedia data and social media data.
+
+Kian-Lee Tan is a Professor of Computer Science at the National University of Singapore (NUS). He
+received his BSc Hons (1st Class), MSc, and PhD in Computer Science from NUS in 1989, 1991 and 1994
+respectively. His research interest in database systems focuses on query processing and optimization in a
+wide range of domains including parallel, distributed and peer-to-peer databases, multimedia (image and
+video) databases, high-dimensional databases, main memory databases, data streams and sensor networks,
+spatial-temporal databases, and wireless and mobile databases. He has published over 300 research articles
+in international journals and conference proceedings, and co-authored several books/monographs. Kian-Lee
+is currently the coordinating editor-in-chief of the Very Large Data Base (VLDB) Journal. He also serves in
+the editorial board of the IEEE Transactions on Knowledge and Data Engineering and the WWW Journal.
+He is also a member of the VLDB Endowment Board.
+
+

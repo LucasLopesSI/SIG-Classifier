@@ -1,0 +1,2372 @@
+Geoinformatica
+DOI 10.1007/s10707-014-0206-6
+
+Partition-based range query for uncertain trajectories
+in road networks
+
+Ling Chen & Yanlin Tang & Mingqi Lv & Gencai Chen
+
+Received: 1 July 2013 / Revised: 1 December 2013
+Accepted: 3 February 2014
+# Springer Science+Business Media New York 2014
+
+Abstract Query processing for trajectory data is a hot topic in the field of moving objects
+databases (MODs). Most of the previous research work focused on the Euclidean space, and
+the uncertain trajectories are represented as sheared cylinders. However, in many applications
+(e.g. traffic management), the movements of moving objects (MOs) are constrained by the
+road network environments, which makes the previous methods ineffective. In this paper, we
+firstly construct an uncertain trajectory model, which is composed of a sequence of segment
+units with earliest arrival time and latest departure time, based on the assuming availability of a
+maximum speed on each road segment. Secondly, we present a partition-based uncertain
+trajectory index (PUTI) to facilitate the search of possible MOs within the space and time
+range in the road networks based on the uncertain trajectory model. It provides appropriate
+groups to gather segment units of trajectories according to their network distances. Finally, an
+efficient algorithm for range query is proposed by leveraging the index. The experiments on
+two datasets demonstrate that the uncertain trajectory model is effective, and PUTI also
+significantly outperforms the network distance based MON-tree on range query.
+
+Keywords Uncertain trajectories . Range query . Graph partition . Road networks
+
+1 Introduction
+
+With the rapid advances in communication and sensing technologies, there is an increasing
+demand in many applications for supporting location based services (LBSs), such as mobile
+communication, vehicle guidance, and traffic management, etc. As a result, an enormous
+amount of research effort goes into the field of moving objects databases (MODs). One of the
+most representative data in MODs is historical trajectory, available as a sequence of (location,
+time) values. A typical application for trajectories is range query. For example, in the
+investigation of a traffic accident, it is very important for officers to find out the potential
+perpetrators or witnesses, by analyzing the historical trajectories, which are produced by cars
+passing through the roads near the accident scene.
+
+L. Chen (*) : Y. Tang : M. Lv : G. Chen
+College of Computer Science, Zhejiang University, Hangzhou 310027, People’s Republic of China
+e-mail: lingchen@cs.zju.edu.cn
+
+Geoinformatica
+
+Traditionally, when querying the moving objects (MOs), a normal assumption is that the
+entire trajectories are available [3, 4, 6, 14, 16, 20, 21, 22]. However, location acquisition
+devices (e.g. GPS, roadside sensor, etc.) can only provide location samples at discrete time
+instants in practice. For example, in taxi management applications, a taxi usually sends its
+current location to servers every minute or so for the sake of energy efficiency and commu-
+nication cost reduction. Even the movements of a taxi are restricted to the road networks, the
+acquisition of its exact location at a specific time instant still cannot be guaranteed. Motivated
+by these observations, we incorporate uncertainty into trajectories in the road networks, and
+estimate time based on the maximum speed of each road segment.
+
+On the other hand, the existing indexing techniques for MOs in the road networks
+decompose the networks into roads or road segments, and organize the spatio-temporal
+location of the MOs on each road or road segment with a specific index, e.g. 2D R-tree
+[3–6, 29]. One of the shortcomings of these approaches is the way that the space is
+decomposed. It might lead to indexing too many duplicate trajectories. Besides, these ap-
+proaches do not support network distance based query. In the light of the limitation, we
+develop a partition based index structure for uncertain trajectory range query.
+
+By taking the above two aspects into consideration, we propose an approach to solve the
+problem of spatio-temporal range query for uncertain trajectories in the road networks. The
+basic idea is to partition the network into different regions according to their sums of network
+distances. Then, the trajectories are split into segment units with path and time uncertainty.
+Finally, the segment units are co-located according to the network partitions, and the total time
+interval of segment units in each partition of every MO is indexed. The purposes of partition
+are as follows. The first is to cut down the disk I/O, because we have to perform disk I/O
+operations on every road segment without the partitions, like FNR-tree [6]. The second is to
+query spatial region efficiently by using pre-computed distances between adjacent partitions.
+The third is to reduce the overlap of time intervals caused by uncertainty. Given a range query
+including a query point q, a distance threshold dr and a time interval (ts,te), we can quickly find
+partitions completely covered by the query spatial region and partitions which partially
+intersect with the query spatial region. For the former kind of partitions, we can easily get
+the satisfied trajectories through the time interval tree on each partition. For the latter kind of
+partitions, we firstly query the time interval trees to get candidates, and then refine the
+candidates for the result. In summary, followings are our main contributions:
+
+1. Present an uncertain trajectory model: By considering the maximum speed on each road
+segment, we present an uncertain trajectory model, including path uncertainty and time
+uncertainty. To the best of our knowledge, it is the first model that represents the
+uncertainty by segment units with earliest arrival time and latest departure time, instead
+of time-dependent probability functions or space-time prisms.
+
+2. Propose an index method for uncertain trajectories: We propose a partition based index
+framework, which combines R-tree and B+-tree, for the range query of uncertain
+trajectories.
+
+3. Propose a range query algorithm for uncertain trajectories: We define the problem of range
+query for uncertain trajectories in road networks, and provide an efficient range query
+algorithm that consists of three steps: spatial pruning, time filter and result refinement.
+4. Conduct experimental verification: We conduct extensive experimental evaluation which
+
+demonstrates the benefits of the proposed methodology.
+
+The remaining part of this paper is organized as follows. Section 2 presents the related work
+about the uncertainty of MOs and trajectory indexes in road networks. Section 3 introduces the
+
+basic definitions and the uncertain trajectory model. Sections 4 and 5 mainly describe the
+index structure and range query algorithm in detail. Section 6 presents the performance
+evaluation, and at last the conclusions are given in Section 7.
+
+Geoinformatica
+
+2 Related work
+
+Since the problem investigated in this paper relates to both uncertain trajectory models and
+queries for trajectories in the road networks, we review the related work in these two categories
+in Sections 2.1 and 2.2 respectively.
+
+2.1 Managing uncertainty of moving objects
+
+In recent years, the uncertainty issues in MODs have been proposed in two main environments: the
+Euclidean space [2, 9, 15, 16, 19, 22–26], and the road network space [3–5, 10, 11, 12, 28, 29, 30].
+Researchers have addressed the problem of generic representation of uncertainty, along
+with a framework for syntactic categorization of spatio-temporal queries. Lange et al. [13]
+identify two broad categories of uncertainty trajectory models of MOs: one is PDF-based
+model, and the other is shape-based model.
+
+There are some literatures focusing on uncertain trajectories in the Euclidean space
+environment. Pfoser and Jensen [19] consider the implications of the fact that the object’s
+motion was constrained by the maximum speed between two updates, and demonstrate that the
+spatial zone of the MO during two consecutive updates is an ellipse. However, when the
+difference between two updates or the maximum distance is large, the error may become very
+great since it limits the uncertainty to the past of MOs. Another uncertain trajectory model is
+represented as a three-dimensional sheared cylinder by Trajcevski et al. [26]. This is obtained
+by associating a fixed uncertain threshold r at each time instant with each line segment of the
+trajectory. For a given uncertain trajectory and two end-points, the volume of the trajectory
+between two updates is the union of all the disks with a radius r centered at the updates along
+the line segment which connects two end-points. However, the author did not give an
+appropriate way to estimate the value of r. In practice, it is difficult to determine the value
+of r that can assure high accuracy.
+
+Based on the above two uncertain trajectory models, a set of novel but natural spatio-
+temporal operators are proposed to express spatio-temporal queries [16, 26]. Trajcevski et al.
+[23–25] propose probabilistic range query and continuous nearest neighbor query algorithms.
+Chung et al. [2] map the uncertain movements of all MOs to a dual space for indexing, and
+employ an approximate approach to examine the candidates.
+
+Researchers also make contributions to meeting the demands of road network environ-
+ments, and existing uncertain trajectory models can be divided into three categories. The first
+kind of uncertain trajectory models is associated with a location update policy. De Almeida
+and Güting ([3, 4] present the geometry of the MOs in networks with uncertainty, and extends
+the ADT framework [7] in terms of uncertainty in data types and operations. They also propose
+a location update policy, including ITLU, DTTLU and STTLU, to reduce the uncertainty of
+MOs. Ding [5] represent the uncertain region [3, 4] as Uncertain Trajectory Unit, and propose
+an index framework, the UTR-tree, which is based on MON-tree [3, 4], to index the full
+uncertain trajectories of network constrained MOs. However, since both GPS devices and
+roadside sensors usually cannot support the update policy, it is difficult for applications to use
+these methods directly. In addition, network distance based range query is not supported in
+these literatures.
+
+Geoinformatica
+
+The second kind of uncertain trajectory models are represented as time-dependent proba-
+bility functions, and the impact of uncertain model on query processing is considered. Zheng
+et al. [29] represent the uncertainty of MOs in the road networks as time-dependent probability
+distribution function, assuming the availability of a maximal speed on each road segment. The
+uncertain trajectory model has two types of uncertainty, i.e. path uncertainty and location
+uncertainty, and the UTH index is introduced to process probabilistic spatio-temporal range
+query, which is based on FNR-tree [6]. Since the probability that the MOs are in the spatial and
+time range is computed in query processing, the efficiency is relatively low.
+
+The third kind of uncertain trajectory models are represented as the space-time
+prisms. Kuijpers and Othman [11] propose the space-time prism in the road networks
+with general maximal speeds of edges based on the model in Euclidean space [19].
+is bounded by the
+For each location along a given edge, a vertical
+location.
+earliest-possible and the latest-possible time that
+However, there is only an alibi query provided in the paper, which might be because
+the complexity of other query types is high. Kuijpers et al. [10] also propose the
+algorithms to calculate network-based space-time prisms.
+
+the MO can be at
+
+line-segment
+
+that
+
+2.2 Query for trajectories in road networks
+
+As mentioned above, considerable attention has been paid to the index methods for MOs. Most
+of these works deal with indexing past, present, or near-feature positions of MOs that move
+freely in a two-dimensional space. There are also methods for indexing trajectories of MOs in
+the networks [3, 4, 6, 14, 16, 20, 21, 22, 27]. The main idea in these previous works is to
+decompose a three-dimensional problem into two sub-problems in lower dimensions and then
+use a combination of two level R-trees to index the trajectories. The trajectories are represented
+with reference to a network, i.e. with the relative positions of the MOs on network edges [7].
+These indexes can be classified into two categories.
+
+The first kind of indexes considers the roads or road segments as index units. The FNR-tree
+[6] utilizes a 2D R-tree to index road segments. For every leaf node in the 2D R-tree, there is a
+1D R-tree to index the MOs whose trajectories cross the road segments included in the leaf
+nodes within a certain period of time. A major disadvantage of the FNR-tree is its limitation in
+trajectory modeling. Since only the time intervals are stored in the 1D R-tree, it is assumed that
+the MOs could not stop, change speed or direction in the middle of a road segment. This
+limitation is addressed by the MON-tree [3, 4]. The MON-tree is composed of a 2D R-tree (top
+R-tree) that indexes the network edges and a set of 2D R-trees (bottom R-trees) that index the
+movements of MOs along the edges. An additional hash structure is used to map each polyline
+[3, 4] to its corresponding tree, which can speed up insertions. Given a 3D spatio-temporal
+query, the top R-tree is used to find the precise intersections between the spatial part of the
+query and the network. Based on these intersections, a set of sub-queries is generated for each
+intersected part of each involved edge, and the corresponding bottom R-trees are accessed to
+respond to the sub-queries.
+
+The second kind of indexes considers the partitions as index units. Xuan et al. [27] and Liu
+et al. [16] propose range query algorithms for in-network trajectories based on Voronoi, which
+is a structure widely used in nearest neighbor query process. They consider the Voronoi
+partition as a processing unit rather than an edge or a route. Xuan et al. [27] also propose
+continuous range query. Sandu Popa et al. [21] propose PARINET and T-PARINET index to
+efficiently retrieve the trajectories of MOs moving in the networks. The structure of PARINET
+[21] is based on a combination of graph partitions and a set of composite B+tree local indexes.
+The trajectories are decomposed using graph partition theory, and the process can be tuned for
+
+Geoinformatica
+
+a given query load and data distribution in the network. T-PARINET [22] is designed for the
+continuous index of trajectory data flows. Since roads or road segments are basic units in the
+networks and partitions consist of adjacent road segments, the second type is more efficient on
+range query.
+
+However, all the above indexes in the networks do not take the uncertainty of
+trajectories into consideration. It is usually assumed that an update is issued each
+time the MOs change their speed or pass on a different road, and a linear interpo-
+lation is employed over each interval. Hence, these existing indexes are inappropri-
+trajectories. Additionally, network distance based query is not
+ate to express real
+supported.
+
+3 Uncertain trajectory model
+
+Definition 1 (Road Network): A road network is represented by a graph G=(V, E),
+where V and E are the sets of vertices and edges, respectively. Each edge e∈E is
+associated with a pair (l(e), s(e)), corresponding to the length and maximum allowed
+speed of e.
+Definition 2 (Trajectory): A trajectory of a MO O in the road network G is a sequence of
+positions with timestamps: To={(p1,t1),(p2,t2),…,(pi,ti),…,(pn,tn)}, where pi is the sam-
+pling position on e∈E at time ti (i=1,2,…,n).
+
+The uncertain trajectory model in our work is similar to the model in [29], except
+that we do not need the time-dependent probability distribution function, because we
+aim at finding all the trajectories that possibly pass through the spatial region during
+the specified time interval. The uncertainty of trajectories in the road network space is
+quite different from that in the Euclidean space, since the movements of MOs are
+constrained by specific roads. Figure 1 shows an example of range query for uncertain
+trajectories in road network. Each edge (ei,l(ei),s(ei)) in the network has two attri-
+butes: the length l(ei) and the maximum allowed speed s(ei). In the figure, Ta and Tb
+are two uncertain trajectories. The black round dots represent sampling points of Ta.
+
+1bT
+
+2bT
+
+dist(q,t=90)=920
+
+3bT
+
+4bT
+
+5bT
+(e7,300,40)
+
+( 10e
+
+)45,600,
+
+300
+q
+(e6,1000,50)
+700
+
+80
+
+(e8,400,45)
+
+( 11e
+
+,
+
+)40,450
+
+(e9,500,65)
+
+100
+
+6bT
+
+2aT
+
+rd
+
+3aT
+
+(e4,200,60)
+
+(e1,300,40)
+
+(e3,500,60)
+
+(e2,650,50)
+
+(e5,500,50)
+4aT
+
+dist(q,t=90)=930
+5aT
+
+6aT
+
+1aT
+
+Fig. 1 An example of range query for uncertain trajectories
+
+Geoinformatica
+
+The white round dots represent sampling points of Tb. The corresponding thick lines
+stand for the real routes of the MOs (i.e. Ta and Tb). Here,
+
+T a ¼ T a1 p1
+f
+
+ð
+
+; 10
+
+Þ; T a2 p2
+ð
+
+; 40
+
+Þ; T a3 p3
+ð
+
+; 70
+
+Þ; T a4 p4
+ð
+
+; 100
+
+Þ; T a5 p5
+ð
+
+; 130
+
+Þ; T a6 p6
+ð
+
+; 160
+
+g;
+Þ
+
+T b ¼ T b1 p1
+f
+
+ð
+
+; 0
+
+Þ; T b2 p2
+ð
+
+; 20
+
+Þ; T b3 p3
+ð
+
+; 40
+
+Þ; T b4 p4
+ð
+
+; 60
+
+Þ; T b5 p5
+ð
+
+; 80
+
+Þ; T b6 p6
+ð
+
+g:
+; 100
+Þ
+
+A range query is issued from query point q for the trajectories within network distance
+dr=1000 during time interval (90, 100). If the MOs follow the shortest paths and move with
+uniform velocity, both Ta and Tb are not in the result. The reason is that Ta will choose path
+{(e1,300,40),(e2,650,50)} between T a3 and T a4 , and Tb will leave (e8,400,45) at time 88.9.
+However, as shown in Fig. 1, the routes of Ta and Tb actually meet the query condition. In the
+situation described above, the query results will miss some important MOs. Therefore, we
+incorporate uncertainty into trajectories to ensure that all qualified MOs are outputted.
+
+We represent an uncertain trajectory in road networks as a sequence of road segments with
+time intervals during which the MO may be on the corresponding road segments. Specifically,
+we define two types of uncertainty.
+
+1. Path Uncertainty: There might be multiple paths between two sampling points of a MO.
+Along with some of these paths, the MO can arrive the second sampling location before
+the second sampling time at maximum speed of each road segment. Given two trajectory
+sampling points (pi,ti) and (pi+1,ti+1) of a MO O in the road networks, the set of possible
+paths PPi between (pi,ti) and (pi+1,ti+1) consists of paths whose minimum time costs are
+less than ti+1−ti. Then:
+
+n
+(cid:1)
+PPi Oð Þ ¼ P j∈paths pi
+
+; piþ1
+
+(cid:3)(cid:4)
+(cid:1)
+(cid:4)
+(cid:4)t P j
+
+(cid:3)
+
+o
+;
+
+≤tiþ1−ti
+
+where t(Pj) stands for the minimum time cost for path Pj, 1≤j≤l, l is the number of all
+possible paths.
+
+2. Time Uncertainty: After all the elements of PPi have been obtained, the exact location of
+the MO at a specific time instant is still not known. Since the trajectory will be
+decomposed into segment units for simple representation and partition, we alter the
+location uncertainty [29] to time uncertainty for each edge, i.e. projecting the uncertainty
+to the time dimension instead of spatial dimension. The first advantage of this change is
+that the expression of the uncertain model is simpler. The second is that it is easier to apply
+to the network partition. This is because the network partition is also relevant to spatial
+uncertainty, so considering both network partition and spatial uncertainty will be more
+complexity. The third is that the time dimension is more selective than the spatial
+k ) to denote the earliest
+k ) and tl(vi,j
+dimension in most cases of range query. We use te(vi,j
+k (k=0,1,…,n) along Pj.
+arrival time and latest departure time for a given vertex vi,j
+n )=ti+1. The earliest arrival time and latest departure time
+Particularly, te(vi,j
+of other vertices can be inferred recursively as follows:
+
+0 )=ti, and tl(vi,j
+
+(cid:5) (cid:6)
+
+te vk
+i; j
+
+(cid:6)
+
+(cid:5)
+¼ te vk−1
+i; j
+
+(cid:5)
+þ t vk−1
+i; j
+
+; vk
+i; j
+
+(cid:6)
+
+;
+
+(cid:5) (cid:6)
+tl vk
+i; j
+
+(cid:5)
+¼ tl vkþ1
+i; j
+
+(cid:5)
+(cid:6)
+−t vk
+i; j
+
+; vkþ1
+i; j
+
+(cid:6)
+;
+
+Geoinformatica
+
+k−1,vi,j
+where t(vi,j
+with a start vertex vi,j
+departure time is tl(vi,j
+
+k and an end vertex vi,j
+k+1).
+
+k ) represents the minimum time costs from vertex vi,j
+
+k−1 to vertex vi,j
+k+1, its earliest arrival time is te(vi,j
+
+k . For an edge
+k ) and its latest
+
+Definition 3 (uncertain trajectory) As the uncertain trajectory model contains path uncertainty
+and time uncertainty, we use a sequence of all possible segments with earliest arrival time and
+latest departure time to represent an uncertain trajectory:
+(cid:1)
+
+(cid:3)
+
+(cid:3)
+
+(cid:7)
+(cid:1)
+T u Oð Þ ¼ edgeid; ps1
+
+; pe1
+
+; ts1
+
+; te1
+
+; d1
+
+; …; edgeid; psi
+
+; pei
+
+; tsi
+
+; tei
+
+; di
+
+(cid:1)
+
+…; edgeid; psn
+
+; pen
+
+; tsn
+
+; ten
+
+; dn
+
+(cid:3)o
+;
+
+where edgeid denotes an edge in the graph (represented by a segment identifier); psi denotes the
+start position of the edge where the MO arrives; pei denotes the end position of the edge where
+the MO leaves or stops; tsi stands for the earliest arrival time at psi ; tei stands for the latest
+departure time at pei ; and di stands for the direction of MOs moving on the edge (i=1,2,…,n).
+Therefore, in our uncertain trajectory model, the MOs can change their speed in the middle of an
+edge. We define edgeid; psi
+
+as a segment unit of the uncertain trajectory.
+
+; pei
+
+; tei
+
+; tsi
+
+(cid:3)
+
+(cid:1)
+
+4 Indexing structure
+
+In this section, we propose an index structure, partition-based uncertain trajectory index
+(PUTI), to support efficient range query for uncertain trajectories in road networks. As shown
+in Fig. 2, PUTI consists of a top level 2 D R-tree, whose leaf entries contain pointers to 1 D R-
+tree. In PUTI, the 2 D R-tree is used to index the partitions of the networks, and each partition
+has a 1 D R-tree to index the time intervals during which the MOs might be in the partition.
+Typically, R-tree [8] cannot store the remaining detail information of trajectories in the
+partitions. Therefore, we combine 1 D R-tree and B+tree through a unique key to represent
+the spatial and temporal information in each partition.
+
+Section 4.1 explains how we partition the network into appropriate regions, and the detail
+index components are presented in Section 4.2. Section 4.3 describes how to insert trajectories
+into PUTI and how to delete trajectories from PUTI.
+
+4.1 Network partition
+
+Graph partition is an important problem that has been extensively studied in the last decades. In
+our work, we take two kinds of information into consideration: the network distance and the
+connections among adjacent partitions. In addition, since the spatial region is computed
+according to network distance, the graph partition must maintain the network topology.
+METIS [17] is a public implementation which aims to efficiently find partitions with high
+quality based on specific heuristics, which meets our demands for graph partition with vertex
+weights. It partitions the network into several regions, such that the sum of vertices weights in
+each partition is approximately equal to each other and the connections among regions are least.
+We implement the network partition method based on the multilevel k-way algorithm [17]
+in METIS. Figure 3a illustrates the network partition method. Given an undirected graph
+
+Geoinformatica
+
+2D R-tree
+
+P1
+
+P2
+
+P3
+
+P4
+
+1D R-tree
+
+B+-tree
+
+Key value
+storage
+
+Key value
+storage
+
+Key value
+storage
+
+Key value
+storage
+
+Fig. 2 An overview of PUTI structure example
+
+G=(V, E) representing the road network, firstly, we weight an edge ei by its minimum time cost
+l(ei)/s(ei)), and construct G’s line graph L(G) (i.e. each vertex of L(G) represents an edge of G,
+and two vertices of L(G) are adjacent if their corresponding edges share a common endpoint in
+G). Let L(G), the weights of vertices and the number of partitions p be the input of the
+multilevel k-way algorithm in METIS, we can get p contiguous and balanced partitions as
+described in [17]. After converted back, we finally obtain p balanced partitions of G. This is
+because that the partitions in the line graph are vertex balanced [17], and the edge lengths in
+the original graph are equal to the weights of vertices in the line graph. Figure 3b shows a real
+example of road network partition of San Joaquin city with 1,000 regions. The different
+partitions are represented by regions with different colors.
+
+4.2 PUTI structure
+
+To index the uncertain trajectories, we borrow the ideas from [16], which are proposed to solve
+the problem of the range query for trajectories in road networks based on NVD. The concepts
+of valid partition and partially valid partition are the same as valid region and partially valid
+region in [16]. However, the proposed index structure PUTI is different with that in [16] from
+the following aspects.
+
+1.
+
+In [16], trajectories are composed of vertices with timestamps. In PUTI, to capture the
+uncertainty, trajectories are composed of sequences of segment units.
+
+2. Since spatial dimension is less selective than time dimension in most cases (i.e. time filter
+might make the result much smaller than spatial filter for the candidate partitions), we
+intend to index the time intervals of trajectories in each partition, instead of finding the
+available edges firstly.
+
+Geoinformatica
+
+4
+
+1
+
+1
+
+3
+
+transform to
+line graph
+
+2
+
+3
+
+2.1
+
+4
+
+2
+
+2
+
+5
+
+G
+
+METIS
+algorithm
+(p=2)
+
+1,2(4)
+
+2,5(5)
+
+1
+,
+4
+(
+2
+.
+1
+)
+
+1
+
+,3
+
+(
+
+1
+
+)
+
+4 , 3 ( 2 )
+
+4,5(2)
+
+1,2
+
+2,5
+
+1
+,
+4
+
+1
+
+,3
+
+4 , 3
+
+4,5
+
+convert back
+to G
+
+4
+
+1
+
+1
+
+3
+
+2
+
+3
+
+2.1
+
+4
+
+2
+
+2
+2
+
+5
+
+G
+
+L(G)
+
+2 partitions
+(a)  The main process of network partition
+
+(b) An example of network partitions with 1000 regions
+
+Fig. 3 Network partitions. a The main process of network partition. b An example of network partitions with
+1,000 regions
+
+3. METIS partition costs less on both offline computation of precomputed dist component
+and online computation of valid partitions and partially valid partitions. This is because
+METIS guarantees that the partitions are balanced.
+
+PUTI is based on partitions for uncertain trajectories in road networks, and it consists of
+
+four major components, as illustrated in Fig. 4.
+
+1. Edge Hash Table: The edge hash table describes the corresponding relationships between
+edges and partitions. Since all the positions are given in the form of edge id and offset, we
+simply adopt hash table to quickly compute which partition the query position belongs to.
+The edge hash table can fit into main memory to reduce the disk access cost.
+
+2. Partition Component: The partition component records all the border points in each
+partition. It is similar to the NVPs Component [16]. It can also fit into main memory to
+reduce the disk access cost.
+
+3. Precomputed Dist Component: The precomputed dist component records the shortest
+path distances between any two border points in each partition. This component can be
+stored in main memory or disk or both according to the size of the network.
+
+4. Time Interval Component: To quickly determine if a candidate partition contains objects
+of interest, we maintain a 1 D R-tree and a B+tree to organize the time periods and
+corresponding segment units in each partition. 1 D R-tree cannot store the segment units in
+the tree, because the leaf nodes have the same structure with intermediate nodes in a R-
+tree. The trajectory ids, earliest arrival time and latest departure time of MOs in the
+
+Geoinformatica
+
+Time Interval Component
+
+root
+
+ID R-tree
+
+Edge Hash Table
+
+edgeId
+
+partitionId
+
+1
+
+23
+
+2
+
+25
+
+...
+
+...
+
+n
+
+p
+
+P1
+
+P2
+
+P3
+
+b1,b2,…..b20,b22,b23
+
+b1,b2,…..b23,b24,b25
+
+b1,b2,…..b13,b14,b15
+
+Partition Component
+
+Spatial R Tree
+for Partitions
+
+PreComputed
+Dist Component
+
+b1
+
+b1
+
+b1
+
+...
+
+b2
+
+dist(b1,b2)
+
+b3
+
+b4
+
+...
+
+dist(b1,b3)
+
+dist(b1,b4)
+
+……
+
+B+ tree
+
+P2
+
+Time
+incresing
+
+segment units
+
+segment units
+
+segment units
+
+Fig. 4 The data structure of PUTI
+
+partitions are stored in the leaf nodes of the R-tree. The string that consists of earliest
+arrival time, latest departure time, and the trajectory id is regarded as the key of the
+segment units within earliest arrival time and latest departure time. We exploit Berkeley
+DB1 to store the key and the data to reduce disk I/O, because the B+tree in Berkeley DB
+can guarantee that the data within short time interval is stored in the same data page.
+
+4.3 Insert and delete trajectories
+
+(cid:7)
+
+The trajectories of MOs can be inserted into the time interval component as follows. First, we
+calculate the possible paths PPi Oð Þ of the MOs, in the form of sets of segment units as
+described in Section 3. Then, we co-locate segment units according to the network partitions.
+If there is no path uncertainty, the segment units in the same partition are put together as
+(cid:1)
+(cid:1)
+Sp ¼ edgeid; ps1
+edgeid; psm
+, and the values of psi
+and pei are 0 or 1, except for the MOs starting from or ending at the middle of edges. The time
+interval
+and relevant segment unit set are inserted into 1 D R-tree and B+tree
+respectively. If path uncertainty exists and all possible paths between two trajectory sampling
+points are in the same partition, we deal with all the segment units as above.
+
+(cid:3)
+; …
+
+; pem
+
+; pe1
+
+; dm
+
+; tem
+
+; tem
+
+; tsm
+
+; te1
+
+; ts1
+
+; d1
+
+ts1
+ð
+
+(cid:3)(cid:8)
+
+Þ
+
+If the path uncertainty exists and some possible paths between two trajectory sampling
+points are not in the same partition, the segment units are co-located according to the partitions.
+For segment units in the same partition, the earliest arrival time and latest departure time of all
+the segment units in the same partition are inserted into R-tree as the time interval, and these
+segment units are inserted into B+-tree.
+
+Algorithm 1 shows the pseudo-code for inserting a trajectory into the PUTI. In the
+algorithm, trajEdgeSet is a data structure that contains some segment units. The partition
+currentPartition that the first sample belongs to is obtained by edge hash table in
+partitionHash(trajNode.edgeid) function. When inserting a trajectory into PUTI, there are
+three cases. Case 1 (lines 7–9): the adjacent trajectory sampling points (we call them trajectory
+
+1 http://www.oracle.com/technetwork/products/berkeleydb/overview/index.html
+
+Geoinformatica
+
+nodes in the pseudo-code) are on the same edge. If the trajectory node is the last node of the
+trajectory, the segment units trajEdgeSet are inserted into the time interval component. Case 2
+(lines 10–15): the adjacent trajectory nodes are on the adjacent edges. The earliest arrival time
+and latest departure time of the first edge are updated. If the second edge is in a new partition,
+the segment units in the old partition are inserted into the time interval component. Case 3
+(lines 17–18): there are more than two edges between the adjacent trajectory nodes. The
+pathUncertain(startNode, endNode, limitedTime) function is to find all the possible paths that
+the MO can arrive the vertex endNode from the vertex startNode within the time limitedTime.
+To implement this, we use a priority queue H to maintain the explored paths along
+with the minimum time costs for traversing them. In each iteration, it retrieves a path
+P from the top of H and expands P by using its adjacent edges that have not been
+visited yet. In detail, when popping a path from H, if the MO can pass through the
+explored edge within limited time at the maximum speed, we insert the edge to the
+path and push the path into H. The process is repeated until H is empty. In the
+partitionSegUnit(paths) function, firstly, the earliest arrival time and latest departure
+time of all segment units are computed. Secondly, these segment units are co-located
+according to the partitions and segment units in each partition are inserted into the
+time interval component as described above.
+
+partitionHash(trajNode.edgeid)
+
+traj.trajId
+
+traj.node[0]
+
+trajEdgeSet
+trajEdgeSet.trajId
+trajNode
+currentPartition
+preEdge
+trajNode.edgeid
+for each trajNode in traj from node1 do
+
+Algorithm 1: Insert a trajectory
+Input: traj: an original trajectory
+1.
+2.
+3.
+4.
+5.
+6.
+7.
+8.
+9.
+10.
+11.
+12.
+
+if the adjacent nodes are on the same edge and trajNode is the last node then
+
+insert trajEdgeSet into time interval component
+currentPartition
+
+partitionHash(trajNode.edgeid) 
+else if the adjacent nodes are on the adjacent edges then
+
+compute segment unit info and time interval for the preEdge
+if  currentPartition != partitionHash(trajNode.edgeid) or  trajNode is the last
+
+node then
+
+end if
+
+else
+
+13.
+14.
+15.
+16.
+17.
+18.
+19.
+20. end for
+
+insert trajEdgeSet into Time Interval Component
+currentPartition
+
+partitionHash(trajNode.edgeid)
+
+pathUncertain(startNode,endNode,limitedTime) 
+
+paths
+partitionSegUnit(paths) 
+
+preEdge
+
+trajNode.edgeid
+
+Since deletion operation is applied much less frequently for historical trajectories, we
+mention it briefly. First, we find the edges intersected with the trajectory for deletion. Then,
+
+after obtaining the related partitions through edge hash table, we get the leaf nodes with
+trajectory id through time interval R-trees. Finally, for every deleted leaf node of R-trees, we
+associate the time intervals with the trajectory ids as keys and delete the corresponding values
+in B+-trees.
+
+Geoinformatica
+
+5 Range query processing
+
+Definition 4 (range query for uncertain trajectories): Given a query point q (an
+edge id and offset), a network distance restriction dr, and a time restriction (ts,te),
+the range query is to find all the MOs that possibly pass by the region r(q,dr)
+during the time interval (ts,te), where r(q,dr) stands for a set of positions whose
+network distances from q are less than dr.
+
+Our algorithm consists of three steps: spatial pruning,
+
+time filter, and result
+refinement. In the spatial pruning step, our approach locates the partition that
+contains query point q, and obtains valid and partially valid partitions. In the time
+filter step, for valid partitions, the partial final result is outputted, and for partially
+valid partitions, candidates are selected. In the result refinement step, final result
+set is computed from the candidates of partially valid partitions through retrieving
+the segment units in B + -tree. Algorithm 2 shows the pseudo-code of the range
+query on PUTI. Lists of trajectory result, valid and partially valid partitions are
+initially set to empty. The detailed process of the range query algorithm is depicted
+as follows.
+
+1. Spatial Pruning (lines 3–5): Since the range dr
+
+is explicitly specified in the
+syntax of the query, we firstly calculate the partitions intersect with the region
+r(q, dr). We use edge hash table to find the first partition cur_partition that q
+belongs to in the containPartition(q) function, and then use Euclidean distance
+to estimate the partitions candidate_partitions intersect with the region r(q, dr)
+by invoking 2 D R-tree index on partitions in the spatialFilter(q, dr) function.
+In the partitionExpansion(next_partition, dr) function, with cur_partition and
+the precomputed dist component, we get the valid partitions and partially valid
+partitions partition_list from candidate_partitions through the partition exten-
+the partitions in ascending order
+sion part of the algorithm [16]. We sort
+according to the minimum distances from partitions to query point q. As a
+result, we can get the trajectories approximately in the order of their network
+distance from q.
+
+2. Time Filter (lines 6–9): Only those MOs that travel inside the selected partitions
+In the
+during the query time interval may belong to the final
+te) function, we get a part of the final result by time
+timeFilter(partitionId,
+interval range query on 1 D R-tree for the valid partitions, and a set of candidates
+which is significantly smaller than the data in the partitions for the partially valid
+the trajectory id result from valid partitions can be returned,
+partitions. So far,
+because the partial result is the neatest trajectories.
+
+result.
+
+ts,
+
+3. Result Refinement (lines 10–23): For each partially valid partition, we consider it
+as a local network including the query point.
+In the localExpansion(q,
+localNetwork) function, incremental network expansion is employed to get exact
+I n t h e
+e d g e s
+
+v a l i d _ e d g e _ l i s t w i t h i n t h e
+
+r e s t r i c t i o n .
+
+s p a t i a l
+
+Geoinformatica
+
+If
+
+≥ts
+
+the trajectory is not
+
+SegUnitInPartition(trajId, startTime, endTime) function, for each trajectory can-
+didate, we get the segment units segment_unit_list from the B + −tree through the
+key, which consists of the earliest arrival time, the latest departure time, and the
+trajectory id.
+in the result, we test whether
+segment_unit_list intersects with valid_edge_list. If it is true, the trajectory that
+≤te
+at
+least one of whose intersected segment units satisfying the condition tsi
+and tei
+is added to final result. Otherwise, we directly step to the next
+candidate. If the application needs to find the exact MOs in r(q, dr) during the
+time interval, we further test if the time period of MOs on the part edge with
+the max allowed speed, which is in r(q, dr), is intersected with the query time
+interval when the edge is partially in r(q, dr). Specially, when partition_list is
+empty (i.e. the query spatial region is too small to cover any partition), we treat
+the only partition which contains the query point as a partially valid partition. A
+simple example of result refinement is given in Fig. 5. A range query is issued
+to find the trajectories within network distance 20 from query point Q and time
+period (40, 50). As shown in Fig. 5, P2 is one of the partially valid partitions,
+whose border points are A, B, C and D. The red dotted lines stand for the
+distances from query point to the border points. Firstly, an incremental network
+expansion is employed to calculate the segment units within network distance
+20. The results include AD, DC, AE, EF and FC (the yellow lines) in Fig. 5.
+Secondly, the segment units which satisfy the time period condition are obtained
+from the B + tree, according to the key got from the time filter step. The results
+include AD and BC in Fig. 5. Thirdly, the segment unit AD is the intersection
+of the above two segment unit sets. For an approximate range query, T1 is in the
+final results. However, if the target is to find the exact MOs in r(q, dr) during
+the time interval, we may miss some possible MOs. In Fig. 5, we find that BC
+is partially in r(Q, 20). Supposed that the segment unit of T4 in P2 is (BC, 45,
+60, 0), T4 might be in the final query results. The max allowed speed of BC is
+1.5, so T4 would cost 2 time units to move 3 at max allowed speed. As a result,
+time and the latest departure time of HC is 47 and 60.
+the earliest arrival
+
+P2
+
+A
+
+B
+
+5
+
+3
+
+4
+
+H, CH=5
+
+G
+
+8
+
+E
+
+3
+
+4
+
+F
+
+C
+
+8
+
+D
+
+30
+
+10
+
+10
+
+15
+
+Q
+
+Time Interval Component
+Time Interval Component
+
+root
+
+ID R-tree
+
+50
+
+T2
+
+T1
+
+T3
+
+B+ tree
+
+P2
+
+Time
+incresing
+
+30_50_T2
+: (BC, 0, 1, 30, 50, 0)
+40_60_T1
+: (AD, 0, 1, 40, 60, 1)
+100_124_T3
+(AE, 0, 1, 100, 110, 0)(EF, 0, 1, 108,
+118, 0)(FC, 0, 1, 115, 124, 0)
+
+(a) partition map
+
+(b) Time Interval Component Index
+
+Fig. 5 An example of the result refinement step in range query
+
+Because (47, 60) is intersected with (40, 50), T4 is definitely in the final query
+results.
+
+Geoinformatica
+
+6 Experimental evaluation
+
+In this section, we evaluate the effectiveness of the uncertain trajectory model and the
+efficiency of PUTI. All experiments are implemented in C++ language and run on an Intel
+Core i3 CPU 2.93 GHz PC with 2 GB RAM. The network partitions are generated based on
+METIS [17]. The storage files are organized by using Oracle Berkeley DB. The page size of R-
+tree, which is used for indexing time interval and Euclidean space of partitions, is set to 4 KB.
+There are two choices, i.e. UTR-tree [5] and MON-tree [3, 4], that can be considered as
+potential competitors with our method. UTR-tree focuses on the same goal with our method,
+but it has a strict requirement on the trajectories update, and thus it is not appropriate to
+
+Geoinformatica
+
+compare it with our method on the same dataset. In order to compare MON-tree with our
+method, we modify the MON-tree into network distance based MON-tree. In detail, we use
+INE algorithm [18] and 2 D R-trees to implement network distance based MON-tree.
+Assuming that the MOs always follow the shortest paths and travel at a constant speed
+between two consecutive trajectory samples, we can obtain the entire trajectories through
+Dijkstra algorithm and linear interpolation. First, we use INE algorithm to compute the valid
+edge set within the network distance dr from query point q. Then, for each edge in the edge set,
+we search the 2 D R-tree for satisfied trajectories. The MON-tree [3, 4] uses a modified version
+of R-tree that is capable of handling multiple query windows in one index scan. However, the
+open source R-tree implementation used in the experiments does not support the parallel sub-
+query. Besides, due to the file open limitation of the OS, we cache the roots of 2 D R-trees. At
+last, we eliminate the duplicate trajectories. Note that network distance based MON-tree is still
+called as MON-tree for short in the following paragraphs.
+
+The evaluation is divided into three parts. First, we evaluate the performance of the insert
+operation of PUTI. Second, we conduct elaborated experiments on PUTI to assess the index
+robustness with variation of the partition number and query size. Third, we compare our
+method against MON-tree, in terms of accuracy and efficiency.
+
+6.1 Data sets
+
+Available real trajectory dataset is not sufficiently representative in terms of trajectory variety
+and data size. Moreover, the underlying road network required by the experiment is rarely
+available free of charge. Therefore, we use the generator proposed by Brinkhoff [1] to create
+synthetic datasets of MOs in the road networks.
+
+We use Hancock and San Joaquin as the underlying road networks in our experiments,
+because there are areas of different road densities in the maps. Hancock has 11,760 vertices
+and 13,175 edges, while San Joaquin has 33,340 vertices and 39,647 edges. The networks are
+represented in a segment-oriented model [3, 4].
+
+The road network segments can be categorized into 8 classes, each of which corresponds to
+a maximum speed. We generate 8 classes of MOs, and each class stands for a kind of vehicle
+that has a maximum speed. The generator also simulates weather conditions or other similar
+events that impact the motion and speed of the MOs. The configuration of the generator is
+default.
+
+The Hancock dataset, which has a smaller size, is used to analyze the factors that influence
+the efficiency of insert operation, and to compare PUTI with MON-tree in terms of recall rate,
+precise rate, F-measure metric, and efficiency. In order to compute the recall rate and the
+precise rate of PUTI, we generate the trajectories with high sample rate, i.e. one sample per
+time unit, as the ground truth. Based on the ground truth data, trajectories with low sample rate,
+i.e. one sample per m time units, are generated as the inputs for the experiments. San Joaquin
+dataset, which has a larger amount of data, is used for deeper analysis of the effects of partition
+number on range query. Table 1 presents the statistics of the datasets.
+
+6.2 Results and discussion
+
+6.2.1 Performance of inserting trajectories
+
+Firstly, we evaluate the performance of the insert operation in PUTI with different sampling
+intervals. The result of this experiment is shown in Fig. 6. We set the number of partitions as
+300, since range query can get almost the best performance with 300 partitions. As mentioned
+
+Table 1 Statistics of two datasets
+
+Dataset names
+
+# of segment units
+
+# of MOs at beginning
+
+# of time units
+
+Hancock dataset
+
+5,114,865
+
+San Joaquin dataset
+
+27,656,847
+
+1,000
+
+1,000
+
+2,000
+
+10,000
+
+10
+
+30
+
+Geoinformatica
+
+# of MOs created
+per time unit
+
+in Section 4.2, the cost of inserting data is mainly composed of two parts: finding all the
+possible paths and inserting the segment units into index. It can be seen from Fig. 6a that as the
+number of trajectories grows up, the cost for inserting trajectories rises too. Specifically, the
+speed of growth is relatively slow when m is smaller, because the former part costs much less
+
+m=10
+
+m=40
+
+m=20
+
+m=50
+
+m=30
+
+m=60
+
+1
+
+5
+
+10
+Number of trajectories(x1000)
+
+15
+
+20
+
+(a) The Effect of #of trajectories and sampling interval on total time of insert operation 
+
+m=10
+
+m=40
+
+m=20
+
+m=50
+
+m=30
+
+m=60
+
+1
+
+5
+
+10
+Number of trajectories(x1000)
+
+15
+
+20
+
+(b) The Effect of #of trajectories and sampling interval on time of finding possible paths
+
+1600
+
+1400
+
+1200
+
+1000
+
+800
+
+600
+
+400
+
+200
+
+0
+
+800
+
+700
+
+600
+
+500
+
+400
+
+300
+
+200
+
+100
+
+0
+
+ 
+t
+r
+e
+s
+n
+
+i
+ 
+f
+o
+ 
+e
+m
+
+i
+t
+ 
+l
+a
+t
+o
+T
+
+)
+s
+(
+n
+o
+i
+t
+a
+r
+e
+p
+o
+
+ 
+e
+l
+
+i
+
+b
+i
+s
+s
+o
+p
+ 
+g
+n
+d
+n
+i
+f
+ 
+f
+o
+ 
+e
+m
+T
+
+i
+
+)
+s
+(
+s
+e
+h
+t
+a
+p
+
+s
+e
+s
+s
+e
+c
+c
+a
+ 
+k
+s
+i
+d
+ 
+f
+o
+ 
+#
+
+1400
+
+1200
+
+1000
+
+800
+
+600
+
+400
+
+200
+
+0
+
+10
+
+20
+
+30
+
+40
+
+50
+
+60
+
+Sampling interval m(s)
+
+(c) The Effect of sampling interval ondisk accesses 
+
+Fig. 6 Performance of inserting trajectories with different sampling intervals. a The Effect of #of trajectories and
+sampling interval on total time of insert operation. b The Effect of #of trajectories and sampling interval on time
+of finding possible paths. c The Effect of sampling interval on disk accesses
+
+Geoinformatica
+
+time than the latter part. However, when m becomes larger, the speed of growth is obviously
+accelerated. The reason is that the cost of finding all the possible paths becomes more
+expensive when m grows up, as shown in Fig. 6b. Namely, there are much more paths to be
+found out and inserted into the index when the sampling interval is higher. Due to the same
+reason, when the sampling interval increases, the number of disk accesses of the insert
+operation goes up too, as shown in Fig. 6c.
+
+The effects of the number of partitions on the performance of the insert operation are shown in
+Fig. 7. We set the sampling interval m=30, since the insert operation obtains average perfor-
+mance when m=30. It can be seen that the time cost of insert operation first increases and then
+decreases. The reason is as follows. The process of inserting trajectories composes of two sub-
+processes, i.e. finding possible paths and inserting data into index. The cost of finding possible
+paths is almost steady since the sampling interval does not change as the number of partitions
+rises. As for inserting data into index, there are two influencing factors: the number of R-trees or
+B+-trees where data is inserted and the size of each index. As we can see from Fig. 7a, the former
+factor costs more than the later factor when the number of partitions changes from 100 to 700,
+but the case becomes opposite when the number of partitions is larger than 900. Since the more
+the partitions are, the larger the number of time interval components is, we find that as the
+number of partitions rises, there are more disk accesses to be executed as shown in Fig. 7b.
+
+6.2.2 Effect of the number of partitions
+
+In this section, we analyze the efficiency of the proposed range query algorithm under different
+query sizes and numbers of partitions. The number of partitions is an important influencing
+
+p=100
+p=500
+p=900
+
+p=300
+p=700
+p=1100
+
+1
+
+5
+
+10
+
+15
+
+20
+
+Number of trajectories(x1000)
+
+(a) The Effect of # of trajectories and # of partitions on total time of insert operation
+
+ 
+
+g
+n
+i
+t
+r
+e
+s
+n
+
+i
+ 
+f
+o
+ 
+e
+m
+
+i
+t
+ 
+l
+a
+t
+o
+T
+
+)
+s
+(
+r
+o
+t
+a
+r
+e
+p
+o
+
+s
+e
+s
+s
+e
+c
+c
+a
+ 
+k
+s
+i
+d
+ 
+f
+o
+ 
+#
+
+2000
+
+1500
+
+1000
+
+500
+
+0
+
+2500
+
+2000
+
+1500
+
+1000
+
+500
+
+0
+
+100
+
+300
+
+700
+500
+# of partitions
+(b) The Effect of # of partitions on disk accesses 
+
+900
+
+1100
+
+Fig. 7 Performance of inserting trajectories with various numbers of partitions. a The Effect of # of trajectories
+and # of partitions on total time of insert operation. b The Effect of # of partitions on disk accesses
+
+Geoinformatica
+
+factor of PUTI. We set the sampling interval m=30, since range query obtains average
+performance when m=30. Figure 8 presents the results of San Joaquin dataset with different
+range query sizes. The query size varies from 1ε to 6ε, where ε=(0.0005×D)×(0.0005×T) (D
+is the sum of distances of all the road segments in the road network, and T is the total time
+interval of all the trajectories). As shown in Fig. 8a, with 100–300 partitions, our method can
+achieve the best performance for the dataset. Because when the number of partitions is too
+large, the number of hits of candidates in the time filter step becomes low; when the number of
+partitions is too small, the execution of the time filter step becomes frequent and the
+computation of the satisfied partitions costs more. Obviously, when the number of
+partitions grows large to a certain extent, PUTI would retrograde to MON-tree in
+terms of space expansion. When the query size increases from 1ε to 6ε, the cost of
+computing satisfied partitions and the number of partitions to deal with are increased.
+We also find that the smaller the number of partitions is, the slighter the effects of
+query size on the cost of range query is.
+
+Additionally, as shown in Fig. 8b, with the increase of the number of partitions, the number
+of disk accesses of range query continues to decrease and then becomes stable. This might be
+because during the time filter step, large amount of partially valid partitions causes large
+number of fault hits, leading to more disk I/O reads in the refinement step. At the same time,
+the number of partitions is small when the query size increases from 1ε to 6ε, the number of
+the disk accesses to refine partially valid partitions also increases.
+
+1ε
+4ε
+
+2ε
+5ε
+
+3ε
+6ε
+
+50
+
+100
+
+1000
+
+1500
+
+300
+500
+# of partitions
+
+(a) The Effect of the number of partitions and query size on query time
+
+1ε
+4ε
+
+2ε
+5ε
+
+3ε
+6ε
+
+)
+s
+(
+y
+r
+e
+u
+q
+ 
+r
+e
+p
+ 
+e
+m
+
+i
+t
+ 
+
+U
+P
+C
+
+3.5
+
+2.5
+
+1.5
+
+3
+
+2
+
+1
+
+0
+
+0.5
+
+y
+r
+e
+u
+q
+ 
+r
+e
+p
+ 
+s
+e
+s
+s
+e
+c
+c
+a
+ 
+k
+s
+i
+d
+ 
+f
+o
+
+ 
+
+#
+
+1200
+
+1000
+
+800
+
+600
+
+400
+
+200
+
+0
+
+50
+
+100
+
+1000
+
+1500
+
+300
+500
+# of partitions
+
+(b) The Effect of the number of partitions and query size on query disk accesses
+
+Fig. 8 Performance of range query with different query sizes. a The Effect of the number of partitions and query
+size on query time. b The Effect of the number of partitions and query size on query disk accesses
+
+Geoinformatica
+
+6.2.3 PUTI versus MON-tree on recall rate, precision rate and F-measure
+
+We compare the recall rate and the precision rate of PUTI and MON-tree with different
+sampling intervals. We set the number of partitions as 300, since range query obtains almost
+the best performance when the number of partitions is 300. Figure 9a shows that when the
+sampling interval becomes higher, the recall rate of MON-tree drops much more quickly than
+that of PUTI. This is because PUTI finds all possible MOs within the query size, and MON-
+tree misses a lot of MOs which violate the rules of movement as described in Section 6.1.
+
+PUTI
+
+MON-tree
+
+e
+t
+a
+r
+ 
+l
+l
+a
+c
+e
+R
+
+e
+t
+a
+r
+ 
+n
+o
+i
+s
+i
+c
+e
+r
+P
+
+e
+r
+u
+s
+a
+e
+m
+-
+F
+
+1.2
+
+1
+
+0.8
+
+0.6
+
+0.4
+
+0.2
+
+0
+
+1.2
+
+1
+
+0.8
+
+0.6
+
+0.4
+
+0.2
+
+0
+
+1.2
+
+1
+
+0.8
+
+0.6
+
+0.4
+
+0.2
+
+0
+
+10
+
+30
+
+40
+
+60
+
+80
+
+90
+
+Sampling interval m(s)
+
+(a) Sampling interval vs. recall rate
+
+PUTI
+
+MON-tree
+
+10
+
+30
+
+40
+
+80
+(b) Sampling interval m(s)
+
+60
+
+90
+
+PUTI
+
+MON-tree
+
+10
+
+30
+
+40
+
+60
+
+80
+
+90
+
+Sampling interval m(s)
+
+(c) Sampling interval vs. F
+
+Figure 9 PUTI versus MON-tree on Recall Rate, Precision Rate and F-measure. a Sampling interval vs. recall
+rate. b Sampling interval vs. precision rate. c Sampling interval vs. F
+
+Geoinformatica
+
+It can be seen in Fig. 9b that the precision rate of PUTI is a little lower than that of the
+MON-tree, but the difference is subtle. For example, when the sampling interval is 30 s, the
+recall rate of PUTI is 16.68 % higher, and the precision is only 0.3 % lower. This might be
+because that the path uncertainty contains more possible paths and the time uncertainty
+elongates the time interval for each segment unit, leading to adding more trajectories that
+are not in the ground truth to the final result, as the sampling interval increases. When the
+sampling interval increases to 80 s, the precision rate of PUTI exceeds that of MON-tree.
+
+Figure 9c shows the comparative results of the standard F-measure metric. It demonstrates
+that our method outperforms MON-tree when the sampling interval varies. For example, when
+the sampling interval is 40 s, the F-measure of PUTI is 0.993, 13.76 % higher than that of
+MON-tree. As the time interval increases, the gap of F-measure between them becomes larger.
+
+6.2.4 PUTI versus MON-tree on query efficiency
+
+We also compare the efficiency of PUTI and MON-tree for queries with different sizes. The
+range query includes two dimensions, i.e. spatial and time dimensions, and the query size
+varies from 1ε to 6ε, where ε=(0.001×D)×(0.001×T). The number of partitions is 300. As
+Fig. 10 shows, PUTI with different sampling intervals consistently outperforms MON-tree on
+CPU time and disk accesses, and the gap increases as query size varies from 1ε to 6ε. It is
+because that PUTI only gets the result from R-tree in a valid partition, while MON-tree
+
+m=10
+
+m=80
+
+m=30
+
+MON-tree
+
+m=60
+
+)
+s
+(
+y
+r
+e
+u
+q
+ 
+r
+e
+p
+ 
+e
+m
+
+i
+t
+ 
+
+U
+P
+C
+
+0.8
+
+0.7
+
+0.6
+
+0.5
+
+0.4
+
+0.3
+
+0.2
+
+0.1
+
+0
+
+y
+r
+e
+u
+q
+ 
+r
+e
+p
+ 
+s
+e
+s
+s
+e
+c
+c
+a
+ 
+k
+s
+i
+d
+ 
+f
+o
+ 
+#
+
+800
+
+700
+
+600
+
+500
+
+400
+
+300
+
+200
+
+100
+
+0
+
+1ε
+
+2ε
+
+4ε
+3ε
+Query size
+(a) Query size vs. CPU time
+
+5ε
+
+6ε
+
+m=10
+
+m=80
+
+m=30
+
+MON-tree
+
+m=60
+
+1ε
+
+2ε
+
+4ε
+3ε
+Query size
+(b) Query size vs. # of disk accesses
+
+5ε
+
+6ε
+
+Fig. 10 PUTI versus MON-tree on Query Efficiency. a Query size vs. CPU time. b Query size vs. # of disk
+accesses
+
+Geoinformatica
+
+computes the satisfied MOs on each edge respectively. As the query size increases, the number
+of valid partitions grows up either. As a result, with the increase of the network distance, the
+cost of PUTI rises slowly while that of MON-tree rises significantly. This is because that the
+trajectories of MOs fully cover most of the edges that MOs pass by, and PUTI regards the time
+dimension as a more selective dimension.
+
+We can also find from Fig. 10 that the CPU time and the number of disk accesses grow
+slowly when the sampling interval increases. That might be because that longer sampling
+interval causes more segment units with longer time interval to be indexed and queried.
+
+7 Conclusions and future work
+
+In this paper, we propose a partition-based approach to solve the range query problem on
+uncertain trajectories in road networks. First, we define the problem of range query for uncertain
+trajectories in road networks. Second, we construct the uncertain trajectory model including path
+uncertainty and time uncertainty, by considering the maximum speed on each road segment.
+Third, we build a partition based index framework, i.e. PUTI, for range query on uncertain
+trajectories. Finally, we evaluate our uncertain trajectory model and PUTI with different datasets
+of trajectories in real road network maps. PUTI has two important advantages over the existing
+approaches. The first advantage lies on the side of the performance. The experimental evaluation
+shows that our approach significantly outperforms the MON-tree, and PUTI shows robust
+performance with different query sizes, sampling intervals, and partition numbers. The second
+advantage is that PUTI supports a concise and flexible uncertain trajectory model which reduces
+the cost and guarantees the accuracy. Therefore, our approach can be applied to the investigation
+of traffic accidents and provide supports to data mining on trajectories.
+
+Since our uncertain trajectory model is based on the max speed of the road segments, the
+MOs that have lower speed would cause a larger error. On the other hand, the long sampling
+intervals would make the accuracy and efficiency low. The range query is the only query type
+proposed in this paper. There might be other query type based on PUTI to meet the demands of
+the applications. Therefore, our work can be extended in three directions in the future. The first
+direction is to construct the uncertain trajectory model with real-time traffic condition instead
+of max speed of the road segment, in order to improve the precision of the query result. The
+second direction is to support other query types of historical trajectory data based on our
+model, e.g. continuous range query and k nearest neighbor query. The third direction is to
+handle queries about the current and near-future position of MOs in the networks.
+
+Acknowledgments This work was funded by the Ministry of Industry and Information Technology of China
+(No.2010ZX01042-002-003-001), Natural Science Foundation of China (Nos. 60703040, 61332017), and
+Science and Technology Department of Zhejiang Province (Nos. 2007C13019, 2011C13042, 2013C01046).
+
+References
+
+1. Brinkhoff T (2002) A framework for generating network-based moving objects. GeoInformatica 6(2):153–180
+2. Chung BS, Lee WC and Chen AL (2009) Processing probabilistic spatio-temporal range queries over
+moving objects with uncertainty. Proceedings of the 12th International Conference on Extending Database
+Technology: Advances in Database Technology 60–71
+
+3. De Almeida VT, Güting RH (2005) Indexing the trajectories of moving objects in networks*.
+
+GeoInformatica 9(1):33–60
+
+Geoinformatica
+
+4. De Almeida VT and Güting RH (2005) Supporting uncertainty in moving objects in network databases.
+Proceedings of the 13th Annual ACM International Workshop on Geographic Information Systems 31–40
+5. Ding Z (2008) UTR-tree: An index structure for the full uncertain trajectories of network-constrained moving
+
+objects. MDM’08. 9th International Conference 33–40
+
+6. Frentzos E (2003) Indexing objects moving on fixed networks. Advances in spatial and temporal databases
+
+289–305
+
+15(2):165–190
+
+7. Güting RH, De Almeida VT, Ding Z (2006) Modeling and querying moving objects in networks. VLDB J
+
+8. Güttman A (1984) R-trees: a dynamic index structure for spatial searching. SIGMOD 47–57
+9. Hua M and Pei J (2010) Probabilistic path queries in road networks: traffic uncertainty aware path selection.
+
+Proceedings of the 13th International Conference on Extending Database Technology 347–358
+
+10. Kuijpers B, Miller HJ, Neutens T (2010) Anchor uncertainty and space-time prisms on road networks. Int J
+
+11. Kuijpers B, Othman W (2009) Modeling uncertainty of moving objects on road networks via space-time
+
+Geogr Inf Sci 24(8):1223–1248
+
+prisms. Int J Geogr Inf Sci 23(9):1095–1117
+
+J Comput Syst Sci 76(7):538–560
+
+information. Quality of Context 76–87
+
+Sci 20(3):303–328
+
+Database Syst Adv Appl 357371
+
+12. Kuijpers B, Othman W (2010) Trajectory databases: data models, uncertainty and complete query languages.
+
+13. Lange R, Weinschrott H, Geiger L and Blessing A (2009) On a generic uncertainty model for position
+
+14. Li X, Lin H (2006) Indexing network‐constrained trajectories for connectivity‐based queries. Int J Geogr Inf
+
+15. Liu H and Schneider M (2011) Querying moving objects with uncertainty in spatio-temporal databases.
+
+16. Liu S, Chen L and Chen G (2011) Voronoi-based range query for trajectory data in spatial networks.
+
+Proceedings of the 2011 ACM Symposium on Applied Computing 1022–1026
+
+17. Moulitsas I, Karypis G (2008) Architecture aware partitioning algorithms. Algorithm Architectures Parallel
+
+18. Papadias D, Zhang J and Mamoulis N (2003) Query processing in spatial network databases. Proceedings of
+
+the 29th International Conference on Very Large Data Bases (29), 802–813
+
+19. Pfoser D, Jensen C (1999) Capturing the uncertainty of moving-object representations. Adv Spat Databases
+
+20. Pfoser D, Jensen CS (2005) Trajectory indexing using movement constraints*. GeoInformatica 9(2):93–115
+21. Sandu Popa I, Zeitouni K and Oria V (2010) PARINET: A tunable access method for in-network trajectories.
+
+Data Engineering (ICDE), 2010 I.E. 26th International Conference 177–188
+
+22. Sandu Popa I, Zeitouni K, Oria V (2011) Indexing in-network trajectory flows. Int J Very Large Data Bases
+
+Process 42–53
+
+111–131
+
+20(5):643–669
+
+23. Trajcevski G (2003) Probabilistic range queries in moving objects databases with uncertainty. Proceedings of
+
+the 3rd ACM International Workshop on Data Engineering for Wireless and Mobile Access 39–45
+
+24. Trajcevski G, Tamassia R, Cruz IF (2011) Ranking continuous nearest neighbors for uncertain trajectories.
+
+VLDB J 20(5):767–791
+
+25. Trajcevski G, Tamassia R and Ding H (2009) Continuous probabilistic nearest-neighbor queries for uncertain
+trajectories. Proceedings of the 12th International Conference on Extending Database Technology: Adv
+Database Technol 874–885
+
+26. Trajcevski G, Wolfson K, Hinrichs K (2004) Managing uncertainty in moving objects databases. ACM Trans
+
+27. Xuan K, Zhao K, Taniar D (2011) Voronoi-based range and continuous range query processing in mobile
+
+on Database Syst (TODS) 29(3):463–507
+
+databases. J Comput Syst Sci 77(4):637–651
+
+Proc VLDB Endowment 2(1):1198–1209
+
+28. Zhang M, Chen S, Jensen CS (2009) Effectively indexing uncertain moving objects for predictive queries.
+
+29. Zheng K, Trajcevski G and Zhou X (2011) Probabilistic range queries for uncertain trajectories on road
+networks. Proceedings of the 14th International Conference on Extending Database Technology 283–294
+30. Zheng K, Zheng Y and Xie X (2012) Reducing uncertainty of low-sampling-rate trajectories. Data
+
+Engineering (ICDE), IEEE 28th International Conference 1144–1155
+
+Geoinformatica
+
+Ling Chen received his Ph.D degree in computer science from Zhejiang University, China in 2004. He joined
+Zhejiang University in 2004. From 2006 to 2007, he was a research fellow in The University of Nottingham, UK.
+Currently, he is an associate professor in the college of computer science. His research interests include databases,
+
+distributed systems, HCI, AI, and pattern recognition.
+
+Yanlin Tang was a master student in the College of Computer Science and Technology, Zhejiang University,
+China when this research was performed. Her research interests include uncertainty and query in temporal-spatial
+databases.
+
+Geoinformatica
+
+Mingqi Lv obtained his Ph.D. Degree in computer science from Zhejiang University, China in 2012. Currently,
+he is a research fellow at Nanyang Technological University, Singapore. His research interests include ubiquitous
+computing, data mining, and HCI.
+
+Gencai Chen is a professor in the College of Computer Science, Zhejiang University, China. From 1987 to 1988,
+he studied in the Department of Computer Science, State University of New York at Buffalo, USA. He won the
+special allowance, conferred by the State Council of China in 1997. He is currently vice director of the Software
+Research Institute, Zhejiang University. His research interests mainly include database, data mining, CSCW, and
+pattern recognition.
+
+

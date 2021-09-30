@@ -1,0 +1,2789 @@
+Geoinformatica (2014) 18:193–228
+DOI 10.1007/s10707-013-0178-y
+
+The largest empty rectangle containing only a query
+object in Spatial Databases
+
+Gilberto Gutiérrez · José R. Paramá ·
+Nieves Brisaboa · Antonio Corral
+
+Received: 22 May 2012 / Revised: 16 December 2012 /
+Accepted: 1 April 2013 / Published online: 19 April 2013
+© Springer Science+Business Media New York 2013
+
+Abstract Let S be a set of n points in a fixed axis-parallel rectangle R ⊆ (cid:3)2, i.e. in
+the two-dimensional space (2D). Assuming that those points are stored in an R-tree,
+this paper presents several algorithms for finding the empty rectangle in R with the
+largest area, sides parallel to the axes of the space, and containing only a query point
+q. This point can not be part of S, that is, it is not stored in the R-tree. All algorithms
+follow the basic idea of discarding part of the points of S, in such a way that the
+problem can be solved only considering the remaining points. As a consequence,
+the algorithms only have to access a very small portion of the nodes (disk blocks) of
+the R-tree, saving main memory resources and computation time. We provide formal
+proofs of the correctness of our algorithms and, in order to evaluate the performance
+of the algorithms, we run an extensive set of experiments using synthetic and real
+data. The results have demonstrated the efficiency and scalability of our algorithms
+for different dataset configurations.
+
+Keywords Spatial databases · Query · Indexing methods
+
+A preliminary partial version of this work appeared in [16].
+G. Gutiérrez (B)
+Computer Science and Information Technologies Department, Universidad del Bío-Bío,
+Chillán, Chile
+e-mail: ggutierr@ubiobio.cl
+
+J. R. Paramá · N. Brisaboa
+Computer Science Department, University of A Coruña, A Coruña, Spain
+
+J. R. Paramá
+e-mail: jose.parama@udc.es
+
+N. Brisaboa
+e-mail: brisaboa@udc.es
+
+A. Corral
+Department of Languages and Computation, University of Almeria, Almeria, Spain
+e-mail: acorral@ual.es
+
+194
+
+1 Introduction
+
+Geoinformatica (2014) 18:193–228
+
+In computational geometry, there is a research line that is aimed at finding empty
+geometric figures in a space that contains a set of points. For example, one of them is
+to find the largest empty axis-parallel rectangle in a space containing a set of points
+(see Fig. 1a). A variant of the previous problem is to find the largest rectangle that
+only contains a given query point, assuming that the query point does not belong to
+the set of points in the space (see Fig. 1b). This work deals with the latter variant.
+
+More variants of this problem are those that find a circumference, a square, or a
+convex hull. In addition, in the case of rectangles and squares, another alternative is
+to consider figures with sides that are not parallel to the axes.
+
+The search for empty geometric figures with the largest area, or any other
+metric, has applications in several fields. Among them, we can cite very-large-
+scale integration design (VLSI), database management, operations research, wireless
+sensor network [5], geographical information systems (GIS) [31], and data mining
+[14].
+
+As an example of application of the largest empty rectangle containing a query
+point in the GIS field, consider an entrepreneur trying to find a location for her/his
+business (restaurant, coffe shop, etc.). If she/he has a list of candidate positions for
+her/his business (available and affordable locals), she/he can provide those positions
+as the query points to a GIS system, which has the locations of business of the same
+sector as points. After running the queries, she/he obtains the largest empty rectangle
+around each query point, and then, she/he can choose a local with a large empty
+area around the query point, where the position of the local (query point) is quite
+centered in the empty area. This means that the site has a considerable area around
+without competitors and, therefore, a high probability of having customers for whom
+the closest option is her/his business. Note that, the largest empty rectangle (without
+location constraints) would be in an area where the locals are too expensive, or in an
+area too far from her/his home, or any other constraint.
+
+q
+
+(a) Largest empty rectangle.
+
+(b) Largest empty rectangle containing
+only a query point (the triangle point is
+the query point).
+
+Fig. 1 Two variants of the problem of finding the largest empty rectangle
+
+Geoinformatica (2014) 18:193–228
+
+195
+
+Another classic application would be when we have several candidate placements
+for a facility that implies risks (for example, a nuclear plant or a potential toxic
+chemical plant) [31]. If we have the location of human settlements as points and we
+provide those candidate sites for the facility as query points, we can choose a location
+with a large empty area around, and where the query point is quite centered. Observe
+that, if we do not use the query point, the largest empty rectangle can be in a foreign
+country, in a non appropriate geological soil, or in the sea (assuming that the space
+limits include one or more peninsulas).
+
+Finally, in the case of VLSI, one might be interested in placing a large circuit close
+
+to a given component [5, 19].
+
+The spatial databases (SDBs) represent an important aid for GIS to manage large
+amounts of data. However, SDBs require the design of new data structures, spatial
+access methods, query languages, and algorithms to manage spatial information. In
+this sense, several new query types have been defined, among others, the window
+query, the intersection query, the nearest neighbor, and the spatial join [15, 30].
+Many of those query types are problems that were first tackled in the field of
+the computational geometry, where it is assumed that all spatial objects can be fit
+into main memory, and later, those problems were faced in the field of the SDBs.
+Following this path, several algorithms have been proposed considering that objects
+are stored in a multidimensional structure, in most cases an R-tree [17], for example;
+[11, 18] present several algorithms that solve the k-pairs (k ≥ 1) of nearest neighbors
+between two sets, [29] shows an algorithm to find the nearest neighbor to a given
+point, and [7] presents an algorithm to obtain the convex hull of a set of points stored
+in an R-tree.
+
+The problem of finding the largest axis-parallel rectangle that only contains a
+given query point (see Fig. 1b) has also been treated in the area of computational
+geometry. In this work, we face this problem from the perspective of SDBs, assuming
+that the points are stored in an R-tree. We present three basic algorithms and two
+combinations of them. All algorithms are based on the same idea, they extract a
+portion of the points in the space by taking advantage of the presence of an R-tree.
+Then, using only those points, a conventional computational geometry algorithm
+obtains the same result as if it were applied over the whole set of points. The idea
+is that the extracted set is much smaller than the whole set of points, and thus, the
+computation is faster and needs less main memory.
+
+These algorithms take advantage of the extensive use of the R-tree in commercial
+database management systems [21] (Oracle [25], PostgreSQL [28], etc.), extending
+the usefulness of that data structure.
+
+The first algorithm, called q−MER, was presented in [16]. The other two, called
+q−MERD1 and q−MERD2, are presented for the first time in this work. Since
+depending on the distribution of the data provided as input, one algorithm performs
+better than the others, in this paper we also present two new heuristics that choose
+the best algorithm for a given query and input data. In addition, this work present a
+more detailed empirical study with respect to that in [16].
+
+We have run a set of experiments to evaluate the performance of our algorithms
+over large real and synthetic datasets. The results have demonstrated the efficiency
+of our algorithms in terms of pruning unnecessary branches on the R-tree in order to
+find the final result of the query and scalability for different dataset configurations.
+Moreover, our algorithms required less response time and storage resources than the
+
+196
+
+Geoinformatica (2014) 18:193–228
+
+naive approach of reading all the points from disk, store them in main memory, and
+use a computational geometry algorithm to obtain the result.
+
+The outline of the paper is as follows: Section 2 presents some previous related
+work. Section 3 presents some basics and definitions. Section 4 presents our three
+basic algorithms and the two heuristics. Section 5 shows the results of our experi-
+ments. Finally, Section 6 shows our conclusions and directions for future work.
+
+2 Related work
+
+Given a set S of n points in a fixed axis-parallel rectangle R ⊆ (cid:3)2, the search for
+the largest empty geometric figure (circumference, square, rectangle, or convex hull)
+has been an active research field in last decades. Focusing on the problem of finding
+the largest rectangle with sides parallel to the axes of the space, two variants have
+been considered: (i) no information about the position of the figure is provided (see
+Fig. 1a), and (ii) information about the position is provided (see Fig. 1b).
+
+The first variant has been extensively studied. The first work is [23], where
+two algorithms are described: the first one takes O(n2) time and O(n) space, the
+second one takes O(n log2 n) expected time considering that the points are randomly
+arranged into the space. Later, Chazelle et al. [9], present a divide-and-conquer
+algorithm with O(n log3 n) time complexity using O(n log n) space. An algorithm
+with similar time complexity is discussed in [1], this one using O(n) space. Orlowski
+presented an algorithm [26] that takes O(s log n) time, where s is the number of
+maximal empty rectangles (or restricted rectangles). A maximal empty rectangle
+(MER) is a rectangle that (i) its edges are parallel to the axes of R, (ii) it lies wholly in
+R, (iii) no point of S is contained in its interior, and (iv) each edge contains, at least, a
+point of S or is contained in an edge of R. Moreover, that algorithm has an expected
+time O(n log n). A more recent approach [12] takes O(n log2 n + s) time and O(log n)
+space by using a priority search tree.
+
+There are also works in 3D, in this case the algorithms compute the largest empty
+
+axis-parallel cuboid [22, 24].
+
+The second variant was proposed in [2, 3]. This algorithm performs a preprocess-
+ing step where the space is divided into a set of cells such that all points that fall in
+the same cell produce the same maximal empty rectangle containing the query point.
+These cells are stored in main memory organized into a data structure for objects in
+the two-dimensional space called range tree. The preprocessing stage takes storage
+O(n2 log n) and time O(n2). To retrieve the MER corresponding to a query point q,
+an additional O(log n) time is needed. Another approach was presented in [19], this
+corresponds to a significant improvement in terms of preprocessing time and space
+with respect to that in [2, 3]. Specifically, this algorithm requires O(nα(n) log3 n)
+storage to maintain the data structure (a segment tree) and O(nα(n) log4 n) time to
+build the structure, where the term α(n) is the slowly increasing inverse Ackermann
+function. Yet, the query time to find the MER that only contains q increases to
+O(log4 n).
+
+However the search for a circle with location constraints is an old problem. There
+are several variants: largest circumference only containing a query point [5, 20], a
+query line [4], or even a n − gon [10, 31].
+
+Geoinformatica (2014) 18:193–228
+
+197
+
+All the algorithms commented so far assume that the objects can be fit into main
+memory. Edmonds et al. [14] face the problem of finding all the empty spaces left by
+a set of objects, assuming that the main memory does not have enough space to store
+all the objects. That algorithm takes O(|X||Y|), where X e Y are the distinct values
+of the coordinates of the dataset. Yet, this work does not consider the case where the
+objects are stored in a multidimensional structure.
+
+To the best of our knowledge, this problem has not been tackled in the field of
+SDBs. The closest problem might be the skyline query (which given a set of points S,
+the query returns all points in S that are not dominated by another point) [8, 27] and
+its variations (dynamic and reverse skyline queries) [13]. Observe that the dominant
+points of the skyline query define an empty area that includes the origin of the space
+(0, 0). However, our empty areas do not have a skyline shape, but a simple corner of
+a city block, yet in four directions (northeast, northwest, southwest, and southeast)
+from the query point. Therefore our problem is related to the skyline problem, since
+both use the dominance relationship between elements stored in the R-tree (points
+and MBRs (Minimum Bounding Rectangles)). Furthermore, in order to speed up
+execution times, indexes (as R-tree) have been also used to avoid processing part of
+the points [8, 27].
+
+3 Preliminaries
+
+3.1 R-tree
+
+An R-tree is a generalization of B+-trees designed for the dynamic indexation
+of a set of k-dimensional geometric objects. It is a hierarchical, height balanced
+multidimensional data structure, designed to be used in secondary storage. In
+inner levels the indexed objects are represented by the Minimum Bounding
+k-dimensional Rectangles (MBRs), which bound their children. In this paper, we
+focus on 2 dimensions, therefore these MBRs are rectangles with faces parallel to the
+coordinate axis and characterized by two points ( pmin and pmax). By using the MBR
+instead of the exact geometrical representation of the object, its representational
+complexity is reduced to two points where the most important features of the
+spatial object (position and extension) are maintained. Consequently, the MBR is
+an approximation widely employed, and the R-trees belong to the category of data-
+driven access methods, since their structure adapts itself to the MBRs distribution in
+the space.
+
+Definition 1 An MBR is a rectangle, which faces are parallel to the axis of the
+coordinate system and is characterized by two points pmin and pmax, where pmin =
+( pmin.x, pmin.y) and pmax = ( pmax.x, pmax.y), such that pmin.x ≤ pmax.x and pmin.y ≤
+pmax.y. They correspond to the end-points of one of its major diagonals (e.g. the
+lower-left corner and the upper-right corner of such rectangle).
+
+An R-tree satisfies the following rules. Leaves are on the same level. In our case,
+each leaf node contains the indexed real points, although it may contain pointers to
+the objects of the database together with their MBRs. Every inner node contains
+entries of the form (cid:6)MBR, ref (cid:7), where ref is a pointer to the child of the entry and
+
+198
+
+Geoinformatica (2014) 18:193–228
+
+MBR is the MBR that contains spatially the MBRs (or points if the child is a leaf
+node) contained in this child. An R-tree of class (m; M) has the characteristic that
+every node, except possibly for the root, contains between m and M entries, where
+m ≤ (cid:8)M/2(cid:9). The root contains at least two pairs. The R-tree nodes are implemented
+as disk pages.
+
+Figure 2 depicts some MBRs, the indexed points, and the corresponding R-tree.
+Dotted lines denote the MBRs of the entries at the root node. The rectangles with
+solid lines are the MBRs in the entries of parent nodes of the leaves. Finally, points
+are the indexed objects in the leaves.
+
+We consider that the leaf nodes are at level 0 and the root is at level h, that is, the
+
+tree has h + 1 levels.
+
+Next we present two important properties of the MBRs of R-trees [29]:
+
+Property 1 MBR enclosure property: This property establishes that an MBR of an
+R-tree entry always encloses the MBRs of its descendant entries.
+
+Fig. 2 An R-tree
+
+Geoinformatica (2014) 18:193–228
+
+199
+
+Property 2 MBR face property: This property establishes that every face of any
+MBR of an R-tree node (at any level) touches at least one point of some spatial
+object in the spatial database.
+
+Many variations of R-trees have appeared in the literature (an exhaustive survey
+can be found in [21]). One of the most popular and efficient variations is the R*-tree
+[6]. The R*-tree added two major enhancements to the R-tree, when a node
+overflow is caused. First, rather than just considering the area, the node-splitting
+algorithm in R*-tree also minimized the perimeter and overlap enlargement of the
+minimum bounding rectangles. Minimizing the overlap tends to reduce the number of
+subtrees to follow for search operations. Second, R*-tree introduced the notion
+of forced reinsertion to make the shape of the tree less dependent to the order
+of insertions. When a node becomes overflowed, it is not split immediately, but a
+portion of entries of the node is reinserted from the top of the tree. The reinsertion
+provides two important improvements. First, it can reduce the number of splits
+needed and; second, it is a technique for dynamically reorganizing the tree. With
+these two enhancements, the R*-tree generally outperforms the R-tree and it is
+commonly accepted that the R*-tree is one of the most efficient R-tree variants. In
+this paper, we have chosen the R*-tree to perform our experimental study.
+
+3.2 Deﬁnitions and properties
+
+Next, we introduce some definitions and properties that will be used later.
+
+Definition 2 Let S be a set of points in a fixed axis-parallel rectangle R ⊆ (cid:3)2 (in
+the plane) and a query point q /∈ S such that q ∩ R (cid:12)= ∅. An axis-parallel rectangle is
+called a maximal empty rectangle only containing the query point (QMER) if:
+
+it contains the query point,
+its edges are parallel to the axes of R,
+it lies wholly in R,
+
+(i)
+(ii)
+(iii)
+(iv) no point of S is contained in its interior, and
+(v) each edge contains, at least, a point of S or is contained in a edge of R.
+
+Here, the notion of an axis-parallel rectangle assumes that its geometric structure
+is bounded by four sides and thus, a QMER in 2D can be given by two points: its
+lower-left corner and its upper-right corner (as an MBR).
+
+A QMER is a rectangle only containing the query point that can not be enlarged,
+either due to edges contained in the space limits or edges that contain a point.
+Figure 3 displays two QMERs (marked with letters A and B), there are many others,
+but in order to avoid an overloaded figure, only those QMERs are shown.
+
+Observe that the QMER B can not grow in any direction: to the south, the space
+ends; to the west, the QMER can not be enlarged, otherwise B would contain the
+point p21; to the north, the QMER founds a barrel in p14; and finally to the east, p17
+represents an obstacle to the growth of B. This does not mean that B is the largest
+empty rectangle containing q, in fact A is larger.
+
+In order to obtain the largest empty rectangle, all computational geometry algo-
+rithms compute MERs (QMERs in the variants with query point) somehow, and
+then they search the largest MER (QMER), which is the desired result.
+
+200
+
+Fig. 3 Two QMERs
+
+Geoinformatica (2014) 18:193–228
+
+Definition 3 Given a set of points S in a fixed axis-parallel rectangle R ⊆ (cid:3)2 stored
+in an R-tree and a query point q /∈ S such that q ∩ R (cid:12)= ∅. A candidate empty
+rectangle containing the query point (QCER) is a QMER computed using a set of
+points (called C) that are obtained from the MBRs of the R-tree, instead of using the
+real points in S.
+
+QCERs are computed taking advantage of the knowledge of the position and
+extension of the objects in the space present in the R-tree. QCERs are equal or
+upper bounds of real QMERs, this allows the q−MER algorithm to compute only
+QMERs inside QCERs. By doing this, we divide the problem of computing the
+largest empty rectangle containing the query point over the set of points S into much
+smaller problems. Each one computes the largest empty rectangle containing the
+query point inside a QCER, which is usually much smaller than the complete space
+R. Although, we have to repetitively run the computational geometry algorithm
+(once for each QCER), since those executions have as input a much smaller set of
+points, this implies that the total execution time is lower.
+
+Definition 4 Given a set of points S in a fixed axis-parallel rectangle R ⊆ (cid:3)2, which
+is stored in an R-tree, and a query point q /∈ S and q ∩ R (cid:12)= ∅, the largest maximal
+empty rectangle containing the query point q (LQMER) is the QMER, also in R,
+with the largest area.
+
+Definition 5 We say that an edge of a rectangle is supported by a point p, if that edge
+contains p.
+
+For example, observe in Fig. 3 that the upper edge of the QMER A is supported
+by the point p3, since it contains that point. That is, the edge contains the point, but
+
+Geoinformatica (2014) 18:193–228
+
+201
+
+Table 1 Deﬁnitions
+U LQ( p)
+
+U RQ( p)
+
+LLQ( p)
+
+LRQ( p)
+
+U LC(R)
+U RC(R)
+LLC(R)
+LRC(R)
+L(R)
+R(R)
+U(R)
+D(R)
+F ART H ESTC( p, R)
+
+The Upper-Left quadrant of p is the rectangle bounded by
+
+point p and the Upper-Left corner of R
+
+The Upper-Right quadrant of p is the rectangle bounded by
+
+point p and the Upper-Right corner of R
+
+The Lower-Left quadrant of p is the rectangle bounded by
+
+point p and the Lower-Left corner of R
+
+The Lower-Right quadrant of p is the rectangle bounded by
+
+point p and the Lower-Right corner of R
+
+Is the Upper-Left corner of R
+Is the Upper-Right corner of R
+Is the Lower-Left corner of R
+Is the Lower-Right corner of R
+The line segment that connects U LC(R) with LLC(R)
+The line segment that connects U RC(R) with LRC(R)
+The line segment that connects U LC(R) with U RC(R)
+The line segment that connects LLC(R) with LRC(R)
+The corner of R such that dist( p, F ART H ESTC( p, R)) is the
+largest euclidean distance between p and any corner of R
+
+the point is not inside A. If an edge of a QMER is supported by a point, then such
+edge can not be moved in such a way that the QMER grows, otherwise, the rectangle
+will contain that point, and hence it would not be a QMER, since only the query
+point is allowed inside a QMER.
+
+(a) Quadrants deﬁned by a point.
+
+(b) Elements deﬁned by a rectangle.
+
+(c) A distance relationship between a
+rectangle and a point.
+
+Fig. 4 Deﬁnitions
+
+202
+
+Geoinformatica (2014) 18:193–228
+
+Given a rectangle R ⊆ (cid:3)2 that contains a point p, Table 1 shows some definitions
+(see Fig. 4 for a graphic description). These definitions are auxiliary definitions that
+will be used along the paper.
+
+Definition 6 Let R ⊆ (cid:3)2 be a rectangle that contains three points: a query point q,
+pi( pi.x, pi.y), and p j( p j.x, p j.y), being i (cid:12)= j:
+
+If pi and p j are in U RQ(q). pi dominates p j in U RQ(q) if pi.x ≤ p j.x and pi.y ≤
+p j.y.
+If pi and p j are in U LQ(q). pi dominates p j in U LQ(q) if p j.x ≤ pi.x and pi.y ≤
+p j.y.
+If pi and p j are in LRQ(q). pi dominates p j in LRQ(q) if pi.x ≤ p j.x and p j.y ≤
+pi.y.
+If pi and p j are in LLQ(q). pi dominates p j in LLQ(q) if p j.x ≤ pi.x and p j.y ≤
+pi.y.
+
+Definition 7 Let R ⊆ (cid:3)2 be a rectangle that contains two points: a query point q
+and pi.
+
+If pi is in U LQ(q) the dominance area of pi is the rectangle bounded by pi and
+the Upper-Left corner of R
+If pi is in U RQ(q) the dominance area of pi is the rectangle bounded by pi and
+the Upper-Right corner of R
+If pi is in LLQ(q) the dominance area of pi is the rectangle bounded by pi and
+the Lower-Left corner of R
+If pi is in LRQ(q) the dominance area of pi is the rectangle bounded by pi and
+the Lower-Right corner of R
+
+–
+
+–
+
+–
+
+–
+
+–
+
+–
+
+–
+
+–
+
+In Fig. 5a, p1 dominates p3, p4, and p5 in the U RQ(q) quadrant, yet it does not
+
+dominate p2. The grey shaded area is the dominance area of p1 in U RQ(q).
+
+(a) Involving points.
+
+(b) Involving points and MBRs.
+
+Fig. 5 Dominance relationships and areas
+
+Geoinformatica (2014) 18:193–228
+
+203
+
+Definition 8 Let R ⊆ (cid:3)2 be a rectangle that contains a query point q, a point pi, and
+an MBR R j:
+
+–
+–
+–
+–
+
+pi dominates R j in U LQ(q), if pi dominates LRC(R j).
+pi dominates R j in U RQ(q), if pi dominates LLC(R j).
+pi dominates R j in LLQ(q), if pi dominates U RC(R j).
+pi dominates R j in LRQ(q), if pi dominates U LC(R j).
+
+Definition 9 Let R ⊆ (cid:3)2 be a rectangle that contains a query point q and two MBRs,
+Ri and R j, being i (cid:12)= j:
+– Ri dominates R j in U LQ(q), if LRC(Ri) dominates R j and Ri ∩ R j = ∅ (i.e. R j
+does not overlap with Ri and R j is dominated by the lower-right corner of Ri).
+
+– Ri dominates R j in U RQ(q), if LLC(Ri) dominates R j and Ri ∩ R j = ∅.
+
+Table 2 Additional definitions
+
+QMER
+
+QCER
+
+Supported
+
+LQMER
+
+pi dominates p j in U RQ(q)
+pi dominates p j in U LQ(q)
+pi dominates p j in LRQ(q)
+pi dominates p j in LLQ(q)
+Dominance area of pi in
+quadrant U RQ(q)
+Dominance area of pi in
+quadrant U LQ(q)
+Dominance area of pi in
+quadrant LLQ(q)
+Dominance area of pi in
+quadrant LRQ(q)
+pi dominates R j in U LQ(q)
+pi dominates R j in U RQ(q)
+pi dominates R j in LLQ(q)
+pi dominates R j in LRQ(q)
+Ri dominates R j in U LQ(q)
+Ri dominates R j in U RQ(q)
+Ri dominates R j in LLQ(q)
+Ri dominates R j in LRQ(q)
+Dominance area of Ri
+
+in quadrant x
+
+pi and p j are points and Ri and R j are MBRs
+
+Maximal empty rectangle only containing the query
+
+point
+
+Candidate maximal empty rectangle, a QMER
+computed from a set of points C extracted
+from the R-tree
+
+An edge of a rectangle is supported by a point p
+
+if that edge contains p
+
+Largest maximal empty rectangle containing
+
+the query point
+pi.x ≤ p j.x and pi.y ≤ p j.y
+p j.x ≤ pi.x and pi.y ≤ p j.y
+pi.x ≤ p j.x and p j.y ≤ pi.y
+p j.x ≤ pi.x and p j.y ≤ pi.y
+The rectangle bounded by pi and the Upper-Right
+
+The rectangle bounded by pi and the Upper-Left
+
+The rectangle bounded by pi and the Lower-Left
+
+corner of R
+
+corner of R
+
+corner of R
+
+The rectangle bounded by pi and the Lower-Right
+
+corner of R
+pi dominates LRC(R j)
+pi dominates LLC(R j)
+pi dominates U RC(R j)
+pi dominates U LC(R j)
+LRC(Ri) dominates R j and Ri ∩ R j = ∅
+LLC(Ri) dominates R j and Ri ∩ R j = ∅
+U RC(Ri) dominates R j and Ri ∩ R j = ∅
+U LC(Ri) dominates R j and Ri ∩ R j = ∅
+The space of x where any MBR completely within that
+
+area is dominated by Ri
+
+204
+
+Geoinformatica (2014) 18:193–228
+
+– Ri dominates R j in LLQ(q), if U RC(Ri) dominates R j and Ri ∩ R j = ∅.
+– Ri dominates R j in LRQ(q), if U LC(Ri) dominates R j and Ri ∩ R j = ∅.
+
+Definition 10 Let R ⊆ (cid:3)2 be a rectangle that contains a query point q and an MBR
+Ri fully inside a quadrant x. The dominance area of Ri covers the space of x where
+any MBR completely within that area is dominated by Ri.
+
+In Fig. 5b is shown the dominance relationships between points and MBRs. p
+dominates all MBRs except R6. For the MBRs, we can see in grey the dominance
+area of R1 in U RQ(q), and we can deduce that R1 dominates R3, R4, and R5
+(equivalently, R3, R4, and R5 are dominated by R1), while R2 and R6 are not
+dominated by R1.
+
+Dominance relationships are the key for the algorithms q−MERD1 and
+q−MERD2. Basically, when a point or an MBR dominates another point or MBR,
+these algorithms can discard those dominated items, since a QMER can not have
+edges supported by dominated points. However, the dominant elements are kept,
+because those points or points inside those MBRs might support the edges of a
+QMER.
+
+As a remainder, Table 2 briefly describes the definitions not covered by Table 1.
+
+4 Algorithms
+
+In this section we present our algorithms. We show the rationale behind them and
+we prove their concreteness by means of the appropriate lemmas, theorems, and
+corollaries. Our algorithms assume that the points of S are stored in an R-tree and
+are based on the general idea of discarding points using the properties of R-trees and
+the dominance relationships defined in Section 3.2.
+
+4.1 q−MER algorithm
+
+This algorithm requires two main steps:
+
+1. First, it computes a set of QCERs, which, in turn, requires two substeps:
+
+(a) The computation of the set of points C: QCERs are QMERs computed
+using as input a set of points C extracted from the R-tree, rather than
+computing them from the real points in S. For the computation of C, the
+algorithm processes the MBRs in parent nodes of the leaves of the R-tree.
+For each MBR, one or two points can be added to C. Those points are
+the most distant points to the query point q that could be located in that
+MBR (that is, it is likely those points are not part of the real set of points).
+Figure 6 displays an example. From the MBRs in parent nodes of leaves
+(the rectangles) and the query point q, q−MER produces the set of points
+C = {c1, c2, c3, c4, c5, c6, c7, c8, c9, c10}.
+When the MBR is completely inside one quadrant, the algorithm adds only
+one point. For example, R5 produces the point c1, since it is the farthest
+point with respect to q that could be located in that MBR, but, c1 is probably
+not part of the set of points actually stored in the R-tree. When the MBR
+
+Geoinformatica (2014) 18:193–228
+
+Fig. 6 The set of points C
+
+205
+
+overlaps two quadrants, two points are added. For example, the processing
+of R6 produces two points c4 and c5, those are the most distant points in
+each of the two quadrants that intersect with R6: c4 is the farthest point
+with respect to q that could be located in the part of R6 in the U LQ(q)
+quadrant, whereas c5 has the same properties in the LLQ(q) quadrant. The
+rest of points are computed similarly.
+
+(b) The actual computation of the QCERs: A computational geometry algo-
+rithm is run (in our experiments, we used the Orlowski’s algorithm [26])
+using the set C as input. We use the variant of the computational geometry
+algorithm that obtains all QMERs, instead of only computing the largest
+one, that is, in our case, we obtain all the QCERs. Figure 7a shows a QCER
+(again, there are others, but to simplify the figure, we only show one),
+denoted as A(cid:14). The points of C are the barrels that do not allow to expand
+A(cid:14) in any direction. Figure 7b shows a real QMER A overlaid over the
+QCER A(cid:14) and the real points. Observe that A(cid:14) is an upper bound of A
+since is computed using the farthest points with respect to q that could be
+located in the MBRs of the R-tree.
+
+2.
+
+In the second step, QCERs are processed according to their area, from largest
+to smallest. For each QCER, our algorithm accesses the leaves of the R-tree
+that contain the real points that intersect with such a QCER. Those real points,
+that we call C(cid:14), are used to obtain a candidate solution, by means of the same
+computational geometry algorithm used to obtain the QCERs, this time with
+the variant that computes only the largest QMER. This candidate solution is
+the real largest empty rectangle containing the query point that is equal to or
+contained into the processed QCER. As the processing of QCERs progresses,
+the candidate solutions may improve previous ones. For example, when the
+
+206
+
+Geoinformatica (2014) 18:193–228
+
+(a)
+
+A QCER.
+
+(b)
+
+A QCER (A ) and its corresponding
+QMER (A).
+
+Fig. 7 The computation of QCERs
+
+QCER A(cid:14) of Fig. 7 is processed, it is necessary to access the children of the
+entries containing the MBRs R5, R8, R6, R9, R11, and R12. Then q−MER inserts
+in C(cid:14) the points that intersect with A(cid:14), and processes C(cid:14) with the computational
+geometry algorithm. Finally, if the obtained candidate solution ( A) is better than
+the previous ones, then it passes to be considered the best candidate solution
+found so far.
+
+Next, we describe in detail each of these steps.
+
+4.1.1 Obtaining the QCERs
+
+As it can be seen in Algorithm 1, the first step of q−MER obtains zero, one, or
+
+two points from each processed MBR, depending on three cases.
+
+1. The first case is when the considered MBRi is completely inside one of the
+quadrants defined by the query point (see Fig. 8a). In this case, the algorithm
+produces the point of the farthest corner of MBRi with respect to the query
+point, i.e. F ART H ESTC(q, MBRi). In Fig. 8a, it is supposed that MBRi is in
+LRQ(q), and therefore the point LRC(MBRi) is added to the set of points C.
+2. Another treated case is when the MBRi intersects with two of the quadrants
+defined by the query point (see Fig. 8b). In this case, two points are added to the
+set C, those in the farthest corners of MBRi with respect to the query point. In
+Fig. 8b, MBRi intersects with quadrants U RQ(q) and LRQ(q), and therefore
+the algorithm adds U RC(MBRi) and LRC(MBRi) to C.
+
+3. The last case appears when the query point is inside the considered MBRi. For
+
+this situation, we had three options:
+(a) The first option is to split C in two sets of points C1 = C∪ {U RC(MBRi),
+LLC(MBRi)} and C2 = C ∪ {U LC(MBRi), LRC(MBRi)}. Now each set
+should continue the whole process independently. This apparently does not
+
+Geoinformatica (2014) 18:193–228
+
+207
+
+if MBRi intersects with only one of the quadrants U LQ(q), LLQ(q), U RQ(q) or LRQ(q)) then
+
+) to C
+
+else
+
+if q is not inside MBRi then
+
+for each MBR MBRi in n do
+
+add F ART H ESTC(q, MBRi
+
+Algorithm 1 First step of q−MER
+1: step1(q, R-tree T)
+2: INPUT: q {the query point and the R − tree}
+3: OUTPUT: LQCER {a set of QCERs}
+4: Let C = ∅ {a set of points}
+5: for each node n parent of the leaves of T do
+6:
+7:
+8:
+9:
+10:
+11:
+12:
+13:
+14:
+15:
+16:
+17:
+18:
+19:
+20:
+21:
+22:
+23: end for
+24: return LQCER
+
+= ComputeQCER(C, q)
+
+add U RC(MBRi
+
+add U LC(MBRi
+
+add LRC(MBRi
+
+add LLC(MBRi
+
+end for
+
+end if
+
+end if
+
+end if
+
+if MBRi intersects with U LQ(q) and LLQ(q) then
+
+) and LLC(MBRi
+
+) to C
+
+else if MBRi intersects with LLQ(q) and LRQ(q) then
+) and LRC(MBRi
+else if MBRi intersects with U RQ(q) and U LQ(q) then
+
+) to C
+
+) and U LC(MBRi
+
+) to C
+
+else if MBRi intersects with LRQ(q) and U RQ(q) then
+) and U RC(MBRi
+
+) to C
+
+represent a big issue. The problem arises when the query point is in more
+than one MBR. In this case the number of set of points increases rapidly,
+since for C1 two new sets should be created (C11 and C12), and the same
+for C2. Furthermore, since for each set of points Ci, several QCERs could
+be created, if the number of sets of points grows fast, the same will happen
+with the number of QCERs.
+
+(b) Another option is to access the leaf node corresponding to MBRi and add
+to C all real points it contains. This significantly increases the number of
+points in C and thus, the number of QCERs to be processed. Observe again,
+that the query point might be inside several MBRs, and then all the points
+in the leaves corresponding to the entries of those MBRs should be added
+to C.
+
+(c) No point is added to C.
+
+(a) Example of the ﬁrst case.
+
+(b) Example of the second case.
+
+Fig. 8 The two cases tackled by the first step of q−MER
+
+208
+
+Geoinformatica (2014) 18:193–228
+
+We chose the third option, since we experimentally found that the other two
+options increase the computation time, whereas the benefits in the filtering
+capability were not significant.
+
+Once we have the set of points C, the computational geometry algorithm
+(ComputeQCER) is run to obtain the QCERs. Next we prove that LQMER can
+not be larger than, at least, one of these QCERs.
+
+Lemma 1 Let S be a set of points in a f ixed axis-parallel rectangle R ⊆ (cid:3)2, which is
+stored in an R-tree, and a query point q /∈ S such that q ∩ R (cid:12)= ∅. Let LQCER the list of
+QCERs obtained by the f irst step of q-MER. LQMER can not be larger than one of
+the QCERs in LQCER.
+
+Proof It is clear that LQMER should be one of the QMERs computed from the
+points in S.
+
+We are going to show that each QCER QCERi is supported by points of C that
+ensure the existence of points in the real set of points (S) within the limits of QCERi
+and, at least one of them is inside each of the quadrants defined by q. Therefore those
+points allow the creation of a QMER within QCERi.
+
+Let MBR p be an MBR in an entry of a node of the R-tree, which is parent of
+leaves. Let pru be a point extracted from MBR p by the step1 of q−MER, that is
+pru ∈ C, and let us suppose without loss of generality that pru is in U RQ(q).
+
+Let us consider that QCERi has an edge supported by pru. Assume that there is a
+QMER QMER j with three edges supported by real points inside or contained by the
+edges of QCERi. We are going to prove that there is a real point pu within the limits
+of QCERi that allows QMER j keep its area inside QCERi. We have two cases:
+
+1. QCERi has its right side supported by pru.
+
+By Property 2 (MBR face property), the existence of MBR p requires the
+presence of at least one real point contained by U(MBR p) ( pu ∈ S). Since pru is
+the rightmost point of U(MBR p), pu.x ≤ pru.x, then QMER j can have an edge
+supported by pu, and that edge is within the limits of QCERi.
+
+2. QCERi has its upper side supported by pru.
+
+In this case pu.y = pru.y, then again, QMER j can have an edge supported by
+pu, and that edge is within the limits of QCERi.
+
+Then, we have shown, that the existence of QCERi implies the existence of a
+point ( pu in this case) that allows the creation of a QMER j within the area covered
+by QCERi.
+
+Observe that, since we assumed that pru is in U RQ(q), if QCERi has its lower
+or left edge supported by pru, QCERi will not contain q and thus it would not be a
+QCER.
+
+The only exception to this proof is when the step1 does not produce points in
+a quadrant, in such a case we assume that the algorithm includes in C the farthest
+corner of such quadrant with respect to the query point. Thus QCERi can not be
+shortened by a point of C in U RQ(q), and hence a QMER can not expand beyond
+the area of QCERi in U RQ(q).
+
+Finally, the proof can be extended to points in the rest of quadrants with similar
+(cid:16)(cid:17)
+
+reasonings.
+
+Geoinformatica (2014) 18:193–228
+
+209
+
+In Fig. 7a, by Property 2, U(R8) must contain a point of S, and in our example
+that point is p9 (see Fig. 7b), yet could be the case that c3 ∈ S. p9 and any point in
+U(R8), excepting c3, would shorten the candidate solution with respect to the QCER
+A(cid:14). Even if c3 ∈ S and is the only point in U(R8), in our example, the obligatory point
+in L(R8) would shorten A with respect to A(cid:14).
+
+4.1.2 Computing the rectangle with the largest area containing q
+
+Algorithm 2 shows the second step of q−MER, which obtains the largest QMER.
+The set of QCERs obtained from the first step are stored in a heap (binary max-
+heap, called HQCER) where the QCER with the largest area is at the top.
+
+The algorithm starts by checking the QCER with the largest area. The function
+RemoveMax() extracts the top of the heap. Now the corresponding candidate
+solution is computed by accessing the real points stored in the leaves of the R-tree.
+We run the computational geometry algorithm computeER1 with the real points that
+intersect the considered QCER. To obtain them, we check all the MBRs of nodes
+that are parents of leaves and intersect with the current QCER. Moreover, from the
+points inside those MBRs, we only consider those that actually intersect with the
+considered QCER.
+
+The result of running computeER is stored in a temporary object (TMPQMER).
+The function area computes the area of TMPQMER, and if its area is greater than
+that of the current largest QMER (MaxMer), then TMPQMER becomes MaxMer.
+The process ends when the heap becomes empty or the area of the QCER at the
+
+top of the heap is smaller than that of the current MaxMer.
+
+Let C
+.RemoveMax() {Extracts the first QCER of the heap HQCER}
+Let QCER = HQCER
+for each entry e in nodes of T parent of leaves whose MBR intersects with QCER do
+
+(cid:14) = ∅ {A set of points}
+
+Algorithm 2 Second step of q−MER
+1: Step2(Heap HQCER, point q, R-tree T)
+2: INPUT: {heap with the QCERs, query point, and the R − tree}
+3: OUTPUT:MaxMer {the largest rectangle containing only q}
+4: Let a = 0 {The area of the candidate solution currently stored at MaxMer}
+5: repeat
+6:
+7:
+8:
+9:
+10:
+11:
+12:
+13:
+14:
+15:
+16:
+17:
+18:
+end if
+19: until (HQCER
+20: return MaxMer
+
+Obtain the leaf node Node pointed by the entry e
+for each point r ∈ Node that intersects with QCER do
+
+end for
+Let T MPQMER = computeER(C
+if area(T MPMER) > a then
+
+Let MaxMer = T MPQMER
+Let a = area(T MPMER)
+
+.isEmpty()) OR (area(QCER)< a)
+
+(cid:14) = C
+
+end for
+
+(cid:14) ∪ r
+
+Let C
+
+(cid:14), q) {Computes LQMER considering the points in C
+
+(cid:14)
+
+}
+
+Theorem 1 Given a set of points S in a f ixed axis-parallel rectangle R ⊆ (cid:3)2, which is
+stored in an R-tree, and a query point q /∈ S and q ∩ R (cid:12)= ∅. Let MaxMer the output
+of algorithm q−MER. MaxMer is LQMER.
+
+1computeER only computes LQMER, instead of computing all QMERs.
+
+210
+
+Geoinformatica (2014) 18:193–228
+
+Proof Step2 computes the largest QMER inside each QCER obtained by Step1. By
+Lemma 1, no QMER can be larger than one of the QCERs computed by Step1, then
+(cid:16)(cid:17)
+the largest QMER computed by Step2 is LQMER.
+
+4.2 Dominance-based algorithms
+
+4.2.1 q−MERD1 algorithm
+
+This algorithm processes the R-tree level by level from the root to the leaves
+discarding MBRs in inner levels and points in the leaves. When an MBR is discarded,
+the algorithm does not take into account its children, which are not further inspected
+by taking advantage of the Property 1.
+
+The algorithm basically works in inner levels as follows. Considering a level l, for
+each of the four quadrants defined by q, the algorithm chooses the MBR of l that is
+completely contained in that quadrant and whose farthest corner with respect to q is
+nearest to that point. That is, for each quadrant x ∈ {LRQ(q), LLQ(q), U LQ(q),
+U RQ(q)}, the algorithm chooses the MBR MBRx such that:
+
+dist(q, F ART H ESTC(q, MBRx)) = min{dist (q, F ART H EST(q, MBRi))}
+∀MBRi completely inside x
+
+(1)
+
+Then for each quadrant x, the algorithm discards all the MBRs of l dominated by
+MBRx. In the example of Fig. 9a, from the MBRs fully inside U RQ(q), since R8
+dominates R7, the algorithm discards R7. In LRQ(q), R9 dominates R10, which is
+discarded. In the other two quadrants, there are not dominance relationships.
+
+After this, the MBRs that are not discarded are replaced by the MBRs in their
+children, that is, the algorithm continues in the next level of the R-tree. The process
+described above continues while it does not reach the parent level of the leaves of the
+R-tree. When this condition becomes true, for each of the MBRs that have not been
+
+(a) Discarding complete MBRs in
+intermediate levels.
+
+Fig. 9 q−MERD1 procedure
+
+(b) Discarding points in the last level.
+
+Geoinformatica (2014) 18:193–228
+
+211
+
+discarded, the algorithm obtains from the children of their entries, the real points
+they contain. Now the algorithm computes the nearest neighbor nnx point for each of
+the quadrants x ∈ {LRQ(q), LLQ(q), U LQ(q), U RQ(q)}, which is the real nearest
+point to q in the quadrant x considering only the points that were not discarded by the
+filtering of MBRs in previous steps. Next, from the remaining points, the algorithm
+discards in each quadrant x, those points dominated by nnx. Finally, the points that
+were not discarded are provided as input to ComputeER, which obtains the final
+answer.
+
+In Fig. 9b, in the U LQ(q) quadrant, nnU LQ(q) = p3, then p2 is discarded since that
+point is dominated by p3. However, since p3 does not dominate p1 and p4. Those
+points, as well as p3, are provided as input to ComputeER. Algorithm 3 presents a
+detailed description.
+Algorithm 3 q−MERD1
+1: q−MERD1(point q, R-tree T)
+2: INPUT: {the query point and the R-tree}
+3: OUTPUT: MaxMer {LQMER}
+4: Let MBRroot the MBR that includes all the MBRs at the root of the R-tree T
+5: Let E,Ex be sets of MBRs
+6: Let C be a set of points
+7: Insert in E the element MBRroot
+8: Let l = h {h is the height of the R-tree T}
+9: while l ≥ 0 do
+if l > 0 then
+10:
+11:
+12:
+
+Substitute MBRi in E by the MBRs in the child node corresponding to its entry
+{the node in the next level pointed by the entry containing MBRi is read}
+
+for each MBRi in E do
+
+13:
+14:
+15:
+16:
+
+end for
+for each x ∈ (LLQ(q), LRQ(q), U RQ(q), U LQ(q)) do
+
+Let Ex the set of MBRs of E that are completely inside the quadrant x
+Let MBRx an MBR in Ex such that
+
+dist(q, F ART H ESTC(q, MBRx)) = min{dist(q, F ART H EST(q, MBRi
+∀MBRi in Ex
+
+))}
+
+Discard from E all the MBRs of Ex that are dominated by MBRx
+
+end for
+
+Let C = ∅
+for each MBRi in E do
+
+else
+
+17:
+18:
+19:
+20:
+21:
+22:
+23:
+24:
+25:
+26:
+27:
+28:
+29:
+30:
+31:
+32: end while
+
+end if
+Let l = l − 1
+
+Add to C the points in the children of MBRi
+
+end for
+for each x ∈ (LLQ(q), LRQ(q), U RQ(q), U LQ(q)) do
+
+From the points in C, Let nnx the nearest point to q in quadrant x
+Remove from C the points dominated by nnx in the quadrant x
+
+end for
+Let MaxMer = ComputeER(C, q)
+return MaxMer
+
+Using the example of Fig. 9, whose R-tree is shown in Fig. 2, Table 3 shows
+a trace of the Algorithm 3. The algorithm starts considering the MBR (MBRroot)
+that encloses the MBRs at the root node, which is immediately substituted by those
+MBRs (second row of Table 3). The MBRs R1, R2, R3, and R4 are the rectangles with
+dotted lines in Fig. 2. Since there is no dominance relationships between those MBRs,
+they are replaced by their children (third row of Table 3). Then the dominance
+relationship between R8 and R7 discards R7 and that between R9 and R10 discards
+R10 (fourth row). Since we have reached the parent level of leaves, those MBRs are
+used to build a first version of the set of points C, which contains the points of each
+MBR in E (fifth row). Next, the dominance relationships between points remove
+
+212
+
+7
+12
+12
+17
+22
+
+26
+
+Table 3 A trace of q−MERD1
+Line
+
+Content of E
+
+MBRroot
+R1,R2,R3, R4
+R5,R6,R7, R8,R9,R10, R11,R12
+R5,R6,R7, R8,R9,R10, R11,R12
+R5,R6, R8,R9, R11,R12
+
+R5,R6, R8,R9, R11,R12
+
+Geoinformatica (2014) 18:193–228
+
+Content of C
+∅
+∅
+∅
+∅
+p1, p2, p3, p4, p5, p6, p9, p10, p11, p13, p12,
+p14, p18, p19, p20, p21, p22, p23
+p1, p2, p3, p4, p5, p6, p9, p10, p11, p13, p12,
+p14, p18, p19, p20, p21, p22, p23
+
+points: p3 discards p2, and p6 discards p5, p18, and p20 (sixth row). Finally, the
+remaining points in C are provided, along with the query point, to the computational
+geometry algorithm ComputeER to obtain the final result.
+
+Lemma 2 Let S be a set of points S in a f ixed axis-parallel rectangle R ⊆ (cid:3)2, which is
+stored in an R-tree, and let q be a query point q /∈ S such that q ∩ R (cid:12)= ∅. Given a point
+pi ∈ S, there can not be a QMER QMER p j, which overlaps the dominance area of pi.
+
+Proof Without loss of generality let us suppose that pi is in U RQ(q).
+
+Assume that QMER p j overlaps the dominance area of pi. Therefore, it should
+have an edge supported by a point p j such that pi dominates p j, and thus p j should
+be in U RQ(q) as well. Without loss of generality suppose that such edge is the upper
+edge.
+
+Observe that when considering the U RQ(q) quadrant, if QMER p j has its lower
+or left edge supported by p j, it will not be a QMER, since it would not contain q.
+Therefore, QMER p j should have its left edge to the left of q and the lower edge
+below q.
+
+Since pi.y ≤ p j.y, pi.x ≤ p j.x and QMER p j has its left edge to the left of q and the
+lower edge below q, if QMER p j overlaps the dominance area of pi, then QMER p j
+will contain pi, and thus it would not be a QMER. We reach a contradiction because
+(cid:16)(cid:17)
+we supposed that QMER p j overlaps the dominance area of pi.
+
+Corollary 1 Let S be a set of points in a f ixed axis-parallel rectangle R ⊆ (cid:3)2, which is
+stored in an R-tree. Given a query point q /∈ S and two MBRs Ri and R j of the R-tree,
+where i (cid:12)= j, all contained in R, if Ri dominates R j in a quadrant def ined by q and a
+QMER QMERa has an edge e supported by a point pw, pw ∩ Ri (cid:12)= ∅, there can not
+be another QMER QMERb with an edge supported by a point pk, pk ∩ R j (cid:12)= ∅.
+
+Proof Without loss of generality let us suppose that Ri and R j are in U RQ(q). By
+Property 2, there should be a point pd in D(Ri) and another one pl in L(Ri). By the
+definition of dominance between MBRs, every point in R j is dominated by pd and/or
+(cid:16)(cid:17)
+by pl, therefore by Lemma 2, QMERb can not exist.
+
+Theorem 2 Given a set of points S in a f ixed axis-parallel rectangle R ⊆ (cid:3)2, which
+is stored in an R-tree, and a query point q /∈ S and q ∩ R (cid:12)= ∅. Algorithm q−MERD1
+obtains LQMER.
+
+Geoinformatica (2014) 18:193–228
+
+213
+
+Proof When the algorithm removes an MBR R j when processing inner levels,
+that MBR is dominated by another MBR Ri (i (cid:12)= j) in that quadrant, therefore
+by Corollary 1, R j can be removed safely because any QMER will have its edges
+supported by points of Ri rather than having them supported by points in R j.
+
+Similarly, when the algorithm removes points in the leaves, any discarded point
+pk is dominated by another point pw in the same quadrant, then by Lemma 2, pk can
+be safely discarded because there can not be a QMER with an edge supported by pk
+rather than by pw, otherwise that QMER will overlap the dominance area of pw. (cid:16)(cid:17)
+
+4.2.2 q−MERD2 algorithm
+This algorithm is a variant of the previous one. q−MERD2 begins computing for
+each quadrant defined by q, the nearest point with respect to q (nnU RQ(q), nnLLQ(q),
+nnU LQ(q), and nnLRQ(q)), by using a combination of window query and nearest
+neighbor query in each quadrant. These searches take logarithmic time since we can
+use the R-tree.
+
+Now the algorithm works similarly to q−MERD1. The R-tree is traversed level
+by level from the root to the leaves. In non-leaf levels, the algorithm discards the
+MBRs fully inside one quadrant, which are dominated by the nearest neighbor of
+that quadrant. In the last level, it discards real points in nodes descendant of the
+MBRs that were not discarded in previous levels and that are dominated by the
+nearest neighbor of its quadrant. Finally, again, the remaining points are provided
+to computeER to obtain the final solution.
+
+For example, suppose that q−MERD2 processes the MBRs and points of Fig. 10.
+Focusing on the LLQ(q) quadrant, the algorithm discards the MBR R11 given that
+is fully inside LLQ(q), and it is dominated by nnLLQ(q) = p6. R6 and R12 can not be
+discarded because they are not fully inside LLQ(q). When the algorithm reaches the
+
+Fig. 10 q−MERD2 procedure
+
+214
+
+Geoinformatica (2014) 18:193–228
+
+leaves, p5 is discarded since it is dominated by nnLLQ(q), whereas the points that are
+not dominated by nnLLQ(q) ( p22 and p23) are kept.
+Algorithm 4 describes the algorithm in detail.
+
+Algorithm 4 q−MERD2
+1: q−MERD2(point q, R-tree T)
+2: INPUT: q and T {the query point and the R-tree}
+3: OUTPUT:MaxMer {Largest empty rectangle only containing q}
+4: Let MBRroot the MBR that includes all the MBRs at the root of the R-tree T
+5: Let E and Ex be sets of MBRs
+6: Let C be a set of points
+7: Insert in E the element MBRroot
+8: for each x ∈ (LLQ(q), LRQ(q), U RQ(q), U LQ(q)) do
+9:
+Let nnx be the nearest neighbor to q in quadrant x.
+10: end for
+11: Let l = h − 1 {h is the height of the R-tree}
+12: while l ≥ 0 do
+if l > 0 then
+13:
+14:
+15:
+
+for each MBRi in E do
+
+else
+
+16:
+17:
+18:
+19:
+20:
+21:
+22:
+23:
+24:
+25:
+26:
+27:
+28:
+29:
+30:
+31:
+32:
+33: end while
+
+end for
+
+Let C = ∅
+for each MBRi in E do
+
+Add to C the points in the children of MBRi
+
+end for
+for each x ∈ (LLQ(q), LRQ(q), U RQ(q), U LQ(q)) do
+
+Remove from C the points dominated by nnx in the quadrant x
+
+end for
+Let MaxMer = ComputeER(C, q)
+return MaxMer
+
+end if
+Let l = l − 1
+
+Substitute MBRi in E by the MBRs in the child node corresponding to its entry {the node in the next
+level pointed by the entry containing MBRi is read}
+
+end for
+for each x ∈ (LLQ(q), LRQ(q), U RQ(q), U LQ(q)) do
+
+Let Ex the set of MBRs of E that are completely inside the quadrant x
+Discard from E all the MBRs in Ex dominated by nnx
+
+Using the example of Fig. 10, Table 4 shows a trace of the Algorithm 4. Again,
+the algorithm starts considering the MBR at the root node (MBRroot). Next, the
+nearest neighbor to q in each quadrant is computed (nnLRQ(q) = p12, nnLLQ(q) =
+p6, nnU LQ(q) = p3, nnU RQ(q) = p10). Now, MBRroot is substituted by the MBRs
+it contains (R1, R2, R3, and R4 of the second row of Table 4), which correspond
+to the rectangles with dotted lines in Fig. 2. Since there are no dominance rela-
+
+Table 4 A trace of q−MERD2
+Line
+
+Content of E
+
+7
+12
+12
+17
+22
+
+26
+
+MBRroot
+R1,R2,R3, R4
+R5,R6,R7, R8,R9,R10, R11,R12
+R5,R6,R7, R8,R9,R10, R11,R12
+R5,R6, R8,R9, R12
+
+R5,R6, R8,R9, R12
+
+Content of C
+∅
+∅
+∅
+∅
+p1, p2, p3, p4, p5, p6, p9, p10, p11,
+p13, p12, p14, p21, p22, p23
+p1, p2, p3, p4, p5, p6, p9, p10, p11,
+p13, p12, p14, p21, p22, p23
+
+Geoinformatica (2014) 18:193–228
+
+215
+
+tionships between the nearest neighbors of q and R1, R2, R3, and R4, such MBRs
+are substituted by the MBRs in their children (third row of Table 4). Then the
+dominance relationship between p10 and R7 discards R7, that between p12 and R10
+discards R10, and p6 dominates and discards R11 (fourth row). In the level containing
+parent of leaves, MBRs are used to build a first version of the set of points C,
+which contains the points of each MBR in E (fifth row). Next, the dominance
+relationships between points performs the last prune: p3 discards p2 and p6 discards
+p5 (sixth row). Finally, the remaining points in C are provided, along with the query
+point, to the computational geometry algorithm ComputeER to obtain the final
+solution.
+
+Theorem 3 Given a set of points S in a f ixed axis-parallel rectangle R ⊆ (cid:3)2, which
+is stored in an R-tree, and a query point q /∈ S and q ∩ R (cid:12)= ∅. Algorithm q−MERD2
+computes LQMER.
+
+Proof When the algorithm removes an MBR R j when processing inner levels, that
+MBR is dominated by the nearest neighbor (nnx) in that quadrant, therefore since,
+by construction, nnx dominates all the points in R j, by Lemma 2, R j can be removed
+safely because any QMER will have its edges supported by nnx, rather than by any
+point in R j.
+
+Similarly, when the algorithm removes points in the leaves, any discarded point
+pk is dominated by nnx in the same quadrant, then by Lemma 2, pk can be safely
+(cid:16)(cid:17)
+discarded.
+
+4.3 Combination of the algorithms
+
+As we will see, our experiments show that depending on the data distribution, one
+of the algorithms performs better than the others. To solve this problem, we propose
+two combinations of the previous basic algorithms. Each combination chooses one of
+the basic algorithms depending on a heuristic that tries to anticipate which algorithm
+will work better with the input data. One combination includes the q−MER and
+q−MERD1, whereas the other combines q−MER and q−MERD2.
+
+In the case of the combination q−MER+q−MERD1, the heuristic uses the MBRs
+in the entries of the root node of the R-tree and computes for each quadrant x ∈
+(LLQ(q), LRQ(q), U RQ(q), U LQ(q)) the MBR MBRx that satisfies the Formula 1
+(see page 18). Then the heuristic computes the dominance area created by each
+MBRx in its corresponding quadrant. The percentage of space (R) covered by these
+dominance areas are stored in a variable called δheur1 (0 ≤ δheur1 ≤ 1).
+
+In the case of the combination q−MER+q−MERD2, the heuristic computes the
+nearest neighbor to q in each quadrant and computes the dominance areas of
+those points in each quadrant. Now, the percentage of space (R) covered by these
+dominance areas are stored in a variable called δheur2 (0 ≤ δheur2 ≤ 1).
+
+In any case, if the percentage of the space of R covered by the dominance areas
+computed by the heuristics showed above is less than a given threshold, then the
+
+216
+
+Geoinformatica (2014) 18:193–228
+
+q−MER algorithm is used, otherwise the dominance-based algorithm is used. When
+using the combination of q−MER+q−MERD1, the threshold is 20 %, whereas when
+combining q−MER+q−MERD2, the threshold is 80 %. More formally:
+
+Heuristic 1 Let S be a set of points in a f ixed axis-parallel rectangle R ⊆ (cid:3)2 stored in
+an R-tree, a query point q /∈ S and q ⊆ R, and a variable (0 ≤ δheur1 ≤ 1). An ef f icient
+algorithm to obtain LQMER can be designed as follows:
+
+1.
+2.
+
+if δheur1 < 0.2 then the algorithm q−MER is chosen.
+if δheur1 ≥ 0.2 then the algorithm q−MERD1 is chosen.
+
+Heuristic 2 Let S be a set of points in a f ixed axis-parallel rectangle R ⊆ (cid:3)2 stored in
+an R-tree, a query point q /∈ S and q ⊆ R, and a variable (0 ≤ δheur2 ≤ 1). An ef f icient
+algorithm to obtain LQMER can be designed as follows:
+
+1.
+2.
+
+if δheur2 < 0.8 then the algorithm q−MER is chosen.
+if δheur2 ≥ 0.8 then the algorithm q−MERD2 is chosen.
+
+The values of the threshold are quite different. The reason is the mechanism used
+by the two combinations to compute the dominance areas. q−MER+q−MERD1 uses
+the MBRs at the root of the R-tree, those MBRs are usually large. This means that
+it is difficult to find an MBR completely inside one of four quadrants defined by
+q. Therefore the algorithm that computes δheur1 has problems to create dominance
+areas. However, the combination q−MER+q−MERD2 easily obtains the largest
+possible dominance areas, and thus, the threshold must be higher to balance this
+ability.
+
+These thresholds were chosen from our experience with different data distribu-
+tions. Their values depend on where q is located and the distribution of the points.
+As the points approach to a uniform distribution, the dominance-based algorithm
+performs better, whereas when the distribution is far from uniform, the q−MER
+algorithm usually performs better. The basic idea is that q−MER works better when
+there are large empty spaces, this happens mostly in real data distributions. The
+reason is that in empty spaces there are no points to create dominance relationships,
+and therefore discarding is low.
+
+The query point also plays an important role. When there are large empty
+spaces and the query point is in a empty space, q−MER quickly obtains a good
+candidate solution since, the QCERs are processed from largest to smallest. This
+allows the algorithm to discard many other QCERs that are already smaller than
+that candidate solution. On the contrary, when the query point is in a zone densely
+populated, the QCERs are small and therefore they are not capable of discarding
+most of the QCERs computed by the first step of q−MER, and then they should
+be checked.
+
+However, algorithms q−MERD1 and q−MERD2 lose effectiveness when the
+query point is in a empty space, as they have less chances to find points to produce
+dominance relationships, and then the percentage of points that are dominated is
+smaller, and hence the discarding is lower. On the contrary, if the query point is in a
+
+Geoinformatica (2014) 18:193–228
+
+217
+
+dense populated area, this favors the dominance-based algorithms, as they have good
+chances to find nearby points that dominate big amounts of points.
+
+The combinations of algorithms take advantage of this behavior, obtaining
+
+q−MER + q−MERD2 the best performance in most cases.
+
+Now the question that might arise is, what happens if the heuristic chooses the
+wrong algorithm. In Section 5, we will show that in any case, q−MER, q−MERD1,
+and q−MERD2 perform better than computing the solution with a computational
+geometry algorithm. Therefore in case of a wrong guess, the chosen algorithm will
+still get significant improvements.
+
+5 Experimental results
+
+We compared our algorithms against a naive algorithm that retrieves all the points
+stored in the R-tree by reading all the disk blocks (nodes) and then solving the
+problem in main memory with the computational geometry algorithm. In any case
+(naive approach, ComputeQCER, and ComputeER), we used Orlowski’s algorithm
+[26]. The restriction of the query point allows some improvements in the algorithm
+that speed up the execution times. Orlowski’s algorithm computes several types of
+MERs. For example, the MERs of Type bt are obtained by drawing a vertical line
+from the top to the bottom of the space passing through each point (see Fig. 11).
+In our case, we only have to compute the MER delimited by the lines that intersect
+with points W and Z , since that MER is the only one (of this type) that contains q
+(that is, it is a QMER). To compute this type of MERs, Orlowki’s algorithm sorts
+the points by the X coordinate; we take advantage of this ordering by breaking the
+process when the QMER is found. Similar improvements were applied to the rest of
+types of MERs.
+
+We suppose that it is possible to store all the points in main memory. This
+eliminates the effect of the memory over our experiments, since the computational
+geometry algorithm has all the memory it needs that, as we will see, it is much more
+than our algorithms.
+
+The algorithms were implemented in Java and the programs were run on an
+isolated Intel®Xeon®-E5520@2.26GHz with 72 GB DDR3@800MHz RAM with a
+SATA hard disk model Seagate® ST2000DL003-9VT166. It ran Ubuntu 9.10 (kernel
+2.6.31-19-server).
+
+Fig. 11 Orlowki’s bt MERs
+
+218
+
+Geoinformatica (2014) 18:193–228
+
+(a) Uniform distribution
+
+(b) Gaussian distribution
+
+(c) Real data (RD1)
+
+(d) Real data (RD2)
+
+(e) Real data (RD3)
+
+(f) Real data (RD4)
+
+Fig. 12 The datasets used in the experiments (to avoid cluttering the graphs, only some of the points
+were drawn)
+
+We used Marios Hadjieleftheriou’s Java Implementation of an R*-tree.2
+
+5.1 Experimental setup
+
+tion (see Fig. 12a).
+
+tion (see Fig. 12b).
+
+We considered the following sets of points in a two-dimensional space [0, 1] × [0, 1].
+
+1. Sets of 200 K3, 500 K, 1,000 K, 2,000 K, and 5,000 K points with uniform distribu-
+
+2. Sets of 200 K, 500 K, 1,000 K, 2,000 K, and 5,000 K points with Gaussian distribu-
+
+2http://libspatialindex.github.com/
+31 K = 1,000 points
+
+Geoinformatica (2014) 18:193–228
+
+219
+
+3. Four real datasets denoted by RD1 (see Fig. 12c), RD2 (see Fig. 12d), RD3 (see
+Fig. 12e), and RD4 (see Fig. 12f), with 2,249,727, 556,696, 194,971, and 699,900
+points, respectively. The real datasets are the California Roads (RD1), Tiger
+Census Blocks (RD2), and Tiger Streams (RD3) datasets from the web site
+rtreeportal4 and a dataset (RD4) that was given by a Chilean company provided
+that the source were not published.
+
+In our experiments, we considered two different disk block sizes, namely 1KB and
+4KB. With these disk block sizes (nodes), the maximum capacity of leaf(internal)
+nodes of the R*-tree were 51(28) and 204(112) points(entries), respectively.
+
+The performance of all algorithms was measured comparing the number of
+accessed blocks and the response time (it represents the overall execution time—
+elapsed time or wall-clock time—of the algorithms, which is measured in seconds)
+that each algorithm required to find the solution. The response time includes the
+time required to read the points from disk. We assume that the R*-tree is already
+built (that is, the time required to build it is not included in our times) since it is
+the structure that stores the points. The algorithms use the appropriate structure (a
+stack for depth-first search or a FIFO queue for breadth-first search) to traverse the
+R*-tree. The reads of nodes in the stack or the queue are not counted. We do not
+consider any other read buffer, therefore whenever the algorithms read a node (disk
+block) that is not in the stack or the queue, that read is counted regardless of whether
+the node comes from disk or from the operating system buffer cache. Therefore, the
+measure of accessed blocks ignores the effect of any type of buffer cache (excepting
+the simple structures commented above). For all measures, we computed the average
+of 100 random queries.
+
+The effect of any read buffer, for example the operating system buffer cache,
+would benefit only the q−MER algorithm, since it might access several times the
+same R*-tree leaf node when processing different QCERs. However, the naive
+approach would not improve its performance as it reads from disk each leaf node
+once, since the repetitive reads of intermediate nodes are solved by the stack or
+queue. To study this effect, we show the response time required by all algorithms.
+As we will see, the presence of different buffers (OS buffer or different hardware
+caches) does not change the values of disk accesses.
+
+5.2 Evaluation
+
+A first test compares all our algorithms against the naive approach using only the
+synthetic data (uniform and Gaussian distributions).
+
+Figures 13, 14, and 15 show the performance of the algorithms when applied
+over the datasets with uniform distribution. Figure 13 shows the percentage of disk
+blocks with respect to the total amount of blocks of the R*-tree that each algorithm
+needs to access in order to solve the queries. Observe that the naive approach has to
+access all of them, hence it is not shown in the charts. As it can be seen, q−MERD1
+and q−MERD2 present a better behavior than q−MER in this experiment. The
+dominance-based algorithms need only around of the 25 % of the disk block accesses
+required by q−MER.
+
+4http://rtreeportal.org
+
+Geoinformatica (2014) 18:193–228
+
+q−MER
+q−MER D1
+q−MER D2
+
+q−MER
+q−MER D1
+q−MER D2
+
+ 500  1000  1500  2000  2500  3000  3500  4000  4500  5000
+set size (K, 1K=1,000 points)
+
+ 500  1000  1500  2000  2500  3000  3500  4000  4500  5000
+set size (K, 1K=1,000 points)
+
+(a) size of block 1 KB
+
+(b) size of block 4 KB
+
+Fig. 13 Percentage accessed blocks (data with a uniform distribution)
+
+ 0
+
+ 500  1000 1500 2000 2500 3000 3500 4000 4500 5000
+
+ 0
+
+ 500  1000 1500 2000 2500 3000 3500 4000 4500 5000
+
+set size (K, 1K=1,000 points)
+(a) size of block 1 KB
+
+set size (K, 1K=1,000 points)
+(b) size of block 4 KB
+
+Fig. 14 Amount of accessed disk blocks (data with uniform distribution). Observe that the Y axis
+uses a logarithmic scale
+
+220
+
+ 
+
+%
+
+ 30
+
+ 60
+
+ 50
+
+ 40
+
+ 20
+
+ 10
+
+ 0
+
+ 0
+
+Naive
+q−MER
+q−MERD1
+q−MERD2
+
+ 1e+06
+
+ 100000
+
+s
+k
+c
+o
+l
+B
+
+ 10000
+
+ 1000
+
+ 100
+
+Naive
+q−MER
+q−MERD1
+q−MERD2
+
+ 100
+
+ 10
+
+ 1
+
+ 0.1
+
+s
+d
+n
+o
+c
+e
+S
+
+ 0.01
+ 0
+
+ 
+
+%
+
+ 30
+
+ 60
+
+ 50
+
+ 40
+
+ 20
+
+ 10
+
+ 0
+
+ 0
+
+ 100000
+
+Naive
+q−MER
+q−MERD1
+q−MERD2
+
+ 10000
+
+s
+k
+c
+o
+l
+B
+
+ 1000
+
+ 100
+
+Naive
+q−MER
+q−MERD1
+q−MERD2
+
+ 100
+
+ 10
+
+ 1
+
+ 0.1
+
+s
+d
+n
+o
+c
+e
+S
+
+ 0.01
+ 0
+
+ 500  1000  1500  2000  2500  3000  3500  4000  4500  5000
+
+ 500  1000  1500  2000  2500  3000  3500  4000  4500  5000
+
+set size (K, 1K=1,000 points)
+(a) size of block 1 KB
+
+set size (K, 1K=1,000 points)
+(b) size of block 4 KB
+
+Fig. 15 Response time required by the algorithms (data with uniform distribution). Observe that the
+Y axis uses a logarithmic scale
+
+Geoinformatica (2014) 18:193–228
+
+221
+
+q−MER
+q−MERD1
+q−MERD2
+q−MER + q−MERD2
+
+q−MER
+q−MERD1
+q−MERD2
+q−MER + q−MERD2
+
+ 
+
+%
+
+ 10
+
+ 20
+
+ 15
+
+ 5
+
+ 0
+
+ 
+
+%
+
+ 10
+
+ 20
+
+ 15
+
+ 5
+
+ 0
+
+ 0
+
+ 500  1000  1500  2000  2500  3000  3500  4000  4500  5000
+
+ 0
+
+ 500  1000  1500  2000  2500  3000  3500  4000  4500  5000
+
+set size (K, 1K=1,000 points)
+(a) size of block 1 KB
+
+set size (K, 1K=1,000 points)
+(b) size of block 4 KB
+
+Fig. 16 Percentage accessed blocks (data with a Gaussian distribution)
+
+The same magnitude of differences can be observed in Figs. 14 and 15, which
+consider the total amount of accessed blocks and the response time required to solve
+the queries, respectively. Figures 14 and 15 make clear the difference between the
+naive approach and our algorithms, observe that those figures use a logarithmic scale
+in the Y axis. For example, when using a block size of 1 KB, q−MER, q−MERD1,
+and q−MERD2 require only 8.08 %, 4.8 %, and 4.6 %, respectively, of the time
+required by the naive approach (Fig. 15a), and the dominance based algorithms
+around a 40 % of that required by q−MER. We have not presented the results of the
+combined algorithms since with these datasets, they achieve marginal improvements.
+Figures 16, 17, and 18 show the results obtained when using the Gaussian data
+distribution as input. When the values of the combination of algorithms are not
+shown in Figs. 16 and 17, this means that those values are practically the same as
+those obtained by the basic algorithms. As in the case of the uniform distribution, all
+our algorithms significantly overcome the naive approach. For example, observe that
+in Fig. 18a, q−MER, q−MERD1, q−MERD2, q−MER + q−MERD1, and q−MER +
+q−MERD2 require only 7.1 %, 5.7 %, 6.2 %, 5.5 %, and 5.5 %, respectively, of the
+time required by the naive approach.
+
+Naive
+q−MER
+q−MERD1
+q−MERD2
+
+ 1e+06
+
+ 100000
+
+s
+k
+c
+o
+l
+B
+
+ 10000
+
+ 1000
+
+ 100
+
+Naive
+q−MER
+q−MERD1
+q−MERD2
+
+ 100000
+
+ 10000
+
+s
+k
+c
+o
+l
+B
+
+ 1000
+
+ 100
+
+ 0  500  1000 1500 2000 2500 3000 3500 4000 4500 5000
+set size (K, 1K=1,000 points)
+(a) size of block 1 KB
+
+ 0  500  1000 1500 2000 2500 3000 3500 4000 4500 5000
+set size (K, 1K=1,000 points)
+(b) size of block 4 KB
+
+Fig. 17 Accessed disk blocks with Gaussian data distribution. The Y axis is a logarithmic scale
+
+Naive
+q−MER
+q−MERD1
+q−MERD2
+q−MER + q−MERD1
+q−MER + q−MERD2
+
+222
+
+ 100
+
+ 10
+
+ 1
+
+s
+d
+n
+o
+c
+e
+S
+
+ 0.1
+
+Geoinformatica (2014) 18:193–228
+
+Naive
+q−MER
+q−MERD1
+q−MERD2
+q−MER + q−MERD1
+q−MER + q−MERD2
+
+ 100
+
+ 10
+
+ 1
+
+s
+d
+n
+o
+c
+e
+S
+
+ 0.1
+
+ 0
+
+ 500  1000  1500  2000  2500  3000  3500  4000  4500  5000
+
+ 0
+
+ 500  1000  1500  2000  2500  3000  3500  4000  4500  5000
+
+set size (K, 1K=1,000 points)
+(a) size of block 1 KB
+
+set size (K, 1K=1,000 points)
+(b) size of block 4 KB
+
+Fig. 18 Response time required by the algorithms (Gaussian distribution). The Y axis uses a
+logarithmic scale
+
+In order to avoid any distortion due to the arrangement of the data in an R*-tree
+that might increase the disk seek times, we stored all the points in a sequential file,
+in such a way that the naive approach can read the points sequentially. The results of
+this experiment can be seen in Fig. 19. Observe that, our algorithms also overcome
+the naive approach in this scenario. The disk blocks were of 1 KB, but the results
+with 4 KB were similar.
+
+Tables 5 and 6 show the performance of our algorithms and the naive approach
+over the real datasets. In this experiment, we used only one size of disk block of 1 KB,
+and the results for 4 KB followed the same trend. Table 5 summarizes the disk block
+accesses, whereas Table 6 shows the response time consumed to solve the queries.
+In Table 5, the five rows under the title #Accessed blocks show the total amount of
+blocks accessed, while the last five rows present the percentage of blocks accessed by
+each algorithm with respect to the total amount of blocks. In the case of Table 6, the
+upper data rows show the response time required by each algorithm, whereas the last
+five data rows show the percentage of time required by our algorithms with respect
+to the naive approach.
+
+Naive
+q−MER
+q−MERD1
+q−MERD2
+
+ 100
+
+ 10
+
+ 1
+
+ 0.1
+
+s
+d
+n
+o
+c
+e
+S
+
+ 0.01
+ 0
+
+Naive
+q−MER
+q−MERD1
+q−MERD2
+q−MER + q−MERD1
+q−MER + q−MERD2
+
+ 100
+
+ 10
+
+ 1
+
+s
+d
+n
+o
+c
+e
+S
+
+ 0.1
+
+ 500  1000  1500  2000  2500  3000  3500  4000  4500  5000
+
+ 0
+
+ 500  1000  1500  2000  2500  3000  3500  4000  4500  5000
+
+set size (K, 1K=1,000 points)
+(a) Uniform distribution.
+
+set size (K, 1K=1,000 points)
+(b) Gaussian distribution
+(the Y axis is in logarithmic scale).
+
+Fig. 19 Experiment where the naive approach reads the points from a sequential file
+
+Geoinformatica (2014) 18:193–228
+
+Table 5 Blocks accessed with real data, using a disk block size of 1 KB
+
+Size of set(points)
+Size of R*-tree(# blocks)
+
+Algorithm
+q−MER
+q−MERD1
+q−MERD2
+q−MER + q−MERD1
+q−MER + q−MERD2
+
+q−MER
+q−MERD1
+q−MERD2
+q−MER + q−MERD1
+q−MER + q−MERD2
+
+#Accessed blocks
+
+RD1
+
+2,249,727
+71,720
+
+4,799
+9,478
+11,627
+8,866
+3,093
+
+RD2
+
+556,696
+18,509
+
+1,614
+2,414
+2,354
+1,611
+938
+
+RD3
+
+194,971
+6,245
+
+1,199
+448
+350
+448
+340
+
+6.7
+13.2
+16.2
+12.4
+4.3
+
+8.7
+13.0
+12.7
+8.7
+5.1
+
+19.2
+7.2
+5.6
+7.2
+5.4
+
+Algorithm
+
+Percentage accessed blocks with
+
+respect the total
+
+223
+
+RD4
+
+699,900
+21,066
+
+2,416
+971
+825
+2,346
+659
+
+11.5
+4.6
+3.9
+11.1
+3.1
+
+As in previous data distributions, our algorithms overcome the naive approach.
+For example, in the case of the RD1 dataset, q−MER needs only 6.48 % of the time
+required by the naive approach. Table 5 shows an excellent performance of q−MER
+in the RD1 and RD2 datasets, where it outperforms q−MERD1 and q−MERD2. Yet,
+datasets RD3 and RD4 show the opposite behavior. If we analyze the distribution of
+the four real datasets, as we can see in Fig. 12, RD1 and RD2 have cluttered zones,
+whereas others are completely empty. Instead, in RD3 and RD4, the objects occupy
+almost all the space, having a distribution close to uniform. Therefore, as explained
+above, q−MER has a better behavior with datasets with large empty spaces, and
+worse when the distribution gets closer to uniform. On the contrary, the dominance-
+based algorithms show a better performance with uniform distributions.
+
+Next we focus our study in the storage required for each algorithm. The second
+step of q−MER obtains several sets of points C(cid:14), one for each QCER computed by
+
+Table 6 Performance with real datasets and disk block size 1 KB
+
+Algorithm
+
+time (seconds)
+
+RD2
+
+RD3
+
+RD4
+
+Naive
+q−MER
+q−MERD1
+q−MERD2
+q−MER + q−MERD1
+q−MER + q−MERD2
+
+q−MER
+q−MERD1
+q−MERD2
+q−MER + q−MERD1
+q−MER + q−MERD2
+
+RD1
+
+15.60
+1.01
+1.88
+2.33
+1.77
+0.89
+
+6.48
+12.05
+14.93
+11.34
+5.70
+
+3.22
+0.29
+0.44
+0.44
+0.31
+0.21
+
+9.00
+13.66
+13.66
+9.62
+6.52
+
+1.27
+0.15
+0.09
+0.09
+0.11
+0.08
+
+11.81
+7.08
+7.08
+8.66
+8.12
+
+5.10
+0.37
+0.28
+0.27
+0.28
+0.25
+
+7.25
+5.49
+5.29
+5.49
+4.90
+
+Algorithm
+
+Percentage of time required with respect
+
+to the naive approach
+
+224
+
+Geoinformatica (2014) 18:193–228
+
+the first step. Each set is provided as input to the algorithm ComputeER (line 14
+of Algorithm 2), which obtains the LQMER. We denote each run of ComputeER
+with a set of points as a case. The dominance-based algorithms only run ComputeER
+once, and therefore they always tackle just one case. In this experiment, we are not
+interested in the number of cases, as this parameter is captured by the response
+time needed to solve the queries. We are interested in the size of the cases, which
+measure the memory needed by each algorithm. Table 7 describes each of those
+cases considering several datasets and using a size of disk block of 1 KB, and the
+results for 4 KB followed the same trend.
+
+Observe that q−MER needs to process many cases to solve a query. However,
+the average size of those cases is small compared to the total number of points.
+Moreover, the maximum size of a case is still very small; 3 % approximately of the
+total amount of points. These values remain invariant regardless of the distribution
+of the considered dataset. The maximum size of a case indicates the amount of space
+needed to process a query. In our experiments, assuming that each point occupies
+20 bytes, 4 bytes for an integer that stores an identifier, and 16 bytes to store two
+coordinates (two double precision real numbers), q−MER needs around 1.1 MB
+with a dataset of size 2,000 K points (around 38.1 MB) and uniform or Gaussian
+distribution.
+
+q−MERD1 and q−MERD2 only need to solve one case for each query, yet the
+maximum size of a tackled case can reach around the 70 % of the total amount of
+points, when the distribution is far from uniform. However, the space consumed gets
+
+3.0
+
+3.2
+
+3.1
+
+2.9
+
+2.9
+
+2.9
+
+65.4
+
+47.8
+
+17.5
+
+18.1
+
+0.3
+
+7.6
+
+Uniform
+
+Gauss
+
+2,000 K
+
+2,000 K
+
+Table 7 Description of the cases solved by each algorithm
+
+Algorithm
+q−MER
+
+q−MERD1
+
+q−MERD2
+
+Size
+
+#p
+Avg
+Max
+PMax
+
+#p
+Avg
+Max
+PMax
+
+#p
+Avg
+Max
+PMax
+
+q−MER
+#p
++
+Avg
+q−MERD1 Max
+PMax
+
+q−MER
+#p
++
+Avg
+q−MERD2 Max
+PMax
+
+RD1
+
+2,249 K
+
+29
+2,489
+68,214
+
+1
+258,814
+1,472,361
+
+1
+349,679
+1,634,021
+
+3
+97,908
+1,472,361
+
+7
+8,683
+417,966
+
+RD2
+
+556 K
+
+20
+1,040
+17,805
+
+1
+55,946
+266,253
+
+1
+61,367
+268,257
+
+4
+9,458
+148,993
+
+2
+9,200
+122,151
+
+RD3
+
+194 K
+
+40
+328
+6,090
+
+1
+3,177
+34,140
+
+1
+3,484
+37,465
+
+1
+3,177
+34,140
+
+2
+2,960
+25,921
+
+RD4
+
+699 K
+
+47
+617
+20,371
+
+1
+13,229
+126,629
+
+1
+15,402
+145,641
+
+45
+618
+20,371
+
+3
+3,933
+80,726
+
+70
+997
+57,555
+
+1
+3,584
+6,887
+
+1
+3,624
+6,992
+
+3
+2,146
+57,555
+
+1
+3,624
+6,992
+
+34
+1,904
+57,642
+
+1
+14,464
+151,746
+
+1
+21,377
+393,380
+
+2
+10,212
+151,746
+
+3
+11,212
+393,380
+
+18.6
+
+21.9
+
+13.3
+
+11.5
+
+0.3
+
+19.7
+
+#p indicates the number of cases; Avg the average size of the cases; Max the maximum size of the
+tackled cases; and PMax the size of the largest case solved with respect to the total amount of points
+(in percentage)
+
+72.6
+
+48.2
+
+19.2
+
+20.8
+
+0.3
+
+19.7
+
+65.4
+
+26.8
+
+17.5
+
+2.9
+
+2.9
+
+7.6
+
+Geoinformatica (2014) 18:193–228
+
+225
+
+lower as the distribution approaches to the uniform distribution, until they reach a
+0.3 % when it is completely uniform.
+
+This confirms even more the adequacy of q−MER to real data with empty spaces
+and the dominance-based algorithms to the uniform distributions. Once again, the
+combination of algorithms (q−MER + q−MERD1 and q−MER + q−MERD2) take
+advantage of each approach, that is, they reduce the size of the cases (the main ad-
+vantage of q−MER) and the number of cases (the main advantage of the dominance-
+it can be seen that the algorithm q−MER +
+based algorithms). In Table 7,
+q−MERD2 achieves a good balance between the size of the cases and the number of
+cases; this added to the low number of blocks that this algorithm needs (see Table 5),
+yielding a good average performance.
+
+6 Conclusions
+
+In this work, we have presented three basic algorithms to solve the problem of
+finding the largest axis-parallel empty rectangle containing only a query point q in a
+rectangular space that contains a set of points stored in an R*-tree. We also presented
+two heuristics that choose the basic algorithm that better adapts to the input data
+distribution in order to obtain the best performance.
+
+We performed a set of experiments to measure the performance of our algorithms
+considering several synthetic and real datasets. The results show that our algorithms
+only need to access 3–55 % of the nodes of the R*-tree, that is, they are able to
+discard a big amount of the points stored in the R-tree. Obviously, this implies that
+our algorithms require much less response time than the naive approach; in the
+range 0.8–15.0 % of the time required by the naive algorithm. Regarding space, our
+algorithms require 0.3–73 % of the space required by the naive algorithm. Moreover,
+the algorithm with best average behavior requires 0.8–8 % of the time and 0.3–21.9 %
+of the space required by the naive approach.
+
+To the best of our knowledge, this is the first work that solves this problem
+considering that the points are stored in a spatial data structure as the R*-tree. As
+future work, we want to extend our proposal to objects with more dimensions and
+to rectangles with sides that are not necessarily parallel to the axes of the original
+space. We plan also to work in developing a cost model to predict the time and space
+consumed by our approach.
+
+Acknowledgements This work was supported, for the first author, by the project MECESUP
+UBB0704 (Chile). For the second and third authors by Ministerio de Educación y Ciencia [TIN2009-
+14560-C03-02] and [TIN2010-21246-C02-01], and Xunta de Galicia [grant 2010/17]. Finally, for the
+last author, his work has been supported by the Ministerio de Educación y Ciencia [TIN2008-
+003063], and the Junta de Andalucía research project [TIC-06114]. We would like to thank Yannis
+Manolopoulos and Juan Ramón López Rodríguez for their valuable comments and suggestions to
+improve the quality of the paper.
+
+References
+
+1. Aggarwal A, Suri S (1987) Fast algorithms for computing the largest empty rectangle. In: Pro-
+
+ceedings of SCG ’87. ACM, pp 278–290
+
+226
+
+Geoinformatica (2014) 18:193–228
+
+2. Augustine J, Das S, Maheshwari A, Nandy SC, Roy S, Sarvattomananda S (2010) Recognizing
+the largest empty circle and axis-parallel rectangle in a desired location. CoRR abs/1004.0558
+3. Augustine J, Das S, Maheshwari A, Nandy SC, Roy S, Sarvattomananda S (2010) Querying for
+
+the largest empty geometric object in a desired location. CoRR abs/1004.0558v2
+
+4. Augustine J, Putnam B, Roy S (2010) Largest empty circle centered on a query line. J Discrete
+
+Algorithms 8(2):143–153
+
+5. Augustine J, Das S, Maheshwari A, Nandy SC, Roy S, Sarvattomananda S (2013) Localized
+
+geometric query problems. Comput Geom 46(3):340–357
+
+6. Beckmann N, Kriegel H, Schneider R, Seeger B (1990) The R*-tree: An efficient and robust
+access method for points and rectangles, In: Garcia-Molina H, Jagadish HV (eds) Proceedings of
+SIGMOD ’09. ACM Press, pp 322–331
+
+7. Böhm C, Kriegel H.-P (2001) Determining the convex hull in large multidimensional databases.
+
+In: Proceedings of DaWaK ’01. Springer, pp 294–306
+
+8. Börzsönyi S, Kossmann D, Stocker K (2001) The skyline operator. In: Proccedings of ICDE ’01.
+
+9. Chazelle B, Drysdalet RL, Lee DT (1986) Computing the largest empty rectangle. SIAM J
+
+pp 421–430
+
+Comput 15:300–315
+
+10. Chew LP, Drysdale RLS (1986) Finding largest empty circles with location constraints. Tech.
+
+Rep. PCS-TR86-130, Dartmouth College, Computer Science, Hanover, NH
+
+11. Corral A, Manolopoulos Y, Theodoridis Y, Vassilakopoulos M (2004) Algorithms for processing
+
+k-closest-pair queries in spatial databases. Data Knowl Eng 49(1):67–104
+
+12. De M, Nandy SC (2011) Inplace algorithm for priority search tree and its use in computing largest
+
+empty axis-parallel rectangle. CoRR abs/1104.3076
+
+13. Dellis E, Seeger B (2007) Efficient computation of reverse skyline queries. In: Proceedings of
+
+14. Edmonds J, Gryz J, Liang D, Miller RJ (2003) Mining for empty spaces in large data sets. Theor
+
+15. Gaede V, Günther O (1998) Multidimensional access methods. ACM Comput Surv 30(2):
+
+16. Gutiérrez G, Paramá J (2012) Finding the largest empty rectangle containing only a query point
+
+in large multidimensional databases. In: Proceedings of SSDBM 2012. Springer
+
+17. Guttman A (1984) R-trees: A dynamic index structure for spatial searching. In: Proceedings of
+
+SIGMOD ’84, ACM, pp 47–57
+
+18. Hjaltason GR, Samet H (1998) Incremental distance join algorithms for spatial databases. In:
+
+Proceedings of SIGMOD ’98, ACM, pp 237–248
+
+19. Kaplan H, Mozes S, Nussbaum Y, Sharir M (2012) Submatrix maximum queries in monge
+matrices and monge partial matrices, and their applications. In: Proceedings of SODA 2012,
+SIAM, pp 338–355
+
+20. Kaplan H, Sharir M (2012) Finding the maximal empty disk containing a query point. In:
+
+Proceedings of SCG 2012, SoCG ’12. ACM, New York, NY, USA, pp 287–292
+
+21. Manolopoulos Y, Nanopoulos A, Papadopoulos AN, Theodoridis Y (2005) R-Trees: Theory and
+Applications (Advanced information and knowledge processing). Springer-Verlag New York,
+Inc., Secaucus, NJ, USA
+
+22. Minati D, Nandy S (2011) Space-efficient algorithms for empty space recognition among a point
+set in 2d and 3d. In: Proceedings of the 23rd annual Canadian conference on computational
+geometry, pp 347–353
+
+23. Naamad A, Lee DT, Hsu W-L (1984) On the maximum empty rectangle problem. Discrete Appl
+
+24. Nandy S, Bhattacharya B (1998) Maximal empty cuboids among points and blocks. Comput Math
+
+VLDB ’07. ACM, pp 291–302
+
+Comput Sci 296:435–452
+
+170–231
+
+25. Oracle spatial user’s guide and reference (2012) http://docs.oracle.com/html/A88805_01/sdo_
+
+26. Orlowski M (1990) A new algorithm for the largest empty rectangle problem. Algorithmica 5:65–73
+27. Papadias D, Tao Y, Fu G, Seeger B (2005) Progressive skyline computation in database systems.
+
+ACM T Database Syst 30(1):41–82
+
+28. Postgis 1.5.3 manual (2012) http://postgis.refractions.net/documentation/manual-1.5/
+29. Roussopoulos N, Kelley S, Vincent F (1995) Nearest neighbor queries. SIGMOD Rec 24(2):71–79
+30. Shekhar S, Chawla S (2003) Spatial databases - a tour. Prentice Hall
+31. Toussaint GT (1983) Computing largest empty circles with location constraints. In J Comput Inf
+
+Sci 12(5):347–358
+
+Math 8:267–277
+
+Appl 36(3):11–20
+
+intr.htm
+
+Geoinformatica (2014) 18:193–228
+
+227
+
+Gilberto Gutiérrez received his M. Sc. from the University of Chile in 1999 and the Ph.D. in
+computer science in 2007 from the same university. Currently he is assistant professor at the
+Universidad del Bío-Bío and is a member of the directors board of the Chilean Computer Science
+Society. His research interest are: spatial and temporal databases and data structures.
+
+José R. Paramá received his Ph.D. in 2001 at the University of A Coruña, where he is currently
+associate professor. His main research topics are compression and indexation of information and
+spatial databases.
+
+228
+
+Geoinformatica (2014) 18:193–228
+
+Nieves R. Brisaboa received her first degree in computer science and a Ph.D. from the University
+of A Coruña, Spain. She is founder and director of the Database Laboratory at the University
+of A Coruña, from which she supervised the research in databases undertaken at this university.
+As director of the laboratory, she was the main researcher of 13 projects founded by the public
+administrations of Galicia and Spain. In addition, she was the director of various development
+projects founded by public companies (local administration of A Coruña province and the Royal
+Academy of Galician Language). She serves as a reviewer for international journals and conferences,
+and supervised six PhD theses. Currently, she is a full-professor within the Computer Science
+Department, University of A Coruña. Her research interests include digital libraries, text retrieval,
+compressed text retrieval, deductive databases and spatial databases.
+
+Antonio Corral
+received his PhD (2002) in Computer Science (European Doctorate) from the
+University of Almeria (Spain). Since June 2008, he is an Associate Professor at the Department of
+Languages and Computing, University of Almeria (Spain). He has participated actively in several
+research projects in Spain (INDALOG, vManager, etc.) and Greece (CHOROCHRONOS and
+ARCHIMEDES). He has published in referred scientific international journal (Data & Knowledge
+Engineering, The Computer Journal, GeoInformatica, Information Sciences, etc.), conferences
+(SIGMOD, SSD, ADBIS, SOFSEM, PADL, etc.) and book chapters. His main research interests
+include access methods, query processing and spatial and spatio-temporal databases. Further infor-
+mation can be found at http://www.ual.es/~acorral/.
+
+

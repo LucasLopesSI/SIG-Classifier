@@ -1,0 +1,1821 @@
+Geoinformatica (2010) 14:23–53
+DOI 10.1007/s10707-008-0075-y
+
+User deﬁned topological predicates in database systems
+
+Thomas Behr · Ralf Hartmut Güting
+
+Received: 11 April 2008 / Revised: 30 October 2008 /
+Accepted: 15 December 2008 / Published online: 15 January 2009
+© Springer Science + Business Media, LLC 2009
+
+Abstract Current database systems cannot only store standard data like integer,
+string, and real values, but also spatial data like points, lines, and regions. The
+importance of topological relationships between spatial objects has been recognized
+a long time ago. Using the well known 9-intersection model for describing such re-
+lationships, a lot of different topological relationships can be distinguished. For the
+query language of a database system it is not desirable to have such a large number
+of topological predicates. Particularly the query language should not be extended
+by a lot of predicate names. It is desirable to build new relationships from existing
+ones, for example to coarse the granularity. This paper describes how a database
+system user can deﬁne and use her own topological predicates. We show algorithms
+for computing such predicates in an efﬁcient way. Last, we compare these general
+versions with specialized implementations of topological predicates.
+
+Keywords Topological predicate · Topological relationships · Spatial database ·
+User deﬁned topological predicate
+
+1 Introduction
+
+Besides standard data types, current database systems are able to store different
+kinds of information. Among others, it is possible to store spatial data types like
+points, lines, and regions. The importance of topological relationships between spatial
+objects has been recognized a long time ago. In database systems, topological predi-
+cates are used to ﬁnd pairs of spatial objects which are in an interesting relationship.
+
+T. Behr (B) · R. H. Güting
+
+FernUniversität in Hagen, Hagen, Germany
+e-mail: thomas.behr@fernuni-hagen.de
+
+R. H. Güting
+e-mail: rhg@fernuni-hagen.de
+
+24
+
+Geoinformatica (2010) 14:23–53
+
+Using the well known 9-intersection model [7], a lot of topological relationships
+can be distinguished. For example, for two complex lines1 82 different relationships
+can occur [20]. From a database view it is not desirable to extend the query language
+by names for each relationship. For one thing it is difﬁcult to handle a huge number of
+predicate names, for the other thing there are different matrices of the 9-intersection
+model describing obviously the same topological relationship. Database queries can
+be formulated easier if the user can put together such topological predicates to
+a single predicate instead to connect them by a disjunction in each query. The
+predicates proposed by the Open GIS Consortium [15] cover a lot of applications.
+Unusual predicates can be formulated using the relate operator or a disjunction
+of several instances of that operator. Using relate, the topological relationship is
+described by a pattern string. The formulation of that string requires some knowledge
+about the underlying model (the DE-9IM, see Section 2). Using the approach
+proposed in this paper, an expert can deﬁne any topological predicate needed by
+the application. After that, the ordinary user can use it via its name.
+
+Traditionally the evaluation of an non-predeﬁned topological predicate (given
+as a disjunction of basic predicates) requires an evaluation of the basic predicates
+and connecting the results. So, several scans through the spatial data are required
+resulting in long answer times for the complete disjunction. When using user deﬁned
+predicates, a single scan of the spatial data will be sufﬁcient to decide whether the
+predicate is fulﬁlled or not. We will propose the algorithms in Section 5.2.
+
+The remainder of this paper is structured as follows. Section 2 is about previous
+work in the ﬁelds covered by this paper and underlines its new parts. In Section 3
+we describe the tools (i.e. data types and operators) required for deﬁning and using
+topological relationships. In Section 4 we show a set of examples, applying these
+tools within an existing database system. The implementation of the data types and
+algorithms for efﬁcient evaluation of topological predicates is the subject of Section
+5. We compare the running times of our general algorithms with already existing ones
+in Section 6. Finally, Section 7 concludes the paper.
+
+2 Related work
+
+In the past, several models describing topological relationships have been developed.
+In [6], the emptiness/non-emptiness of the intersections between the interior and the
+boundary of the involved objects are used to describe a topological relationship. The
+model is called the 4 intersection model. [5] investigates the possible relationships
+between regions with holes using that model. But it omits complex regions with
+separate components.
+
+In this paper, we use the 9-intersection model [7]. It is an extension of the 4
+intersection model. Here not only the emptiness of the intersections between interior
+and boundary of a spatial object is evaluated, but additionally the intersections of all
+parts of an object with the exterior of the other object. It uses a boolean matrix to
+represent a topological relationship between two spatial objects o1 and o2. The matrix
+
+1A complex line may consist of several non-connected parts, and may have any number of endpoints
+(also zero for a loop.)
+
+Geoinformatica (2010) 14:23–53
+
+25
+
+entries indicate the non-emptiness of the intersection between the interior (o◦), the
+boundary (δ(o)) and the exterior (o−1) of the involved objects in the following way:
+o◦
+1
+
+⎛
+
+⎞
+
+(cid:4)= ∅
+(cid:4)= ∅
+(cid:4)= ∅
+
+∩ δ(o2) (cid:4)= ∅
+δ(o1) ∩ δ(o2) (cid:4)= ∅
+∩ δ(o2) (cid:4)= ∅
+o
+
+−1
+1
+
+o◦
+∩ o
+1
+δ(o1) ∩ o
+−1
+∩ o
+o
+1
+
+−1
+2
+−1
+2
+−1
+2
+
+(cid:4)= ∅
+(cid:4)= ∅
+(cid:4)= ∅
+
+⎠
+
+m(o1, o2) =
+
+⎝
+
+⎛
+
+⎝
+
+∩ o◦
+o◦
+2
+1
+δ(o1) ∩ o◦
+2
+−1
+∩ o◦
+o
+2
+1
+⎞
+ii ib ie
+bi bb be
+ei eb ee
+
+⎠
+
+=
+
+where the lower matrix is used as an abbreviation of the upper one within the
+remainder of this paper, i.e. we use the names of the entries to specify matrix
+positions.
+
+For simple spatial objects, only a few topological predicates can be realized. For
+example for two non-empty simple regions (connected areas without holes), eight
+topological relationships can be identiﬁed. But the number of realizable matrices
+grows drastically when switching to complex spatial objects. For example, for two
+non-empty complex lines 82 relationships can occur. A detailed analysis of realizable
+topological relationships applying the 9-intersection model to complex spatial objects
+can be found in [20].
+
+Whereas for simple spatial objects, providing a complete set of topological predi-
+cates makes sense, the according set of predicates for complex objects would be hard
+to use. For example if each realizable matrix in that model got its own name, the user
+would have to handle more than 80 predicate names.
+
+If that model was used in pure fashion, the next problem would be that different
+matrices describe the same relationship, as an example see Fig. 1. We can see, that in
+all cases of this ﬁgure both lines have no common part and should be identiﬁed to be
+disjoint. Clearly, loops are limit cases — but there is no reason to ignore them.
+
+Instead of only checking for emptiness of intersections between object com-
+ponents, the Dimension Extended Method (DE-9IM) [4] deﬁnes a topological
+relationship using the maximum dimension of any connected point set within such
+intersections. Also the problem of too many different topological relationships was
+addressed. In contrast, the Calculus Based Method (CBM) uses only a few basic
+topological relationships [3] together with a boundary operator for providing a user
+friendly model for querying a database system. The CBM is applied to complex
+spatial objects in [1]. Detailed Topological Relationships between Composite Re-
+gions (TRCR) is the subject of [2]. Here, the number of topological relationships
+depends on the number of components of the involved regions. Therefore that model
+is inappropriate for extending the query language of a database system.
+
+Fig. 1 Different matrices describing disjoint lines
+
+26
+
+Geoinformatica (2010) 14:23–53
+
+The Open GIS Consortium [15] presents a small ﬁxed set of named topological
+predicates. Unusual predicates can be expressed using the relate predicate. Besides
+the objects, that operator receives a template describing a set of matrices in the DE-
+9IM. By a conjunction of several relate operators, it is possible to deﬁne any set
+of matrices within that model. Using the relate operator requires some knowledge
+about the DE-9IM. Using our approach, an expert can deﬁne the predicates and the
+user can use them via its name. Also if the user is an expert, it is easier to use a
+predeﬁned predicate by name instead of formulating the predicate for each query.
+
+If the used database system does not support an extension of the query language,
+using our approach internally can have advantages. For example if the user formu-
+lates an expression connecting several topological predicates by boolean operators,
+the DBMS’s optimizer can build a single predicate from it. Thereby only a single scan
+through the spatial objects is sufﬁcient to evaluate the complete expression.
+
+Another problem is the granularity of topological predicates. For example, it is
+not clear whether a region should be inside another region if it has no parts in
+the other region’s exterior, or has each part of the region in the other region’s
+interior (see Fig. 2). Such decisions depend on the applications and the user’s
+understanding of topological predicates. Even researchers are not agreed, e.g. in
+[15] both relationships are collected in the contains predicate while in [7] both
+relationships are separated into the predicates contains and covers.
+
+Schneider [18] presents an implementation for computing topological predicates
+for complex regions. That paper presumes realm based regions presented in [13].
+Such regions are represented by their boundaries, which are sets of segments. In the
+realm based approach, these segments must not cross each other even for different
+objects. Furthermore, an endpoint of a segment must not lie within the interior of
+any other segment. So, segments are equal or have at most one common endpoint.
+Within a spatial database system (or a database system extended by spatial features),
+it is a very hard task to maintain these conditions.
+
+Within this paper, we present algorithms computing topological relationships
+between complex spatial objects in an efﬁcient way. We leave the assumption of
+realm based objects and allow segments to overlap or to cross.
+
+In [19] an algorithm computing the topological relationship between two complex
+regions is described. The regions which are the arguments of that algorithm are not
+restricted to be realminized. The return type of the algorithm is one of the rela-
+tionships in {disjoint, meet, inside, contains, equal, coveredBy, covers, overlap}. In
+contrast, we use clusters which can represent any topological relationship. Thereby,
+we can check a topological predicate within a single scan of both objects, for example
+for even to evaluate a disjunction of several basic predicates. Furthermore, we
+describe algorithms for all combinations of spatial objects instead only for the region
+type.
+
+Fig. 2 Different relationships
+or not?
+
+Geoinformatica (2010) 14:23–53
+
+27
+
+A two step approach for computing a topological predicate is proposed in [17].
+In the ﬁrst step, topological information is stored in a so-called topological fea-
+ture vector. In the second phase, the stored information is used to determine the
+topological relationship between the spatial objects. In this paper, we determine
+the topological relationship within a single step. In the evaluation of a topological
+predicate, its possible to stop the computation if a non-allowed (depending on the
+predicate) intersection is found. Thus it is possible to avoid a complete scan of the
+involved spatial objects.
+
+3 Concept
+
+A rough idea to solve the problems addressed in the previous sections is described in
+[20]. In this paper, we formally introduce a set of types with some operations working
+on it. For integrating the concept into a DBMS, we assume a database system, where
+new types can be deﬁned and used. Furthermore, the DMBS must be able to include
+new algorithms and to call them via its (extended) query language.
+
+3.1 Spatial data types
+
+First, we have to clarify which spatial objects can occur and we have to deﬁne their
+parts (interior, boundary) in a formal way.
+
+A value of type point corresponds to a single point in the Euclidean space. Its
+
+interior consists of that point and its boundary is empty.
+
+An object of type points is a ﬁnite set of points. The boundary of a points value
+
+also is empty.
+
+point := R2
+∀ p ∈ point : p◦ = p, δ( p) = ∅
+
+points := { p ⊂ R2| p is f inite}
+∀ ps ∈ points : ps◦ = ps, δ( ps) = ∅
+
+A segment is described by its two endpoints. The boundary of a segment corre-
+
+sponds to its endpoints. Its interior is the straight line between the endpoints.
+
+segment = {(s, e) | s, e ∈ point, s (cid:4)= e}
+∀seg =((x1, y1), (x2, y2)) ∈ segment :
+
+seg◦ := {(x, y) | x = x1 + β(x2 − x1), y = y1 + β(y2 − y1), β ∈ (0, 1)}
+δ(seg) = {(x1, y1), (x2, y2)}
+
+An instance of type line is a ﬁnite set of segments. Its boundary corresponds to the
+subset of the endpoints of the contained segments which are not covered by any part
+of another contained segment. Formally we get:
+
+line := {s ⊂ segment|s is ﬁnite}
+∀l ∈ line :δ(l) = {e : card({s = (e1, e2) ∈ l|e = e1 ∨ e = e2}) = 1} −
+
+(cid:6)
+
+s∈l
+
+s◦
+
+(cid:8)
+
+l◦ =
+
+(s◦ ∪ δ(s)
+
+− δ(l)
+
+(cid:7)
+
+(cid:6)
+
+s∈l
+
+28
+
+Geoinformatica (2010) 14:23–53
+
+The deﬁnition of a region is based on the point set theory [8]. In an abstract way,
+a region is a bounded regular closed point set with a ﬁnite number of connected
+components. The boundary of a region has no missing or dangling lines or points.
+From a technical point of view, a region is represented by a set of loops deﬁned
+by sets of segments forming its boundary. Each loop separates the interior and the
+exterior of the region.
+
+3.2 Types representing topological relationships
+
+In the following, we denote the 9-intersection matrix for the objects o1 and o2 by
+m(o1, o2). We call the type representing such a matrix int9m. Formally, an object of
+that type is a nine-tuple of boolean values:
+
+A cluster is a named set of objects of type int9m. Formally, we have:
+
+int9m := {a9| ∈ {true, f alse}}
+
+M := F(int9m) = {m | m ∈ int9m}
+cluster := {(n, m) | n ∈ string, m ∈ M}
+
+We use that type to deﬁne a topological relationship. A topological predicate p
+can be described by a cluster c. p complies with two objects o1 and o2 if m(o1, o2)
+is contained in the set of matrices in c. For example, we could deﬁne a disjoint
+predicate for two non empty objects by a cluster containing all matrices with a false
+entry at the positions ii, ib, bi, and bb and true entries at positions ie and ei. We
+can combine different topological relationships to a single one just by forming the
+union of matrices contained in the two corresponding clusters. Thus we overcome
+the problem of granularity. In the following, we will denote the string component of
+a cluster c with c.name, and the set of matrices of c with c.matrices.
+
+A predicategroup deﬁnes a system of mutually exclusive topological relationships.
+If several users (or applications) need different interpretations of a same-named
+predicate (e.g. due to different granularities), different clusters with the same name
+must be managed. Using a predicate group, we collect a consistent set of clusters.
+The formal deﬁnition of that type is:
+
+predicategroup := {C ∈ F(cluster) |
+∀ci, c j ∈ C, i (cid:4)= j :
+ci.name (cid:4)= c j.name ∧ ci.matrices ∩ c j.matrices = ∅}
+
+Objects of type predicategroup are used to organize collections of topological
+predicates. Furthermore, this type enables the possibility to ﬁnd out the topological
+relationship between two given objects.
+
+3.3 New operations
+
+Besides the creation of new objects of one of the types described in Section 3.2, we
+have two new operators namely toprel and toppred with following signatures:
+
+toprel :
+toppred:
+where t1, t2 ∈ {point, points, line, region}
+
+t1 × t2 → int9m
+t1 × t2 × cluster → bool
+
+Geoinformatica (2010) 14:23–53
+
+29
+
+The toprel operator computes the 9-intersection matrix for a pair of spatial
+objects. We can use it to determine the topological relationship between two objects.
+
+The operator toppred computes the following function:
+
+toppred(o1, o2, c) := toprel(o1, o2) ∈ c.matrices
+
+Providing a separate operator for this function enhances the readability of queries
+and enables an early exit in algorithms implementing that operator (see Section 5.3).
+The toppred operator has functionality similar to the SDO_RELATE operator
+of the Oracle Spatial database system [14]. Whereas the SDO_RELATE operator
+receives one of a small set of topological predicates (or a disjunction of them), our
+operator is more ﬂexible because arbitrary clusters can be used.
+
+3.4 Application
+
+For each predicate, the topological relationship is coded in an object of type cluster.
+For the standard predicates of the OGC except the general predicate relate, the
+database system should hold predeﬁned clusters directly in its kernel.
+
+The relate operator cannot be realized using the algorithms from Section 5.2 in
+the pure form proposed here because they are based on the 9-intersection model. In
+contrast the relate operator requires the DE-9IM model. By simple changes to our
+algorithms (we will describe them), it is possible to extend our approach to support
+also the DE-9IM model.
+
+Unusual topological relationships are stored as single objects or within a relation
+depending on the data model of the DBMS. If the DBMS supports user deﬁned
+functions, we just create new functions calling the toppred operator. Otherwise, the
+user has to use the toppred predicate directly.
+
+4 Realization in SECONDO
+
+The types and operations described in Section 3 have been implemented as exten-
+sions to the Secondo extensible database system. Secondo is extensible by so-called
+algebra modules using the concept of the second order signature [9]. An algebra
+module provides new data types (as C++ classes) together with operators (as C++
+functions) working on them.
+
+The spatial data types from Section 3.1 are implemented in the Spatial-
+Algebra. The TopRelAlgebra implements the data types from Section 3.2. Both
+algebra modules are connected by the TopOpsAlgebra providing the toprel and the
+toppred operator.
+
+4.1 Deﬁning and manipulating matrices
+
+Usually, single matrices are not deﬁned by the user. But they may be helpful to
+deﬁne and manipulate clusters. In Secondo, an object can be created by a const
+construct having the format [const type value valuelist]. For an object of type
+int9m there are several possibilities for valuelist. For a matrix m it can be a list
+containing the boolean entries of m in the following order: (ii ib ie bi bb be ei eb
+ee). As an abbreviation, the concatenation of the entries in the matrix can also be
+
+30
+
+Table 1 Operations on
+clusters
+
+Name
+
+union
+intersection
++, -
+name_of
+contains
+disjoint
+transpose
+
+Geoinformatica (2010) 14:23–53
+
+Signature
+cluster × cluster → cluster
+cluster × cluster → cluster
+cluster × int9m → cluster
+cluster → string
+cluster × int9m → bool
+cluster × cluster → bool
+cluster × string → cluster
+
+interpreted as a binary number, so that each matrix can be described by a unique
+number in range [0, 511].
+
+4.2 Deﬁning and manipulating clusters
+
+A cluster is a named set of matrices describing a topological relationship. It can
+be deﬁned directly by writing up the set of contained matrices: [const cluster
+value ("name" (m1 m2 ...))], where mi is a matrix description from Section
+4.1. Because it is inconvenient for the user to select the contained matrices manually,
+there is an alternative way for describing a set of matrices by giving the set of matrices
+as a boolean expression. The basic conditions are ii, . . . , ee. Each basic condition
+corresponds to a true value at the corresponding matrix position (formally an xx in
+the formula corresponds to xx = true). They can be combined to expressions using
+and(&), or(|), not(!), → (⇒), and ↔(⇔) operations and brackets in the usual way.
+For example, deﬁning a cluster describing a touches relationship [4] can be
+done in the following way. Such a relationship should hold, if the involved ob-
+jects have a common boundary but no further common parts. The expression:
+[const cluster value ("touches" "bb & !( ii | ib | bi)")] de-
+ﬁnes the corresponding cluster.
+
+Clusters can be manipulated using the operations from Table 1. The operation
+union (intersection) creates the union (intersection) of the matrices of both argu-
+ments. The name is taken from the ﬁrst argument. The operations +, -, name_of,
+contains, and disjoint should be self-explanatory. The transpose operator deﬁnes
+a symmetrical relationship by replacing all contained matrices by their transposed
+counterparts. The string parameter is the name of the result. For example, if there is
+a cluster cl_inside deﬁning an inside relationship, we can create a contains cluster
+using the command:
+
+let cl_contains = transpose(cl_inside, "contains").
+In general,
+m(o1, o2) = transpose(m(o2, o1)) holds. Hence also toppred(o1, o2, cl) = toppred(o2,
+o1, transpose( cl)) holds.
+
+4.3 Deﬁning predicate groups
+
+A predicategroup describes a system of mutually exclusive topological relationships.
+It is realized by a set of disjoint clusters. There are several operators creating
+predicate groups from clusters.
+
+Among others, the operator stdpgroup is provided creating a constant predicate
+group realizing our imagination of topological predicates. The result contains eight
+
+Geoinformatica (2010) 14:23–53
+
+Table 2 Operations on
+predicate groups
+
+Name
+
+stdpgroup
+clustername_of
+cluster_of
+sizeof
+getcluster
+
+31
+
+Signature
+→ predicategroup
+predicategroup × int9m → string
+predicategroup × int9m → cluster
+predicategroup → int
+predicategroup × string → cluster
+
+topological predicates, namely covers, coveredBy, contains, inside, equal,
+disjoint, meet, and overlap.
+
+Table 2 shows an overview of the operators deﬁned on the type predicategroup.
+The operator cluster_of returns the cluster containing the 9-intersection matrix
+an abbreviation for
+given as
+name_of(cluster_of(g, m)). It
+for more comfort. Using the
+getcluster operator, we can extract a cluster from a group by its name.
+
+second argument.
+
+is provided just
+
+clustername_of
+
+the
+
+is
+
+4.4 Using deﬁned objects
+
+In this section we illustrate how to use the types and operators from the last sections
+by providing some examples.
+
+Queries are formulated using the query language of Secondo’s optimizer [10]. The
+query language is very similar to SQL but differs in some details. Further applications
+of the Secondo system are described in [11].
+
+For the following examples, we use the database “Germany” which is described in
+
+detail in Appendix A.1.
+
+Example 1 Find out which districts are the neighbors of the urban district with name
+“Magdeburg”.
+
+For better readability, we ﬁrst extract the cluster describing adjacent spatial
+
+objects from the standard predicate group:
+
+let ’cl_meet = getcluster(stdpgroup(),"meet")’.
+
+Because Secondo supports user deﬁned functions, we use this possibility to give
+
+our “new” predicate a name.
+
+let ’myAdjacent = fun(r1 : region, r2: region)
+
+toppred(r1,r2,cl_meet)’.
+
+The function object now can be used like a usual predicate. We have to tell the
+optimizer to use the newly deﬁned predicate as a preﬁx operator of Secondo.
+
+assert(secondoOp(myAdjacent, prefix, 2)).
+
+32
+
+Geoinformatica (2010) 14:23–53
+
+After that, we can use it. Of course, these steps must be done only once for the
+deﬁnition of a topological predicate. Later, the predicate can just be used without
+further changes.
+
+select cname from district where myAdjacent(territory,
+
+magdeburg).2
+
+Admittedly, that example is not very impressive because we only use a standard
+predicate also directly available within the Secondo system3. But it demonstrates,
+how to deﬁne and to use new predicates.
+
+Example 2 Which are the districts that intersect the river “Rhine”?
+
+This question can be answered by:
+
+let ’cl_intersects =
+
+[const cluster
+
+select dname
+from [river, district]
+where [rname ="Rhine" ,
+
+value ("intersects" "ii | ib | bi | bb")]’.
+
+toppred(rroute, territory, cl_intersects)].
+
+In that example we show, how easy a predicate can be deﬁned without using one of
+the predeﬁned predicates.
+
+Example 3 Which parts of highways are disjoint or completely inside of
+“Magdeburg”?
+
+let ’cl_di = getcluster(stdpgroup(),"disjoint") union
+
+getcluster(stdpgroup(),"inside")’.
+
+select [aname,anr]
+from highway
+where toppred(HRoute, magdeburg, cl_di).
+
+By simply deﬁning a new cluster, we can combine two completely different
+topological relationships. So, we only have to compute a single topological predicate.
+If a ﬁxed set of topological relationships was provided, we would have to evaluate two
+different topological predicates and connect their result within a disjunction. Because
+the computation of a topological predicate is expensive in general, our approach
+saves running time in such cases.
+
+2For technical reasons, in Secondo’s SQL-like query language, names of objects (relations) and
+attributes are written in lower case.
+3The standard predicate also calls the toppred operator using a predeﬁned object of type cluster.
+
+Geoinformatica (2010) 14:23–53
+
+33
+
+Example 4 But also more unconventional topological relationships can be deﬁned.
+For example, imagine we want to ﬁnd out whether a river exists which ends within
+the urban district Magdeburg but is not completely inside of that district.
+
+First, we deﬁne the cluster realizing the predicate from our question. Then, we
+
+execute the corresponding query.
+
+let ’cl_ends_in = [const cluster value
+
+("endsIn" "bi & (ie | be)")]’.
+
+select count(*)
+from
+where
+first 1.
+
+river2
+toppred(RRoute, magdeburg, cl_ends_in)
+
+Example 5 Finally, we will show, how predicate groups can be used to ﬁnd out the
+topological relationship of two objects. In the example, we search for the relationship
+between the city Hagen and the same-named district.
+
+select [cname, dname,
+
+toprelation ]
+
+from [city, district]
+
+clustername_of(std, toprel(pos, territory)) as
+
+where [cname = "Hagen", dname contains cname ].
+
+5 Implementation
+
+5.1 Data types
+
+In Secondo the most data types contain a ﬂag indicating whether the object is
+deﬁned. An undeﬁned object corresponds to a null value in a conventional database
+system. In this paper we are only interested on deﬁned values and so we ignore the
+special case of undeﬁned values in the remainder of this paper.
+
+The point data type consist of two real coordinates each represented by the C++
+
+data type double.
+
+For sets of objects, Secondo provides a template class DBArray. It can be used
+
+like a usual vector but provides some functionality for persistent storing.
+
+The points type is basically such a DBArray storing single values of type point.
+
+The entries are stored in lexicographical order. Duplicates are not allowed.
+
+There is no implementation for a segment within Secondo. Instead so-called
+halfsegments are used. Basically a halfsegment is a segment with one signalized end-
+point, the dominating point. Each segment is stored as two halfsegments with oppo-
+site dominating points. We use the function hasLeftDomPoint (hasRightDomPoint)
+to ﬁnd out whether the smaller (bigger) endpoint of a halfsegment is the dominating
+one.
+
+Within the line type, halfsegments are stored sorted where the ﬁrst criterion for
+sorting is the dominating point. Thereby each segment is reached twice during a
+single scan of all halfsegments. First, we hit the left (smaller) endpoint of the segment
+
+34
+
+Geoinformatica (2010) 14:23–53
+
+and later the right (bigger) one. By this representation, we avoid the expensive
+creation of an explicit event structure for plane sweep algorithms. The disadvantage
+is the doubled data size on disc and in memory.
+
+line values are not restricted to have a ﬁxed number of endpoints and can consist
+
+of several components.
+
+For a region, we store its boundary as a set of halfsegments. For the region type,
+halfsegments are extended by a ﬂag insideAbove indicating where the inner part
+of the region is. Within a representation of a region, both, overlapping and crossing
+segments, are not allowed.
+
+For the representation of a 9-intersection matrix, we use a bit vector. The bit
+
+vector is realized using the C++ data type short int.
+
+Because a 9-intersection matrix consists of 9 boolean values, there are 512 possible
+matrices. So, a cluster can contain at most 512 matrices. This number is small
+enough to represent it as a bit vector. The ﬁxed size of the bit vector has some
+advantages when storing the object persistently. Inserting, deleting and checking for
+containedness of a single matrix can be done in constant time. For the set operations
+union, intersection and so on, we have to scan the whole bit vector. Due to the
+restricted size, this can also be done efﬁciently.
+
+Using the DE-9IM, we would have 95 = 59, 049 possibilities theoretically. But the
+actual number is much less. Because the boundary of the considered spatial types
+has a maximum dimension of one, in the DE-9IM matrix each intersection with a
+boundary component cannot have the entry two. Because we only consider restricted
+spatial objects, the dimensions of the intersection of the exteriors is always 2. For this
+reason only 4,860 matrices are realizable independent of the involved spatial data
+types. If we include the involved data types, we can decrease this number much more.
+Therefore we propose to use an ordered set to represent a cluster for the DE-9IM.
+
+For two different spatial types t1 and t2 the complex algorithms realizing the toprel
+and the toppred operators only are implemented in one direction. For example, the
+algorithm processing the types line and region is implemented with signature (line ×
+region) but not with signature (region × line). Instead, the toprel operator transposes
+the result after calling the algorithm and the toppred operator transposes the
+argument cluster. Hence, transposing of a cluster is a frequently needed operation.
+To accelerate it, we also store the bit vector representing the transposed cluster and
+swap them for transposing.
+
+A predicate group is realized by a DBArray containing clusters. The single entries
+are stored sorted by their names. An additional cluster contains all matrices which
+are not contained in clusters deﬁned explicitly by the user.
+
+5.2 Algorithms
+
+In this section we describe how the topological relationship between two spatial
+objects can be computed. We will only present the main parts of the algorithms. In
+the actual implementation, in a preliminary step, checks for emptiness and disjoint
+minimum bounding boxes are performed (see also Section 5.3.2).
+
+The algorithms support the 9-intersection model. But by simple changes, they can
+also be used within the DE-9IM model. The difference is that in the DE-9IM the
+matrices contain the dimension instead of boolean values. The assigned dimension
+or the complete resulting matrix is given in the algorithms as a comment.
+
+Geoinformatica (2010) 14:23–53
+
+35
+
+5.2.1 point × point
+
+Two single points can be equal or not equal. So, we can compute the 9-intersection
+matrix by the following code:
+
+For checking a topological predicate, we compute the corresponding 9-
+intersection matrix and check whether that matrix is contained in the cluster describ-
+ing the topological relationship.
+
+Obviously, both toprel and toppred can be computed in constant time.
+
+5.2.2 point × points
+
+For the type combination point and points, we use the following algorithm:
+
+The only expensive operation in that algorithm is to check whether P is contained
+in Ps. Because the elements in Ps are stored sorted, we can use a binary search to do
+it. So, the complete algorithm works in O(log(size(Ps)) + 1) time.
+
+36
+
+5.2.3 points × points
+
+Geoinformatica (2010) 14:23–53
+
+Again, we beneﬁt from the sorted storage of the entries for a points value. To
+compute the result, we do a parallel scan and set the matrix entries to the correct
+values. Because only entries at the matrix positions ii, ie, and ei can be found
+during this scan, we can stop the process when these entries are all set to true. Here,
+the running time is O(m + n + 1) time, where n and m are the sizes of the arguments.
+The complete algorithm is:
+
+5.2.4 point × region
+
+Here, we use a usual plumb line algorithm to ﬁnd out, where the point is located with
+respect to the region. The running time is proportional to the number of halfsegments
+contained in the region’s representation. It can be improved using the improved
+plumb line algorithm proposed in [12]. The runtime in the worst case is still O(N)
+but in the most cases having practical relevance, it can be reduced to O(log(N)).
+
+5.2.5 Plane sweep algorithms
+
+All other type combinations are handled using plane sweep algorithms [21].
+
+The event structure consists of four components. Two of the components are
+static and correspond to the array containing the point values and the halfsegments
+respectively. For each static component there is an additional dynamic component
+which is organized as a priority queue. In the following we call them q1 and q2
+respectively. The queue is initially empty and will be ﬁlled with halfsegments during
+
+Geoinformatica (2010) 14:23–53
+
+37
+
+the plane sweep. A function getNext returns the globally smallest element from all
+four containers and removes this element from the event structure.
+
+A halfsegment is deﬁned to be smaller than a given point iff its dominating point
+is lexicographically smaller than or equal to the point. Because all four components
+are kept sorted internally, we can determine the smallest element in constant time.
+
+The sweep line status structure contains all segments currently intersecting a
+vertical line called the sweep line. The sweep line is moved from left to right stopping
+at the x-coordinates of the events within the event structure. The status structure is
+organized as a usual AVL-tree.
+
+Points are never inserted into this structure. Each segment stored in the AVL-
+tree is assigned to an owner which can be an element of {ﬁrst, second, both}. All
+elements are sorted with respect to their current y-coordinate. For segments having
+equal y-coordinates, their slopes serve as the secondary sorting criterion. Because
+overlapping segments are stored only once (owner = both), these two criterions are
+sufﬁcient to compare segments with respect to a given x-coordinate.
+
+5.2.6 Preparations
+
+In some algorithms, we use the function insert_e to insert halfsegments created
+from a segment into the event structure. Within the insert_e function the function
+create_left (create_right) is used to produce a halfsegment from a given segment
+and setting the smaller (bigger) point to be the dominating point of the resulting
+halfsegment. Besides the event structure and the segment, the algorithm receives
+an argument f determining which halfsegments should be inserted. If the value of
+argument f is l, only the halfsegment with the smaller (left) point is inserted into the
+event structure. If f is set to r only the opposite (right) halfsegment is inserted. If
+f = b holds, both corresponding halfsegments are created and inserted.
+
+38
+
+Geoinformatica (2010) 14:23–53
+
+(a)
+
+(b)
+
+(c)
+
+(d)
+
+(e)
+
+Fig. 3 Splitting segments
+
+Within the status structure, neighbored segments never intersect except in their
+endpoints. It follows that between the current event and the next event each pair
+of segments stored in the status structure is disjoint (except possibly common
+endpoints). That maintains the ordering of the segments by their y-coordinate in
+that range. Non-allowed conﬁgurations are shown in Fig. 3.
+
+We keep that invariance by splitting segments during inserting and removing
+
+segments from the sweep status structure.
+
+We deﬁne another order (cid:16)for segments in the following way:
+
+(r1, r2) (cid:16) (s1, s2) ⇔ min(r1, r2) < min(s1, s2)
+
+where min denotes the minimum point using the lexicographical order.
+
+When splitting a segment s at a given point p, where p is located on the interior
+of s, we denote the resulting subsegments with s_lef t and s_right respectively where
+holds s_lef t (cid:16) s_right.
+
+Two overlapping segments (see Fig. 3a) s1 and s2 are split into three parts called
+L, C, and R where L (cid:16) C (cid:16) R hold. C is the common part of both segments. If the
+owners of s1 and s2 are different, the common part gets both as its owner, otherwise
+the owner of s1. The union of the segments minus C creates two further parts L and
+R which may be empty.
+
+We use the following algorithm to insert a segment into the sweep status structure
+
+maintaining the invariant of non-intersecting segments:
+
+Geoinformatica (2010) 14:23–53
+
+39
+
+Now we show that after calling the insert_s operation, the demanded invariant are
+still fulﬁlled. In the case of overlapping segments, we replace the original segment
+seg2 by one or two parts whose union is a subsegment of seg2. Because seg2 does not
+overlap or cross any neighbor, this trivially holds also for all its sub pieces.
+
+In the case of crossing or touching segments, we split the segments at the critical
+points and only insert the parts left of that point into sss. For this reason, the inserted
+segment(s) cannot intersect with its neighbors up to these points. These points are
+also inserted into the event structure. Because the next event occurs at least at that
+point (or left of it), the properties are fulﬁlled up to the next event.
+
+If the newly inserted segment has no common point with its neighbors, we have
+
+nothing to do.
+
+Now, we have to clarify, how to remove a segment from the AVL-tree. First of
+all, we only have to remove segments which are geometrically equal to the segment
+to remove. In the algorithm, we indicate a check for geometrical equality by ‘= =’.
+Remember that segments were said to be equal if they overlap. After splitting a
+segment s, s will not be within the sweep status structure sss. Though, the event
+structure e still contains an event referring s and it’s right endpoint. Therefore
+remove_s(sss, s, e) will be called later during evaluating one of the plane
+sweep algorithms. During that evaluation of remove_s, we might ﬁnd a segment
+s1 in sss with s = s1 (i.e. s1 overlaps s). Since we do not want to remove s1 if it is a
+fragment of s, we only remove s1 if s1 == s (s1 and s are geometrically equal). After
+actually removing a segment, its former left and right neighbor are neighbored now.
+
+40
+
+Geoinformatica (2010) 14:23–53
+
+We have to check whether these neighbors break the invariants and to split them if
+necessary. We use the following algorithm:
+
+5.2.7 line × points
+
+The algorithms for computing the 9-intersection matrix for the signatures point ×
+line → int9m and points × line → int9m are the same. If we deal with a single point,
+we just interpret them as a points value with a single element.
+
+Endpoints of segments are candidates for boundary points of the whole line.
+Because we split segments if a point of another segments is located on the interior,
+it is easy to ﬁnd out whether an endpoint is really a boundary point or not. To do so,
+we have to count the number of dominating points which hit such a candidate. If the
+number of hits is exactly one, it is a boundary point, for more than one hit this point
+is part of the interior.
+
+For a non-empty line, the interior consists of a inﬁnite number of points. An
+inﬁnite point set cannot be covered by the ﬁnite point set of the points value. Thereby
+
+Geoinformatica (2010) 14:23–53
+
+41
+
+for a non-empty line the entry ie of the resulting matrix is always true (or 1 in the
+case of DE-9IM).
+
+Because halfsegments are processed before the points (if the dominating point is
+the same as the point), the segment is removed from the status structure before the
+point is processed. So, we have to store the last processed dominating point together
+with the amount of halfsegments having it as dominating point. All together, we get
+the following algorithm:
+
+42
+
+Geoinformatica (2010) 14:23–53
+
+Because a points value has an empty boundary, we can stop our computation if all
+
+remaining matrix entries (bi, be, ii, ie, ei) have been set to true.
+
+5.2.8 line × line
+
+The algorithm used here is very similar to the line × points combination. If we ﬁnd
+overlapping segments with different owners, we set the ii entry of the resulting matrix
+to true (or to 1 in the DE-9IM). If we ﬁnd crossing segments we set the ii-entry also
+to true (or 0 respectively). To be able to distinguish between the different owners
+of dominating points, we use two counters for the last processed dominating point
+– one counter for each line. Because the remainder of that algorithm is the same as
+before, we go on without giving the complete algorithm.
+
+5.2.9 points × region
+
+We process the halfsegments in the same way as in the line × points combination. We
+do not need a counter for the dominating points because the boundary of a region
+value is built by the complete segments instead of only some of the endpoints, i.e.
+because the boundary of a region consists of a set of loops, the counter will have at
+least the value two. We store the last processed dominating point of the region to ﬁnd
+intersections from the points value with the boundary of the region at the right end
+of a face. If a point from the points value is processed, we search in the AVL-tree the
+segment which is on or directly below the point. If the segment contains the point,
+
+Geoinformatica (2010) 14:23–53
+
+Fig. 4 All intersections for
+crossing segments
+
+43
+
+ee
+
+bb
+
+ii
+
+eb
+
+be
+
+ei
+
+ie
+
+bi
+
+ib
+
+(the shaded areas are the interiors of the involved regions)
+
+it is located on the region’s boundary. If there is no segment below the point, it is in
+the exterior of the region. Otherwise, we can determine whether the point is in the
+interior or in the exterior of the region using the insideAbove ﬂag of the segment.
+
+5.2.10 region × region
+
+The algorithm used here is similar to this one proposed in [18]. The main difference
+is that in this paper we compute a 9-intersection matrix instead of computing a
+topological predicate from a predeﬁned set of such predicates.
+
+For each segment so called coverage numbers (con_above and con_below)
+are computed. Such numbers show, how many regions (0, 1, or 2) are covering
+the area above and below the segment respectively. The coverage numbers can be
+computed easily using the insideAbove ﬂags of the segments. When we reach
+the right endpoint of a halfsegment, we can be sure that the coverage numbers
+and the owner are up to date. So, we can use the coverage numbers to derive the
+corresponding matrix entries. The coverage numbers are updated during splitting
+and inserting segments in the obvious way using the insideAbove ﬂag. The last
+processed dominating point is extended by its owner and stored in a local variable. If
+two segments are crossing, all possible intersections are found (see Fig. 4). Thus we
+can stop our computation in that case.
+
+The complete algorithm is the following:
+
+44
+
+Geoinformatica (2010) 14:23–53
+
+5.2.11 line × region
+
+Actually, this is the most complex algorithm, because the coverage numbers as well
+as the counter for the line’s potential endpoints must be handled. But basically, it
+works as a combination of the algorithms before. For segments owned exclusively
+by the line, the coverage numbers below and above are always equal, namely the
+con_above value of its left neighbor in the sweep status structure. To check where
+the last processed dominating point was, we additionally store its con_below value.
+
+5.3 Acceleration for topological predicates
+
+In database systems, the normal case is to ﬁnd pairs of spatial objects being in
+a given topological relationship by evaluating a topological predicate instead of
+
+Geoinformatica (2010) 14:23–53
+
+45
+
+computing the relationship for pairs of objects in form of a 9-intersection matrix.
+In our approach, where topological predicates are realized by the toppred operator
+and we can already compute the 9-intersection matrix for two spatial objects, the
+toppred operator is simple to realize using the following algorithm:
+
+Unfortunately, this simple approach leads to long running times because we have
+to scan the whole objects. For example, we want to check two line values for equality
+given as the condition (!ib & !ie & !bi & !be & !ei & !eb). Although, we could return
+false if any non-allowed intersection is found, we have to scan all segments of the
+line because the complete matrix must be computed. Even bounding box checks for
+lines will have no effect using that simple approach because the matrix entries eb and
+be cannot be derived from bounding box constellations. In this section, we will show,
+how early exits and bounding box checks can be used in our algorithms without loss
+of generality.
+
+5.3.1 Early exit
+
+To enable an early exit, we extend our algorithms computing the matrix by an
+additional argument of type cluster. In a ﬁrst step, this cluster is restricted to contain
+the matrices valid for the current combination of spatial objects. For example in
+the computation for two points values, we remove all matrices containing a true at
+any entry related to an object’s boundary. A complete discussion about the possible
+matrices can be found in [20]. Whenever an intersection is found, we restrict our
+cluster to such matrices having a true at the corresponding position. If the cluster
+becomes empty, we can stop the computation and the result is false. On the other
+hand, the cluster may contain all matrices which can be derived from the partial
+result by setting further intersections to be true. In this case, we call the cluster
+an extension of the matrix (see Fig. 5 for an example). Because while executing the
+algorithm no entries are set to false, we can also stop the computation here and
+return true.
+
+Fig. 5 Cluster c is an extension of matrix m
+
+46
+
+Geoinformatica (2010) 14:23–53
+
+5.3.2 Minimum bounding box checks
+
+To avoid unnecessary expensive evaluations on complex geometries, in practice,
+minimum bounding box checks are used as a preﬁlter.
+
+For most predicates, disjoint minimum bounding boxes or the emptiness of an
+involved object render complex computations needless. In the context of database
+systems, additionally the expensive access to the spatial data may be avoided in such
+cases.
+
+However, in our approach it is possible to deﬁne predicates where the disjointness
+of the bounding boxes cannot help. For example, consider a predicate describing the
+relationship “Some boundary parts of the second object are outside the ﬁrst object”.
+For a line value nothing is known about the existing endpoints (the line’s boundary).
+Hence, we have to perform a check for the their existence.
+
+Because the clusters acting as arguments of the algorithms are not constrained,
+we cannot do the bounding box check without knowledge about the cluster. For this
+reason, we have extended our cluster representation by some ﬂags describing, which
+bounding box tests will successfully avoid expensive computations. A function of the
+cluster type uses these ﬂags to perform the possible bounding box checks in constant
+time, i.e. without scanning the whole cluster. The ﬂags are computed when the cluster
+is created by a scan of all contained matrices. The creation of a new cluster is a
+rare operation in contrast to the evaluation of a predicate. Therefore the additional
+running time during the creation is acceptable. In the following, we describe the ﬂags,
+their meaning, and the inferences for bounding box checks.
+
+In the sequel, a ‘&’ denotes a bitwise conjunction of the matrix entries.
+
+NO_EXT_INTER ∀m ∈ c : m&(001 001 110) = (000 000 000)
+
+PART_INTER
+
+O1_EMPTY
+
+O2_EMPTY
+
+∀m ∈ c : m&(110 110 000) (cid:4)= (000 000 000)
+The ﬂag PART_INTER is set to true, if each matrix within
+the cluster requires an intersection of the object’s boundaries
+or inner parts. So, disjoint bounding boxes or an empty object
+induce a false result for the predicate evaluation.
+
+This ﬂag is true, if in each contained matrix no part of an
+object is in the exterior of the other one, and vice versa. This is
+possible, if the bounding boxes are equal. So different bound-
+ing boxes will produce a false in the predicate evaluation.
+∀m ∈ c : m&(111 111 000) = (000 000 000)
+This ﬂag indicates that in each matrix the intersections of
+the boundary and the interior of o1 are empty. Thereby the
+predicate can be evaluated to true if o1 is empty.
+∀m ∈ c : m&(110 110 110) = (000 000 000)
+This is just the symmetric case to the one above.
+
+O1_NON_EMPTY ∀m ∈ c : m&(111 111 000) (cid:4)= (000 000 000)
+
+This ﬂag is true, if each matrix in the cluster has at least one
+intersection of the non-exterior parts of o1. If o1 is empty, the
+corresponding predicate cannot be evaluated to true.
+
+O2_NON_EMPTY ∀m ∈ c : m&(110 110 111) (cid:4)= (000 000 000)
+
+O1_INNER
+
+Works like O1_NON_EMPTY, but for object o2.
+∀m ∈ c : m&(001 001 000) = (000 000 000)
+If this holds, each part of o1 cannot be in the exterior of o2.
+
+Geoinformatica (2010) 14:23–53
+
+47
+
+This implies that the bounding box of o1 must be contained
+within the bounding box of o2.
+∀m ∈ c : m&(000 000 110) = (000 000 000)
+Symmetrically to O1_INNER.
+
+O2_INNER
+
+6 Experiments
+
+The introduction of general implementations for any topological predicate will
+produce some overhead in contrast to specialized solutions for each predicate. For
+example a specialized disjoint operator can abort its computation, if the algorithm
+detects an intersection of any parts of the arguments while the general implemen-
+tation must check if the cluster contains a matrix which has a true entry at the
+corresponding position.
+
+In this section we measure the running times for checking two spatial objects for a
+set of (user deﬁned) topological predicates and compare them with the running times
+for specialized predicates which were already part of the Secondo system.
+
+The data sets used in the experiments are described in Appendix A.1. The system
+
+used for the tests was a standard PC. Its conﬁguration is shown in Table 3.
+
+Since the goal of the experiments is to compare the efﬁciency of the predicates,
+in some experiments we have used a simple nested loop join comparing all pairs
+of objects from the two argument relations rather than a spatial join also available
+in Secondo. Thereby, we can also check specialized operators for more restrictive
+bounding box checks. For example in the column “district × district” in Table 4, we
+have each predicate evaluated 439 × 439 = 192,721 times. The bounding box check
+rejects 189,418 pairs. The proper algorithm for testing the predicate is executed 3,303
+times. (See Appendix A for the numbers.) Obviously, the time for the bounding
+box check is very small compared to the proper predicate implementation. As a
+reference, the nested loop join for “district × district” checking only for bounding
+box overlap has a running time of 1.7 s. An exception are the full scaled versions
+of the Sequoia database where a spatial join was used to reduce the number of
+investigated pairs.
+
+6.1 Topological predicates of the SpatialAlgebra
+
+In the SpatialAlgebra, several topological predicates have been deﬁned. Their
+names and meanings are collected in Table 5.
+
+Unfortunately it turned out during our experiments that most implementations
+of the spatial predicates were not well-engineered. The reason was the big effort in
+writing dedicated code for each predicate. For example, the operator descriptions
+were not unique, e.g. the overlap operator was described by “returns true if the
+
+Table 3 Conﬁguration of the
+PC used for the experiments
+
+CPU
+OS
+Kernel Version
+RAM
+SWAP
+
+Intel® Pentium®IV at 2.93 GHz
+SuSe Linux 10.3
+2.6.18
+1 GB
+8 GB
+
+48
+
+Geoinformatica (2010) 14:23–53
+
+Table 4 Running times of the operators of the SpatialAlgebra
+
+district × district
+lj
+
+sj
+
+river × district
+lj
+
+sj
+
+river × highway
+lj
+
+sj
+
+city × district
+lj
+
+sj
+
+=
+#
+intersects
+inside
+overlaps
+onborder
+ininterior
+
+18.8 s
+18.1 s
+38.5 s
+18.8 s
+1:14 m
+–
+–
+
+16.8 s
+–
+35.0 s
+16.8
+1:13 m
+–
+–
+
+–
+–
+20.4 s
+5.4 s
+24.3
+–
+–
+
+–
+–
+20.1 s
+3.9 s
+22.3
+–
+–
+
+0.9 s
+0.9 s
+2.6 s
+1.0 s
+2.6s
+–
+–
+
+0.1 s
+–
+1.7 s
+0.1 s
+1.7 s
+–
+–
+
+–
+–
+–
+5.0 s
+–
+5.0 s
+7.6
+
+–
+–
+–
+2.5s
+–
+1.6 s
+1.8
+
+lj loopjoin, sj spatial join
+
+arguments overlap each other”. Only a look into the source code could help to
+ﬁnd out the exact meaning of this. Furthermore, for most topological relationships
+only a naive implementation exists. For example, the = operator checks for equality
+of the representations. Because in Secondo the representation of a spatial object
+is not unique, we cannot trust a false result of this predicate. The remaining
+operators are implemented to have quadratic running time. For this reason, the
+general implementation beats the specialized ones in most cases.
+
+For
+
+these reasons,
+
+the
+SpatialAlgebra makes no sense. But we have collected the running times needed
+to evaluate our implementation of topological predicates to show that the running
+times are reasonable.
+
+the comparison with the implementation of
+
+6.2 Topological predicates of the PlaneSweepAlgebra
+
+The PlaneSweepAlgebra — like the TopOpsAlgebra — uses plane sweep
+algorithms for detecting the topological relationships between spatial objects. Only
+two topological relationships are implemented, namely p_intersects (both objects
+have a common point in their interior), and intersects_new (both arguments have
+any common point). We deﬁne the corresponding clusters by the conditions “ii”
+for the p_intersects predicate and “ii | ib | bi | bb” for the intersects_new
+predicate.
+
+A topological predicate in the PlaneSweepAlgebra is computed in two steps.
+In the ﬁrst step, both arguments (of type line or region) are realminized. This means,
+segments are split when they are overlapping, crossing, or touching. After that,
+algorithms from [13] are used to check the topological predicate. Both steps are
+realized using plane sweep algorithms. A disadvantage of that approach is that the
+
+Table 5 Specialized
+topological relationships
+implemented in the
+SpatialAlgebra
+
+Operator
+
+Meaning
+
+=
+#
+intersects
+inside
+overlaps
+onborder
+ininterior
+
+Check for equality
+Check for inequality
+True, if any common point is found
+True, if nothing is outside of the other object
+True, if there is a common point in the interior
+True, if a point is located on the border of a region
+True, if a point is located in the interior of a region
+
+Geoinformatica (2010) 14:23–53
+
+Table 6 Running time comparison with the PlaneSweepAlgebra (p_intersects predicate)
+
+p_intersects
+district × district
+district × river
+district × highway
+river × highway
+SeqPoly × SeqPoly_small
+SeqPoly × SeqLine_small
+SeqLines × SeqPoly_small
+SeqLines × SeqLines_small
+SeqPoly × SeqPoly
+SeqLines × SeqLines
+SeqPoly × SeqLines
+aThe system crashes during running the query
+
+PlaneSweep
+
+1:27 m
+30.1 s
+SIGSEGVa
+3.1 s
+49.4 s
+43.3 s
+1:01 m
+44.2 s
+SIGSEGVa
+52:30 min
+7 h 17:28 m
+
+arguments must be scanned completely to produce the realminized version. Our
+approach does these steps toothed allowing for an early exit.
+
+Table 6 compares the running times of the p_intersects predicate using the spe-
+cialized implementation of the PlaneSweepAlgebra with the running times of our
+general implementation. We can see that the produced overhead is comparatively
+small to the advantages of the early exit.
+
+In the experiments, we have partially used downscaled versions of the Sequoia
+Benchmark relations as a second argument. This was done because we want to focus
+on predicate evaluation, as explained earlier, and have used a simple nested loop
+join algorithm again. For testing the original relations, we have used a spatial join.
+If we use a simple nested loop join here, we had to check the topological predicate
+79, 6072 = 633, 727, 449 (201, 6582 = 40, 665, 948, 964) times for the SeqPoly (Seq-
+Lines) relations. Using a spatial join reduces this huge number to candidates with
+intersecting bounding boxes (see Table 10).
+
+Table 7 shows the running times of the intersects_new operator and its alternative
+realized in the TopOpsAlgebra. Again the overhead of our general implementation
+is adequate or the running times are better than the ones for the specialized versions.
+
+Table 7 Running time comparison with the PlaneSweepAlgebra (intersects_new operator)
+
+intersects_new
+district × district
+district × river
+district × highway
+river × highway
+SeqPoly × SeqPoly_small
+SeqPoly × SeqLines_small
+SeqLines × SeqPoly_small
+SeqLines × SeqLines_small
+SeqPoly × SeqPoly
+SeqLines × SeqLines
+SeqPoly × SeqLines
+aThe system crashes during execution of this query
+
+PlaneSweep
+
+1:14 m
+30.1 s
+23.9 s
+3.1 s
+1:02 m
+45.1 s
+1:00 m
+45.3 s
+SIGSEGVa
+45:46 m
+SIGSEGVa
+
+49
+
+TopOps
+
+1:14 m
+22.3 s
+16.5 s
+1.9 s
+42.7 s
+46.7 s
+1:10 m
+50.2 s
+4 h 21:10 m
+15:55 m
+6 h 12:26 m
+
+TopOps
+
+35.3 s
+20 s
+15.8 s
+1.9 s
+54.8 s
+54.1 s
+1:13 m
+54.9 s
+4 h 49 m
+14:00 m
+5 h 59 m
+
+50
+
+7 Conclusions
+
+Geoinformatica (2010) 14:23–53
+
+We have shown how user deﬁned topological predicates can be realized within
+a database system. After sketching some problems with specialized topological
+relationships provided by a database system, we have presented the advantages
+and the implementation of our general approach. The performance of the general
+implementation has been shown to be similar to existing specialized implementations
+for some predicates within the Secondo extensible database system.
+
+Appendix A: Used data sets
+
+A.1 Database “Germany”
+
+The database “Germany” contains cities, districts, rivers, and highways of Germany
+in the following relations:
+
+district
+
+(DName : string, Area : real, Pop : int, Pop_male : int, Territory : region)
+
+where DName is the name of the district, Area is the area occupied by the region, Pop
+is the population in thousands, Pop_male is the amount of the male population in
+thousands, and Territory is a region value describing the territory of the district.
+The relation consists of 439 entries. The contained regions have 368 segments on
+average (50 minimum, 1,086 maximum). The regions within this relation form a
+partition of Germany, i.e. there are no overlapping regions. For this reason, we only
+can ﬁnd equal, adjacent, or disjoint regions within the relation district.
+
+river
+
+river2
+
+(RName : string, RNo : int, RRoute : line)
+
+The relation contains 375 parts of rivers. The geometry is described in the attribute
+RRoute. The lines consist of 82 segments on average (ﬁve minimum, 471 maximum).
+
+(RName : string, RNo : int, RRoute : line)
+
+This relation contains the same data as the relation “river”. The difference is that
+here rivers are no longer divided into several parts. The relation contains 122 rivers
+with 251 segments on average (eight minimum, 1,010 maximum).
+
+highway
+
+(HName : string, HNo : int, HRoute : line)
+
+Table 8 Number of
+intersecting bounding boxes
+
+district
+river
+highway
+
+district
+
+3,303
+
+river
+
+1,682
+1,381
+
+highway
+
+1,597
+674
+1,379
+
+Geoinformatica (2010) 14:23–53
+
+Table 9 Sizes of the relations
+of the Sequoia database
+
+51
+
+Number of tuples
+Number of segments
+
+Poly
+
+Poly_small Lines
+
+Lines_small
+
+79,607 200
+
+201,658 200
+
+Min
+Max
+Avg
+
+4
+0
+5,537 922
+40
+
+46
+
+0
+
+1
+466 160
+18
+
+18
+
+This relation contains 325 parts of highways of Germany. The size of the line value
+
+is 37 segments on average (one minimum, 217 maximum).
+
+city
+
+(key : int, Name : string, Position : point, . . . )
+
+This relation comes from opengeodb [16]. It contains 17,409 cities (14,288 located
+in Germany). Besides the position also further but here unused attributes are stored.
+Table 8 shows how many pairs of entries within the relations have intersecting
+
+bounding boxes.
+
+Furthermore, the database contains some “single” objects. This means objects
+stored outside a relation. In this paper we use the object “magdeburg” of type region,
+which was extracted from the relation district.
+
+A.2 Database “Sequoia”
+
+The database “Sequoia” contains a subset of the Sequoia 2000 benchmark data [22].
+Because we only are interested in the spatial attributes, we have also reduced the set
+of attributes. Within our paper, we only use the line and the polygon features of the
+benchmark. We have stored them in two relations with schemas:
+
+SeqPoly
+
+(No : int, Reg : region)
+
+SeqLines
+
+(No : int, Line : line)
+
+The relations and attributes have the sizes described in Table 9.
+To reduce the query time, we have created two smaller relations which are
+randomized subsets of the relations SeqLines and SeqPoly, each with size of 200
+tuples.
+
+Table 10 shows the numbers of overlapping bounding boxes for these relations.
+
+Table 10 Numbers of
+intersecting bounding boxes
+
+SeqLines_small
+SeqPoly_small
+SeqPoly
+SeqLine
+
+SeqLine
+
+924
+1,081
+552,337
+939,865
+
+SeqPoly
+
+544
+1,543
+743,229
+552,337
+
+52
+
+References
+
+Geoinformatica (2010) 14:23–53
+
+1. Clementini E, di Felice P (1996) A model for representing topological relationships between
+
+complex geometric features in spatial databases. Inf Sci 90(1–4):121–136
+
+2. Clementini E, Di Felice P, Califano G (1995) Composite regions in topological queries. IS
+
+20(7):579–594
+
+3. Clementini E, Felice PD (1993) An object calculus for geographic databases. In: SAC ’93:
+Proceedings of the 1993 ACM/SIGAPP symposium on applied computing. New York, NY, USA,
+ACM, pp 302–308
+
+4. Clementini E, Felice PD, van Oosterom P (1993) A small set of formal topological relationships
+
+suitable for end-user interaction. In: SSD: advances in spatial databases. LNCS, Springer
+
+5. Egenhofer M, Clementini E, Di Felice P (1994) Topological relations between regions with holes.
+
+Int J Geographic Inf Syst 8(2):128–142
+
+6. Egenhofer MJ (1989) A formal deﬁnition of binary topological relationships. In: Litwin W,
+Schek H (eds) Third international conference on foundations of data organization and algorithms
+(FODO). Lecture Notes in Computer Science, vol 367. Springer, pp 457–472, June
+
+7. Egenhofer MJ, Herring JR (1990) Categorizing binary topological relations between regions,
+lines, and points in geographic databases. Technical report, Department of Surveying Engineer-
+ing, University of Maine, Maine
+
+8. Gaal SA (1964) Point set topology. Academic, New York
+9. Güting RH (1993) Second-order signature: a tool for specifying data models, query processing,
+and optimization. In: Proc. of the ACM SIGMOD international conf. on management of data,
+pp 277–286
+
+10. Güting RH, Behr T, Almeida V, Ding Z, Hoffmann F, Spiekermann M (2004) SECONDO: an
+
+extensible dbms architecture and prototype. Technical report, FernUniversität Hagen
+
+11. Güting RH, de Almeida VT, Ansorge D, Behr T, Ding Z, Höse T, Hoffmann F, Spiekermann M,
+Telle U (2005) SECONDO: an extensible dbms platform for research prototyping and teaching.
+In: ICDE. IEEE Computer Society, pp 1115–1116
+
+12. Güting RH, Ding Z (2004) A simple but effective improvement to the plumb-line algoritm. Inf
+
+13. Güting RH, Schneider M (1995) Realm-based spatial data types: the ROSE algebra. VLDB J
+
+14. Kothuri R, Godfrind A, Beinat E (2007) Pro oracle spatial for oracle database 11g. Springer,
+
+Process Lett 91(6):251–257
+
+4(2):243–286
+
+New York
+
+15. Open GIS Consortium, Inc. (1999) OpenGIS simple features speciﬁcation for SQL Revision 1.1,
+
+OpenGIS Project Document 99-049, May
+
+16. OpenGeoDB (2008) OpenGeoDB. http://opengeodb.hoppe-media.com, 2008-02-14
+17. Reasey Praing MS (2008) Efﬁcient implementation techniques for topological predicates on
+
+complex spatial objects. GeoInformatica 12(3):313–356
+
+18. Schneider M (2002) Implementing topological predicates for complex regions. In: Proceedings
+
+of the international symposium on spatial data handling, pp 313–328
+
+19. Schneider M (2004) Computing the topological relationship of complex regions. In: DEXA,
+
+20. Schneider M, Behr T (2006) Topological relationships between complex spatial objects. ACM
+
+pp 844–853
+
+Trans Database Syst 31(1):39–81
+
+21. Shamos MI, Hoey D (1976) Geometric intersection problems. In: FOCS. IEEE, pp 208–215
+22. Stonebraker M, Frew J, Gardels K, Meredith J (1993) The sequoia 2000 benchmark. In:
+Buneman P, Jajodia S (eds) Proceedings of the 1993 ACM SIGMOD international conference
+on management of data. Washington, D.C., 26–28 May, ACM, New York, pp 2–11
+
+Geoinformatica (2010) 14:23–53
+
+53
+
+Thomas Behr is a research assistant at the University of Hagen, since 2003. He has received his
+diploma in computer science in 2002. His research interests include spatial and spatio temporal
+databases, especially moving objects databases.
+
+Ralf Hartmut Güting has been a full professor in Computer Science at the University of Hagen,
+Germany, since 1989. He received his Diploma and Dr. rer. nat. degrees from the University of
+Dortmund in 1980 and 1983, respectively, and became a professor at that university in 1987. From
+1981 until 1984 his main research area was Computational Geometry. After a one-year stay at
+the IBM Almaden Research Center in 1985, extensible and spatial database systems became his
+major research interests; more recently, also spatio-temporal or moving objects databases. He is an
+associate editor of the ACM Transactions on Database Systems and an editor of GeoInformatica.
+He has published two German text books on data structures and algorithms and on compilers,
+respectively, and an English text book on moving objects databases, as well as around seventy journal
+and conference articles. His group has built prototypes of extensible and spatio-temporal database
+systems, the Gral system and the SECONDO system.
+
+

@@ -1,0 +1,2342 @@
+bs_bs_banner
+
+Research Article
+
+Transactions in GIS, 2014, 18(S1): 25–52
+
+pRPL 2.0: Improving the Parallel Raster Processing Library
+
+Qingfeng Guan, Wen Zeng, Junfang Gong, and Shuo Yun
+
+National Engineering Research Center of GIS and Faculty of Information Engineering, China
+University of Geosciences
+
+Abstract
+This article presents an improved parallel Raster Processing Library – pRPL version 2.0. Since the release
+of version 1.0, a series of modiﬁcations has been made in pRPL to improve its usability, ﬂexibility, and
+performance. While retaining some of the key features of pRPL, the new version has gained several new
+features: (1) a new DataManager class has been added for integrated data management, and to facilitate
+data decomposition, assignment mapping, data distribution, Transition execution, and load-balancing; (2)
+a GDAL-based raster data I/O mechanism has been added to support various geospatial raster data
+formats, and provide centralized and pseudo parallel I/O modes; and (3) a static load-balancing mode and
+a dynamic load-balancing mode using the task-farming technique are provided. A parallel zonal statistics
+tool and a parallel Cellular Automata model were developed to demonstrate the usability and perfor-
+mance of pRPL 2.0. The experiments using the California datasets showed that the performance altered
+when different pRPL options (i.e. load-balancing mode, I/O mode and writer mode) were used for differ-
+ent algorithms, datasets, and varying numbers of processes.
+
+1 Introduction
+
+1.1 Parallel Geospatial Computing
+
+With the continuing advances in geospatial data acquisition and management technologies
+and spatial analysis and modeling over the last few decades, geographic information science
+and technologies (GIS&T) have entered the Big Data era (Vatsavai et al. 2012). Spatial big
+data are characterized by the same traits as big data in the general sense, i.e. big volume,
+high updating velocity, large variety, and varying veracity (a.k.a. 4Vs, Douglas 2012), and
+thus require innovative data management and analytical methods and technologies. The
+massive amount of ever-growing spatial data and the high computational complexity of
+many spatial analysis methods often lead to an infeasible length of computing time and vast
+memory space, which has become a pressing challenge and bottleneck for large-scale
+GeoComputation. High-performance computing (HPC) technologies, especially parallel com-
+puting, have been used in many geospatial studies as a solution to computationally intensive
+and data-intensive problems such as spatial data handling and analysis (Sandu and Marble
+1988; Li 1992), least cost path (Smith et al. 1989), polygon overlay (Wang 1993), terrain
+analysis (Rokos and Armstrong 1992; Puppo et al. 1994; Kidner et al. 1997; Zhao et al.
+2013), land use modeling (Li et al. 2010), and geostatistics (Armstrong and Marciano 1993,
+1995, 1996, 1997; Cramer and Armstrong 1997; Kerry and Hawick 1998; Wang and
+Armstrong 2003; Guan et al. 2011).
+
+The recent developments of CyberGIS (Wang and Armstrong 2009; Wang and Liu 2009;
+Wang 2010; Yang et al. 2010; Nyerges et al. 2013), spatial cloud computing (Yang et al.
+
+Address for correspondence: Qingfeng Guan Faculty of Information Engineering, China University of Geosciences. 388 Lumo Road,
+Wuhan, Hubei 430074, China. E-mail: guanqf@cug.edu.cn
+Acknowledgments: This study was supported by the Specialized Research Fund for the Doctoral Program of Higher Education, Ministry
+of Education of China (No. 20130145120013).
+
+© 2014 John Wiley & Sons Ltd
+
+doi: 10.1111/tgis.12109
+
+26 Q Guan, W Zeng, J Gong and S Yun
+
+(GPUs)
+
+and graphics processing units
+
+2011, 2013),
+the deploy-
+ment of parallel computing in geospatial studies, as they are able to provide easy-to-access
+HPC facilities and platforms. For example, Tang et al. (2011) and Shook et al. (2013) devel-
+oped parallel agent-based models (ABMs) within cyberinfrastructure environments for
+spatio-temporal simulations of large numbers of individuals. Huang et al. (2013) used cloud
+computing for parallel simulation and forecasting of dust storms. Shi and Ye (2013) devel-
+oped a parallel Kriging interpolation algorithm on GPU/CPU heterogeneous computing
+architectures.
+
+also stimulate
+
+Many spatial analysis and models, such as land-use and land-cover change modeling,
+and terrain analysis, use the raster data model, which represents phenomena in geographical
+space as a grid of cells with attribute values (Duckham et al. 2003). Parallelizing a raster-
+based spatial algorithm is usually straightforward. The most commonly used approach is
+dividing the spatial domain into a set of sub-domains and deploying multiple computing
+units (e.g. CPU, CPU cores, and GPU cores) to process the data within the sub-domains
+simultaneously, such that the memory requirement per computing unit and the overall com-
+puting time can be reduced. However, to facilitate various types of raster processing algo-
+rithms and optimize the performance, the parallelization strategy must take into account the
+characteristics of the algorithms (e.g. local, focal, zonal and global scopes, and computa-
+tional dependencies), input and output data structures and formats, as well as parallel com-
+puting environments (e.g. discrete or shared memory conﬁguration, interconnection network,
+and homogeneous or heterogeneous computing units) (Ding and Densham 1996; Mineter
+1998). Thus, the development complexity of parallel raster processing can be quite high, and
+a deep understanding of parallel computing and extensive parallel programming skills are
+required.
+
+Some efforts have been made to provide a parallel raster processing environment or
+platform, and to reduce the complexity of parallelizing application-speciﬁc algorithms.
+Examples include the Global Arrays (GA) developed by the Paciﬁc Northwest National
+Laboratory, and the Parallel Utilities (PUL) developed by the Edinburgh Parallel Computing
+Centre at the University of Edinburgh. Cheng et al. (2012) developed a set of general-
+purpose optimization methods for parallelizing terrain analysis using a Cellular Automata
+(CA) approach, which can also be used in the parallelization of other raster processing
+algorithms.
+
+1.2 Parallel Raster Processing Library (pRPL)
+
+The parallel Raster Processing Library (pRPL, http://sourceforge.net/projects/prpl/) is an open-
+source C++ programming library to enable GIS scientists and practitioners who have basic
+programming skills but lack knowledge and experience of parallel computing and program-
+ming, to easily develop and implement parallel raster-based algorithms, analytical procedures,
+and models (Guan and Clarke 2010). pRPL provides an intuitive programming guideline for
+users to implement application-speciﬁc algorithms (termed Transitions), and requires minimal
+parallel programming skills.
+
+Figure 1 shows the basic parallel processing procedure implemented using pRPL 1.0. A
+Layer object serves as a combining data container holding a Cellspace (i.e. a matrix of cells/
+pixels) and/or multiple SubCellspaces (i.e. subsets of cells within a Cellspace). A Process object
+represents a computing unit that participates in the parallel computing, usually a CPU or a
+CPU core. There are two types of processes: a master process and a set of worker processes.
+The master process reads the Cellspace data into Layers, decomposes them into SubCellspaces,
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+pRPL 2.0: Improving the Parallel Raster Processing Library
+
+27
+
+Processing
+& Updating
+
+Layer 0
+
+Layer 1
+
+Layer 2
+
+Layer 0
+
+Layer 1
+
+Layer 2
+
+Layer 0
+
+Layer 1
+
+Mapping &
+Distributing
+
+Process 0
+
+Gathering
+
+Layer 0
+
+Layer 2
+
+Broadcasting
+
+Process 0 (Master)
+
+Processing
+& Updating
+
+Process 0 (Master)
+
+A Moore neighborhood used
+to construct sub-cellspaces
+
+A sub-cellspace
+in a Layer
+
+Figure 1 Basic parallel processing procedure of pRPL 1.0
+
+Process 1
+
+then maps and distributes the subsets of data to worker processes. Broadcasting a whole
+Cellspace is sometimes needed for global-scope processing (e.g. Layer 2 in Figure 1). A cus-
+tomized Transition is then executed on each computing process (worker or master) to evaluate
+the data and update the output Layer. Once the computation on all processes is completed, the
+master gathers the output SubCellspaces, merges them into a whole Cellspace, and writes to a
+ﬁle.
+
+pRPL supports not only local-scope and neighborhood-scope (i.e. focal) processing but
+also some zonal-scope and global-scope ones, as long as they are parallelizable. For
+neighborhood-scope processing, algorithms that are either centralized (i.e. only the central
+cell of a neighborhood may be updated during the processing) or non-centralized (i.e. any
+cell within a neighborhood may be updated) can both be parallelized. pRPL supports any
+conﬁguration of a Neighborhood object,
+including regular von Neumann, Moore, and
+extended Moore conﬁgurations, as well as irregular ones that may be asymmetric and/or
+discontinuous.
+
+pRPL provides multiple data-decomposition methods for users, including regular row,
+column, and block-wise decompositions, as well as a spatially adaptive quad-tree-based (QTB)
+decomposition method for cases when the computational intensity is extremely heterogeneous
+over space.
+
+Some iterative processing procedures (such as Cellular Automata) require executing one or
+more Transition(s) multiple times, which necessitates data exchange among processes at each
+iteration if neighborhood-scope Transition(s) are used (Hutchinson et al. 1996; Mineter 1998).
+pRPL uses the “Update-on-Change” technique to help reduce the communication volume for
+data exchange, hence reducing the computing time. Also, the “edgesFirst” and non-blocking
+data exchange techniques overlap the computation and communication, which also helps
+reduce the computing time.
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+28 Q Guan, W Zeng, J Gong and S Yun
+
+Figure 2 SubCellspaces for map projection transformation (Source is the input layer and Target is
+the output layer)
+
+Furthermore, pRPL is capable of organizing processes in groups, and supports data-task
+hybrid parallelism, which is innovative for parallel raster processing and especially useful
+when handling massive-volume datasets and a large number of parallelizable tasks at the same
+time. With grouped processes, dynamic task load-balancing can be implemented with ease.
+
+Written in the C++ language and based on the Message Passing Interface (MPI) that is
+supported by most parallel computing systems, pRPL provides transparent parallelism for GI
+scientists and practitioners to exploit the computing power of a wide range of HPC facilities,
+including multi-core computers, super computers, computer clusters, computational grid, and
+cloud computing services. More importantly, pRPL provides a test-bed for computationally
+intensive geospatial analysis and models, and a problem-solving environment for previously
+computationally infeasible approaches.
+
+However, a few limitations and shortcomings have been found in pRPL 1.0:
+1. Even though pRPL 1.0 supports multi-layer processing, the management of multiple
+Layers is mostly user-speciﬁed in the customized Transition. A Layer updates its SubCellspaces
+using a Transition, which can be customized to require some extra input Layers (for details,
+see Guan 2008). This mechanism implies that a Transition can have no more than one output
+Layer, which is not enough in some cases.
+
+Also, pRPL 1.0 automatically assures the domain decomposition and assignment mapping
+to be identical across Layers (Figure 1), which greatly reduces the development complexity in
+many cases. But this restriction also limits pRPL’s applicability, especially when the Layers
+have varying spatial reference systems. For example, in projection transformation processing,
+the output Layer can be decomposed in a regular manner (e.g. row, column, and block-wise),
+but the decomposition of the input Layer depends on the minimal bounding rectangles
+(MBRs) of the output Layer’s SubCellspaces and the transformation settings (including the
+source projection, target projection, and sampling methods, etc.). Thus the decomposition of
+these two Layers may differ in terms of SubCellspaces’ dimensions and MBRs (Figure 2).
+
+Therefore, a standard and uniform multi-layer data management mechanism that is inde-
+pendent from any Transition is needed to accommodate various processing requirements such
+as multiple output Layers and different domain decomposition across Layers.
+
+2. pRPL 1.0 focuses on parallel raster processing, and only provides a primitive method
+for reading and writing raster data in a speciﬁc ASCII format. To handle other raster data
+formats, users must write their own data I/O functions, which inevitably increases the develop-
+ment complexity. More importantly, pRPL 1.0 only provides a centralized data I/O mechanism
+(Figure 1), which has been recognized as one of the major bottlenecks for computational per-
+formance because of the following disadvantages: (a) a massive memory space is required for
+the master process to hold the whole Cellspace’s data; (b) while the master is reading/writing
+data, the workers remain idle; and (c) the messages for data transfer between the master and
+workers are usually large in size and require a lengthy time to complete. Also, pRPL 1.0
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+pRPL 2.0: Improving the Parallel Raster Processing Library
+
+29
+
+cannot automatically handle the spatial reference information (e.g. projection and spatial
+transformation parameters) and the NoData value in the data. Therefore, a ﬂexible data I/O
+mechanism is needed to handle various raster formats and improve the I/O performance.
+
+3. pRPL 1.0 provides a static data load-balancing mechanism, which means the Cellspaces
+are decomposed and all SubCellspaces are distributed onto processes before the actual compu-
+tation starts. During the computation, SubCellspaces are not allowed to migrate between pro-
+cesses. This static load-balancing method may not be efﬁcient in a heterogeneous parallel
+computing environment where the computing speed, memory space, and interconnection
+bandwidth vary among computing nodes (Cosnard and Trystram 1995). Therefore, a dynamic
+data load-balancing mechanism is needed to dynamically assign SubCellspaces onto processes
+with various computing capabilities and working status (i.e. busy or idle), hence to improve
+the computational efﬁciency.
+
+This article presents an improved pRPL, version 2.0. A series of modiﬁcations have been
+made to solve the above problems and improve the usability, ﬂexibility, and performance of
+pRPL, while some of the key features of pRPL remain, such as the supports for both central-
+ized and non-centralized neighborhood-scope processing, spatially adaptive decomposition, an
+“Update-on-Change” technique, “edgesFirst” processing, and a non-blocking data exchange
+mechanism.
+
+2 pRPL 2.0
+
+Some of the fundamental components of pRPL have been redesigned and redeveloped in order
+to accommodate the new features and improve the performance, and some new features have
+been added to pRPL to solve the problems mentioned above. The remainder of this section
+describes the major modiﬁcations and new features in pPRL 2.0. For other features in pRPL,
+please refer to Guan (2008) and Guan and Clarke (2010).
+
+2.1 DataManager
+
+A DataManager class has been added to pRPL to provide integrated data management, facili-
+tate data decomposition, assignment mapping, and data distribution, handle static and
+dynamic load-balancing, and control and monitor the execution of Transitions.
+
+2.1.1 Layer and Neighborhood management
+
+During the parallel computing, a DataManager object resides on each process, serving as a
+table of contents by maintaining an indexing system of Layers and Neighborhoods, such that a
+particular Layer or Neighborhood can be retrieved via its unique name (Figure 3).
+
+The DataManager class provides methods for adding and removing Layers and Neighbor-
+hoods. A Layer must be added to the DataManager before being decomposed. When adding a
+Layer to the DataManager, the Layer’s metadata (including dimensions, data type, data size,
+NoData value, and spatial reference information) is initialized according to the user’s speciﬁ-
+cation or a raster ﬁle’s metadata. Such attribute information can then be used for regular
+domain decomposition (e.g. row, column, and block-wise), while the Layer is still empty and
+holds no cell data, see Section 2.1.2. (Spatially adaptive domain decomposition approaches,
+such as QTB, require the whole Cellspace data in memory so the workloads of SubCellspaces
+can be calculated, see Guan and Clarke 2010).
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+30 Q Guan, W Zeng, J Gong and S Yun
+
+DataManager
+
+List of Layers
+List of Neighborhoods
+AddLayer()
+RemoveLayer()
+AddNeighborhood()
+RemoveNeighborhood()
+DecomposeLayers()
+StaticLoadBalancing(Transition)
+DynamicLoadBalancing(Transition)
+
+0..*
+
+Neighborhood
+
+Name
+Neighbor Coordinates
+Neighbor Weights
+
+0..*
+
+Layer
+
+Name
+CellspaceInfo (global)
+List of CellspaceInfo (for SubCellspaces)
+List of SubCellspaceInfo (for SubCellspaces)
+Cellspace
+List of SubCellspaces
+
+Figure 3 The DataManager class
+
+pRPL 2.0 provides three approaches to adding a Neighborhood to the DataManager: (1)
+by using some built-in methods of pRPL for regular conﬁgurations (e.g. von Neumann,
+Moore, and extended Moore); (2) by the user’s speciﬁcation; and (3) by loading a neighbor-
+hood conﬁguration ﬁle (for details on the neighborhood ﬁle, see Guan 2008). When a Layer or
+Neighborhood is removed from the DataManager, the corresponding memory space will be
+released as well. Note that adding and removing Layers/Neighborhoods are collective opera-
+tions and performed on all processes, so that the DataManagers on all processes maintain an
+identical set of Layers and Neighborhoods and synchronize their basic attributes (including the
+Layers’ metadata and Neighborhoods’ conﬁgurations).
+
+2.1.2 Domain decomposition
+
+In parallel spatial computing, domain decomposition is the process of dividing a region of
+interest into multiple sub-regions for concurrent processing. In pRPL 2.0, the DataManager
+class provides a set of methods for decomposing multiple Layers at once, and assuring the
+decomposition to be identical across Layers so that the SubCellspaces with the same ID on dif-
+ferent Layers will have exactly the same dimensions and MBR (Figure 1). Also, to increase the
+ﬂexibility, pRPL 2.0 allows a Layer to have a unique domain decomposition that is different
+from other Layers. pRPL assumes that the SubCellspaces with the same ID on different Layers
+refer to the same geospatial sub-region even though they may differ in dimensions and MBRs,
+thus they will be processed together (Figure 4). In this case, the Transition must be carefully
+customized, because a particular pair of row-column coordinates may point to different
+geospatial locations on different Layers. Geospatial coordinates (e.g. latitude and longitude),
+on the other hand, should be safe to reference locations/cells across Layers.
+
+The decomposition operation generates a list of SubCellspace metadata maintained by the
+Layer, indicating the basic attributes of SubCellspaces (including IDs, dimensions, and MBRs).
+Like adding and removing Layers/Neighborhoods, the decomposition is also a collective
+operation for all processes, so a Layer on any process maintains the complete list of metadata
+for all SubCellspaces.
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+pRPL 2.0: Improving the Parallel Raster Processing Library
+
+31
+
+0
+s
+s
+e
+c
+o
+r
+P
+
+1
+
+s
+s
+e
+c
+o
+r
+P
+
+2
+
+s
+s
+e
+c
+o
+r
+P
+
+3
+s
+s
+e
+c
+o
+r
+P
+
+1
+
+2
+
+3
+
+4
+
+1
+
+2
+
+3
+
+4
+
+1
+
+2
+
+3
+
+4
+
+1
+
+2
+
+3
+
+4
+
+Figure 4 Various domain decomposition conﬁgurations across Layers
+
+2.1.3 Assignment mapping
+
+Once the Layers are decomposed, a mapping operation needs to be executed to assign the
+SubCellspaces onto multiple processes so that they are can be processed in parallel. In many
+raster processing operations, different cell values require different treatments, leading to differ-
+ent amounts of computational workload. For example, a NoData cell may be simply ignored
+while a cell with a usable value must be evaluated using a certain algorithm. The hetero-
+geneous spatial distribution of various cell values leads to heterogeneous spatial distribution of
+workload, hence heterogeneous workloads of SubCellspaces if a regular decomposition is
+used. (Spatially adaptive decomposition approaches, e.g. QTB, can divide the whole Cellspace
+into irregularly sized SubCellspaces with similar amounts of workload.)
+
+To increase the possibility of evenly distributing workloads onto multiple processes, the
+scattered mapping technique is supported by pRPL,
+in which case a large number of
+SubCellspaces with small granularity are generated, and each process is assigned with multiple
+SubCellspaces that are spatially scattered (Mineter 1998).
+
+A DataManager includes an ownership map indicating which process holds which
+SubCellspaces. Each record in the ownership map is composed of a process ID and a vector of
+SubCellspace IDs as the process’s assignments (Table 1). The mapping operation populates the
+ownership map by iteratively retrieving a SubCellspace ID from the global list of SubCellspace
+metadata (generated by the decomposition procedure), and adding it to the designated
+process’s assignment vector. Note that the DataManager maintains only one ownership map
+for all Layers, which assures that the SubCellspaces with the same ID on different Layers will
+be assigned to the same process, in order to facilitate multi-layer processing.
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+32 Q Guan, W Zeng, J Gong and S Yun
+
+Table 1 An Example of ownership map
+
+Process ID
+
+0
+1
+2
+
+SubCellspace IDs
+(process’s assignments)
+
+0, 3, 6, . . . , N-3
+1, 4, 7, . . . , N-2
+2, 5, 8, . . . , N-1
+
+2.1.4 Data distribution and submission
+
+Before executing a Transition, the SubCellspaces on the input Layers must be populated by
+loading the data from raster datasets (e.g. ﬁles or databases). Also, after the Transition is com-
+pleted, the SubCellspaces on the output Layers will be written to raster datasets if the user
+requests so. Like version 1.0, pRPL 2.0 provides a centralized data I/O approach. (A pseudo
+parallel I/O approach is also provided by pRPL 2.0, which does not require Cellspace/
+SubCellspace transfer among processes, see Section 2.2.2). A speciﬁc process is responsible for
+data I/O and distributing the input SubCellspaces to other processes, and other processes
+submit the output SubCellspaces to the I/O process once the computation is complete. Trans-
+ferring a whole Cellspace is sometimes needed when a global-scope processing is to be
+executed and all cells within the Cellspace will be required for the computation.
+
+The non-blocking data transfer technique is used for transferring Cellspaces/SubCellspaces
+among processes, such that a SubCellspace’s transfer can overlap with the processing of other
+SubCellspaces. As a result, the idle time of a process to wait for the transfer to complete can be
+reduced and the computational efﬁciency is therefore improved. It is important to note that all
+data transfers are handled by pRPL and transparent to users.
+
+2.1.5 Transition execution
+
+The DataManager also controls and monitors the execution of Transitions. An application-
+speciﬁc Transition class can be derived based on the basic Transition class provided by pRPL,
+to implement a user-deﬁned raster processing algorithm by overriding the evaluate method of
+the basic class (Guan 2008).
+
+pRPL supports multi-layer algorithms, and allows a Transition to process any number of
+Layers. Especially, multiple output Layers are allowed in pRPL 2.0, which means a Transition
+may update more than one Layer during the processing. When deploying a customized
+Transition, the user just needs to specify the names of the input and output Layers, and the
+name of the Neighborhood if a neighborhood-scope algorithm is to be used. According to the
+assignment vector in the ownership map, the DataManager on a process automatically reads
+the SubCellspaces on the input Layers, initializes the SubCellspaces on the output Layers, and
+applies the Transition on the SubCellspaces.
+
+for executing Transitions
+
+To accommodate various processing operations, the DataManager class provides three
+options
+to evaluate Layers: EVALUATE_ALL, EVALUATE
+_SELECTED, and EVALUATE_RANDOMLY. The EVALUATE_ALL option deploys the Tran-
+sition to evaluate all the cells within the SubCellspaces. The EVALUATE_SELECTED option
+only evaluates a set of user-selected cells. The EVALUATE_RANDOMLY option executes an
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+pRPL 2.0: Improving the Parallel Raster Processing Library
+
+33
+
+iterative procedure that randomly chooses a cell to evaluate at each iteration until a user-
+deﬁned condition is satisﬁed and the Transition is terminated. These three Transition-evoking
+options enable the DataManager to execute a large variety of raster processing algorithms,
+such as scanning, tracing, and random sampling.
+
+If a neighborhood-scope Transition is to be iteratively executed multiple times, the “halo”
+cells of each SubCellspace need to be updated at each iteration according to their origins in
+other SubCellspaces (Mineter 1998), which often requires data exchange among processes. As
+in version 1.0, pRPL 2.0 automatically takes care of the data exchange if the Transition
+requests this (i.e. the Transition’s “needExchange” option is ON). When the Transition’s
+“edgesFirst” option is ON, the DataManager ﬁrst processes the edges of all SubCellspaces
+using the Transition, packs the updated cells into data streams, and initializes non-blocking
+data exchange. While transferring the data, the DataManager processes the interiors of
+SubCellspaces. After the processing is completed, it ﬁnalizes the data exchange and updates the
+“halo” cells. For more details on “Update-On-Change”, “edgesFirst”, and non-blocking data
+exchange techniques, please see Guan (2008) and Guan and Clarke (2010).
+
+2.2 Raster Data I/O
+
+Some modiﬁcations have been made in pRPL to improve the usability, ﬂexibility, and perfor-
+mance of data I/O. pRPL 2.0 now supports reading and writing datasets in a wide variety of
+raster formats, and provides two I/O options: centralized I/O and pseudo parallel I/O. Also, a
+writer process can be created for dynamic writing in response to other processes’ requests. The
+data I/O operations are no longer executed on the whole Cellspace at once, but on the
+SubCellspaces as needed, and the memory space can be dynamically initialized and released to
+improve the efﬁciency.
+
+2.2.1 GDAL-based I/O
+
+Parallel geospatial raster I/O has been implemented in the Terrain Analysis Using Digital
+Elevation Models (TauDEM, http://hydrology.usu.edu/taudem/taudem5/index.html), in which
+all processes can read and write sub-regions of a raster ﬁle concurrently (Tesfa et al. 2011).
+However, the current version of TauDEM only supports parallel I/O of a speciﬁc raster format,
+i.e. GeoTIFF. As a general-purpose library, pRPL aims to support as many as possible com-
+monly used geospatial raster data formats.
+
+To achieve such a goal, pRPL 2.0 uses the Geospatial Data Abstraction Library (GDAL)
+as the data I/O interface. GDAL (http://www.gdal.org) is an open-source programming library
+that presents a single abstract data model and provides a uniﬁed I/O interface to the calling
+applications for a large variety of data formats, including GeoTIFF, Erdas Imagine, Arc/Info
+Binary Grid, ENVI Raster, and MrSID. With GDAL, a DataManager is able to initialize a
+Layer (i.e. specifying its basic attributes, including dimensions, data type, data size, NoData
+value, and spatial reference information) using the metadata of a raster dataset (e.g. a ﬁle or a
+dataset within a database), create a raster dataset according to a Layer’s attributes, and read/
+write a Cellspace/SubCellspace from/into a raster dataset in any GDAL-supported format.
+
+2.2.2 Centralized I/O and pseudo parallel I/O
+
+While supporting a large variety of geospatial raster formats, GDAL has its limitations for par-
+allel processing, mainly because it is not completely thread-safe (http://trac.osgeo.org/gdal/
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+34 Q Guan, W Zeng, J Gong and S Yun
+
+SubCellspace
+0
+
+2
+
+1
+
+3
+
+Input Dataset
+
+SubCellspace
+0
+
+2
+
+1
+
+3
+
+Input Dataset
+
+Process 1
+
+Process 2
+
+0
+
+0
+
+1
+
+1
+
+Read
+
+Process 0
+
+0
+
+1
+
+Distribute
+
+Submit
+
+Process 0
+
+0
+
+1
+
+Write
+
+Read
+
+Process 1
+
+Process 2
+
+0
+
+0
+
+0
+
+1
+
+1
+
+1
+
+Write
+
+Write
+
+Read
+
+Process 0
+
+0
+
+1
+
+Write
+
+Temporary Dataset
+
+Temporary Dataset
+
+0
+
+2
+
+1
+
+3
+
+Output Dataset
+
+0
+
+2
+
+1
+
+3
+
+Output Dataset
+
+(a) Centralized I/O
+
+(b) Pseudo Parallel I/O
+
+Figure 5 Centralized and Pseudo Parallel data I/O
+
+wiki/FAQMiscellaneous#IstheGDALlibrarythread-safe). When multiple processes access the
+same dataset concurrently, GDAL does not guarantee correct data I/O. As proved by Qin et al.
+(2014), for some raster formats such as GeoTIFF, multiple concurrent processes can read sub-
+regions of a raster dataset correctly using GDAL. But parallel writing with column or block-
+wise decomposition is highly inefﬁcient and cannot produce correct output because of the
+caching mechanism of GDAL. To overcome this problem, Qin et al. proposed a two-phase I/O
+strategy, which constructs a row-wise sub-region on each process through data exchange,
+before writing data to the output dataset in parallel. However, this two-phase strategy requires
+that the mapping and distribution are completed before the writing operations, thus it is only
+applicable for static load-balancing. In dynamic load-balancing, SubCellspaces are dynamically
+mapped onto processes according to their working status (i.e. busy or idle), and as a result, the
+data I/O operations of SubCellspaces are dynamically executed.
+
+To support various parallel computing environments and requirements, pRPL 2.0 provides
+two data I/O modes: centralized I/O and pseudo parallel I/O. In the centralized I/O mode
+(Figure 5a), the master process is responsible for reading, distributing, receiving, and writing
+SubCellspaces, either according to the static ownership map (in the static load-balancing
+mode), or in response to workers’ dynamic requests (in the dynamic load-balancing mode).
+The worker processes are responsible for receiving, processing, and submitting SubCellspaces,
+either according to the static ownership map, or through dynamic requesting. All I/O opera-
+tions are performed by the master through GDAL, thus a single-thread data access mechanism
+is formed and the correctness of I/O is guaranteed. As mentioned in Section 2.1.4, all
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+pRPL 2.0: Improving the Parallel Raster Processing Library
+
+35
+
+SubCellspace transfers are performed using the non-blocking data transfer technique. The
+performance of centralized I/O largely depends on the interconnection bandwidth among
+processes.
+
+In the pseudo parallel I/O mode (Figure 5b), the worker processes read SubCellspaces
+from raster datasets in parallel. As mentioned above, parallel reading via GDAL is applicable
+for some raster data formats. Parallel writing via GDAL, however, is problematic. In pRPL
+2.0, each process writes a temporary raster dataset (in the same format as the ﬁnal output
+dataset) for a SubCellspace once it is evaluated. The master process reads the temporary
+datasets and writes the SubCellspaces into the ﬁnal output dataset in the desired format, either
+after all SubCellspaces are evaluated (in the static load-balancing mode), or in response to
+workers’ requests (in the dynamic load-balancing mode). Pseudo parallel writing also assures
+that a dataset is written by only one process so the correctness of data output is guaranteed.
+Apparently, the pseudo parallel I/O mode does not require transferring SubCellspaces among
+processes, thus largely reduces the amount of inter-process communications. On the other
+hand, it requires all processes to have reading and writing access rights in a shared disk space,
+and the performance mostly depends on the I/O rate of the disk.
+
+Also, users are allowed to choose different I/O modes for reading and writing separately.
+For example, a program can use parallel reading and centralized writing, or centralized
+reading and pseudo parallel writing, according to the parallel computing environment, prefer-
+ence, and GDAL’s support for the desired format.
+
+2.2.3 Writer process
+
+pRPL 2.0 also allows a speciﬁc writer process to be initialized besides the master and workers.
+The writer process takes over the writing operations so the master can focus on data reading
+and computing coordination. The writer executes writing operations dynamically in both I/O
+modes, and thus enables on-demand data output. After a certain SubCellspace is evaluated, the
+working process notiﬁes the writer by sending a submission request, and then either submits
+the SubCellspace to the writer (through non-blocking data transfer) or writes it to a temporary
+dataset, depending on the I/O mode. Whenever the writer receives a submission request, it
+either receives the SubCellspace or reads the temporary dataset, and writes to the ﬁnal output
+dataset.
+
+2.2.4 Dynamic deletion
+
+Both the centralized and pseudo parallel I/O modes allow for removing the Cellspaces and
+SubCellspaces from Layers once they are no longer needed by the process (e.g. after distrib-
+uted from the master, submitted from the workers, and written by the master, writer, or
+workers), so the memory space can be released to achieve higher performance and efﬁciency.
+for the master and writer processes. They read and write
+This is especially useful
+SubCellspaces as needed instead of the whole Cellspace at once, and release memory space
+dynamically, which greatly reduces the memory requirement.
+
+2.3 Data load-balancing
+
+pRPL 2.0 supports both static and dynamic data load-balancing. The load-balancing is auto-
+matically coordinated by the DataManager when executing the Transitions, and users just
+need to specify the load-balancing mode to be used.
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+36 Q Guan, W Zeng, J Gong and S Yun
+
+In both load-balancing modes, the necessary Layers are ﬁrst initialized (i.e. specifying the
+dimensions, data type, data size, NoData value, and spatial reference information) according
+to the metadata of GDAL-supported raster datasets or the user’s requests. The Layers are then
+decomposed, so that for each Layer, a complete list of metadata for all SubCellspaces is gener-
+ated on all processes. The static and dynamic load-balancing modes differ in the following
+steps, i.e. how SubCellspaces are mapped to processes and how processes are coordinated for
+the Transition execution.
+
+2.3.1 Static load-balancing
+
+In the static load-balancing mode (Figure 6), all SubCellspace IDs are mapped to all working
+processes (including the master and workers, excluding the writer if it exists) by populating the
+DataManager’s ownership map. According to the ownership map, the SubCellspaces on the
+input Layers are either read by the master and distributed to workers (i.e. centralized reading),
+or read by working processes simultaneously (i.e. parallel reading). Note that a particular
+process only holds the SubCellspaces that are assigned to it. Then, each working process starts
+
+Initialize Layers
+
+Start
+
+Decompose Layers
+
+Map all
+SubCellspaces
+
+Read all assigned
+input SubCellspaces
+
+No
+
+Centralized
+Reading?
+
+Yes
+
+Receive all assigned
+input SubCellspaces 
+from master
+
+Are there
+uncompleted
+Assignments?
+
+Yes
+
+Initialized output
+SubCellspaces for an
+assignment
+
+No
+
+Writer exists?
+
+No
+
+Centralized
+Writing?
+
+No
+
+Yes
+
+Yes
+
+Send QUIT signal to
+writer
+
+Submit all output
+SubCellspaces to
+master
+
+Notify writer
+
+Yes
+
+No
+
+Writer exists?
+
+Execute Transition
+
+Stop
+
+Write output
+SubCellspaces to
+temporary ﬁles
+
+No
+
+Centralized
+Writing?
+
+Yes
+
+Writer exists?
+
+Yes
+
+Submit output
+SubCellspaces to writer 
+(non-blocking)
+
+No
+
+Figure 6 The ﬂowchart for worker processes in the static load-balancing mode
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+pRPL 2.0: Improving the Parallel Raster Processing Library
+
+37
+
+Initialize Layers
+
+Start
+
+Decompose Layers
+
+Map all
+SubCellspaces
+
+Read all assigned
+input SubCellspaces
+
+No
+
+Centralized
+Reading?
+
+Yes
+
+Read all input 
+SubCellspaces and
+distribute to workers
+
+Are there
+uncompleted
+Assignments?
+
+Yes
+
+Initialized output
+SubCellspaces for an
+assignment
+
+No
+
+Writer exists?
+
+No
+
+Centralized
+Writing?
+
+No
+
+Yes
+
+Yes
+
+Send QUIT signal to
+writer
+
+Receive all output
+SubCellspaces from 
+workers and write to
+ﬁnal output ﬁles
+
+Notify writer
+
+Yes
+
+No
+
+Writer exists?
+
+Execute Transition
+
+Stop
+
+Write output
+SubCellspaces to
+temporary ﬁles
+
+No
+
+Centralized
+Writing?
+
+Yes
+
+Writer exists?
+
+Yes
+
+No
+
+Read all temporary 
+ﬁles and write to ﬁnal
+output ﬁles
+
+Submit output
+SubCellspaces to writer 
+(non-blocking)
+
+Figure 7 The ﬂowchart for the master process in the static load-balancing mode
+
+an iterative procedure over its assignments. At each iteration, a SubCellspace ID (as an assign-
+ment) is popped from the process’s assignment vector, the corresponding output SubCellspaces
+are created, and the Transition is executed on the set of input and output SubCellspaces with
+this ID. After an assignment is completed and if data output is needed, the working process
+may proceed with one of the following two routines depending on the I/O settings: (1) sending
+a SUBMISSION request to the writer if it exists, and starting non-blocking transfers to submit
+the output SubCellspaces (i.e. centralized writing with writer); or (2) writing the output
+SubCellspaces into temporary datasets (i.e. pseudo parallel writing), and sending a SUBMIS-
+SION request to the writer if it exists.
+
+After the assignments are completed on all working processes, if data output is needed but
+no writer exists, the master process either gathers the output SubCellspaces from workers (i.e.
+centralized writing without writer), or reads all temporary SubCellspace datasets (i.e. pseudo
+parallel writing without writer), and writes to the ﬁnal output datasets (Figure 7).
+
+If a writer process exists, it responds to the requests from all working processes during the
+computation, by either receiving the output SubCellspaces through non-blocking data transfers
+(i.e. centralized writing with writer), or reading the temporary datasets (i.e. pseudo parallel
+writing with writer), and writes to the ﬁnal output datasets on the ﬂy (Figure 8).
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+38 Q Guan, W Zeng, J Gong and S Yun
+
+2.3.2 Dynamic load-balancing
+
+The dynamic load-balancing in pRPL 2.0 is based on the task-farming technique (Figure 9).
+Before the actual computation starts, a subset of SubCellspace IDs is mapped to the worker
+processes as their initial assignments (e.g. two assignments per worker). In the centralized
+reading mode, the master process reads and distributes the input SubCellspaces according to
+the initial mapping, while in the parallel reading mode, the workers read their assigned
+SubCellspaces simultaneously. Each worker then starts an iterative procedure to execute the
+Transitions over the SubCellspaces, as in the static load-balancing mode. Unlike the commonly
+used task-farming approach in which a worker requests more tasks after all the initial tasks
+are completed, pRPL 2.0 uses a pre-request approach. A worker requests more assignments by
+sending a NEW_TASK request to the master, when the previously assigned assignments are
+near completion (e.g. only one assignment is left for evaluation). Once a new assignment (i.e. a
+SubCellspace ID) is returned by the master, the worker either starts non-blocking transfers to
+receive the corresponding input SubCellspaces from the master (i.e. centralized reading), or
+reads the input SubCellspaces on its own (i.e. parallel reading). The pre-request approach is
+especially useful for centralized data I/O, because it overlaps the non-blocking transfers of new
+SubCellspaces and the computation of remaining assignments, therefore reduces the idle time.
+After an assignment is completed and if data output is needed, the worker may proceed with
+
+Start
+
+Initialize Layers
+
+Decompose Layers
+
+Map all
+SubCellspaces
+
+Number of
+active working
+processes > 0
+
+No
+
+Stop
+
+Read temporary ﬁles of
+output SubCellspaces
+
+Yes
+
+Receive a signal from 
+any working process
+
+Write output
+SubCellspaces to ﬁnal
+output ﬁles
+
+SUBMISSION
+
+Centralized
+writing?
+
+Is it
+SUBMISSION
+or QUIT?
+
+QUIT
+
+No
+
+Yes
+
+Receive output
+Subcellspaces from the
+submitting process
+
+Number of active
+working processes - 1
+
+Figure 8 The ﬂowchart for the writer process
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+pRPL 2.0: Improving the Parallel Raster Processing Library
+
+39
+
+Initialize Layers
+
+Start
+
+Decompose Layers
+
+Map a subgroup of
+SubCellspaces
+
+Read initially assigned
+input SubCellspaces
+
+No
+
+Centralized
+Reading?
+
+Yes
+
+Receive initially assigned
+input SubCellspaces from 
+master
+
+Master response = 0
+
+Any 
+uncompleted
+assignments?
+
+Yes
+
+Request a new
+assignment from master
+
+Yes
+
+Yes
+
+Master 
+response = 
+QUIT?
+
+No
+
+No
+
+Read newly assigned
+input SubCellspaces
+
+Centralized
+Reading?
+
+Yes
+
+Receive newly assigned
+input SubCellspaces from 
+master (non-blocking)
+
+Number of
+uncompleted
+assignment < 2 & 
+Master response != 
+QUIT
+
+No
+
+Choose an assignment that
+is ready (i.e., input
+SubCellspaces have been
+read or received)
+
+No
+
+Writer exists?
+
+No
+
+Yes
+
+Send QUIT signal to
+writer
+
+Send QUIT signal to
+master
+
+Stop
+
+Notify writer
+
+Yes
+
+Initialized output
+SubCellspaces for the
+assignment
+
+Notify master
+
+Writer exists?
+
+No
+
+Execute Transition
+
+Submit output
+SubCellspaces to writer 
+(non-blocking)
+
+Write output
+SubCellspaces to
+temporary ﬁles
+
+No
+
+Centralized
+Writing?
+
+Yes
+
+Writer exists?
+
+Yes
+
+No
+
+Submit output
+SubCellspaces to master 
+(non-blocking)
+
+Figure 9 The ﬂowchart for worker processes in the dynamic load-balancing mode
+
+one of the following three routines depending on the I/O settings: (1) sending a SUBMISSION
+request to the master, and starting non-blocking transfers to submit the output SubCellspaces
+(i.e. centralized writing without writer); (2) sending a SUBMISSION request to the writer,
+and starting non-blocking transfers (i.e. centralized writing with writer); and (3) writing the
+output SubCellspaces into temporary datasets (i.e. pseudo parallel writing), and sending a
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+40 Q Guan, W Zeng, J Gong and S Yun
+
+Initialize Layers
+
+Start
+
+Decompose Layers
+
+Map a subgroup of
+SubCellspaces
+
+No
+
+Yes
+
+What is the
+request?
+
+QUIT
+
+Centralized
+writing?
+
+No
+
+Yes
+
+Centralized
+Reading?
+
+Yes
+
+Read initially assigned
+input SubCellspaces 
+and distribute to workers
+
+Number of active
+workers > 0
+
+No
+
+Stop
+
+Notify the requesting worker of the
+new assignment (SubCellspace ID)
+
+Centralized
+reading?
+
+No
+
+Yes
+
+Yes
+
+No
+
+Read temporary ﬁles of
+output SubCellspaces
+
+Receive a request
+from any worker 
+
+Map a new
+assignment to the
+requesting worker
+
+Write output
+SubCellspaces to ﬁnal
+output ﬁles
+
+SUBMISSION
+
+NEW_TASK
+
+Any unmapped
+assignment?
+
+Read newly assigned input
+SubCellspaces and send to the
+requesting worker (non-blocking)
+
+Receive output Subcellspaces 
+from the submitting process 
+(non-blocking)
+
+Number of active
+workers - 1
+
+Send a QUIT signal to
+the requesting worker
+
+Figure 10 The ﬂowchart for the master process in the dynamic load-balancing mode
+
+SUBMISSION request to the master or writer. A worker keeps running until a QUIT signal
+instead of a new assignment is returned by the master; the worker then completes the remain-
+ing assignments and transfers, and sends a QUIT request to the master at the end.
+
+The master process keeps a count of active worker processes, and responds to their
+requests (Figure 10). If a NEW_TASK request is received, the master extracts an unmapped
+SubCellspace ID as the new assignment and returns it to the requesting worker. A QUIT signal
+is returned if all SubCellspace IDs have been mapped. In the centralized reading mode,
+the master also reads the input SubCellspaces for the new assignment and starts non-blocking
+transfers to distribute the data to the work. If a SUBMISSION request is received, the
+master either starts non-blocking transfers to receive the output SubCellspaces (i.e. centralized
+writing without writer), or reads the corresponding temporary datasets (i.e. pseudo parallel
+writing without writer). The output SubCellspaces are written to the ﬁnal output datasets once
+the transfers or reading operations are completed. The master keeps running until a QUIT
+request has been received from every worker, and all transfers and writing operations have
+been completed.
+
+The writer in the dynamic load-balancing mode works similarly as in the static load-
+in the initial mapping step only a subset of
+
+that
+
+balancing mode (Figure 8), except
+SubCellspace IDs are mapped.
+
+During the task farming, the master maintains a complete ownership map as it is respon-
+sible for mapping SubCellspace IDs to workers, while each worker maintains a partial owner-
+ship map in which the worker’s own assignment vector is updated. Once the task farming is
+completed, the ownership map can be synchronized on all processes in case the mapping infor-
+mation is needed for the following operations (e.g. data exchange among workers to update
+“halo” cells).
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+pRPL 2.0: Improving the Parallel Raster Processing Library
+
+41
+
+Unlike the static load-balancing mode in which the master participates in the actual com-
+putation (i.e. non-zero assignments for the master), the dynamic load-balancing mode excludes
+the master from the actual computation such that it can focus on coordinating assignments
+and workers. The writer process is excluded from the actual computation in both static and
+dynamic load-balancing modes.
+
+3 Examples and Experiments
+
+To demonstrate the usability and performance of pRPL 2.0, two showcases were developed:
+(1) parallel zonal statistics, as a representative of a wide range of spatial analytics that are
+essentially local or zonal operations; and (2) a parallel Cellular Automata (CA) model for
+urban growth simulation, as a representative of focal operations and iterative algorithms that
+require frequent data exchange among processes.
+
+All experiments were conducted on a computer cluster composed of 106 computing
+nodes, each of which is equipped with four Opteron 2.1 GHz 16-core CPUs and 256 GB of
+RAM. The computing nodes are connected through a Quad Data Rate (QDR) Inﬁniband
+network at 10 Gigabit/second communication rate. The parallel programs were compiled
+using g++ compiler 4.7, OpenMPI 1.6, and GDAL 1.9, on the Scientiﬁc Linux 6.4 operation
+system.
+
+3.1 Parallel Zonal Statistics
+
+3.1.1 Parallel algorithm
+
+Zonal statistics are commonly used spatial analysis tools, to calculate statistics (e.g. maximal,
+minimal, mean, median values, standard deviation, sum and variety) for a set of zones deﬁned
+by a zone dataset (i.e. zone layer), based on the values from another dataset (i.e. value layer).
+A zone is deﬁned by all the cells in the zone layer (raster) that have the same value (e.g. an
+administrative unit, a land-use type, and a vegetation type). The input zone layer deﬁnes the
+shape and locations of zones. The input value layer contains the input values used in calculat-
+ing the output statistics for each zone. Even though zonal statistics are simple calculations,
+when they are applied on large datasets the computing time can be extensively long.
+
+The calculation for each zone is completely independent from the calculations for other
+zones, thus parallelizable. However, decomposing the input layers by zones may introduce
+large imbalances in workload, because the sizes of zones may vary greatly (Mineter 1998).
+Since the statistical calculation is based on the combination of individual cells, we divided the
+input layers using regular decomposition methods (e.g. row-wise, column-wise, and block-
+wise), and applied the statistical calculation on each SubCellspace. Once complete, a combin-
+ing operation was used to gather the output values from all SubCellspaces through data
+exchange to calculate the ﬁnal statistical values (Figure 11). Through such a procedure, the
+zonal operations were transformed to local operations, and the workload imbalance among
+SubCellspaces was greatly reduced.
+
+In this study, we developed a zonal calculation Transition and a zonal combining Transi-
+tion, based on the basic Transition provided by pRPL. A parallel zonal statistics program
+was then developed to apply both Transitions to calculate the maximal, minimal, and mean
+values for all zones. Note that this showcase is only a demonstration of implementing zonal
+operations using pRPL, and more complex zonal algorithms can be parallelized using the same
+strategy.
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+42 Q Guan, W Zeng, J Gong and S Yun
+
+3.1.2 Experiments and performance assessments
+
+The experiments used the Digital Elevation Model (DEM) data of California as the value layer,
+and the county map of California as the zone layer. A zone is deﬁned by the Federal Informa-
+tion Processing Standards (FIPS) code of a county. Each dataset contains 40,460 × 23,851 cells
+at 30m resolution, with values stored as unsigned short integers in GeoTIFF format. The size
+of each input ﬁle is about 1.9 GB.
+
+The experiments showed that the row-wise decomposition performed slightly better than
+column and block-wise decompositions, because of the row-wise storage mechanism of
+GeoTIFF and I/O mechanism of GDAL. The following performance assessments use only the
+results from the row-wise decomposition experiments. Each input Layer was decomposed into
+1,024 SubCellspaces, each of which contained 40 × 23,851 or 39 × 23,851 cells. The scattered
+mapping technique was used such that each process was assigned with multiple SubCellspaces
+scattered over the space, to reduce the chance of workload imbalance (Mineter 1998).
+
+Without writing the output raster datasets, a sequential program took 2,554 seconds (about
+42 minutes) to complete using a single CPU core on the computer cluster. With 512 processes (i.e.
+512 CPU cores), using the parallel reading and static load-balancing modes, the parallel program
+completed in less than eight seconds, achieving a speed-up of 320.5 and an efﬁciency of 62.6%. As
+shown in Figure 12, static load-balancing outperformed dynamic load-balancing in most cases, for
+two reasons: (1) the CPU cores on the computer cluster were identical in terms of processing speed
+
+Zonal Statistics Computing
+
+Zonal Statistics Combining
+
+Value
+Layer
+
+Zone 
+Layer
+
+Value
+Layer
+
+Zone 
+Layer
+
+ZONE A
+
+ZONE B
+
+ZONE C
+
+ZONE A
+Min: 1
+Max:2
+Total: 12
+Count: 7
+
+ZONE B
+Min: 1
+Max: 3
+Total:13
+Count: 5
+
+ZONE C
+Min: 2
+Max: 4
+Total: 17
+Count: 6
+
+Process 0
+
+e
+g
+n
+a
+h
+c
+x
+E
+a
+t
+a
+D
+
+ZONE A
+Min: 1
+Max:1
+Total: 1
+Count: 1
+
+ZONE B
+Min: 1
+Max: 3
+Total:13
+Count: 9
+
+ZONE C
+Min: 1
+Max: 4
+Total: 22
+Count: 8
+
+ZONE B
+Min: 1
+Max: 3
+Total:26
+Count: 14
+Mean: 1.86
+
+Process 0
+
+ZONE B
+Min: 1
+Max: 3
+Total:26
+Count: 14
+Mean: 1.86
+
+ZONE A
+Min: 1
+Max:2
+Total: 13
+Count: 8
+Mean: 1.63
+
+ZONE C
+Min: 1
+Max: 4
+Total: 39
+Count: 14
+Mean: 2.79
+
+ZONE A
+Min: 1
+Max:2
+Total: 13
+Count: 8
+Mean: 1.63
+
+ZONE C
+Min: 1
+Max: 4
+Total: 39
+Count: 14
+Mean: 2.79
+
+Process 1
+
+Process 1
+
+Figure 11 Parallel zonal statistics using a regular decomposition method
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+pRPL 2.0: Improving the Parallel Raster Processing Library
+
+43
+
+Figure 12 Overall computing time for no-outputs experiments of parallel zonal statistics (SLB:
+Static Load-balancing; DLB: Dynamic Load-balancing; CI: Centralized Input; PI: Parallel Input)
+
+Figure 13 Reading time of parallel zonal statistics
+
+and memory allocation; and (2) the workload was rather evenly distributed to SubCellspaces in
+these experiments. The task-farming dynamic load-balancing is suitable when the parallel comput-
+ing units have differentiated computing capacities and the workload is extremely heterogeneous
+over the space. More experiments will be conducted in the future using more complex algorithms
+and datasets that may introduce higher spatial imbalance of workload.
+
+Figure 13 shows that parallel reading largely reduced the time for data input by allowing
+the processes to read their assigned SubCellspaces concurrently. The reading time decreased as
+the number of processes increased in the parallel reading mode, while in the centralized
+reading mode, the reading time stayed approximately the same.
+
+When writing all three output datasets (i.e. the minimal, maximal and mean elevations by
+counties) in GeoTIFF format (Figure 14), the sequential program took 2,728.7 seconds (about 45.5
+minutes) to complete. The highest performance was reached using 256 processes (without a writer)
+and static load-balancing. The parallel program completed in 253.5 seconds, achieving a speed-up
+of 10.8 (Figure 15). By comparing the results with that of the no-outputs experiments, we con-
+cluded that the initialization procedure (especially the creation of the output ﬁles) and writing
+operations took a large proportion of the overall computing time, which greatly degraded the per-
+formance. As shown in Figure 16, in these experiments the initialization took about 110–210
+seconds, which were mainly used to create the output ﬁles (in total 7.8 GB). Since the writing
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+44 Q Guan, W Zeng, J Gong and S Yun
+
+Figure 14 Output results of zonal statistics
+
+operations were embedded in the computation (especially when a writer and/or pseudo parallel
+writing were used), it is hard to determine how much time was used for writing. The differences
+between the computation time of the no-outputs and with-outputs experiments showed that the
+writing operations took about 200–500 seconds.
+
+A writer process greatly reduced the overall computing time in the static load-balancing mode
+(especially when centralized I/O was used), while in the dynamic load-balancing mode, using a
+writer did not help improve the performance. This is because in the static load-balancing mode, the
+master also participates in the actual computation, and the writing operations have to be executed
+by the master after all its assignments have been ﬁnished if a writer does not exist. The writer,
+taking over the writing operations, can dynamically write SubCellspaces to the output ﬁle in
+response to other processes’ requests, thus reducing the overall time. On the other hand, in the
+dynamic load-balancing mode, the master does not participate in the actual computation, and also
+dynamically writes data to the output ﬁles. Using a writer means losing a worker process, leading
+to poorer performance.
+
+In almost all cases, parallel I/O yielded poorer performance than centralized I/O. Since
+parallel reading was proven to be able to help reduce the time for data input, we concluded
+that pseudo parallel writing was outperformed by centralized writing in these experiments.
+The multiple reading and writing operations (i.e. the I/O of temporary ﬁles) in the pseudo
+parallel writing mode degraded the performance. A better solution for parallel writing that
+allows processes to directly write subsets of data into the output datasets is needed.
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+pRPL 2.0: Improving the Parallel Raster Processing Library
+
+45
+
+Figure 15 Overall computing time for with-outputs experiments of zonal statistics (NW: No Writer;
+WW: With Writer; CIO: Centralized I/O; PIO: Pseudo Parallel I/O)
+
+Figure 16 Initialization time vs. computing and writing time
+
+We also used smaller datasets in other experiments, which showed that pseudo parallel
+writing outperformed centralized writing when small numbers of processes were used.
+However, when large numbers of processes were used, pseudo parallel writing was outper-
+formed by centralized writing, because the I/O channel was saturated by overwhelming
+numbers of concurrent writing requests.
+
+3.2 Parallel Urban Cellular Automata
+
+3.2.1 Parallel algorithm
+
+Cellular Automata (CA) has been widely used in geospatial studies to simulate spatio-temporal
+dynamics, such as land-use and land-cover change (Clarke et al. 1997; Couclelis 1997; White et al.
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+46 Q Guan, W Zeng, J Gong and S Yun
+
+1997; Clarke and Gaydos 1998; Wu and Webster 1998; Li and Yeh 2000, 2001; Yeh and Li 2002;
+Silva and Clarke 2002), wildﬁre propagation (Clarke et al. 1995), and freeway trafﬁc (Nagel and
+Schreckenberg 1992; Benjamin et al. 1996). Several parallel geospatial CA models have been devel-
+oped in the past few years (Guan and Clarke 2010; Li et al. 2010; Cheng et al. 2012).
+
+is completely independent of
+
+the computations for other cells,
+
+The transition rules of a CA are applied to all cells within a Cellspace, and the computa-
+tion for a cell
+thus
+parallelizable. A transition rule is essentially a focal operation that calculates the state of a cell
+based on the states of its neighbors and itself. Thus after decomposition, a SubCellspace con-
+tains not only the block of cells to be evaluated locally, but also a ring of “halo” cells that
+serve as the neighbors of the edge cells. Furthermore, the evolution of a CA is usually imple-
+mented by applying the transition rules iteratively on the cells, to simulate the spatio-temporal
+dynamics. Such an iterative algorithm requires the halo cells of a SubCellspace to be updated
+at each iteration according to the neighboring SubCellspaces, which often leads to data
+exchange among processes.
+
+In this study, we implemented a parallel geospatial CA model for urban growth simulation
+based on the model developed by Wu (2002), using pRPL 2.0. The CA includes the following
+transition rules:
+
+1. Global conversion probability:
+
+=
+
+p
+g
+
++(
+∑
+exp a
++(
+∑
++
+exp a
+
+k
+
+b x
+k k
+
+)
+b x
+k k
+
+)
+
+1
+
+k
+
+where pg is the global probability for a cell to convert to urban, a is a constant, bk is a param-
+eter representing the impact of the kth site attribute on the urbanization; xk is one of K site
+attributes that are assumed to have impacts on the urbanization (e.g. elevation, slope, distance
+to transportations, and distance to city centers). The values of a and bk can be determined
+using a logistic regression model with a collection of samples out of the historical datasets.
+
+2. Joint conversion probability:
+
+=
+
+t
+p
+c
+
+p
+g
+
+×
+
+excl
+
+×
+
+×∑
+
+3 3
+
+1
+
+=
+
+(
+−
+t
+con s
+ij
+× −
+3 3 1
+
+urban
+
+)
+
+t is the joint probability for a cell to convert to urban at time t, excl is the exclusion
+where pc
+status of the cell (1 means urban conversion is allowed for the cell; 0 means the cell is excluded
+calculates the urban density of the cell’s 3 × 3 neigh-
+
+for urbanization),
+
+urban
+
+×
+3 3
+
+∑
+
+)
+
+1
+
+(
+=
+−
+t
+con s
+ij
+× −
+3 3 1
+
+borhood at time t-1.
+
+3. Distance-decay conversion probability:
+
+where pd
+t(
+sion parameter, and max pc
+
+t is the distance-decay probability for a cell to convert to urban at time t, δis a disper-
+
+) returns the maximal joint probability of all cells at time t.
+
+4. Final conversion probability and ﬁnal conversion:
+
+t
+p
+d
+
+=
+
+×
+
+t
+p
+c
+
+exp
+
+δ
+− ×
+
+⎛
+⎝⎜
+
+−
+
+1
+
+t
+p
+c
+(
+t
+max p
+c
+
+⎞
+⎠⎟
+
+)
+
+t
+p
+s
+
+= ×
+
+t
+q p
+d
+
+× ∑
+
+t
+p
+d
+
+ij
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+(1)
+
+(2)
+
+(3)
+
+(4)
+
+pRPL 2.0: Improving the Parallel Raster Processing Library
+
+47
+
+t is the ﬁnal probability for a cell to convert to urban at time t, q is the maximal
+where ps
+number of cells to be converted at each iteration according to the projected urban growth
+trend, and ∑ij
+
+tp calculates the sum of distance-decay probabilities of all cells at time t.
+
+d
+
+The ﬁnal conversion of a cell is calculated as follows:
+
+{
+
+=
+
+t
+
+s
+
+urban
+,
+−
+non urban
+,
+
+>
+≤
+
+t
+p
+s
+t
+p
+s
+
+rand
+rand
+
+( )
+( )
+
+(5)
+
+where st is the urbanization status of a cell at time t, and rand() generates a random number
+with uniform distribution within the range of [0, 1].
+
+Transition rule (1), i.e. the global probability calculation, is only executed once at the
+beginning before the iterative procedure. Transition rules (2), (3), and (4) are iteratively
+executed during the evolution of the CA.
+
+In this study, these transition rules were implemented into four Transitions based on the basic
+Transition provided by pRPL, and a parallel program was developed to execute the customized
+Transitions. The parallel CA program provides options for both static and dynamic load-balancing
+modes. However, dynamic load-balancing was only used for transition rule (1). During the compu-
+tation of global probabilities, the workers request more assignments from the master when
+their previously assigned work is near completion. When transition rule (1) is complete, all
+SubCellspaces have been mapped to workers. The program then starts an iterative procedure to
+apply transition rules (2)-(4), during which the assignments for workers remain static.
+
+3.2.2 Experiments and performance assessments
+
+The datasets of California were used in our experiments, including ﬁve normalized site attrib-
+ute layers (i.e. elevation, slope, distance to major transportation networks, distance to city
+centers, and land use of 1992), an exclusion layer, and the urban layer of 1992. Each contains
+40,460 × 23,851 cells at 30 m resolution, stored in GeoTIFF format. The total size is over
+20 GB.
+
+As in the zonal statistics, the following performance assessments use only the results from
+the row-wise decomposition experiments. Each Layer was divided into 4,096 SubCellspaces,
+each of which contains 10 × 23,851 or 9 × 23,851 cells. The scattered mapping technique was
+also used as in the zonal statistics experiments.
+
+Without writing the simulation result, a sequential program took 34,812.9 seconds (about
+9.7 hours) to complete a 5-year (1993–1997) simulation, using a single CPU core on the com-
+puter cluster. With 1,024 processes, using the static load-balancing and parallel reading mode,
+the parallel program completed the same simulation in 77.4 seconds, achieving a speed-up of
+450 and a efﬁciency of 44%. As shown in Figure 17, static load-balancing largely outper-
+formed dynamic load-balancing, as in the zonal statistics experiments. Besides the reasons
+mentioned in Section 3.1.2, there are other explanations to the poorer performance of
+dynamic load-balancing in these CA simulations: ﬁrst, the task-farming technique was only
+used for the global probability calculation. The assignments for processes generated during the
+global probability calculation are not optimized for the following iterative execution of other
+transition rules and second, as pointed out by Guan and Clarke (2010), the spatial distribution
+of workload in a CA may change as the cells’ values change along the evolution. Therefore the
+task-farming technique is not suitable for such dynamic simulations. Figure 17 also shows that
+parallel reading greatly reduced the time for data input, as they did in the zonal statistics
+experiments.
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+48 Q Guan, W Zeng, J Gong and S Yun
+
+Figure 17 Overall computing time for no-outputs experiments of CA simulations
+
+When writing the ﬁnal result (i.e. urban map of 1997) to a GeoTIFF ﬁle (Figure 18), the
+sequential program completed the same simulation in 37,181.5 seconds. With 1,024 processes
+(without a writer), using the static load-balancing and parallel I/O modes, the parallel program
+completed in 245 seconds, achieving a speed-up of 152. As shown in Figure 19, using a writer
+did improve the performance when large numbers of processes (i.e. ≥32) were used. When
+small numbers of processes were used, the gain of I/O efﬁciency by using a separated writer
+was outweighed by the loss of computing power, thus the with-writer simulations yielded
+poorer performance. Pseudo parallel I/O outperformed centralized I/O in most cases, which is
+different from the zonal statistics experiments. This is mainly because the input datasets in the
+CA simulations were considerably larger than the zonal statistics experiments (20 GB vs.
+3.8 GB) while the output dataset was much smaller (965 MB vs. 7.8 GB), thus the data
+reading took the majority of the overall I/O time. The performance gain by using parallel
+reading was therefore more obvious in these experiments.
+
+4 Conclusions
+
+This article presents an improved parallel raster processing library – pRPL 2.0. While retaining
+some of the key features of version 1.0, such as supports for both centralized and non-
+centralized neighborhood-scope processing, spatially adaptive decomposition, “Update-on-
+Change”, “edgesFirst” processing, and non-blocking data exchange, pRPL 2.0 provides
+(1) a new
+several new features to improve the usability, ﬂexibility, and performance:
+DataManager class has been added for integrated data management, and to facilitate data
+decomposition, assignment mapping, data distribution, Transition execution, and load-
+balancing; the support for multi-layer algorithms has been improved by allowing a Transition
+to update and output multiple Layers at once, and allowing for different decomposition con-
+ﬁgurations across Layers; three Transition-evoking options are provided to execute Transitions
+on various sets of cells; (2) a GDAL-based raster data I/O mechanism has been added to
+support a large variety of geospatial raster data formats, and provide centralized and pseudo
+parallel I/O modes; a writer process can be used to release the master from writing operations
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+pRPL 2.0: Improving the Parallel Raster Processing Library
+
+49
+
+Figure 18 Simulated urban growth between 1992–1997
+
+and to dynamically write processed SubCellspaces to output datasets; the master and writer
+reads and/or writes SubCellspaces as needed instead of the whole Cellspace at once; and (3) a
+static load-balancing mode and a dynamic load-balancing mode using the task-farming tech-
+nique are provided.
+
+Two showcases were developed to demonstrate the usability and performance of pRPL
+2.0: (1) parallel zonal statistics as a representative of zonal and local operations; and (2) a par-
+allel geospatial CA model for urban growth simulation as a representative of local operations
+and iterative algorithms that require frequent data exchange among processes. Experiments
+using the California datasets showed pRPL was able to greatly reduce the computing time by
+deploying multiple processes (e.g. CPU cores). The options of pRPL (e.g. static or dynamic
+load-balancing, centralized or pseudo parallel I/O, and with or without a writer) may have
+large impacts on the performance, therefore need to be chosen according to the characteristics
+of the algorithms and datasets, the parallel computing environments, and the user’s preference.
+In conclusion, the usability, ﬂexibility, and performance have been greatly improved in
+pRPL 2.0. As a general-purpose parallel raster processing library, pRPL provides transparent
+parallelism and minimizes the requirements for parallel programming skills in developing an
+application-speciﬁc parallel program, while automatically taking care of the underlying paral-
+lel computing operations and optimizing the performance.
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+50 Q Guan, W Zeng, J Gong and S Yun
+
+Figure 19 Overall computing time for with-outputs experiments of CA simulations
+
+However, pRPL 2.0 still has its limitations. The pseudo parallel I/O requires processes to
+write and read temporary datasets before the data are written to the ﬁnal output datasets,
+which is not as efﬁcient as true parallel I/O. Ideally, all processes should be able to directly
+read/write their assigned sub-regions of the input/output datasets in parallel, such that the
+needs for data transfer and temporary datasets are completely eliminated. More studies will be
+conducted to develop a true parallel raster I/O mechanism for various commonly used raster
+data formats.
+
+References
+
+Armstrong M P and Marciano R J 1993 Parallel spatial interpolation. In Proceedings of the Eleventh Interna-
+tional Symposium on Computer-Assisted Cartography (Auto-Carto 11), Minneapolis, Minnesota: 414–23
+Armstrong M P and Marciano R J 1995 Massively parallel processing of spatial statistics. International Journal
+
+of Geographical Information Science 9: 169–89
+
+Armstrong M P and Marciano R J 1996 Local interpolation using a distributed parallel supercomputer. Interna-
+
+tional Journal of Geographical Information Systems 10: 713–29
+
+Armstrong M P and Marciano R J 1997 Massively parallel strategies for local spatial interpolation. Computers
+
+and Geosciences 23: 859–67
+
+Benjamin S C, Johnson N F, and Hui P M 1996 Cellular automata models of trafﬁc ﬂow along a highway con-
+
+taining a junction. Journal of Physics A: Mathematical and General 29: 3119–27
+
+Cheng G, Lu L, Jing N, Luo C, and Xiong W 2012 General-purpose optimization methods for parallelization of
+
+digital terrain analysis based on cellular automata. Computers and Geosciences 45: 57–67
+
+Clarke K C and Gaydos L J 1998 Loose-coupling a cellular automaton model and GIS: Long-term urban growth
+prediction for San Francisco and Washington/Baltimore. International Journal of Geographical Informa-
+tion Science 12: 699–714
+
+Clarke K C, Hoppen S, and Gaydos L J 1997 A self-modifying cellular automaton model of historical urbaniza-
+
+tion in the San Francisco Bay area. Environment and Planning B 24: 247–61
+
+Clarke K C, Riggan P, and Brass J A 1995 A cellular automaton model of wildﬁre propagation and extinction.
+
+Photogrammetric Engineering and Remote Sensing 60: 1355–67
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+pRPL 2.0: Improving the Parallel Raster Processing Library
+
+51
+
+Cosnard M and Trystram D 1995 Parallel Algorithms and Architectures. Boston, MA, International Thomson
+
+Computer Press
+
+Couclelis H 1997 From cellular automata to urban models: New principles for model development and imple-
+
+mentation. Environment and Planning B 24: 165–74
+
+Cramer B E and Armstrong M P 1997 Interpolation of spatially inhomogeneous data sets: An evaluation of par-
+
+allel computation approaches. In Proceedings of GIS/LIS ′97, Cincinnati, Ohio
+
+Ding Y and Densham P J 1996 Spatial strategies for parallel spatial modelling. International Journal of Geo-
+
+graphical Information Systems 10: 669–98
+
+Douglas L 2012 The importance of ‘big data’: A deﬁnition. Gartner (June 6 2012)
+Duckham M, Goodchild M F, and Worboys M F 2003 Foundations of Geographic Information Science. New
+
+Guan Q 2008 Getting Started with pRPL. WWW document, http://www.geog.ucsb.edu/~guan/pRPL/
+
+York, Taylor and Francis
+
+Getting_started_with_pRPL.pdf
+
+Guan Q and Clarke K C 2010 A general-purpose parallel raster processing programming library test application
+using a geographic cellular automata model. International Journal of Geographical Information Science
+24: 695–722
+
+Guan Q, Kyriakidis P C, and Goodchild M F 2011 A parallel computing approach to fast geostatistical areal
+
+interpolation. International Journal of Geographic Information Science 25: 1241–67
+
+Huang Q, Yang C, Benedict K, Chen S, Rezgui A, and Xie J 2013 Utilize cloud computing to support dust storm
+
+forecasting. International Journal of Digital Earth 6: 338–55
+
+Hutchinson D, Kuttner L, Lanthier M, Maheshwari A, Nussbaum D, Roytenberg D, and Sack J-R 1996 Parallel
+neighborhood modeling: Research summary. In Proceedings of the Eighth Annual ACM Symposium on
+Parallel Algorithms and Architectures (SPAA ′96), Padua, Italy: 204–07
+
+Kerry K E and Hawick K A 1998 Kriging interpolation on high-performance computers. In Proceedings of the
+International Conference and Exhibition on High-Performance Computing and Networking, Amsterdam,
+The Netherlands: 429–38
+
+Kidner D B, Rallings P J, and Ware J A 1997 Parallel processing for terrain analysis in GIS: Visibility as a case
+
+study. Geoinformatica 1: 183–207
+
+Li B 1992 Opportunities and challenges of parallel spatial data analysis: Initial experiments with data parallel
+
+map analysis. In Proceedings of the GIS LIS ′92 Conference, San Jose, California: 445–58
+
+Li X and Yeh A G O 2000 Modelling sustainable urban development by the integration of constrained cellular
+
+automata and GIS. International Journal of Geographical Information Science 14: 131–52
+
+Li X and Yeh A G O 2001 Calibration of cellular automata by using neural networks for the simulation of
+
+complex urban systems. Environment and Planning A 33: 1445–62
+
+Li X, Zhang X, Yeh A G O, and Liu X 2010 Parallel cellular automata for large-scale urban simulation using
+
+load-balancing techniques. International Journal of Geographical Information Science 24: 803–20
+
+Mineter M J 1998 Partitioning raster data. In Healey R D, Dowers S, Gittings B, and Mineter M J (eds) Parallel
+
+Processing Algorithms for GIS. Bristol, PA, Taylor and Francis: 215–30
+
+Nagel K and Schreckenberg M 1992 A cellular automaton model for freeway trafﬁc. Journal of Physics I France
+
+2: 2221–29
+
+Nyerges T L, Roderick M J, and Avraam M 2013 CyberGIS design considerations for structured partici-
+pation in collaborative problem solving. International Journal of Geographical Information Science 27:
+2146–59
+
+Puppo E, Davis L, DeDemthon D, and Teng Y 1994 Parallel terrain triangulation. International Journal of Geo-
+
+graphical Information Science 8: 105–28
+
+Qin C-Z, Zhan L-J, and Zhu A-X 2014 How to apply the Geospatial Data Abstraction Library (GDAL) prop-
+
+erly to parallel geospatial raster I/O? Transactions in GIS 18: in press
+
+Rokos D and Armstrong M P 1992 Parallel terrain feature extraction. In Proceedings of GIS/LIS ′92, San Jose,
+
+California: 652–61
+
+Sandu J S and Marble D F 1988 An investigation into the utility of the Cray X-MP supercomputer for handling
+spatial data.” In Proceedings of the Third International Symposium on Spatial Data Handling, Sydney,
+Australia: 253–66
+
+Shi X and Ye F 2013 Kriging interpolation over heterogeneous computer architectures and systems. GIScience
+
+and Remote Sensing 50: 196–211
+
+Shook E, Wang S, and Tang W 2013 A communication-aware framework for parallel spatially explicit agent-
+
+based models. International Journal of Geographical Information Science 27: 2160–81
+
+Silva E A and Clarke K C 2002 Calibration of the SLEUTH urban growth model for Lisbon and Porto. Com-
+
+puters, Environment and Urban Systems 26: 525–52
+
+Smith T R, Gao P, and Gahinet P 1989 Asynchronous, iterative, and parallel procedures for solving the
+
+weighted-region least cost path problem. Geographical Analysis 21: 147–66
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+52 Q Guan, W Zeng, J Gong and S Yun
+
+Tang W, Wang S, Bennett D A, and Liu Y 2011 Agent-based modeling within a cyberinfrastructure environ-
+ment: A service-oriented computing approach. International Journal of Geographical Information Science
+25: 1323–46
+
+Tesfa T K, Tarboton D G, Watson D W, Schreuders K A T, Baker M E, and Wallace R M 2011 Extraction of
+hydrological proximity measures from DEMs using parallel processing. Environmental Modelling and Soft-
+ware 26: 1696–1709
+
+Vatsavai R, Chandola V, Klasky S, Ganguly A, Stefanidis A, and Shekhar S 2012 Spatiotemporal data mining in
+the era of big spatial data: Algorithms and applications.” In Proceedings of the Twentieth ACM
+SIGSPATIAL International Conference on Advances in Geographic Information Systems, Redondo Beach,
+California
+
+Wang F 1993 A parallel intersection algorithm for vector polygon overlay. IEEE Computer Graphics and Appli-
+
+cations 13(2): 74–81
+
+Wang S 2010 A cyberGIS framework for the synthesis of cyberinfrastructure, GIS, and spatial analysis. Annals
+
+of the Association of American Geographers 100: 535–57
+
+Wang S and Armstrong M P 2003 A quadtree approach to domain decomposition for spatial interpolation in
+
+grid computing environments. Parallel Computing 29: 1481–1504
+
+Wang S and Armstrong M P 2009 A theoretical approach to the use of cyberinfrastructure in geographical
+
+analysis. International Journal of Geographical Information Science 23: 169–93
+
+Wang S and Liu Y 2009 TeraGrid GIScience Gateway: Bridging cyberinfrastructure and GIScience. International
+
+Journal of Geographic Information Science 23: 631–56
+
+White R, Engelen G, and Uljee I 1997 The use of constrained cellular automata for high-resolution modelling of
+
+urban land-use dynamics. Environment and Planning B 24: 323–43
+
+Wu F 2002 Calibration of stochastic cellular automata: The application to rural-urban land conversions. Inter-
+
+national Journal of Geographical Information Science 16: 795–818
+
+Wu F and Webster C J 1998 Simulation of land development through the integration of cellular automata and
+
+multi-criteria evaluation. Environment and Planning B 25: 103–26
+
+Yang C, Goodchild M F, Huang Q, Nebert D, Raskin R, Xu Y, Bambacus M, and Fay D 2011 Spatial cloud
+computing: How can the geospatial sciences use and help shape cloud computing? International Journal of
+Digital Earth 4: 305–29
+
+Yang C, Raskin R, Goodchild M F, and Gahegan M 2010 Geospatial cyberinfrastructure: Past, present, and
+
+future. Computers, Environment and Urban Systems 34: 264–77
+
+Yang C, Xu Y, and Nebert D 2013 Redeﬁning the possibility of Digital Earth and geosciences with spatial cloud
+
+computing. International Journal of Digital Earth 6: 297–312
+
+Yeh A G O and Li X 2002 Urban simulation using neural networks and cellular automata for land use planning.
+In Richardson D and van Oosterom P (eds) Advances in Spatial Data Handling. Ann Arbor, MI, University
+of Michigan Press: 451–64
+
+Zhao Y, Padmanabhan A, and Wang S 2013 A parallel computing approach to viewshed analysis of large
+terrain data using graphics processing units. International Journal of Geographical Information Science 27:
+363–84
+
+© 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, 18(S1)
+
+Copyright of Transactions in GIS is the property of Wiley-Blackwell and its content may not
+be copied or emailed to multiple sites or posted to a listserv without the copyright holder's
+express written permission. However, users may print, download, or email articles for
+individual use.
+
+

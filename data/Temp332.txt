@@ -1,0 +1,2521 @@
+International Journal of Geographical Information
+Science
+
+ISSN: 1365-8816 (Print) 1362-3087 (Online) Journal homepage: http://www.tandfonline.com/loi/tgis20
+
+An algorithm for on-the-fly K shortest paths
+finding in multi-storey buildings using a
+hierarchical topology model
+
+Rosen Ivanov
+
+To cite this article: Rosen Ivanov (2018): An algorithm for on-the-fly K shortest paths finding in
+multi-storey buildings using a hierarchical topology model, International Journal of Geographical
+Information Science, DOI: 10.1080/13658816.2018.1510126
+
+To link to this article:  https://doi.org/10.1080/13658816.2018.1510126
+
+Published online: 24 Aug 2018.
+
+Submit your article to this journal 
+
+View Crossmark data
+
+Full Terms & Conditions of access and use can be found at
+http://www.tandfonline.com/action/journalInformation?journalCode=tgis20
+
+INTERNATIONAL JOURNAL OF GEOGRAPHICAL INFORMATION SCIENCE
+https://doi.org/10.1080/13658816.2018.1510126
+
+RESEARCH ARTICLE
+An algorithm for on-the-ﬂy K shortest paths ﬁnding in
+multi-storey buildings using a hierarchical topology model
+
+Rosen Ivanov
+
+Department of Computer Systems and Technologies, Technical University, Gabrovo, Bulgaria
+
+ARTICLE HISTORY
+Received 4 May 2018
+Accepted 5 August 2018
+
+KEYWORDS
+Indoor navigation; K-
+shortest paths; building
+information modelling
+
+ABSTRACT
+This article presents an approach to computing K shortest paths in
+large buildings with complex horizontal and vertical connectivity.
+The building topology is obtained from Building Information
+Model
+(BIM) and implemented using directed multigraphs.
+Hierarchical design allows the calculation of feasible paths without
+the need to load into memory the topology of the entire building.
+It is possible to expand the graph with new connectivity on-the-
+ﬂy. The paths calculated may be composed of traversable building
+components that are located inside the buildings or those that are
+both inside and outside buildings. The performance (computa-
+tional time and heap size used) is optimized by using the appro-
+priate collections (maps, lists and sets). The proposed algorithm is
+evaluated in several use-case scenarios – complete graphs and real
+building environments. In all test scenarios, the proposed path
+ﬁnding algorithm is faster and uses less memory when compared
+to the fast version of the Yen’s KSP algorithm. The proposed
+approach can be successfully used as a ﬁrst level of coarse-to-
+ﬁne path ﬁnding algorithms.
+
+1. Introduction
+
+Navigation is a complex task (Shah and Miyake 2005) which includes: 1) user and object
+localization, 2) user orientation in the building environment, 3) path ﬁnding from start
+point to the target point and 4) physical movement to the target point, including avoiding
+the obstacles along the path. The algorithms for path ﬁnding depend on several factors,
+such as: topology and geometry of the building; spatial and user semantics; location of
+objects and people in the building; status of sensors deployed in the building; user
+preferences and presence of landmarks, obstacles and hazards along the path. These
+algorithms should ﬁnd the optimal path for each user, not the shortest or fastest path. To
+date, only few indoor navigation systems use algorithms for path ﬁnding that take into
+account building semantics and user preferences (Kritsotakis et al. 2008, Swobodzinski and
+Raubal 2009, Liu and Zlatanova 2013, Vanclooster et al. 2014). The path from start to target
+point may be composed of traversable elements that are located inside the buildings,
+outside the buildings or both inside and outside. Therefore, navigation within a city should
+combine outdoor and indoor navigation. As built environments grow in size and complex-
+ity it is necessary to develop appropriate 3D city models (Heo et al. 2013, Xie et al. 2013,
+
+CONTACT Rosen Ivanov
+© 2018 Informa UK Limited, trading as Taylor & Francis Group
+
+rs.soft.bg@gmail.com
+
+2
+
+R. IVANOV
+
+Angelidou 2014). These models should describe 3D smart urban infrastructure, including
+the hierarchy of building elements and their horizontal and vertical connectivity
+(Tashakkori et al. 2015, Abdoulaye and Zlatanova 2017). The digital description of the
+buildings implies working with big data. If the processing of these data has to be realized
+in real time, one possible solution is their hierarchical modelling. For example, when
+navigating between two buildings, we are not interested in the rooms’ level connectivity
+but only in their access points. When navigating between two ﬂoors, the important
+aspects are connectivity for these ﬂoors and the corresponding vertical connectivity.
+Therefore, the eﬀective hierarchical modelling of the topology is a key element in the
+realization of path ﬁnding in large public buildings. The most commonly used path ﬁnding
+algorithms are designed to ﬁnd the shortest or fastest route when navigating outdoors.
+When navigating in buildings, the parameters that determine which path is optimal for a
+particular user are many more than two. For example, such parameters can be the number
+of obstacles and hazards along the path, the number of landmarks along the path, the
+number and status of doors through which the user should pass, the number of changes
+of direction of movement and the number of intersection points in corridors. Each of these
+parameters can have diﬀerent weight depending on the speciﬁc user. In addition, some
+parameters should be minimized, while others need to be maximized. This is a typical
+multi-parameter optimization task, and it cannot be solved just by changing the edge cost
+in the topological data model. In addition, it is possible to obtain negative weights, but a
+small number of the path ﬁnding algorithms allow this. Therefore, using multi-level path
+ﬁnding algorithms oﬀers more perspective (Liu and Zlatanova 2013, Xiong et al. 2015).
+Usually on the ﬁrst (coarse) level, the shortest path between the start and target rooms is
+calculated, and on the second (ﬁne) level, the physical paths in each of the rooms through
+which the path passes are calculated. When using the heuristic path ﬁnding algorithm, it is
+possible to get near an optimal coarse path. A better solution is to ﬁnd the ﬁrst K feasible
+coarse paths and then for each of them to obtain the appropriate physical path. The
+choice of the optimal path from all K physical paths can be realized using multi-parameter
+optimization.
+
+Our general objective is to propose a hierarchical topology model that describes the
+connectivity of components in multi-storey buildings. Using this model, a path-planning
+algorithm is developed to ﬁnd the K shortest path (KSP) between two nodes located in one or
+two separate buildings. Thanks to the hierarchical description of the connectivity, there is no
+need to load into memory the topology of the entire building but only the topology which is
+part of the feasible paths. It is possible to expand the graph with new connectivity informa-
+tion as needed, for example, if the target changes its location from one node to another. This
+path ﬁnding algorithm may be a part of multi-level approaches for path ﬁnding.
+
+The rest of the article is organized as follows. Section 2 is a critical review of the
+existing spatial data models and path ﬁnding algorithms that can be used indoors. In
+Section 3, we describe the basic aspects of our approach. In Section 4, the experimental
+results are presented. Section 5 concludes the article.
+
+2. Related work
+
+Information on the topology of buildings,
+including the dimensions and location of
+objects in them is in most cases insuﬃcient to achieve reliable and personalized
+
+INTERNATIONAL JOURNAL OF GEOGRAPHICAL INFORMATION SCIENCE
+
+3
+
+navigation. Choosing the right indoor data model is crucial for the path ﬁnding in large
+public buildings. Detailed classiﬁcation of these models is presented in (Worboys 2011,
+Afyouni et al. 2012), where they are mainly divided into spatial and semantic models.
+Indoor spatial data models are classiﬁed into two approaches: the geometrical approach
+and the topological approach. The basic geometric models which are used for path
+ﬁnding in buildings are boundary representation models and grid-based models. The
+grid-based models use a regular (usually triangular or square) or irregular (Voronoi
+diagrams) grid to separate the internal space into cells. The size of the grid cells is
+usually between 0.5 and 1 m to allow for a more accurate description of the feasible
+paths. The grid models’ two main disadvantages are (1) they require a lot of memory
+when modelling large buildings and (2) after obtaining the feasible path, it must be
+smoothed and translated as it may contain zigzag parts and parts ‘glued’ to the walls
+(Lin et al. 2017). In this case, the path ﬁnding process requires a signiﬁcant amount of
+memory and CPU time. To reduce this time, heuristic path ﬁnding algorithms are most
+often used. In multi-storey buildings with complex horizontal and vertical connectivity,
+the choice of a suitable heuristic function is a real problem. Using a diagonal (Euclidean)
+distance to evaluate the distance between adjacent nodes and target node gives
+inaccurate results. The probability in this case that the heuristic algorithms do not return
+the optimal path is high. It is necessary to use other metrics to calculate the indoor
+horizontal and vertical distances (Kang and Li 2017, Xu et al. 2018).
+
+The graphs are commonly used to model connectivity between building components.
+Usually nodes describe the components of the building and edges describe the connectivity
+between these nodes. The main disadvantage of these models is that they do not take into
+account the geometric dimensions of the nodes and the objects in them. This information is
+very important for the reliability of navigation, especially for people with disabilities. Reliable
+navigation in buildings is impossible without rich semantic information about the compo-
+nents of the building, the objects in the building, and the people who are located in the
+building. Diﬀerent semantic models are used for this purpose. The best option in order to
+obtain reusable models is to implement them through ontology (Kun et al. 2017, Lee et al.
+2017). These models describe more abstractly the interior space but provide important
+information for navigation, such as the properties of building components through which
+the paths pass (rooms, doors, obstacles, stairs, elevators), as well as user semantics. Using
+this information it is possible to take into account the personal preferences of each user and
+thus to realize optimal path ﬁnding and personalized navigation (Chang 2007, Niaraki and
+Kim 2009). Semantic models cannot be used on their own because of the impossibility of a
+suﬃciently accurate description of the paths.
+
+Since each approach for indoor data modelling has its strengths and weaknesses, it may
+be recommended to integrate the strengths of multiple approaches into a single indoor
+spatial data model to compensate for the weaknesses. In practice, hybrid models are used
+which combine several of the models analysed. For example, Lin et al. (2017) combine
+topological and grid models to improve the time to ﬁnd the shortest path. Yang and
+Worboys (2015) proposed a comprehensive approach to computing a navigation graph
+for a single ﬂoor of a building, with the employment of new formal topological models
+enhanced with geometry and semantics. Xu et al. (2018) present a hybrid grid model which
+contains geometrical, topological and semantic information of indoor space.
+
+4
+
+R. IVANOV
+
+Path ﬁnding algorithms can be classiﬁed as classic, heuristic and hybrid. To classic
+methods for path ﬁnding can be assigned road map based methods (Visibility Graph and
+Voronoi diagrams), cell decomposition methods, such as exact, approximate or probabilistic
+cell decomposition; and artiﬁcial potential ﬁeld methods. These algorithms are mainly used
+with geometrical type spatial models. Heuristic algorithms usually ﬁnd a near-optimal
+solution. The basic meta-heuristic techniques that can be used for path planning indoors
+are as follows (Atyabi and Powers 2013): Ant Colony Optimization, Particle Swarm
+Optimization, Tabu search, Genetic Algorithms, Artiﬁcial Immune Networks, etc. Heuristic-
+based methods do not guarantee an optimal solution (they may ﬁnd a local optimum).
+Hybrid algorithms combine the advantages of the classical and heuristic techniques. Part of
+path ﬁnding algorithms, such as road maps is designed for outdoor route planning. Others,
+such as potential ﬁelds are suitable for navigation of robots and people without disabilities.
+Cell decomposition methods are not applicable for very large buildings with complex
+connectivity between rooms, ﬂoors and wings due to the inability for hierarchical descrip-
+tion of buildings and large amount of memory that will be required for their realization. Ant
+colony optimization and genetic algorithms do not provide an optimal solution and for very
+large buildings may not return a response in real time.
+
+ð
+
+ð
+
+The majority of the indoor navigation systems use a description of the connectivity of
+building elements through graphs. Let G V; E
+Þ represents a graph, where V is set of n nodes
+and E is set of m edges. Most often, single-source and single-destination path-ﬁnding is used
+(Fallah et al., 2013). They use single shortest path (SSP) algorithm to ﬁnd the shortest or
+fastest path from a starting point to a target point. For this purpose, Dijkstra’s algorithm
+(Dijkstra 1959) or any of its modiﬁcations are most commonly used (Lee et al. 2017). In
+simple directed graphs this algorithm ﬁnds an optimal path to the target point, but it has
+too large computational time. The complexity of the best variant of the Dijkstra’s algorithm,
+which uses Fibonacci heap as a priority queue is O nlog nð Þ
+Þ. The main drawback of the
+Dijksra’s algorithm is an exponential increase in memory requirements where an increase of
+the size of the building map is needed. Dijkstra’s algorithm can only be used in graphs that
+do not contain negative edge weights. For graphs with negative weights shortest path
+problem can be solved by the Bellman-Ford algorithm (Goldberg and Radzik 1993). It
+Þ. When the location of the target point is known the path
+runtime complexity is O nmð
+ﬁnding algorithm can use heuristic function to determine the direction of path ﬁnding
+towards that location. Heuristic algorithms are suitable for use with both grid-based and
+graph-based models. Most often used heuristic-based path-ﬁnding algorithm is A* (Hart
+et al. 1968). This algorithm uses a best-ﬁrst search to ﬁnd a least-cost path. Due to the
+heuristic approach that is used, the A* algorithm does not guarantee optimal path ﬁnding
+when selecting an inappropriate heuristic function. For Euclidean graphs A* algorithm can
+ﬁnd shortest path with complexity of O nð Þ. The main drawback of the A* algorithm is the
+amount of memory required for the algorithm to operate. A* is extremely space-limited in
+practice and will exhaust the available memory quickly. Accuracy of the heuristic function
+establishes the time complexity of a heuristic search algorithm. Therefore, A* operates on
+linear time if the heuristic evaluation function is an accurate estimator. Fringe-Retrieving A*
+(FRA*) algorithm (Sun et al. 2010) is an incremental faster version of the A* algorithm. It
+allows transforming the previous search tree to an updated tree based on the new locations
+of the user and target object. FRA* does not take into account the hierarchical structure of
+an indoor environment.
+
+INTERNATIONAL JOURNAL OF GEOGRAPHICAL INFORMATION SCIENCE
+
+5
+
+Except a building node the user should be able to set as a target points an object or
+person, which is located in the building. In this case, the algorithm that searches a path
+from the current position of the user to the selected target point must be adaptive to
+the changing context in the building. Very few indoor navigation systems and related
+research take into account changes in the building context (Afyouni et al. 2014, Merkel
+et al. 2014, Ji et al. 2015). For people with disabilities, distance and travel time are not
+the only criteria that determine the optimal path. Several additional parameters
+(Vanclooster et al. 2014), such as path complexity (number of turns, number and type
+of corridor’s intersections), path risk evaluation (number of obstacles and hazards along
+the path), path accessibility, evacuation ranking (emergency exits, corridor’s width), etc.
+should take into account using appropriate cost function for graph edges. The signiﬁ-
+cance of each element of the path can be represented by the weights of the edges. In
+(Swobodzinski and Raubal 2009) total number of landmarks and cues are additional
+criteria that should inﬂuence the optimal path selection. If the signiﬁcance of the path
+elements depend on many parameters and navigation is implemented in large buildings
+with complex connectivity, the better solution is to ﬁnd the ﬁrst KSP and then by multi-
+parametric optimization to select an optimal path (Ivanov 2016). Most of KSP algorithms
+have exponential or polynomial runtime and space complexity (Sedeño-Noda and
+González-Martín 2010). The building topology usually is represented with simple direc-
+ted graphs. The fastest algorithms for the KSP problem, in case of weighted directed
+simple graph, are proposed by Yen (1971). When using Dijkstra’s algorithm as a SSP
+function the Yen’s algorithm complexity is O kn m þ logn
+Þ. Hershberger et al. (2007)
+present KSP algorithm for directed simple graphs with runtime complexity of
+O kc n; mð
+Þ. This is an O nð Þ improvement over Yen’s algorithm, but algorithm is
+prone to failure in rare instances. If edge importance depends on multiple parameters
+the composite edge cost may have negative values. In this case, as SSP function can be
+used the algorithm of Bellman-Ford. For undirected graphs best KSP solution gives
+Katoh’s algorithm (Katoh et al. 1982). It has a complexity of O k m þ nlogn
+Þ when
+Þ
+shortest path problem has implemented by the fast Dijkstra’s algorithm. The best known
+heuristic-based KSP algorithm for graphs with cycles is K* algorithm (Aljazzar and Leue
+2011). This algorithm combines features of uniform-cost search and pure heuristic search
+to ﬁnd the optimal solution more eﬃciently. K* applies A* search to the graph in order
+to compute a search tree. Therefore, the disadvantages of the А* algorithm are also the
+shortcomings of the К* algorithm. K* operates on-the-ﬂy, which means that it does not
+require the graph to be explicitly available and stored in main memory. Portions of the
+graph will be generated as needed. Its complexity is O k þ m þ nlogn
+Þ. Sometimes it is
+necessary to use graphs with loops. Suppose that in a long corridor there is a ﬁre. If the
+evacuee can detour the ﬁre by passing through adjacent rooms it is necessary he or she
+to traverse the corridor twice. If the path ﬁnding algorithm works only with simple
+graphs, this important detour path will not be calculated. The fastest algorithm for
+ﬁnding KSP in weighted graphs with directed cycles is Eppstein’s algorithm (Eppstein
+Þ. A comparison of the
+1999). It has a runtime complexity of O m þ nlogn þ k n þ logk
+most commonly used SSP and KSP algorithms, which may be used for path ﬁnding in
+buildings, is presented in Table 1.
+
+ð
+
+ð
+
+Þ
+
+ð
+
+ð
+
+Þ
+
+Þ
+
+ð
+
+ð
+
+ð
+
+ð
+
+For reliable navigation in large public buildings, it is necessary to obtain an optimal
+path for each user. This path must accurately and in detail describe the movement from
+
+6
+
+R. IVANOV
+
+Table 1. A comparison of the most commonly used SSP and KSP algorithms.
+Algorithm
+Dijkstra’s
+
+Worst-case complexity
+O m þ nlogn
+Þ
+
+Single-source SSP
+
+Directed simple
+
+Graph type
+
+Type
+
+ð
+
+Comments
+
+Only for static environments
+
+Bellman-
+Ford
+
+Single-source SSP
+
+O mnð
+Þ
+
+Only for graph with negative
+
+weights
+
+Single-pair SSP
+
+Directed simple
+
+Single-pair SSP
+
+Directed simple
+
+O nð Þ
+
+O nð Þ
+
+A*
+
+FRA*
+
+Yen’s
+
+KSP
+
+Directed simple
+
+O kn m þ nlogn
+Þ
+
+ð
+
+ð
+
+Þ
+
+Easiest to implement, but
+
+Katoh’s
+
+KSP
+
+Undirected simple
+
+O k m þ nlogn
+Þ
+
+ð
+
+ð
+
+Þ
+
+Eppstein’s KSP
+KSP
+K*
+
+Cyclic graphs
+Cyclic directed
+
+graphs
+
+ð
+
+ð
+
+O k n þ logk
+ð
+
+O k þ m þ nlogn
+Þ
+
+Þ þ m þ nlogn
+
+Þ Only for cycled graphs
+
+Heuristic-based
+On-the-ﬂy path ﬁnding
+
+Heuristic-based search, can be
+
+not optimal
+
+Can be used in dynamic
+
+environments
+
+slower than some of the
+others KSP algorithms
+
+Best worst-case complexity and
+fast runtime, but only works
+on undirected graphs.
+
+graphs
+Graphs with
+negative
+weights
+
+graphs
+
+graphs
+
+graphs
+
+graphs
+
+the starting to the target point, taking into account the obstacles along the way. At the
+same time, the algorithm should be realized in real time. These are contradictory
+requirements, which are not satisﬁed separately from any of the analysed spatial data
+models and path ﬁnding algorithms. For now, the winning strategy is to use hybrid
+spatial data models and multi-level path ﬁnding algorithms – coarse-to-ﬁne path ﬁnding.
+In this article, our aim is to develop, implement and test an algorithm that ﬁnds K
+feasible paths in large public buildings using a directed multigraph which represents the
+hierarchy of building components via a specially designed BIM. The algorithm can ﬁnd K
+feasible paths in directed, undirected, cyclic and acyclic multigraphs. It is possible to
+expand the graph with new connectivity on-the-ﬂy. This algorithm may be а part of
+multi-level approaches for path ﬁnding.
+
+3. The proposed path ﬁnding approach
+
+The proposed path ﬁnding approach is a part of BIM-based path ﬁnding service. The
+optimal path is calculated in three steps. First, ﬁnd KSPs to the target point traversing
+connectivity multigraph extracted from the BIM’s topology model (macroscopic path
+ﬁnding). Second, ﬁnd the ﬁne-grained paths using BIM’s boundary-based geometrical
+model (microscopic path ﬁnding). Finally, calculate an optimal for particular user path
+with highest total rank using multi-objective optimization technique. A modiﬁcation of
+BIM which was described in our previous work (Ivanov 2017) is used. BIM technology has
+been receiving a growing amount in last few years. BIM should represent building
+topology and geometry, contextual and semantic information needed for an optimal
+path ﬁnding. The information necessary for path ﬁnding will be extracted directly from
+the BIM (Isikdag et al. 2013, Kang and Li 2017). Our model (Figure 1) is not concerned
+with the architectural building components themselves.
+
+It focuses on the possible path elements (spaces) and the connectivity between these
+elements. This modiﬁcation mainly concerns the topological model. The aim is to
+
+INTERNATIONAL JOURNAL OF GEOGRAPHICAL INFORMATION SCIENCE
+
+7
+
+provide an opportunity to describe the connectivity at diﬀerent levels of the hierarchy,
+including the modelling of the administrative structure of the building. This BIM repre-
+sents 3D dimensions of the building elements and objects located in the building
+(obstacles, hazards and landmarks), status of sensors deployed in the building, users’
+preferences and type of disability, building semantics and constrains (spatial, temporal
+and user speciﬁc). Constrains help to obtain information about which components of the
+building are inaccessible to a speciﬁc user. The reason for using this BIM rather than any
+existing standard BIM is the inability at this stage for a BIM to contain all the information
+needed to make path ﬁnding reliable in large public buildings. BIM standards such as IFC
+and 3D building models such as CityGML have been published to describe the 3D
+geometry and semantics of buildings, but they lack important features that are required
+for reliable indoor navigation. CityGML has limited support for both ﬁxed and movable
+obstacles. Neither standard supports user constraints and semantics. IndoorGML is a
+standard for indoor spatial modelling. It deﬁnes the following information about indoor
+spaces: navigation context and constraints, space subdivisions and types of connectivity
+between spaces, geometric and semantic properties of spaces, and navigation networks.
+IndoorGML can represent obstacles as non-navigable spaces. This standard cannot
+represent required buildings hierarchy, for example, a building’s administrative struc-
+ture. None of these BIMs and 3D building models allows a suﬃciently rich semantic
+description of building components as well as user’s semantics.
+
+3.1. Connectivity model
+
+Several levels of abstraction to model a building’s hierarchy are used (see Figure 1). A
+hierarchical design is easily reusable, can represent large buildings with complex con-
+nectivity, usually scale well, reduces memory usage and improves the time needed to
+ﬁnd an optimal path. It is assumed that buildings have wings. Each wing has one or
+
+Figure 1. UML class diagram of BIM (simpliﬁed).
+
+8
+
+R. IVANOV
+
+several stories. The building connectivity has been modelled based on path elements. In
+our model, a path element is an abstract component that represents any part of the
+path (node or link). Node is a class that describes the spaces in the building through
+which the user can pass if he or she has the appropriate rights. Nodes are divided into
+horizontal nodes (rooms, corridors) and vertical (staircases, elevators, escalators) nodes.
+In this way, horizontal and vertical connectivity can be quickly extracted for each level of
+hierarchy. Rooms and corridors are part of the ﬂoors. Large rooms and corridors can be
+divided into sub-parts (zones) to represent indoor space more accurately. Links describe
+the connectivity between nodes. The links are real and virtual doors, windows and
+openings.
+
+We use a directed multigraph to represent any connectivity between building compo-
+nents in the form of nodes. Each link connects two nodes. Links can be either directed or
+undirected. Between two nodes there may be any number of directed and undirected links.
+The connectivity of building components can be described on several hierarchy levels:
+building, wings, ﬂoors, vertical connectivity and administrative structures (Figure 2).
+
+The bottom level of the hierarchy contains all nodes and links and is described using a
+single-layered multigraph. At the highest level of the hierarchy, the graph contains only one
+node – the entire building is modelled as a single node (Building-1). This level is used to ﬁnd
+the connectivity between two buildings and when searching for a building’s entrances and
+exits. In our model we use a special node named ‘outdoors’ which represents space around
+the buildings. The connectivity of components at the lower hierarchical levels (wing, storey,
+vertical connectivity) is described using subgraphs whose nodes are a subset of the nodes of
+the whole graph. Thanks to the hierarchical and object-oriented description of connectivity
+in BIM, obtaining a subgraph at diﬀerent hierarchy levels is easy and fast. Figure 2(b) shows
+the hierarchical levels that are used to describe the connectivity in a multi-storey building
+
+Building-1
+
+Wing-1
+
+6
+0
+4
+3
+-
+m
+o
+o
+r
+
+5
+0
+4
+3
+-
+m
+o
+o
+r
+
+Wing-1
+
+Floor-4
+
+corridor-f4
+
+Floor-3
+
+Floor-4
+
+Dep-1
+
+Dep-2
+
+0
+1
+3
+3
+-
+m
+o
+o
+r
+
+1
+1
+3
+3
+-
+m
+o
+o
+r
+
+2
+1
+3
+3
+-
+m
+o
+o
+r
+
+2
+0
+3
+3
+-
+m
+o
+o
+r
+
+5
+0
+4
+3
+-
+m
+o
+o
+r
+
+6
+0
+4
+3
+-
+m
+o
+o
+r
+
+4
+0
+3
+3
+-
+m
+o
+o
+r
+
+a)
+
+Dep-2
+
+staircase-f3-4
+
+elevator
+
+Floor-3
+
+Dep-1
+
+corridor-f3
+
+Vertical connectivity
+
+2
+0
+3
+3
+-
+m
+o
+o
+r
+
+4
+0
+3
+3
+-
+m
+o
+o
+r
+
+0
+1
+3
+3
+-
+m
+o
+o
+r
+
+1
+1
+3
+3
+-
+m
+o
+o
+r
+
+2
+1
+3
+3
+-
+m
+o
+o
+r
+
+b)
+
+Figure 2. Connectivity model: (a) levels of abstraction; (b) hierarchy levels.
+
+INTERNATIONAL JOURNAL OF GEOGRAPHICAL INFORMATION SCIENCE
+
+9
+
+with one wing. For simplicity’s sake, only two ﬂoors of the building are shown with the
+names ‘Floor-3’ and ‘Floor-4’. The connectivity between the two ﬂoors is modelled through a
+hierarchy level ‘vertical connectivity’. This level should contain all the nodes of the vertical
+type for the corresponding level of hierarchy, as well as the horizontal nodes through which
+access to them is possible. In the present case, the vertical nodes are those which describe
+the elevator and staircase between the two ﬂoors (‘elevator’, ‘staircase-f3–4’). The horizontal
+nodes are the corridors of the two ﬂoors (‘corridor-f3’ and ‘corridor-f4’). At the storey
+hierarchical level, the subgraph contains all horizontal nodes from a corresponding ﬂoor.
+Thanks to the class AdministrativeStructure, it is possible to generate a subgraph that
+describes the connectivity in an administrative unit, for example, a department or hospital
+ward. In this example, there are two departments named ‘Dep-1’ and ‘Dep-2’. Department 1
+contains nodes, located on the 3rd ﬂoor and Department 2 contains nodes located on the
+3rd and the 4th ﬂoor.
+
+3.2. Build connectivity model
+
+Large public buildings are described by sparse graphs, as the number of links between
+nodes is much smaller than one obtained for dense and complete graphs. The model, which
+describes the connectivity, should meet the following more important conditions: 1) Should
+be eﬀective in sparse graphs, 2) should allow for fast addition of nodes and links to merge
+two or several subgraphs and 3) should allow for modelling of any connectivity between
+building elements. For sparse graphs, it is appropriate to describe the connectivity by a list
+of adjacent nodes. In our model, in order to access the information faster, the connectivity is
+modelled using two hash maps. The ﬁrst map named nodes describes adjacent nodes for
+each node. The second map named links describes links that connect the node with its
+adjacent nodes. For hash maps, basic operations such as get, put, contains key and size have
+O 1ð Þ complexity. This connectivity model meets all the mentioned requirements. The nodes
+and links may be real or virtual. The virtual nodes are used to model speciﬁc zones, such as
+reception in the lobby of the hotel and to realize ‘node-to-nodes’ and ‘nodes-to-node’ path
+ﬁnding scenarios. The virtual links are used to represent openings between rooms and to
+describe virtual connections between real nodes, for example ‘staircase-corridor’.
+
+Let’s describe the path ﬁnding scenario in which the starting point is a node called
+‘room-3312’ and the target node is ‘room-3405’ (Figure 2(b)). The node ‘room-3312’ is а part
+of ‘Dep-1’ and ‘room-3405’ is а part of ‘Dep-2’. We can obtain feasible paths between these
+nodes using diﬀerent graphs: (1) a single-layered graph of the bottom level of the hierarchy;
+(2) a graph which merges subgraphs for ‘Floor-3’, ‘Floor-4’ and ‘Vertical connectivity’ levels
+of hierarchy and (3) a graph which merges subgraphs for ‘Dep-1’, ‘Dep-2’ and ‘Vertical
+connectivity’ levels of hierarchy. Figure 3 shows connectivity models for hierarchical levels
+‘Dep-1’, ‘Dep-2’ and ‘Vertical connectivity’ implemented using hash maps.
+
+There are four feasible paths between the start and target nodes because ‘Room-
+3312’ has two access points (‘door-1-R-3312’ and ‘door-2-R-3312’). Each feasible path is
+composed as a sequence of node and link names. The possibility of merging several
+connectivity models into one allows working only with part of the building connectivity
+– one that is needed to ﬁnd a speciﬁc path.
+
+10
+
+R. IVANOV
+
+Department 1 (Dep-1)
+
+Department 2 (Dep-2)
+
+Nodes: {room-3310=[corridor-f3], room-
+3312=[corridor-f3, corridor-f3], room-
+3311=[corridor-f3], corridor-f3=[room-3310, 
+room-3311, room-3312, room-3312]}
+Links: {room-3310=[door-R-3310], room-
+3312=[door-1-R-3312, door-2-R-3312], room-
+3311=[door-R-3311], corridor-f3=[door-R-3310, 
+door-R-3311, door-1-R-3312, door-2-R-3312]}
+
+Nodes: {room-3302=[corridor-f3], room-3304=[corridor-f3], 
+room-3406=[corridor-f4], room-3405=[corridor-f4], corridor-
+f3=[room-3302, room-3304], corridor-f4=[room-3405, room-
+3406]}
+Links: {room-3302=[door-R-3302], room-3304=[door-R-
+3304], room-3406=[door-R-3406], room-3405=[door-R-
+3405], corridor-f3=[door-R-3302, door-R-3304], corridor-
+f4=[door-R-3405, door-R-3406]}
+
+Vertical connectivity
+
+Feasible paths (from room-3312 to room-3405)
+
+Nodes: {staircase-f3-4=[corridor-f3, 
+corridor-f4], elevator=[corridor-f3, 
+corridor-f4], corridor-f3=[elevator, 
+staircase-f3-4], corridor-f4=[elevator, 
+staircase-f3-4]}
+Links: {staircase-f3-4=[vd, vd], 
+elevator=[elevator-d3, elevator-d4], 
+corridor-f3=[elevator-d3, vd], corridor-
+f4=[elevator-d4, vd]}
+
+Path 1:  | room-3312 | door-1-R-3312 | corridor-f3 | staircase-f3-4 | 
+corridor-f4 | door-R-3405 | room-3405 |
+
+Path 2:  | room-3312 | door-2-R-3312 | corridor-f3 | staircase-f3-4 | 
+corridor-f4 | door-R-3405 | room-3405 |
+Path 3:  | room-3312 | door-1-R-3312 | corridor-f3 | elevator-d3 | 
+elevator | elevator-d4 | corridor-f4 | door-R-3405 | room-3405 |
+Path 4:  | room-3312 | door-2-R-3312 | corridor-f3 | elevator-d3 | 
+elevator | elevator-d4 | corridor-f4 | door-R-3405 | room-3405 |
+
+Figure 3. Find feasible paths merging subgraphs for diﬀerent levels of hierarchy: ‘Dep-1’, ‘Dep-2’
+and ‘Vertical connectivity’ (see Figure 2b).
+
+Initialize and expand multigraph
+
+3.2.1.
+To build the connectivity model, the following two algorithms are used:
+
+● addNode – inserts a new key into hash map nodes or update a value for this key
+● addLink – inserts a new key into hash map links or update a value for this key
+
+Through these algorithms it is possible to initialize connectivity model or merge several
+connectivity models (subgraphs) into one. Algorithm addNode (Figure 4(a)) is used to
+model the relationship between adjacent nodes (argument newAdjacentNodes) and a
+node speciﬁed as a key (argument node). If the key exists (line 1), the new list (lines 2
+and 3) is added to the current list of adjacent nodes. If the key does not exist, a new
+association (line 5) is created. The algorithm has O 1ð Þ time complexity. The algorithm
+addLinks (Figure 4(b)) is used to describe the links (argument newAdjacentLinks) through
+which the adjacent nodes for a given node (argument node) are reached. If this node (key)
+exists (line 1), the new list (lines 2 and 3) is added to the current list of links. If the key does
+not exist, a new association is created (line 5). The algorithm time complexity is O 1ð Þ.
+
+3.2.2. Remove node or link from multigraph
+Two algorithms named removeNode and removeLink are used to model the accessibility
+of the nodes and the links for each particular user. A path ﬁnding algorithm takes into
+time and user-speciﬁc restrictions from BIM class
+account emergency, security,
+Constraints. This class describes the restrictions that could be imposed on each path
+element – node or link. Instead of checking during the calculation of feasible paths the
+accessibility of each node and link multiple times, we remove from the connectivity
+
+INTERNATIONAL JOURNAL OF GEOGRAPHICAL INFORMATION SCIENCE
+
+11
+
+Figure 4. Initialize or expand graph: (a) algorithm addNode; (b) algorithm addLink.
+
+model all nodes and links that are not accessible for particular user at a speciﬁc time.
+This solution allows path ﬁnding to be based only on data in the connectivity model. If
+the navigation service has a distributed architecture, path planning can be realized on
+the client side. In this case, the server should return only the connectivity model because
+information about the accessibility of the nodes and links is not necessary.
+
+To remove a node from connectivity model algorithm removeNode is used (Figure 5
+(a)). The algorithm time complexity is O 1ð Þ. Algorithm removeLink (Figure 5(b)) is used in
+order to block access to the nodes, which are inaccessible through the link speciﬁed as
+an argument.
+
+This requires removing all links with this name from hash map links as well as their
+corresponding nodes in the hash map nodes. As adjacent nodes and links are described
+through lists of type ArrayList, then operation remove has complexity O nð Þ. For this reason,
+instead of operation remove, a set operation that has complexity O 1ð Þ is used (lines 6 and
+15). It only changes the name of the nodes to which the user can reach by passing through
+the speciﬁed link. The time critical operations are those that check whether the list of links
+contains a link with the speciﬁed name (rows 3 and 12). The method indexOf which has a
+complexity O bð Þ is used, where b is number of links to adjacent nodes. The method returns
+(−1) if there is no match. The algorithm complexity is O nbð
+Þ, where n is number of keys in
+hash maps. When searching for paths in large buildings b (cid:2) n.
+
+Insert virtual nodes to multigraph
+
+3.2.3.
+Most often, navigation is to speciﬁed target node. In some cases, users want to reach a
+speciﬁc node that meets a particular condition. For example, the user searches for ‘men’s
+shoes shop’ in the shopping mall. Most likely, there are several men’s shoe shops in the
+mall, and each one of them can be a target node. This requires ﬁnding all the target
+nodes that meet the condition. Of all possible nodes, the one which will be selected will
+be determined by the algorithm for ﬁnding the optimal path for a speciﬁc user. To
+implement the possibility of ‘node-to-nodes’ path ﬁnding, without changing the path
+ﬁnding algorithm programming code, a virtual target node is used. This virtual node
+connects with virtual links to all real target nodes. Once K feasible paths to a new target
+node are found, the virtual node is removed. To make conditional search possible, the
+name of each node is required to contain keywords that describe it, for example, ‘men’s-
+shoes-shop-f2’. To verify that a node name meets speciﬁc condition a template search is
+used. The template search is implemented using regular expressions.
+
+12
+
+R. IVANOV
+
+Figure 5. Remove node or link from connectivity model: (a) algorithm removeNode; (b) algorithm
+removeLink.
+
+Figure 6 shows the pseudo-code of the algorithm insertTargetVirtualNode.
+The input arguments are two: the virtual target node name (vnode) and an array that
+contains the names of the target nodes (target nodes). Each item in this array contains
+the node name or regular expression. If the node name starts with the string ‘regex’,
+then this is a regular expression that describes the node search template, for example:
+
+target nodes = {‘room (cid:3) 3304’, ‘room-3306’, ‘room-3312’},
+
+target nodes ¼ f0regexð^ WC (cid:3) men: (cid:4) fð3j4Þ: (cid:4) $Þ0g:
+
+In the ﬁrst example, the target nodes are three rooms. In the second example, the target
+nodes are all men’s rooms on the 3rd or 4th ﬂoors. The algorithm starts by retrieving the
+number of items in target nodes (line 2). For each item in target nodes (line 3), all keys in
+map nodes (line 5) are checked if a node name is equals to targetNode (line 11) or if a node
+name matches the template (line 9). If there is a match (line 13), the virtual node is added to
+the adjacent nodes (line 16) and the name of the link between them is set to ‘vd’ (line 17).
+The algorithm continues adding all adjacent nodes and links to lists nodeList and linkList
+(lines 18 and 19). After processing all items in target nodes, the algorithm checks if there are
+
+INTERNATIONAL JOURNAL OF GEOGRAPHICAL INFORMATION SCIENCE
+
+13
+
+Figure 6. Algorithm insertTargetVirtualNode.
+
+any matches (line 23). If the virtual node already exists (line 24), the lists of adjacent nodes
+and links are added to their current values in maps nodes and links (lines 25 and 26).
+Otherwise, a new association for the virtual node and its value is added to hash maps
+nodes and links (lines 28 and 29). The algorithm allows the target nodes array to contain an
+arbitrary combination of node names and regular expressions. In this algorithm, the slowest
+operation is the search using template (line 9). The algorithm worst-case complexity is O nð Þ
+if regular expression is not used and O nkð
+Þ otherwise, where n is number of target nodes.
+The parameter k is the maximum number of characters in node names.
+
+3.3. Calculate feasible paths
+
+Let’s ﬁnd KSPs from start node s to the target node t. The path pst is deﬁned as a sequence of
+nodes and links between a start node and target nodes, pst ¼ ns; lk
+, where lk
+ij
+si
+is k-th link between node ni and node nj. Each two adjacent nodes can be linked with one or
+several directed or undirected links. We assume that at macroscopic stage all edges have
+equal weights. The price d s; t
+Þ to reach from a node s to a node t is equal to the number of
+links that user should to pass (length of the path). The aim is to minimize the number of links
+
+; ni; . . . lk
+
+jt nt
+
+n
+
+o
+
+ð
+
+14
+
+R. IVANOV
+
+through which the user passes. Paths, which are generated, are in sequence from the
+shortest to the longest.
+
+We use a specially designed fast implementation of the Breadth First Search (BFS)
+algorithm. For ﬁnite graphs, BSF algorithms are complete and optimal for unit-step cost
+links. To speed up path calculation appropriate abstract data types such as collections and
+sets are used. The algorithm calculatePaths (Figure 7) can ﬁnd K feasible paths in directed,
+undirected, cyclic and acyclic multigraphs.
+
+It uses two lists,visited nodes and visited links, of type ArrayList to store temporary paths as a
+sequence of visited nodes and links (LinkedList). At the initialization stage, visited nodes
+contains only one path with one element – start node. These two lists at any given moment
+contain parts of the paths between the start and target nodes. Some of these paths will be
+removed if they contain loops in node or link lists. Another part of temporary paths, describing
+feasible paths, will be removed from visited nodes and visited links and moved to lists that
+describe the feasible paths (lists nodes and links from class FeasiblePaths). The main cycle
+(while) of the algorithm (line 1) checks whether there are paths in visited nodes and
+visited links. The while cycle iterates D times, where D is the maximum distance between
+start and target nodes. Each time the programming code from the body of the cycle is
+executed and all feasible paths with equal distance d between start and target nodes are
+(cid:6). Therefore, the resulting paths will be in sequence from the shortest to
+obtained, d ¼ 1 (cid:5) D
+the longest. The while cycle may be interrupted depending on the values of the following two
+constants:
+
+½
+
+● K – Number of paths to be searched (line 14).
+
+If K ¼ 1, the shortest path is
+
+obtained, and for K ! 1 all feasible paths are calculated.
+
+● MAX PATH LENGTH – This parameter speciﬁes the maximum length of the paths to
+be found. Thus, the search for a target node may be restricted to a particular area
+of the building (line 43).
+
+The status of the temporary paths is checked in the body of for cycle (line 2): whether the
+target node has been reached (line 6) and whether the path contains a loop (line 7). If the
+target node (line 10) is reached, the path is marked to be removed (line 11) and is added to
+the feasible paths (lines 12 and 13). The algorithm is terminated if the current number of
+feasible paths has reached the value of K (line 14). If a temporary path contains a loop (line
+17), the algorithm checks if only simple paths are searched (line 18). Otherwise (search for
+paths with loops), the path is marked to be removed only if it contains repeating links (line
+21). If the current path has to be removed (line 25), its index is saved in the list named
+paths to remove (LinkedList). If the value of removeFlag is false, adjacent for last node nodes
+(line 26) and links for through which they are reached (line 28) are retrieved. If the next node
+list is empty (line 27) this means that connectivity information for last node is missing. In this
+case, the missing connectivity information is added to the graph on-the-ﬂy. The number of
+adjacent nodes determines how many new paths (possibleNewPaths) are possible for each
+temporary path (line 29). The contents of temporary paths is updating from the body of for
+cycle (line 30). An adjacent node (line 35) is added to the end of the temporary path and the
+(possibleNewPaths (cid:3) 1) number of new temporary paths in visited nodes and visited links
+(rows 37 and 38) are generated.
+
+INTERNATIONAL JOURNAL OF GEOGRAPHICAL INFORMATION SCIENCE
+
+15
+
+Figure 7. Algorithm calculatePaths.
+
+After updating the contents of all temporary paths, all R paths should be removed from
+visited nodes and visited links which indexes are stored in the paths to remove list. Two
+variants of the algorithm for removing infeasible paths have been analysed. In the ﬁrst
+variant, the method remove (ArrayList) is used to delete an element from visited nodes and
+
+16
+
+R. IVANOV
+
+Þ complexity, where M is the number of temporary paths. Therefore,
+visited links. It has O Mð
+the complexity of the algorithm for all R paths to be removed is O RMð
+Þ. The second variant
+of the algorithm can signiﬁcantly reduce the time to remove infeasible paths. It gets and
+simultaneously removes the value of the last item in visited nodes and visited links.
+Provided that the last path should not be deleted, the value of the item to be deleted is
+replaced by the value of the last item. For array lists, the complexity of operations ‘get and
+remove last element’ and ‘set value of an element using its id’ is O 1ð Þ. Therefore, the
+second variant has worst-case complexity O Rð Þ.
+
+Complexity of the proposed path ﬁnding algorithm depends on how sparse the
+graph is. If the graph is densely connected, the destination node cannot be far away
+from the source node. If the graph is sparse, the destination node might be extremely
+distant. Runtime complexity depends on the maximum number of links adjacent to any
+node b. There are at most bd nodes at distance d from the start node. If the distance
+from the start node to the target node is D; than runtime complexity will be O bD
+. In
+the proposed path ﬁnding approach, the entire graph does not need to be loaded into
+memory thanks to the hierarchical description of the building connectivity. The required
+connectivity model is obtained by merging several subgraphs that describe the required
+horizontal and vertical connectivity. This reduces the number of nodes participating in
+the path ﬁnding multiple times. This also reduces the value of parameter b. This makes
+this algorithm applicable when searching for paths in large buildings with complex
+horizontal and vertical connectivity
+
+(cid:2)
+
+(cid:3)
+
+4. Experimental results
+
+The tests were carried out on a desktop computer, with a 3.2 GHz processor AMD Pro
+A8–8650B (4 logical cores), 256 KB L1 cache, 4 MB L2 cache and 32 GB DDR3
+SDRAM@1600 MHz, running over Windows 10 Enterprise (64 bit). The runtime is mea-
+sured using NetBeans IDE proﬁler. The path ﬁnding algorithm is tested in simulated and
+real building environments.
+
+4.1. Path ﬁnding in complete undirected graphs
+
+To analyse the time complexity and memory used of the proposed algorithm, we tested the
+path ﬁnding algorithm in complete undirected graphs. If n is a number of nodes, the
+Þ=2. The maximum number of paths N, from start to
+number of links m becomes n n (cid:3) 1
+target node, depends on the number of possible combinations of paths of diﬀerent length.
+We analysed the algorithm runtime needed to calculate all feasible paths when the number
+of nodes n was between 4 and 11. The results obtained are shown in Table 2.
+
+ð
+
+The results indicate that the proposed algorithm has superior performance compared
+to Yen’s KSP algorithm in all test cases. For example, when n ¼ 4 (5 feasible paths) the
+proposed algorithm is 14.32 times faster, and for n ¼ 11 (986,410 feasible paths) it
+is1433 times faster. The slowest part of the program code is the algorithm that removes
+cyclic temporal paths and feasible paths from the visited nodes and visited links lists.
+Using speciﬁc collections and methods, this time did not exceed 12.5% of the total
+computational time. Experiments show that the proposed algorithm uses more eﬀective
+
+INTERNATIONAL JOURNAL OF GEOGRAPHICAL INFORMATION SCIENCE
+
+17
+
+Table 2. Average runtime on complete graphs for the proposed and Yen’s KSP algorithms.
+
+n
+4
+5
+6
+7
+8
+9
+10
+11
+
+m
+6
+10
+15
+21
+28
+36
+45
+55
+
+Feasible paths
+5
+16
+65
+326
+1,957
+13,700
+109,601
+986,410
+
+Proposed algorithm
+
+Total runtime,
+ms
+
+0.34
+0.94
+2.42
+7.87
+29.86
+128.29
+4,659.04
+76,891.17
+
+Remove path time, ms
+(% of total runtime)
+0.026 (7.65%)
+099 (10.53%)
+0.299 (12.36%)
+0.963 (11.89%)
+3.594 (12.04%)
+13.421 (10.46%)
+79.144 (1.70%)
+639.01 (0.83%)
+
+Yen’s algorithm
+Total runtime,
+ms
+
+4.87
+8.16
+19.80
+65.07
+620.49
+19,698
+1,197,469
+110,170,175
+
+heap compared to Yen’s algorithm for all possible values of K (see Figure 8(a)). With
+Yen’s algorithm for the number of feasible paths above 2000, the heap size increases
+exponentially. The proposed algorithm does not call Garbage Collector (GC) for the
+number of paths below 1000 (see Figure 8(b)), but the time spent in GC if the number of
+feasible paths is above 1000 increases exponentially. The time spent in GC when using
+Yen’s algorithm depends a little on the number of feasible paths and does not exceed
+8% of total computational time. As the path ﬁnding in buildings does not require K
+being greater than 50, the proposed algorithm outperforms Yen’s algorithm, both in
+performance and in the eﬃciency of using heap and GC.
+
+4.2. Path ﬁnding in multi-storey buildings
+
+The experiments were carried out in two multi-storey buildings – the 5-storey ‘Rectorate’
+building (Figure 9(a)) and the 3-storey ‘Library’ buildings (Figure 9(b)).
+
+Connectivity model is obtained from BIM for diﬀerent hierarchy levels. The number of
+nodes and links describing the connectivity between building elements at diﬀerent
+hierarchy levels is shown in Table 3.
+
+The aim of the experiments was to analyse the capabilities of the proposed algorithm
+in diﬀerent path ﬁnding scenarios. The proposed algorithm was tested in three use-case
+path ﬁnding scenarios: 1) Intra-storey path ﬁnding; 2) Inter-storey path ﬁnding and 3)
+Inter-building path ﬁnding. For each scenario, path ﬁnding is realized in three diﬀerent
+ways: (1) using the proposed algorithm and merging subgraphs at diﬀerent hierarchical
+levels (‘proposed KSP 1’ algorithm), (2) using the proposed algorithm at the base level of
+the hierarchy (‘proposed KSP 2’ algorithm) and (3) using the fast version of Yen’s KSP
+algorithm.
+
+Intra-storey path ﬁnding
+
+4.2.1.
+Three experiments were conducted in the ‘rectorate’ building: (1) path ﬁnding from a
+node ‘room-3304’ to a node ‘room-3316’ (1 feasible path), (2) path ﬁnding from a node
+‘room-3304’ to a node ‘elevator’ (15 feasible paths) and (3) path ﬁnding from a node
+‘room-3312’ to all washrooms on the 3rd ﬂoor (4 feasible paths). To describe all wash-
+rooms, a virtual target node named ‘regex(^WC.*f3)’ is used. The results obtained are
+shown in Figure 10. In all test scenarios, the use of the ‘proposed KSP 1’ algorithm, which
+merges the subgraph for the 3rd ﬂoor and the vertical connectivity subgraph, calculates
+
+Max heap size used
+
+Time spent in Garbage Collector
+
+Proposed algorithm
+Yen's KSP algorithm
+
+Proposed algorithm
+Yen's KSP algorithm
+
+18
+
+R. IVANOV
+
+i
+
+B
+M
+
+,
+p
+a
+e
+h
+f
+o
+e
+z
+S
+
+i
+
+300
+
+250
+
+200
+
+150
+
+100
+
+50
+
+0
+
+%
+
+,
+e
+m
+
+i
+t
+e
+v
+i
+t
+a
+e
+R
+
+l
+
+35
+
+30
+
+25
+
+20
+
+15
+
+10
+
+5
+
+0
+
+500
+
+1000
+
+1500
+
+2000
+
+2500
+Number of feasible paths
+
+3000
+
+3500
+
+4000
+
+4500
+
+5000
+
+500
+
+1000
+
+1500
+
+4000
+
+4500
+
+5000
+
+2000
+
+2500
+Number of feasible paths
+
+3000
+
+3500
+
+a)
+
+b)
+
+Figure 8. Maximum heap size used (a) and relative time spent in Garbage Collector (b) for complete
+graph with n ¼ 11 and K from 100 to 5,000.
+
+feasible paths for the least time. This algorithm is on average 7.53 times faster than the
+Yen’s KSP algorithm and on average 2.67 times faster than the ‘proposed KSP 2’ which
+uses a graph for the base level of the hierarchy.
+
+Inter-storey path ﬁnding
+
+4.2.2.
+Two experiments were conducted in the ‘rectorate’ building: (1) path ﬁnding from node
+‘room-3414’ (level 4F) to node ‘printing’ (level 1BF) (75 feasible paths) and (2) path
+ﬁnding from node ‘room-3304’ to all possible men’s rooms on the 3rd and 4th ﬂoors (10
+feasible paths). In this case, to describe all target nodes, a virtual target node with name
+‘regex(^WC-men.*f(3|4).*$)’) is used. The computational time for ﬁnding a diﬀerent
+number of feasible paths (K = 1, 3, MAX) was analysed. The results obtained are
+shown in Figure 11. In this case, the ‘proposed KSP 1’ algorithm gives the quickest
+computational time for all values of parameter K. When searching for feasible paths
+between ﬁve ﬂoors (Experiment 1), the ‘proposed KSP 1’ algorithm is on average 4.69
+times faster than Yen’s KSP algorithm. When searching for feasible paths between two
+ﬂoors (Experiment 2), the ‘proposed KSP 1’ algorithm is on average 27.22 times faster
+than Yen’s KSP algorithm.
+
+Inter-building path ﬁnding
+
+4.2.3.
+The proposed path ﬁnding algorithm allows for merging the connectivity models of two
+or more buildings if necessary. This allows searching for paths in which the start and
+target nodes are located in diﬀerent buildings. Let’s ﬁnd feasible paths from node ‘room-
+3414’ (‘Rectorate’ building, level 4F) to node ‘depository-4-f3’ (‘Library’ building, level 3F).
+In this case, the number of all feasible paths is 5,400. To ﬁnd these paths, we use two
+test scenarios: (1) path ﬁnding from the start node ‘room-3414’ to the target node
+‘depository-4-f3’ and (2) combine all feasible paths obtained by searching paths from the
+start node ‘room-3414’ to outdoors and from outdoors to the target node ‘depository-4-
+f3’. The results obtained when implementing Scenario 1 are shown in Figure 12.
+
+The time required for the calculation of all feasible 5,400 paths (Figure 12(b)) using
+‘proposed KSP 1’, ‘proposed KSP 2’ and the Yen’s KSP algorithms are 1074 ms, 1630 ms and
+
+INTERNATIONAL JOURNAL OF GEOGRAPHICAL INFORMATION SCIENCE
+
+19
+
+staircase-west
+
+elevator
+
+staircase-east
+
+east-wing-door
+
+main-door
+
+elevator-2
+
+staircase-atre-3
+
+elevator-1
+
+staircase-atre-1
+
+door-antre-3
+
+door-antre-2
+
+door-antre-1
+
+staircase-f1-2
+
+door- coffee-bar
+
+door- lounge
+
+Figure 9. Multi-storey test environments: (a) ‘Rectorate’ building; (b) ‘Library’ building.
+
+5807 ms, respectively. When limiting the number of feasible paths K to 1, 3 and 16, the time
+for their calculation is signiﬁcantly reduced (Figure 12(a)). For example, if K = 16 the
+reduction is 66.7 times for ‘proposed KSP 1’ algorithm, 65.5 times for ‘proposed KSP 2’
+algorithm and 169 times for Yen’s algorithm. This means that the Yen’s algorithm is much
+more sensitive to the number of feasible paths sought compared to the proposed algo-
+rithm. Signiﬁcantly less CPU time is needed to calculate all
+feasible paths when
+
+a)
+
+b)
+
+20
+
+R. IVANOV
+
+Hierarchy level
+
+building
+vertical connectivity
+B1F
+1F
+2F
+3F
+4F
+Base
+
+Table 3. Number of node and links for diﬀerent hierarchy levels.
+
+Number of nodes/links
+
+‘Rectorate’ building
+1/3
+16/13
+12/11
+25/29
+9/8
+22/21
+19/18
+94/97
+
+‘Library’ building
+1/5
+19/15
+-
+13/11
+12/11
+7/6
+-
+41/44
+
+s
+m
+
+,
+
+e
+m
+
+i
+t
+
+l
+
+a
+n
+o
+
+i
+t
+
+t
+
+a
+u
+p
+m
+o
+C
+
+50
+
+45
+
+40
+
+35
+
+30
+
+25
+
+20
+
+15
+
+10
+
+5
+
+0
+
+Proposed KSP 1
+
+Proposed KSP 2
+
+Yen's KSP
+
+0
+1
+.
+3
+4
+
+6
+3
+.
+5
+2
+
+6
+8
+.
+0
+1
+
+6
+3
+.
+4
+
+5
+1
+.
+1
+2
+
+7
+4
+.
+7
+
+Scenario 2
+Intra-storey pathfinding
+
+Scenario 3
+
+3
+3
+.
+9
+
+0
+9
+.
+2
+
+8
+0
+.
+1
+
+Scenario 1
+
+Figure 10. Comparison of computational time for intra-storey path ﬁnding scenario.
+
+Proposed KSP 1
+
+Proposed KSP 2
+
+Yen's KSP
+
+5
+8
+.
+9
+5
+
+8
+1
+.
+2
+1
+
+3
+8
+.
+4
+
+9
+2
+.
+2
+
+3
+5
+.
+4
+1
+
+7
+4
+.
+9 7
+2
+.
+4
+
+6
+3
+.
+8
+1
+
+9
+1
+.
+1
+1
+
+ k=1 
+
+ k=3 
+Inter-storey pathfinding, scenario 1
+
+k=max
+
+s
+m
+
+,
+e
+m
+
+i
+t
+
+l
+
+a
+n
+o
+i
+t
+a
+t
+u
+p
+m
+o
+C
+
+60
+
+50
+
+40
+
+30
+
+20
+
+10
+
+0
+
+a)
+
+5
+8
+.
+9
+0
+1
+
+Proposed KSP 1
+
+Proposed KSP 2
+
+Yen's KSP
+
+8
+1
+.
+0
+6
+
+3
+5
+.
+0
+8
+
+8
+2
+.
+1
+
+6
+9
+.
+1
+
+ k=1 
+
+6
+7
+.
+6
+
+1
+7
+.
+3
+
+ k=3 
+Inter-storey pathfinding, scenario 2
+
+k=max
+
+1
+1
+.
+6
+9 1
+4
+.
+8
+
+s
+m
+
+,
+e
+m
+
+i
+t
+
+l
+
+a
+n
+o
+i
+t
+a
+t
+u
+p
+m
+o
+C
+
+120
+
+100
+
+80
+
+60
+
+40
+
+20
+
+0
+
+b)
+
+Figure 11. Comparison of computational time for inter-storey path ﬁnding: (a) test scenario 1; (b)
+test scenario 2.
+
+implementing Scenario 2 (Figure 13). In this case, the number of feasible paths from the start
+node to outdoors is 75 (Figure 13(a)), and from outdoors to target node is 72 (Figure 13(b)).
+In this case, the time to calculate all feasible paths is reduced to 16.86 ms for ‘proposed KSP
+1’ algorithm, 26.8 ms for ‘proposed KSP 2’ algorithm and 82.33 ms for Yen’s KSP algorithm.
+
+INTERNATIONAL JOURNAL OF GEOGRAPHICAL INFORMATION SCIENCE
+
+21
+
+Proposed KSP 1
+
+Proposed KSP 2
+
+Yen's KSP
+
+3
+2
+.
+4
+3
+
+Proposed KSP 1
+
+Proposed KSP 2
+
+Yen's KSP
+
+5807
+
+s
+m
+
+,
+e
+m
+
+i
+t
+
+l
+
+a
+n
+o
+i
+t
+a
+t
+u
+p
+m
+o
+C
+
+40
+
+35
+
+30
+
+25
+
+20
+
+15
+
+10
+
+5
+
+0
+
+1
+2
+.
+3
+2
+
+4
+1
+.
+9
+1
+
+7
+8
+.
+4
+2
+
+1
+1
+.
+6
+1
+
+7
+4
+.
+4
+8 1
+5
+.
+1
+1
+
+4
+5
+.
+1
+1
+
+4
+4
+.
+6
+
+s
+m
+
+,
+e
+m
+
+i
+t
+
+l
+
+a
+n
+o
+i
+t
+a
+t
+u
+p
+m
+o
+C
+
+6000
+
+5000
+
+4000
+
+3000
+
+2000
+
+1000
+
+0
+
+1074
+
+1630
+
+b)
+
+ k=1 
+
+ k=3 
+Inter-building pathfinding, start to target (5400 feasible paths)
+
+k=16 
+
+Inter-building pathfinding scenario 1, K=5400
+
+a)
+
+Figure 12. Comparison of computational time for inter-building path ﬁnding scenario 1: (a) K = 1,
+K = 3 and K = 16; (b) K = 5,400.
+
+5. Conclusions
+
+An algorithm for K feasible path ﬁnding in large public buildings has been designed and
+tested. The algorithm uses a BIM which is specially designed for the purpose of navigation in
+multi-storey buildings with complex connectivity. This BIM describes hierarchically all build-
+ing components and allows extracting connectivity at diﬀerent hierarchical levels: building,
+wing, ﬂoor, vertical connectivity and administrative structure. This allows path ﬁnding using
+the connectivity models of individual parts of a building, not the connectivity model for the
+entire building. The proposed connectivity model allows a description of any node con-
+nectivity. Both acyclic paths and paths with cycles can be obtained. It is possible to merge
+connectivity modes from diﬀerent hierarchy level into one model. If some node connectivity
+is missing in memory, the algorithm can add it to connectivity model on-the-ﬂy. It is possible
+to simultaneously search for multiple target nodes. The proposed path ﬁnding algorithm is
+optimised for performance by using the appropriate programming structures and methods.
+The algorithm makes it possible to obtain the K feasible paths, which are sorted by length –
+from the shortest to the longest. The path ﬁnding can be stopped if all K feasible paths have
+been calculated or if all paths with a predeﬁned maximum length are calculated. Thanks to
+the hierarchical description of building topology, it is possible to realize diﬀerent types of
+path ﬁnding: intra- and inter-ﬂoor path ﬁnding; and intra- and inter-building path ﬁnding.
+Trials conducted with complete undirected graphs show that the proposed algorithm
+is from 14 to 1433 times faster than Yen’s KSP algorithm. It also uses heap memory more
+eﬃciently. The main drawback of the proposed algorithm is that the time spent in
+Garbage Collector is increased when searching for more than 1,000 paths. In the speciﬁc
+implementation of the algorithm, this is not a problem, as when searching paths in
+buildings the value for K is most often less than 50. Several use-case scenarios were
+developed to validate the proposed algorithm in diﬀerent real building environments.
+feasible paths are calculated in all test scenarios.
+The algorithm ensures that all
+Compared to Yen’s KSP algorithm, the time for its realization is several times faster in
+
+22
+
+R. IVANOV
+
+s
+m
+
+,
+
+e
+m
+
+i
+t
+
+l
+
+a
+n
+o
+
+i
+t
+
+t
+
+a
+u
+p
+m
+o
+C
+
+60
+
+50
+
+40
+
+30
+
+20
+
+10
+
+0
+
+Proposed KSP 1
+
+Proposed KSP 2
+
+Yen's KSP
+
+0
+4
+
+.
+
+9
+4
+
+Proposed KSP 1
+
+Proposed KSP 2
+
+Yen's KSP
+
+s
+m
+
+,
+
+e
+m
+
+i
+t
+
+l
+
+a
+n
+o
+
+i
+t
+
+t
+
+a
+u
+p
+m
+o
+C
+
+45
+
+40
+
+35
+
+30
+
+25
+
+20
+
+15
+
+10
+
+5
+
+0
+
+3
+9
+
+.
+
+2
+3
+
+9
+4
+
+.
+
+8
+1
+
+7
+2
+
+.
+
+5
+9 1
+6
+
+.
+
+1
+1
+
+2
+1
+
+.
+
+2
+2
+
+3
+0
+
+.
+
+8
+
+3
+4
+
+.
+
+2
+
+5
+3
+
+.
+
+1
+
+1
+1
+
+.
+
+1
+1
+
+2
+5
+
+.
+
+3
+
+4
+8
+
+.
+
+1
+
+1
+2
+1 8
+1
+
+.
+
+.
+
+4
+
+3
+5
+
+.
+
+1
+1
+
+7
+1
+
+.
+
+5
+
+2
+0
+
+.
+
+6
+
+8
+7
+
+.
+
+2
+
+8
+9
+
+.
+
+2
+
+1
+2
+
+.
+
+3
+
+3
+4
+
+.
+
+3
+
+8
+8
+
+.
+
+7
+
+6
+0
+
+.
+
+8
+
+2
+5
+
+.
+
+6
+
+ k=1 
+
+ k=3 
+
+k=16 
+
+k=max
+
+ k=1 
+
+ k=3 
+
+k=16 
+
+k=max
+
+Inter-building pathfinding, start to outdoors (75 feasible paths)
+
+Inter-building pathfinding, outdoors to library.depository-4-f3 (72 feasible paths)
+
+a)
+
+b)
+
+Figure 13. Comparison of computational time for inter-building path ﬁnding scenario 2: (a) ﬁnd
+paths from node ‘room-3414’ to node ‘outdoors’; (b) ﬁnd paths from node ‘outdoors’ to node
+‘depository-4-f3’.
+
+all test scenarios. The experimental results show that the proposed algorithm can be
+successfully used as a ﬁrst level of coarse-to-ﬁne path ﬁnding approaches.
+
+Acknowledgments
+
+The author thanks the editor and anonymous reviewers for their valuable and constructive
+comments on an earlier draft of the article.
+
+Disclosure statement
+
+No potential conﬂict of interest was reported by the author.
+
+This work has been partially funded by Bulgarian Ministry of Education and Science [Project DH-
+07/10].
+
+Funding
+
+Notes on contributor
+
+Rosen Ivanov is an associate professor of computer science at the Technical University of Gabrovo,
+Bulgaria. His research interests include human-computer interaction, assistive technologies and
+smart cities.
+
+ORCID
+
+Rosen Ivanov
+
+http://orcid.org/0000-0002-8695-3085
+
+INTERNATIONAL JOURNAL OF GEOGRAPHICAL INFORMATION SCIENCE
+
+23
+
+References
+
+Abdoulaye, A. and Zlatanova, S., 2017. Spatial subdivision of complex indoor environments for 3D
+indoor navigation. International Journal of Geographical Information Science, 32 (2), 213–235.
+Afyouni, I., et al., 2014. A PostgreSQL extension for continuous path and range queries in indoor
+
+mobile environments. Pervasive Mob Computation, 15, 128–150.
+
+Afyouni, I., Cyril, R., and Christophe, C., 2012. Spatial models for context-aware indoor navigation
+
+systems: a survey. Spatial Information Science, 1 (4), 85–123.
+
+Aljazzar, H. and Leue, S., 2011. K*: A heuristic search algorithm for ﬁnding the k shortest paths.
+
+Artiﬁcial Intelligent, 175 (18), 2129–2154. doi:10.1016/j.artint.2011.07.003
+
+Angelidou, M., 2014. Smart city policies: a spatial approach. Cities, 41, 3–11. doi:10.1016/j.
+
+cities.2014.06.007
+
+Atyabi, A. and Powers, D.M.W., 2013. Review of classical and heuristic-based navigation and path
+planning approaches. International Journal Advancement Computation Technological, 5 (14), 1–
+14.
+
+Chang, Y.J., 2007. Ontology-based personalized wayﬁnding system using deviation detection for
+IEEE International Conference on Convergence
+
+individuals with cognitive impairments,
+In:
+Information Technology, Korea, 1844–1848.
+
+Dijkstra, E.W., 1959. A note on two problems in connexion with graphs. Numerical Mathematical, 1,
+
+Eppstein, D., 1999. Finding the k shortest paths. SIAM Journal Computation, 28, 652–673.
+
+Fallah, N., et al. 2013. Indoor human navigation systems: a survey. Interacting with Computers, 25,
+
+269–271. doi:10.1007/BF01386390
+
+doi:10.1137/S0097539795290477
+
+21–33.
+
+Goldberg, A.V. and Radzik, T., 1993. A heuristic improvement of the Bellman-Ford algorithm.
+
+Applications Mathematical Letters, 6. doi:10.1016/0893-9659(93)90022-F
+
+Hart, P.E., Nilsson, N.J., and Raphael, B., 1968. A formal basis for the heuristic determination of
+minimum cost paths. IEEE Transactions Systems Sciences Cybern, 4 (2), 100–107. doi:10.1109/
+TSSC.1968.300136
+
+Heo, J., et al., 2013. Productive high-complexity 3D city modeling with point clouds collected from
+terrestrial LiDAR. Computation Environment Urban Systems, 41, 26–38. doi:10.1016/j.
+compenvurbsys.2013.04.002
+
+Hershberger, J., Maxel, M., and Sur, S., 2007. Finding the k shortest simple paths: a new algorithm and
+its implementation. ACM Transactions Algorithms, 3 (4), 45–56. doi:10.1145/1290672.1290682
+Isikdag, U., Zlatanova, S., and Underwood, J., 2013. A BIM-oriented model for supporting indoor
+navigation requirements. Computation Environment Urban Systems, 41, 112–123. doi:10.1016/j.
+compenvurbsys.2013.05.001
+
+Ivanov, R., 2016. An approach for microscopic pathﬁnding and obstacle avoidance for blind and
+visually impaired people. In: ACM Proceedings of the 17th International Conference on Computer
+Systems and Technologies, Palermo, Italy, 285–292.
+
+Ivanov, R., 2017. An approach for developing indoor navigation systems for visually impaired
+Intelligence and Smart
+
+people using building information modeling. Journal of Ambient
+Environments, 9 (4), 449–467. doi:10.3233/AIS-170441
+
+Ji, H., et al., 2015. CrowdSensing: a crowd-sourcing based indoor navigation using RFID-based
+delay tolerant network. Journal Network Computation Applications, 52, 79–89. doi:10.1016/j.
+jnca.2015.02.010
+
+Kang, H.-K. and Li, K.-J., 2017. A standard indoor data model – OGC IndoorGML and implementa-
+
+tion approaches. Geo-Information, 6, 116.
+
+Katoh, N., et al. 1982. An eﬃcient algorithm for K shortest simple paths. Networks, 12 (4), 411–427.
+
+Kritsotakis, M., et al., 2008. C-ngine: a contextual navigation guide for indoor environments. Journal
+
+doi:10.1002/net.3230120406
+
+Ambient Intellligence, 5355, 258–275.
+
+24
+
+R. IVANOV
+
+Kun, D.P., Varga, E.B., and Toth, Z. 2017. Ontology based navigation model of the ILONA system. In:
+IEEE 15th International Symposium on Applied Machine Intelligence and Informatics (SAMI), Herl’any,
+Slovakia, 479–484.
+
+Lee, K., Lee, J., and Kwan, M.P., 2017. Location-based service using ontology-based semantic
+queries: a study with a focus on indoor activities in a university context. Computers,
+Environment and Urban Systems, 62, 41–52. doi:10.1016/j.compenvurbsys.2016.10.009
+
+Lin, Z., et al. 2017. Hybrid spatial data model for indoor space: combined topology and grid. ISPRS
+
+International Journal of Geo-Information, 6 (11), 343. doi:10.3390/ijgi6110343
+
+Liu, L. and Zlatanova, S., 2013. A two-level path-ﬁnding strategy for indoor navigation. Lecture
+
+Notes in Geoinformation and Cartography, (199609), 31–42.
+
+Merkel, S., Kesseler, A., and Schmeck, H., 2014. dynamic multi-objective evacuation path planning
+
+in mobile ad hoc networks, technical report.
+
+Niaraki, A.S., and Kim, K., 2009. Ontology based personalized route planning system using a multi-
+criteria decision making approach. Journal Expert Systems with Applications, 36, 2250–2259.
+Sedeño-Noda, A. and González-Martín, C., 2010. On the K shortest path trees problem. European
+
+Journal Operational Researcher, 202 (3), 628–635. doi:10.1016/j.ejor.2009.06.017
+
+Shah, P. and Miyake, A., 2005. The cambridge handbook of visuospatial thinking, cognitive psychology.
+
+Cambridge University Press.
+
+Sun, X., Yeoh, W., and Koenig, S., 2010. Generalized Fringe-Retrieving A*: faster moving target
+search on state lattices. In: Proceedings - International Conference on Autonomous Agents and
+Multiagent Systems, Toronto, Canada: IFAAMAS, 1081–1088.
+
+Swobodzinski, M. and Raubal, M., 2009. An indoor routing algorithm for the blind: development
+International Journal Geographic
+
+and comparison to a routing algorithm for the sighted.
+Information Sciences, 23, 1315–1343. doi:10.1080/13658810802421115
+
+Tashakkori, H., Rajabifard, A., and Kalantari, M., 2015. A new 3D indoor/outdoor spatial model for
+indoor emergency response facilitation. Building and Environment, 89, 170–182. doi:10.1016/j.
+buildenv.2015.02.036
+
+Vanclooster, A., et al., 2014. Evaluating suitability of the least risk path algorithm to support
+cognitive wayﬁnding in indoor spaces: an empirical study. Applications Geographic, 53, 128–
+140. doi:10.1016/j.apgeog.2014.06.009
+
+Worboys, M., 2011. Modeling indoor space. In: Proceedings of the 3rd ACM SIGSPATIAL International
+
+Workshop on Indoor Spatial Awareness. ACM: New York, 1–6.
+
+Xie, X., et al., 2013. A semantics-constrained proﬁling approach to complex 3D city models.
+Computation Environment Urban Systems, 41, 309–317. doi:10.1016/j.compenvurbsys.2012.07.003
+indoor path planning method. The International Archives of
+Photogrammetry, Remote Sensing and Spatial Information Sciences, 40 (4), 19. doi:10.5194/ispr-
+sarchives-XL-4-W5-19-2015
+
+Xiong, Q., et al. 2015. Multi-level
+
+Xu, W., et al., 2018. A pedestrian tracking algorithm using grid-based indoor model. Automation in
+
+Construction, 92, 173–187. doi:10.1016/j.autcon.2018.03.031
+
+Yang, L. and Worboys, M., 2015. Generation of navigation graphs for indoor space. International. Journal
+
+of Geographical Information Science, 29 (10), 1737–1756. doi:10.1080/13658816.2015.1041141
+
+Yen, J.Y., 1971. Finding the K shortest loopless paths in a network. Journal Managed Sciences, 17, 712–
+
+716.
+
+

@@ -1,0 +1,2511 @@
+Geoinformatica (2016) 20:19–58
+DOI 10.1007/s10707-015-0230-1
+
+SMe: explicit & implicit constrained-space probabilistic
+threshold range queries for moving objects
+
+Zhi-Jie Wang1 · Bin Yao1 · Reynold Cheng2 ·
+Xiaofeng Gao1 · Lei Zou3 · Haibing Guan1 ·
+Minyi Guo1
+
+Received: 3 April 2014 / Revised: 21 March 2015 /
+Accepted: 11 May 2015 / Published online: 3 July 2015
+© Springer Science+Business Media New York 2015
+
+Abstract This paper studies the constrained-space probabilistic threshold range query
+(CSPTRQ) for moving objects, where objects move in a constrained-space (i.e., objects
+are forbidden to be located in some specific areas), and objects’ locations are uncertain.
+We differentiate two forms of CSPTRQs: explicit and implicit ones. Specifically, for each
+moving object o, we model its location uncertainty as a closed region, u, together with
+a probability density function. We also model a query range, R, as an arbitrary polygon.
+An explicit query can be reduced to a search (over all the u) that returns a set of tuples
+in form of (o, p) such that p ≥ pt , where p is the probability of o being located in R,
+and 0 ≤ pt ≤ 1 is a given probabilistic threshold. In contrast, an implicit query returns
+only a set of objects (without attaching the specific probability information), whose prob-
+abilities being located in R are higher than pt . The CSPTRQ is a variant of the traditional
+probabilistic threshold range query (PTRQ). As objects moving in a constrained-space are
+common, clearly, it can also find many applications. At the first sight, our problem can be
+easily tackled by extending existing methods used to answer the PTRQ. Unfortunately, those
+classical techniques are not well suitable for our problem, due to a set of new challenges.
+Another method used to answer the constrained-space probabilistic range query (CSPRQ)
+can be easily extended to tackle our problem, but a simple adaptation of this method is
+inefficient, due to its weak pruning/validating capability. To solve our problem, we develop
+targeted solutions that are easy-to-understand and also easy-to-implement. Our central idea
+
+(cid:2) Zhi-Jie Wang
+
+zjwang888@sjtu.edu.cn
+
+Bin Yao
+yaobin@cs.sjtu.edu.cn
+
+(cid:2)
+
+1
+
+3
+
+Shanghai Key Laboratory of Scalable Computing and Systems, Department of Computer Science
+and Engineering, Shanghai Jiao Tong University, Shanghai, China
+
+2 Department of Computer Science, University of Hong Kong, Hongkong, China
+
+Institute of Computer Science and Technology, Peking University, Beijing, China
+
+20
+
+Geoinformatica (2016) 20:19–58
+
+is to swap the order of geometric operations and to compute the appearance probability
+in a multi-step manner. We demonstrate the efficiency and effectiveness of the proposed
+methods through extensive experiments. Meanwhile, from the experimental results, we
+further perceive the difference between explicit and implicit queries; this finding is inter-
+esting and also meaningful especially for the topics of other types of probabilistic threshold
+queries.
+
+Keywords Probabilistic threshold range query · Uncertain objects · Obstacles · Query
+processing · Indexing
+
+1 Introduction
+
+The range query as one of fundamental operations in moving object search systems has
+attracted a lot of attention in the past decades [4, 10, 13, 15, 18–21, 25, 27, 33, 38, 42, 46].
+A database server usually only stores the discrete location information due to various rea-
+sons such as the limited network bandwidth and battery power of the mobile devices [7, 24].
+This fact implies that the current specific position of a moving object o is uncertain before
+obtaining the next (sampled) location information, which can lead to the incorrect answer
+if we simply take the recorded location (stored in the database) as the current position of
+o. In order to tackle the aforementioned problem, the idea of incorporating uncertainty
+into the moving object data has been proposed [40]. A widely-used uncertainty model is
+to use a closed region (known as uncertainty region) together with a probability density
+function (PDF), which is used to denote the object’s location distribution[7, 40]. Figure
+1a illustrates this model, in which the integration of PDF inside the uncertainty region
+equals one.
+
+From then on, probabilistic range query (PRQ) as a derivative version of the traditional
+range query was naturally presented, and many outstanding works addressed this problem
+(see e.g., [5, 7, 9, 24, 28, 29, 35, 37, 45]). In existing results, one of important branches
+is to address the PRQ over objects moving freely (without predefined routes) in two-
+dimensional (2D) space (see e.g., [5, 7, 45]). Our work generally falls in the aforementioned
+branch.
+
+Motivations. A common fact is that users usually are interested in the objects being
+located in the query range R with higher probabilities. Several classical papers (see e.g.,
+[5, 32, 47]) already considered this fact and studied the probabilistic threshold range query
+(PTRQ). Existing results, however, are mainly developed for the case of non-constrained
+2D space (i.e., no obstacles exist). To our knowledge, the constrained-space probabilistic
+threshold range query (CSPTRQ) has not been studied yet. Moreover, we realize that more
+and more intelligent terminals have been configured with touch screens by which one can
+input the query requirement using the finger or interactive pen [1, 11]. An obvious fact is
+that a more generic shaped query range should be better for the user experience, and can also
+improve the flexibility of a system itself. Existing works (see e.g., [28, 29]) already adopted
+the general polygon as the query range. Those results, however, are mainly developed from
+the theoretical perspective.
+
+Specifically, this paper discusses the CSPTRQ for moving objects, supporting a generic
+shaped query range from the perspective of implementation. For reference, Fig. 1b illus-
+trates an example of objects moving in a constrained 2D space, where objects’ locations are
+
+Geoinformatica (2016) 20:19–58
+
+21
+
+Fig. 1 (a) Illustration of the uncertainty model. (b) Illustration of the objects moving in a constrained 2D
+space, where lr denotes the recorded location (see the black dot), τ denotes the distance threshold, u denotes
+the uncertainty region, the grey rectangles denote the obstacles. For other objects, we only plot their recorded
+locations (without plotting their distant thresholds and uncertainty regions) for clearness
+
+uncertain. The CSPTRQ can be used in a lot of applications, as objects moving in a con-
+strained space are common in the real world. For example, mobile robots are already used
+to rescue survivors after a disaster such as an earthquake [22]. The location information
+of robots is collected and stored on the database server. A typical application for dispatch-
+ing scattered robots to a specific location is retrieving the identities of the robots that are
+currently located in a given region with no less than a predefined (e.g., 75 %) probability;
+here robots usually move freely but can be blocked by various obstacles (e.g., rocks, build-
+ings). As another example, in the information warfare the location information of combat
+machineries is collected and usually stored in the military database [14, 41]. A typical appli-
+cation for the coordination combat is retrieving the identities of the friendly machineries
+(e.g., tanks and panzers) that are currently located in a given region with no less than a spe-
+cific (e.g., 85 %) probability; here objects such as tanks and panzers usually move freely
+without predefined routes but can be blocked by various obstacles (e.g., lakes, hills).
+
+Challenges. At the first glance, the CSPTRQ can be easily tackled by directly extending
+existing methods used to answer the PTRQ. As a matter of fact, there are several new chal-
+lenges. (i) The CSPTRQ needs to handle a set of obstacles, and so the workload is larger,
+implying that to achieve a quick response time is more challenging. (ii) With the presence
+of obstacles, the uncertainty region u is usually a complicated geometry (see Section 3.3
+for more details), rendering that the subsequent computation is more difficult. (iii) In
+a non-constrained space, u can be easily obtained (almost) without taking the precom-
+putation cost, and thus existing methods usually pre-compute a set of bounds based
+on the uncertainty region u and the probability density function (PDF). These bounds
+are used to prune/validate unqualified/qualified objects, and can significantly improve
+the performance, especially when they are correctly indexed using the R-tree like data
+structure. In the context of our concern, the precomputation time is rather long (up to
+the hour level) even if we only pre-compute the uncertainty regions. (See Section 3.3
+for more detailed discussion about bounds and the precomputation.) Imagine if we fur-
+ther pre-compute lots of bounds, the overall precomputation time should be larger. With
+these challenges (particularly, the third one) in mind, we have to resort to other pro-
+posals. Another method used to answer the constrained-space probabilistic range query
+(CSPRQ) [39] can be easily extended to tackle our problem. Unfortunately, a simple adap-
+
+22
+
+Geoinformatica (2016) 20:19–58
+
+tation of this method is inefficient, due to its weak pruning/validating capability. (See
+Section 3.3 for more details about the baseline method).
+
+Overall, we are confronted with the following troubles: (i) those classical techniques
+(used to answer the PTRQ) have powerful pruning/validating capabilities, but are not well
+suitable for the context of our concern, and (ii) the method used to answer the CSPRQ is
+easily incorporated, but to find a feasible and powerful pruning/validating mechanism is not easy.
+Contributions. To tackle the problem efficiently, our first main idea is to swap the order
+of geometric operations, which simplifies the computation and can prune/validate some
+objects without the need of computing their uncertainty regions. After this, by carefully
+considering the details, we realize that the result obtained in the previous step possibly is a
+fake result, which stems from the location unreachability. The natural method to eliminate
+the fault is inefficient. Instead, our strategy is to take advantage of the location unreachabil-
+ity. This method not only eliminates the possible fault, but also prunes some objects in the
+early stages. All strategies developed above actually belong to spatial pruning/validating
+mechanisms.
+
+When we strive to seek the threshold pruning/validating mechanisms, suddenly, we real-
+ize an interesting fact — the CSPTRQ can be classified into two forms: explicit and implicit
+ones (they can have different solutions, performance results, and purposes/applications).
+The former returns a set of tuples in form of (o, p) such that p ≥ pt , wherep is the prob-
+ability of the moving object o being located in the query range R, and 0 ≤ pt ≤ 1 is a
+given probabilistic threshold. A potential purpose/application1 is like: listing the objects
+(e.g., tanks) that are currently located in the region R with no less than the 80 % probability
+in the descending order according to their appearance probabilities; it is similar to the fol-
+lowing: listing the universities that are with no less than 80 points in the descending order
+according to their points, where the points usually be evaluated using a variety of indica-
+tors such as the publications in Nature/Science. In contrast, the latter returns a set of objects
+(without attaching the specific probability information), whose probabilities being located
+in R are higher than pt . Apotential purpose/application 2 is like: returning the number of
+objects (e.g., mobile robots) that are currently located in the region R with no less than the
+75 % probability. Figure 2 gives an example, in which we assume no obstacles exist, R is
+a rectangle, and the location of o follows uniform distribution in u for simplicity. Suppose
+pt = 0.2, the answer of explicit query is {(o2, 50 %), (o3, 50 %), (o4, 25 %)}, while the
+answer of implicit query is {o2, o3, o4}.
+
+The second main idea is to compute the appearance probability p in a multi-step manner,
+and thus objects that are obviously unqualified can be pruned in the early steps. This idea
+is especially effective when the locations of objects do not follow uniform distribution in
+their uncertainty regions. The multi-step strategy yields a set of threshold pruning/validating
+rules, which are employed by the explicit query. As the implicit query does not need to
+return the appearance probabilities of qualified objects, an enhanced multi-step strategy
+is naturally developed, which includes an adaptive pruning/validating mechanism and a
+two-way test mechanism. Furthermore, we optimize our solutions based on a new insight
+
+1It is noteworthy that the traditional probabilistic range query (PRQ) usually refers to the explicit form but
+pt = 0, and so the immediate purposes/applications of the explicit CSPTRQ are the similar as the ones of
+the traditional PRQ.
+2The traditional probabilistic threshold range query (PTRQ) usually refers to the implicit form, and so the
+immediate purposes/applications of the implicit CSPTRQ are similar to the ones of the traditional PTRQ.
+
+Geoinformatica (2016) 20:19–58
+
+23
+
+Fig. 2 Example of explicit and implicit queries, where lr denotes the recorded location, τ denotes the
+distance threshold, and ui denotes the uncertainty region of object oi (i ∈ [1, 2, · · · , 5])
+
+— different candidate moving objects may share the same candidate restricted areas. In
+summary, our contributions are as follows:
+
+– We propose the CSPTRQ, and show that (i) it can be used in many applications; (ii)
+the classical methods used to answer the traditional PTRQ are not well suitable for
+the context of our concern, and a simple adaptation of the method used to answer the
+CSPRQ is inefficient.
+
+– We realize the CSPTRQ can be classified into two forms: explicit and implicit ones.
+
+We formally formulate them, and offer insights into their properties.
+
+– We develop techniques to answer the explicit query, and then extend them to answer
+
+the implicit query. Our solutions are simple but without loss of efficiency.
+
+– We give the detailed theoretical analysis for our algorithms. While we focus on the
+CSPTRQ in this paper, (part of) our techniques can be immediately extended to other
+types of probabilistic threshold queries.
+
+– We experimentally evaluate our algorithms using both real and synthetic data sets. The
+experimental results demonstrate the efficiency and effectiveness of the proposed algo-
+rithms. From the experimental results, we can further perceive the difference between
+explicit and implicit queries. This interesting finding is valuable especially for the
+topics of other types of probabilistic threshold queries.
+
+Paper organization. We review the related work in Section 2. We formally formulate our
+problem and present a baseline method in Section 3. The proposed methods for answering
+the explicit and implicit CSPTRQs are addressed in Sections 4 and 5, respectively. We fur-
+ther optimize our solution based on a new insight in Section 6. We evaluate the performance
+of our proposed methods through extensive experiments in Section 7. Finally, we conclude
+this paper with several interesting research topics in Section 8.
+
+2 Related work
+
+Range query over moving objects. Most of the representative works on range query over
+moving objects have been mentioned in Section 1. A common aspect of those works is not
+to capture the location uncertainty. In other words, they assume the current location of any
+object o is equal to the recorded location (stored on the database server). In contrast, we
+assume the current location of o is uncertain.
+
+24
+
+Geoinformatica (2016) 20:19–58
+
+Uncertainty models. We also mentioned many outstanding works on PRQ over uncer-
+tain moving objects in Section 1. One of important branches assumed that objects move
+freely (without predefined routes) in 2D space. In this branch, there are several typical
+uncertainty models like, the free moving uncertainty (FMU) model [2, 7, 40], the mov-
+ing object spatial temporal (MOST) model [28], the instance based uncertainty model [43,
+47], the uncertain moving object (UMO) model [45], the 3D cylindrical (3DC) model [24,
+37], and the necklace uncertainty (NU) model [17, 36]. Another important branch assumed
+that objects move on predefined routes [7] or road networks [48]. They usually adopt the
+line segment uncertainty (LSU) model [7, 9] to capture the location uncertainty. These
+models have different assumptions and purposes (e.g., 3DC and NU models are suitable for
+querying the trajectories of moving objects), but have their own advantages (note: it is a dif-
+ficult task to say which one is the best. Please refer to [39] as a summary on the differences
+of these models and their assumptions). The model used in [39] roughly follows the FMU
+model, but it is different from the FUM model, as it introduces the concept of restricted
+areas (i.e., obstacles). Here we dub it the extensive free moving uncertainty (EFMU) model
+for clearness. Though our work also uses the EFMU model,
+least
+two differences: (i) our work investigates CSPTRQs (including explicit and implicit
+ones) rather than the CSPRQ, and (ii) our work employs a more generic shaped
+query range.
+
+there are at
+
+Probabilistic threshold range query. According to the theme of this paper, we classify
+PTRQs into two subcategories: PTRQs for moving objects and the ones for other uncertain
+data (note: the terms “PRQ” and “PTRQ” are somewhat abused in the literature, we take
+those papers, which explicitly discussed the probabilistic threshold, as the related work of
+the PTRQ).
+
+Many excellent works addressed the PTRQ for moving objects. For example, Chung
+et al. [9] addressed the PTRQ for objects moving in one-dimensional (1D) space. In con-
+trast, we focus on the objects moving in 2D space. Zhang et al. [45] studied the PTRQ
+over objects moving in 2D space. They proposed the UMO model, in which they assumed
+both the distribution of velocity and the one of location are available at the update time.
+In contrast, we do not need to know the velocity (as well as its distribution), instead
+we assume the specific location of any object o is available at the update time. More-
+over, the used model in this paper is the EFMU model, which considers the existence of
+restricted areas. Zheng et al. [48] studied the PTRQ for objects moving on the road net-
+works. They proposed the UTH model that is developed for querying the trajectories of
+moving objects. In contrast, this paper is not interested in querying the trajectories, and
+it focuses on the objects moving in the constrained 2D space where no predefined route
+is given.
+
+There are many classical papers that studied the PTRQ for other uncertain data. For
+example, Cheng et al. [8] addressed the PTRQ over 1D uncertain data (e.g. sensor data),
+they presented a clever idea, using a tighter bound (compared to the MBR of the uncer-
+tainty interval), called x-bound, to reduce the search cost. Later, Tao et al. [34] extended
+this idea to multi-dimensional uncertain data. They proposed a classical technique, prob-
+abilistic constrained region (PCR), which consists of a set of precomputed bounds, called
+p-bounds. This classical technique is not well suitable for the context of our concern, Sec-
+tion 1 has shown the reasons (more detailed discussion will be given in Section 3.3). Chen et
+al. [5] studied the PTRQ for such a scenario where the location of query issuer is uncertain
+(a.k.a, location based PTRQ); several smart ideas such as the query expansion were devel-
+oped. They assumed the query range R and uncertainty region u are rectangles, and focused
+
+Geoinformatica (2016) 20:19–58
+
+25
+
+on the non-constrained space, and thus employed the p-bounds technique. In contrast,
+both R and u used in our work are more complex, and we focus on the con-
+strained space, where the p-bounds technique has some limitations (again, Section 1
+has shown the reasons). Moreover, our work does not belong to the location based
+PTRQ.
+
+Other probabilistic threshold queries. There are also many representative works that
+addressed other probabilistic threshold queries (PTQs); those works are clearly different
+from ours. For instance, Zhang et al. studied the location based probabilistic threshold range
+aggregated query [47]. Hua et al. [16] addressed the probabilistic threshold ranking query
+on uncertain data. The probabilistic threshold KNN query over uncertain data was inves-
+tigated by Cheng et al. [6]. Yuan et al. [44] discussed the probabilistic threshold shortest
+path query over uncertain graphs. The general PTQ for arbitrary SQL queries that involve
+selections, projections, and joins was studied by Qi et al. [26].
+
+3 Problem definition
+
+3.1 Problem settings and notations
+
+(cid:2)
+
+(cid:2)
+
+Let R be the query range. Let r denote the restricted area, and R be a set of disjoint restricted
+r∈R r ⊂ T. Let o denote the moving object, and O
+areas. Let T be a territory such that
+be a set of moving objects. Let lr be the latest recorded location (stored on the database
+server) of o, andl t be the location of o at an arbitrary instant of time t. We assume that
+lt ∈ T −
+r∈R r. Let τ be the distance threshold of o. We assume any object o reports
+its new location to the server once dist (ltn , lr ) ≥ τ , wherel tn denotes its current specific
+location, dist (·) denotes the Euclidean distance. Finally, for any two different objects o and
+o(cid:6), we assume they cannot be located in the same location at the same instant of time t, i.e.,
+lt (cid:7)= l(cid:6)
+t .
+
+We model both the query range and restricted areas as the arbitrary shaped polygons3.
+
+We capture the location uncertainty using two components [7, 40].
+
+Definition 1 (Uncertainty region) The uncertainty region of a moving object o at a given
+time t, denoted by ut , is a closed region where o can always be found.
+
+Definition 2 (Uncertainty probability density function) The uncertainty probability density
+function of o at time t, denoted by f t (x, y), is a probability density function (PDF) of o’s
+location at a given time t; its value is 0 if lt /∈ ut .
+
+The PDF has the property that
+
+(cid:3)
+ut f t (x, y)dxdy = 1. In addition, under the dis-
+tance based update policy (a.k.a., dead-reckoning policy [7, 40]), for any two different
+time t1 and t2 (t1, t2 ∈ (tr , tn]), the following conditions always hold: ut1 = ut2 and
+f t1 (x, y) = f t2 (x, y), where tr refers to the latest reporting time, tn refers to the current
+time. Henceforth, unless stated otherwise, we use u and f (x, y) to denote the uncertainty
+
+3Any curve can be approximated into a polyline (e.g., by an interpolation method). Hence in theory any
+shaped restricted area or query range can be approximated into a polygon.
+
+26
+
+Geoinformatica (2016) 20:19–58
+
+Table 1 Notations and their
+descriptions
+
+Notations Meanings
+
+R∗
+O∗
+
+Rb
+τ
+lr
+o.(cid:9)
+Ir
+Io
+pt
+uo
+ui
+h
+H
+
+s
+|s|
+s[i]
+s[i]o
+H∗
+sj
+h
+γ
+
+the set of candidate restricted areas
+the set of candidate moving objects
+the minimum bounding rectangle of the query range R
+distance threshold
+recorded location of a moving object o
+circle with the centre lr and radius τ
+index of restricted areas
+index of moving objects
+probabilistic threshold
+outer ring of uncertainty region u
+the ith hole in uncertainty region u
+the set of holes in uncertainty region u
+intersection result between R and u
+the number of subdivisions of s
+the ith subdivision of s
+outer ring of s[i]
+the set of all holes in s
+the j th hole among all the |H∗| holes of s
+reference value
+
+region and PDF of o, respectively4. With the presence of restricted areas (i.e., obsta-
+cles), the uncertainty region u under the distance based update policy can be formalized
+as follows.
+
+u = o. (cid:9) −
+
+r
+
+(cid:4)
+
+r∈R
+
+(1)
+
+where o.(cid:9) denotes a circle with the centre lr and radius τ . We remark that, in the rest of
+this paper, we abuse the notation ‘| · |’, but its meaning should be clear from the context. In
+addition, unless stated otherwise, a notation or symbol with a subscript ‘b’ usually refers to
+its corresponding minimum bounding rectangle (MBR). For instance, Rb refers to the MBR
+of R. For convenience, Table 1 summarizes the notations used frequently in the rest of this
+paper.
+
+3.2 Problem statement
+
+Let pt be the probabilistic threshold, we have
+
+Definition 3 (Explicit CSPTRQ) Given a set R of restricted areas, a set O of moving
+objects in a territory T, and a query range R, an explicit constrained-space probabilistic
+
+4If the time based update policy is assumed to be adopted, such a topic is more interesting and also more
+challenging, since the uncertainty region u is to be a continuously changing geometry over time. See, e.g.,
+[39] for a clue about the relation between the location update policy and the uncertainty region u.
+
+Geoinformatica (2016) 20:19–58
+
+threshold range query (ECSPTRQ) returns a set of tuples in form of (o, p) such that p ≥ pt ,
+where p is the probability of o being located in R, and is computed as
+
+We note that f (x, y)= 1
+
+α(u) when the location of o follows uniform distribution in its
+uncertainty region u, whereα( ·) denotes the area of this geometric entity. In this case, we
+have
+
+(cid:5)
+
+p =
+
+u∩R
+
+f (x, y)dxdy
+
+p = α(u ∩ R)
+α(u)
+
+27
+
+(2)
+
+(3)
+
+Definition 4 (Implicit CSPTRQ) Given a set R of restricted areas, a set O of moving
+objects in a territory T, and a query range R, an implicit constrained-space probabilistic
+threshold range query (ICSPTRQ) returns all the objects o such that p ≥ pt , wherep is the
+probability of o being located in R, and is computed according to Eq. 2.
+
+We remark that though the differences of two queries above are minor at the first glance,
+we will present different solutions respectively in Sections 4 and 5, and show their differ-
+ent performance results in Section 7. Sometimes, we also use terms the explicit query and
+the implicit query to denote the above two queries in the rest of this paper. For ease of
+understanding the proposed methods, we next introduce a baseline method.
+
+3.3 Baseline method
+
+The baseline method is a simple adaptation of the method in [39]. To save space, we only
+present an overall framework of the baseline method.
+
+Preprocessing stage. Here a twin-index is adopted (e.g., a pair of R-trees or its variant):
+one is used to manage the set R of restricted areas; another is used to manage the set O
+of moving objects. To index restricted areas is simple, since we model them as arbitrary
+polygons. Naturally, we can easily find the MBR of any restricted area r (∈ R). In order to
+manage the set O of moving objects, we here index them based on their recorded locations
+lr and distance thresholds τ . Specifically, for each object o, its MBR is a square centering
+at lr with 2τ × 2τ size. For clearness, let Io and Ir be the index of moving objects and the
+one of restricted areas, respectively.
+
+Query processing stage. We first give two definitions before discussing the details of the
+
+query processing procedure.
+
+Definition 5 (Candidate moving object) Given a moving object o and the query range R, o
+is a candidate moving object such that Rb ∩ o.(cid:9)b (cid:7)= ∅.
+
+Definition 6 (Candidate restricted area) Given a moving object o and a restricted area r, r
+is a candidate restricted area such that rb ∩ o.(cid:9)b (cid:7)= ∅.
+
+Let R∗ denote the set of candidate restricted areas, and O∗ denote the set of candidate
+moving objects. There are several main steps for answering the implicit (or explicit) query.
+First, we search O∗ on Io using Rb as the input (here most of unrelated objects are to be
+pruned). Second, for each object o ∈ O∗, we search R∗ on Ir using o.(cid:9)b as the input (here
+most of unrelated restricted areas are to be pruned). We compute o’s uncertainty region u,
+
+28
+
+Geoinformatica (2016) 20:19–58
+
+Fig. 3 Illustration of of p-bounds and the precomutaion. (a) The case of no restricted areas. (b) The case of
+existing restricted areas. (c) The uncertainty region. (d) The precomputaion time when |R| = |O| =50k . ζ
+denotes the number of edges in each restricted area r (note: it may be somewhat difficult to understand this
+figure, and the readers can revisit it after reading Section 7)
+
+and then compute “u ∩ R”5. After this, we compute p using Eq. 2. We put o (or (o, p)) into
+the result if p ≥ pt . Otherwise, we discard it and process the next object. After all candidate
+moving objects are handled, we finally return the result, in which all qualified objects are
+included.
+
+Update stage. When an object o reports its new location to the server, we update the
+database record, i.e., lr . At the same time, we update the index of moving objects, i.e., Io.
+Discussion. The readers may be curious why the baseline method does not employ exist-
+ing threshold pruning/validating mechanisms such as p-bounds in [5, 32, 34, 47]. Briefly
+speaking, a p-bound of the uncertainty region u (of the object o) is a function of p, where
+p ∈ [0, 0.5]. A probabilistically constrained region (PCR) with the parameter p, denoted
+by o.pcr(p), consists of four p-bounds, namely l(p), r(p), t (p) and b(p), see the four
+dashed lines in Fig. 3a. The line l(p) divides the uncertainty region u (i.e., the circle) into
+two parts (on the left and right of l(p) respectively), and the appearance probability of o on
+the left part equals p. (Other three lines have similar meanings.) The grey region illustrates
+o.pcr(p). Assume the parameter p in Fig. 3a is 0.2; moreover, assume the probabilistic
+threshold pt = 0.8, and if q1 is the query range, then o is an unqualified object, and thus
+to be pruned. In contrast, if q2 is the query range, then o is a qualified object, and thus
+to be validated. The example above illustrates the rationale of the classical p-bounds tech-
+nique. In a non-constrained space (i.e., no obstacles exist), all the uncertainty regions can
+be easily obtained (almost) without taking the precomputation cost, and thus pre-computing
+a set ofp-bounds
+is feasible. However, in the context of our concern, the precomputa-
+tion time is rather long (up to the hour level) even if we only pre-compute the uncertainty
+regions. Figure 3d reports the time of pre-computing a set of uncertainty regions. Imagine
+if we further pre-compute lots of p-bounds, then the overall precomputation time should
+be larger. This is the main reason why the p-bounds technique is not well suitable for the
+context of our concern. Other minor (non-fatal) reasons have already been mentioned in
+Section 1. For example, the closed region with many holes shown in Fig. 3c illustrates
+the uncertainty region u, which is derived from Fig. 3b based on Eq. 1. Clearly, to obtain
+o.pcr(p) in Fig. 3c is more difficult than the case of no restricted areas (e.g., see Fig. 3a).
+To this step, it seems no better solution except the baseline method. In the next section,
+we introduce several new ideas, and then present the algorithm to answer the explicit query.
+
+5Note that, the algorithm in [39] cannot support the generic shaped query range, and thus some modifica-
+tions are necessary and inevitable when we compute u ∩ R; moreover, the details of managing complicated
+geometric regions (e.g., u) can be found in that paper.
+
+29
+
+(4)
+
+(5)
+
+Geoinformatica (2016) 20:19–58
+
+4 Explicit CSPTRQ
+
+4.1 Spatial pruning/validating rules
+
+For each object o ∈ O∗, once we obtain the set R∗ of candidate restricted areas, the baseline
+method is to directly compute its uncertainty region u, and then to compute the intersection
+result between R and u. Let s be the intersection result between R and u, it can be formalized
+as follows.
+
+s = u ∩ R = (o. (cid:9) −
+
+r) ∩ R
+
+Our method is to swap the order of geometric operations. The rationale behind it is
+surprisingly simple. Specifically, we first compute “o. (cid:9) ∩R”, and then use the result of
+“o. (cid:9) ∩R” to subtract
+
+r∈R∗ r. It is formalized as follows.
+
+(cid:2)
+
+s = (o. (cid:9) ∩R) −
+
+r
+
+(cid:4)
+
+r∈R∗
+
+(cid:4)
+
+r∈R∗
+
+There are two significant benefits by swapping the order of geometric operations.
+
+(1) We can prune some objects, without the need of computing their uncertainty regions.
+Assume “q1” shown in Fig. 4a is the query range R. Clearly, o is a candidate moving
+object since o.(cid:9)b intersects with Rb. Hereo can be safely pruned without the need of
+computing its uncertainty region u, since “R ∩ o.(cid:9) = ∅”. Similarly, assume that “q2”
+is R. Here “R ∩ o.(cid:9) (cid:7)= ∅” (see Fig.4a), but (o. (cid:9) ∩R) −
+r∈R∗ r = ∅ (see Fig. 4b).
+Hence o can also be pruned safely without the need of computing u.
+
+(2) We no longer need to consider each r ∈ R∗, which simplifies the computation of s.
+For example, regarding to “q2”, only the right most candidate restricted area is relevant
+with the computation of s. Similarly, regarding to “q3” shown in Fig. 4b, only two
+candidate restricted areas are relevant with the computation of s.
+
+(cid:2)
+
+Hence, by swapping the order of geometric operations, we can easily develop the
+
+following pruning/validating rules.
+
+Lemma 1 Given the query range R and an object o ∈ O∗, we have
+
+–
+–
+
+If R ∩ o.(cid:9) = ∅, theno can be pruned safely.
+If R ∩ o.(cid:9) =o. (cid:9), theno can be validated safely.
+
+Proof The proof is immediate by analytic geometry.
+
+Fig. 4 Example of swapping the order of gemetric operations
+
+30
+
+Geoinformatica (2016) 20:19–58
+
+Let R(cid:6) be a set of restricted areas such that the MBR of each r ∈ R(cid:6) has non-empty
+
+intersection set with the MBR of o. (cid:9) ∩R, we have an immediate corollary below.
+
+Corollary 1 Given the query range R and an object o ∈ O∗, o can be pruned safely if
+(o. (cid:9) ∩R) −
+
+(cid:2)
+
+r∈R(cid:6) r = ∅.
+
+Discussion. We remark that the swapping operation itself is very easy, as it does not rely
+on any complicated technique. Furthermore, after we swap the order of geometric opera-
+tions, to develop the pruning/validating rules is also not difficult. We highlight it because it
+is surprisingly simple but clearly efficient.
+
+Now, for any object o ∈ O∗, if it has not been pruned (or validated) by Lemma 1 or
+Corollary 1, whether or not we can directly compute its appearance probability p using
+Eq. 2? At the first sight, it seems to be sure. However, we should note that the intersection
+result s obtained by Eq. 5 is possibly a fake result. We next share our insights and explain
+the details.
+
+4.1.1 Why is it possibly a fake result?
+
+The fake result stems from the location unreachability. To explain it, we need some basic
+concepts.
+
+Given o.(cid:9) and a set R∗ of candidate restricted areas, we say a restricted area r ∈ R∗
+can subdivide o.(cid:9), if and only if the result of “o. (cid:9) −r” consists of multiple disjoint closed
+regions. We term each of those closed regions as a subdivision. Let D denote the set of
+subdivisions, we say a subdivision d ∈ D is an effective subdivision such that lr ∈ d, where
+lr is the (latest) recorded location of o (recall Section 3.1).
+
+Theorem 1 Assume that a restricted area r ∈ R∗ subdivides o.(cid:9), and D is the set of
+subdivisions, if a subdivision d ∈ D is not the effective subdivision, then any point p(cid:6) ∈ d
+is unreachable.
+
+It is easy to know that the object o is located in o.(cid:9), as we adopt the distance based
+Proof
+update policy, recall Section 3.1. We prove p(cid:6) ∈ d is unreachable by contraction. Assume
+that o can reach the point p(cid:6), implying that there exists at least a path from lr to p(cid:6) such that
+it does not directly pass through any restricted area and also the boundary of o.(cid:9). However,
+by the condition “d is not the effective subdivision”, implying that lr and p(cid:6) are located
+respectively in two disjoint closed regions. Based on analytic geometry, it is clear that no
+such a path exists. This completes the proof.
+
+Theorem 1 gives us the insight into the location unreachability. See Fig. 5a for an exam-
+ple, here the subdivision above r1 and the one below r2 are unreachable. Hence, o’s real
+uncertainty region, u, is the subdivision below r1 and above r2. With this (concept) in mind,
+we next use a more targeted example to show why s obtained by Eq. 5 possibly is a fake
+result. The shadow region shown in Figs. 6a or6b illustrates s obtained by Eq. 5, which is
+not equal to ∅. Hereo cannot be pruned/validated based on Lemma 1 and Corollary 1. The
+closed region with many holes shown in Fig. 6b illustrates u. For simplicity, assume that the
+location of o follows uniform distribution in u. In this example, if we simply use the area of
+
+Geoinformatica (2016) 20:19–58
+
+Fig. 5 Illustration of the location
+unreachability
+
+31
+
+the shadow region to divide the area of u, we will get that p is a positive number rather than
+0. Clearly, it is a false answer, since u and s are disjoint, see Fig. 6b.
+
+4.1.2 Natural solution
+
+To eliminate the fault produced by the above problem, the natural solution is to compute
+u, and then to check if u intersects with s. If they are disjoint, then p = 0 ando should
+be pruned. This approach can indeed be used to eliminate the fault but it is inefficient. We
+next review two approaches [39] that are used to compute u, and then show the underlying
+reason.
+
+Given a closed region c, we let v−, v+, h−, h+ denote the four (left, right, bottom, top)
+bounding lines of c, respectively. The span of c is argmax{dist (v−, v+), dist (h−, h+)},
+where dist (·) denotes the Euclidean distance.
+
+Heuristic 1 Given o.(cid:9), and two different candidate restricted areas,
+the candidate
+restricted area with the larger span is more likely to subdivide o.(cid:9) into multiple subdivi-
+sions.
+
+To compute u, there are two approaches. The first one is using o.(cid:9) to subtract each
+restricted area r ∈ R∗ one by one, and finally it chooses the subdivision containing the
+point lr as the uncertainty region u (see, e.g., Fig. 5a). For ease of describing the second
+approach, we let de denote the effective subdivision (recall Section 4.1.1), and slightly abuse
+the notation de.
+
+The second one incorporates Heuristic 1, and can be generally described as follows. First,
+it sorts the set R∗ of candidate restricted areas according to their spans in the descending
+
+Fig. 6 Illustration of the fake result
+
+32
+
+Geoinformatica (2016) 20:19–58
+
+order (implying that the restricted area r ∈ R∗ with the larger span is to be handled firstly);
+and then it uses o.(cid:9) to subtract each r ∈ R∗ one by one; particularly, when multiple
+subdivisions appear, it immediately chooses the effective subdivision de, and then uses de
+to subtract the next r ∈ R∗, and so on; it finally gets u after all the restricted areas r ∈ R∗
+are handled. See Fig. 5b, r1 is to be handled at first. The subdivision below r1 is taken as de.
+Then, it uses de to subtract r2. Here, the subdivision below r1 and above r2 is taken as de.
+After this, the rest of restricted areas can be quickly pruned and thus do not need to execute
+(costly) geometric subtraction operations, improving the first approach.
+
+Why is it inefficient? Consider the example in Fig. 6a again, we can easily see that, if
+we want to get the uncertainty region u, both of the approaches mentioned above need to
+execute subtraction operations many times. This justifies the natural solution mentioned in
+the beginning of Section 4.1.2 is inefficient. Our strategy is to fight poison with poison. In
+other words, we take advantage of the location uncertainty. This method is pretty simple,
+but clearly efficient. The challenge is to find the point of penetration, namely, when, where,
+and how to take advantage of the location unreachability.
+
+4.1.3 Take advantage of the location unreachability
+
+Based on the definition of subdivision,
+Eq. 5, we can build the following theorem.
+
+the nature of location unreachability, and
+
+Theorem 2 Given o.(cid:9) and R∗, s (obtained by Eq. 5) is always a correct result such that
+for any r ∈ R∗, |o. (cid:9) −r| =1, where| · | denotes the number of subdivisions.
+
+Theorem 1 implies that the presence of multiple subdivisions (i.e., |o. (cid:9) −r| > 1) is
+an important sign of the fault to be happened. Hence, if we correctly and timely handle
+this special case, the possible fault could be eliminated efficiently. With this (concept) in
+mind, a more efficient solution comes into being. Specifically, we manage to compute its
+uncertainty region u; in the process of computing u, once multiple subdivisions appear, we
+also choose the effective subdivision d e, but we do not directly use de to subtract the next
+candidate restricted area. Instead, we here check the geometric relation between de and s
+(obtained by Eq. 5).
+
+Lemma 2 If s ∩ d e = ∅, theno can be pruned safely.
+
+Proof We just need to show u ⊆ de. (1) Ifr is the only candidate restricted area that can
+(cid:2)
+r (cid:6)∈R∗ r (cid:6) ⊆ de, wherer (cid:6) ∈ R∗ and r (cid:6) (cid:7)= r. (2)
+subdivide o.(cid:9), it is obvious that u = de −
+If r (cid:6) (∈ R∗) can subdivide o.(cid:9), it must belong to one of the following cases. (For ease of
+discussion, assume r1 shown in Fig. 7a refers to the so-called r).
+
+• r (cid:6) is not located in the same side of de (e.g., r2 in Fig. 7a). Since we adopt the distance
+based update policy (cf. Section 3.1), any point p(cid:6) ( /∈ de) is unreachable (e.g., any point in
+the right of r1). Clearly, r (cid:6) makes no impact on the final result of u.
+
+• r (cid:6) is located in the same side of de. See Fig.7a, r3 illustrates this case. Here r3 can
+and de(cid:6)(cid:6)
+
+subdivide de into two subdivisions, say de(cid:6)
+
+. Clearly, we have
+
+de(cid:6) ∪ de(cid:6)(cid:6) ⊂ de
+
+(6)
+
+Geoinformatica (2016) 20:19–58
+
+33
+
+Fig. 7 Illustration of Lemma 2 and Corollary 2
+
+Without loss of generality, assume de(cid:6)(cid:6)
+is the unreachable subdivision (i.e., any point in de(cid:6)(cid:6)
+is unreachable). For clarity, let r (cid:6)(cid:6) denote other candidate restricted areas such that r (cid:6)(cid:6) ∈ R∗,
+r (cid:6)(cid:6) (cid:7)= r and r (cid:6)(cid:6) (cid:7)= r (cid:6). Then, we have
+
+u = de(cid:6) −
+
+(cid:6)(cid:6) ⊆ de(cid:6) ⊂ de(cid:6) ∪ de(cid:6)(cid:6)
+
+r
+
+(7)
+
+(cid:4)
+
+r (cid:6)(cid:6)∈R∗
+
+By Formulas (6) and (7), we have u ⊂ de (note: when multiple candidate restricted areas are
+located in the same side of de, it is immediate by induction). This completes the proof.
+
+We note that s obtained by Eq. 5 possibly consists of multiple subdivisions. From
+
+Lemma 2, we have an immediate corollary below.
+
+Corollary 2 Given o.(cid:9) and R, we assume s (obtained by Eq. 5) consists of multiple subdi-
+visions, say s[1], s[2], · · ·, s[|s|], where |s| is the total number of subdivisions in s. Without
+loss of generality, assume that r ∈ R∗ can subdivide o.(cid:9) into multiple subdivisions, and
+d e is the effective subdivision. We have that, any subdivision s[i] (i ∈ [1, · · · , |s|]) can be
+pruned safely if s[i] ∩ de = ∅.
+
+See Fig. 7b as an example. r1 subdivides o.(cid:9), s[1] and s[2] are two subdivisions of s
+
+(obtained by Eq. 5). Here s[2] ∩d e = ∅. Thus, s[2] should be pruned.
+
+While this method is pretty simple, we can easily see that it gains two benefits: it not
+only eliminates the possible fault produced by Eq. 5, but also prunes some objects in the
+early stages, without the need of obtaining the final results of their uncertainty regions. See,
+e.g., Figs. 6a or7a, o can be pruned after executing (only) one subtraction operation.
+
+Discussion. All mechanisms discussed before belong to spatial pruning/validating mech-
+anisms. For any object o that has not been pruned/validated by the above mechanisms, the
+natural method is to compute its appearance probability p using Eqs. 2 or 3, and then to
+see if p ≥ pt , where pt is the so-called probabilistic threshold. In the next subsection, we
+present a more efficient method. We remark that s (discussed in the rest of this paper) refers
+to the correct result since we already eliminated the possible fault.
+
+4.2 Threshold pruning/validating rules
+
+Our method computes p in a multi-step rather than one-time way. We call it the multi-
+step mechanism. Briefly speaking, we first obtain a coarse-version result (CVR), which is
+possibly far away from the accurate value of p. We then make a comparison between the
+
+34
+
+Geoinformatica (2016) 20:19–58
+
+CVR and pt , and check if o can be pruned based on the current information. If otherwise,
+we refine the CVR by the further computation.
+
+4.2.1 Uniform distribution PDF
+
+To apply the multi-step mechanism to the case of uniform distribution PDF, we need to find
+appropriate carriers (or things) to which we can apply the multi-step mechanism.
+
+Suppose that there is a closed region with many holes. Its exact area clearly equals that
+the area of the closed region subtracts the areas of all holes. In contrast, if we compute the
+area of the closed region, but do not subtract the areas of holes, we shall get the most coarse
+result. Furthermore, we can easily see that this coarse result can be gradually refined by
+subtracting the rest of holes one by one. Hence, the holes here are taken as the carriers.
+Based on this intuition, it is not difficult to develop the followings.
+
+For ease of understanding the details, we first should note that the uncertainty region u is
+a single subdivision (possibly) with holes; and s may be multiple subdivisions (i.e., |s| > 1)
+and each subdivision (possibly) has holes. Given a closed region c with a hole h, we say the
+boundary of c is the outer ring of c, and say the boundary of h is the inner ring of c. We
+also use α(·) to denote the area of a geometry.
+
+Let uo be the outer ring of uncertainty region u, ui
+
+h be the ith hole in u, and H be the set
+
+of holes in u, where |H| ≥ 0. We have
+
+α(u) = α(uo) −
+
+α(ui
+h)
+
+|H|(cid:6)
+
+i=0
+
+Similarly, let s[i] be the ith subdivision of s, s[i]o be the outer ring of s[i], s[i]j
+hole in s[i], and |s[i]h| be the number of holes in s[i]. We have
+
+h be the j th
+
+α(s) =
+
+α(s[i]) =
+
+⎝α(s[i]o) −
+
+α(s[i]j
+h)
+
+⎛
+
+|s|(cid:6)
+
+i=1
+
+⎞
+
+⎠
+
+|s[i]h|(cid:6)
+
+j =0
+
+|s|(cid:6)
+
+i=1
+
+For ease of presentation, we let H∗ denote the set of (all) holes in s (note: |H∗| =
+(cid:11)|s|
+|s[i]h|), and renumber these holes. Specifically, we let sj
+h denote the j th hole among
+i=0
+all the |H∗| holes. Therefore, Eq. 9 can be rewritten as follows.
+
+α(s) =
+
+α(s[i]o) −
+
+|s|(cid:6)
+
+i=1
+
+|H∗|(cid:6)
+
+j =0
+
+α(sj
+h)
+
+The natural solution (one-time way) is to compute α(u) and α(s) based on Eqs. 8 and
+
+10, respectively, and then to check if α(s)
+α(u)
+
+≥ pt .
+
+In the proposed method, we also compute α(u). We however, do not directly compute
+
+α(s). Specifically, we initially compute
+
+α(s[i]o). Then, we compute the first CVR,
+
+denoted by p0, as follows.
+
+|s|(cid:11)
+
+i=1
+
+(cid:11) |s|
+
+p0 =
+
+i=1 α(s[i]o)
+α(u)
+
+Lemma 3 Given p0 and the probability threshold pt , o can be pruned safely if p0 < pt .
+
+(8)
+
+(9)
+
+(10)
+
+(11)
+
+Geoinformatica (2016) 20:19–58
+
+Proof We only need to show that the appearance probability p is less than pt . Let(cid:6) denote
+an arbitrary non-negative number. We have
+
+In addition, since p = α(s)
+
+p0 =
+
+(cid:11) |s|
+
+i=1 α(s[i]o)
+α(u)
+
+≥
+
+(cid:12)(cid:11) |s|
+
+i=1 α(s[i]o
+α(u)
+
+(cid:13)
+
+− (cid:6)
+
+α(u) , by Eq.10, we have
+(cid:11) |s|
+
+p =
+
+i=1 α(s[i]o) −
+α(u)
+
+(cid:11) |H∗|
+
+j =0 α(sj
+h)
+
+(cid:11) |H∗|
+
+j =0 α(sj
+
+Clearly, “
+we have p ≤ p0. Combining the condition “p0 < pt ”, hence p < pt .
+
+h)” in Eq.13 is a non-negative number. By Formula (12) and Eq.13,
+
+If the object o cannot be pruned based on Lemma 3, and there exist holes in s, we further
+compute the second CVR, and so on. Let pk−1 be the kth CVR, where 1 < k ≤ |H∗| +1.
+We have
+
+pk−1 =
+
+(cid:11) |s|
+
+i=1 α(s[i]o) −
+α(u)
+
+(cid:11)
+
+k−1
+j =0 α(sj
+h)
+
+We should note that pk−1 = p when k = |H∗| +1. In other words, the final CVR is
+j =0 α(sj
+h), since
+equal to the appearance probability p. Furthermore,
+1 < k ≤ |H∗| +1. Hence, from Lemma 3, we have an immediate corollary below.
+
+k−1
+j =0 α(sj
+
+(cid:11) |H∗|
+
+h) ≤
+
+(cid:11)
+
+Corollary 3 Given the kth CVR pk−1 and the probability threshold pt , o can be pruned
+safely if pk−1 < pt .
+
+Discussion. We have shown how to apply the multi-step mechanism to the case of uni-
+form distribution PDF, and developed new pruning rules. The small challenge is to find
+appropriate carriers to which we can apply the multi-step mechanism. To apply this mech-
+anism to the case of non-uniform distribution PDF, there is also a small challenge, which
+however, is different from the previous, as we can easily find appropriate carriers by the
+similar observation. To explain this small challenge, we need some preliminaries. In the
+next subsection, we first introduce the preliminaries, then clarify this small challenge, and
+finally give the details of our method.
+
+4.2.2 Non-uniform distribution PDF
+
+Regarding to the non-uniform distribution PDF, a classical numerical integration method is
+the Monte Carlo method [5, 7, 32]. Let N1 denote a pre-set value, where N1 is an integer.
+The natural solution is to randomly generate N1 points in the uncertainty region u. For each
+generated point p(cid:6), it computes the value f (xi, yi) based on its PDF, where (xi, yi) are the
+coordinates of the point p(cid:6), and then to check if p(cid:6) ∈ s. Without loss of generality, assume
+that N2 points (among N1 points) are to be located in s. Then
+
+35
+
+(12)
+
+(13)
+
+(14)
+
+(15)
+
+(cid:11)
+
+(cid:11)
+
+p =
+
+N2
+i=1f (xi, yi)
+N1
+i=1f (xi, yi)
+
+Finally, it checks if p ≥ pt . If so, it puts the tuple (o, p) into the result. Otherwise, o is to
+be pruned.
+
+36
+
+Geoinformatica (2016) 20:19–58
+
+We should note that the Monte Carlo method is a non-deterministic algorithm. Thus
+we usually use a large sample as the input, in order to assure the accuracy of computa-
+tion. Here the number of generated points is the size of sample. In general, the larger
+N1 is, the workload error is more close to 0. Without loss of generality, assume that the
+allowable workload error is δ, we can get the specific value of N1 by the off-line test.
+To this step, we can easily realize that the generated points can be taken as carriers to
+which we can apply the multi-step mechanism. In other words, the following steps are easily
+brought to mind: we initially generate a small number of points, and thus get a coarse result;
+then, we refine the previous coarse result by gradually adding points. A small challenge is
+to construct the pruning rules. In other words, assume that we get a coarse result, how to
+decide whether or not o can be pruned based on the current coarse result and the probabilistic
+threshold pt .
+
+To alleviate the small challenge above, we take advantage of the workload error. Hence-
+forth, we can easily determine whether or not o can be pruned based on three parameters:
+the current coarse result, its corresponding workload error, and the probabilistic threshold
+pt . We remark that the workload error can also be estimated by the off-line test, when we
+use a small number of points. (In our experiments, we use the maximum workload error.
+a, wherei ∈ [1, 100], and
+For example, assume there are 100 approximate values, say xi
+assume the exact value is xe. Then, the maximum workload error for this single value is
+argmax{|xe − xi
+|}. By the extensive off-line test, an overall maximum workload error thus
+a
+can be estimated. Again, the Monte Carlo method is a non-deterministic algorithm, thus the
+extensive off-line test is needed, in order to assure the accuracy of computation.) Once we
+get rid of this small challenge, it is not difficult to develop the followings.
+
+Specifically, in the proposed method, we do not directly generate N1 points; instead we
+(cid:15) points in u, whereθ is an integer (e.g., 10). Let N 0
+2 be the number of
+
+initially generate (cid:14) N1
+θ
+points being located in s, where N 0
+2
+
+(cid:15). Then, we get the first CVR p0 as follows.
+
+≤ (cid:14) N1
+θ
+(cid:11) N 0
+
+p0 =
+
+2
+
+i=1f (xi, yi)
+
+(cid:11)(cid:14) N1
+θ
+
+(cid:15)
+
+i=1 f (xi, yi)
+
+Let δ0 be the workload error when we use (cid:14) N1
+θ
+
+(cid:15) points as the input. We have
+
+Lemma 4 If p0 +δ0 < pt , theno can be pruned safely.
+
+Proof Let V∞ be the value obtained by Eq. 15 when we set N1 → +∞ (note: in this
+case the workload error can be taken as 0). It is clearly that p0 − δ0 ≤ V∞ ≤ p0 + δ0.
+Incorporating the condition “p0 +δ0 < pt ”, hence V∞ < pt . This completes the proof.
+
+If o cannot be pruned based on Lemma 4, we refine the first CVR by adding points.
+For the kth coarse-version, we denote by (cid:14) k·N1
+the number of generated
+θ
+points, the workload error and the number of points being located in s, respectively. Then,
+the kth CVR pk−1 (1 < k ≤ θ ) can be derived as follows.
+
+(cid:15), δk−1, and N k−1
+
+2
+
+(16)
+
+(17)
+
+pk−1 =
+
+2
+
+i=1 f (xi, yi)
+
+f (xi, yi)
+
+(cid:11)N k−1
+
+(cid:11)(cid:14) k·N1
+θ
+i=1
+
+(cid:15)
+
+Furthermore, since each coarse-version corresponds to a workload error, from Lemma 4,
+we have an immediate corollary below.
+
+Geoinformatica (2016) 20:19–58
+
+37
+
+Corollary 4 Given the probability threshold pt , thek th CVR pk−1 and its corresponding
+workload error δk−1. Ifp k−1 +δk−1 < pt , then o can be pruned safely.
+
+Up to now, we have shown all our pruning/validating rules (including spa-
+the explicit
+
+them together
+
+to answer
+
+tial and threshold ones), we next pull
+query.
+
+4.3 Query processing for explicit CSPTRQ
+
+4.3.1 Algorithm
+
+Let (cid:18) be the query result. Recall that R(cid:6) be a set of restricted areas such that the MBR of
+each r ∈ R(cid:6) has non-empty intersection set with the MBR of o. (cid:9) ∩R (cf. Section 4.1).
+Furthermore, we use u[temp] to denote the intermediate result of the uncertainty region
+u (since we manage to compute the uncertainty region u, and hope some objects can be
+pruned in the early stages, recall Section 4.1.3); similarly, we use p[temp] to denote the
+
+38
+
+Geoinformatica (2016) 20:19–58
+
+intermediate result of p (since we adopt multi-step way to compute the appearance
+probability p, recall Section 4.2).
+
+We first search the set O∗ of candidate moving objects on the index Io using Rb as the
+input. We then process each object o ∈ O∗ based on Algorithm 1. Note that in the algorithm,
+the clause “Discard o” denotes that the object o is to be pruned, and we shift to process the
+next object, without the need of executing the remaining lines.
+
+Lines 1–20 of Algorithm 1 incorporate spatial pruning/validating mechanisms dis-
+cussed in Section 4.1. More specifically, Lines 1–8 employ the strategy discussed before
+Section 4.1.1, and Lines 10–19 employ the strategy discussed in Section 4.1.3. Moreover,
+Lines 21-28 incorporate threshold pruning/validating mechanisms discussed in Section 4.2.
+Note that, to save space, we write the pseudo codes for uniform and non-uniform distribu-
+tion PDFs together, the pseudo codes in brackets are used for the latter (cf. Lines 21–28).
+Moreover, the detailed algorithm for handling the generic shaped query range is built by
+modifying the baseline method, which is not difficult but somewhat tedious, the details are
+omitted.
+
+Naturally, after all objects o ∈ O∗ are handled, we get the answer (cid:18), in which all
+
+qualified objects together with their appearance probabilities are included.
+
+4.3.2 Theoretical analysis
+
+I/O cost. Let Co be the cost of searching the set O∗ of candidate moving objects, C(cid:6)
+r be the
+cost of searching the set R(cid:6) of restricted areas, and Cr be the cost of searching the set R∗ of
+candidate restricted areas (note: R∗ is different from R(cid:6)). Let k1 be the (average) number
+of objects pruned/validated by Lemma 1, and k2 be the (average) number of objects pruned
+by Corollary 1, where k1 + k2 ≤ |O∗|. Note that, each cost mentioned earlier refers to the
+average cost. Let Cio be the total I/O cost, which can be estimated as follows.
+
+(cid:6)
+Cio = Co + (|O∗| −k 1)C
+r
+
++ (|O∗| −k 1 − k2)Cr
+
+(18)
+
+Query cost. LetC s be the cost of computing s (cf. Line 6 in Algorithm 1). Let Cu be
+the cost of computing u, and letk 3 be the (average) number of objects pruned by Lemma
+2. The cost, computing the uncertainty regions of |O∗| −k 1 − k2 objects, is about (|O∗| −
+(k1 + k2 + k3)) · Cu, since k3 objects are to be pruned and usually in the early stages
+(recall Section 4.1.3). Let θ denote the number of multiple versions (since we use multi-
+step computation, recall Section 4.2). Let Cm be the cost of computing all the θ steps. For
+the rest of |O∗| − (k1 + k2 + k3) objects, without loss of generality, assume that they are to
+be pruned (by multi-step mechanism) at the (average) ith step, where 1 ≤ i ≤ θ . Then, the
+cost of handling all the |O∗| −(k 1 + k2 + k3) objects is (|O∗| −(k 1 + k2 + k3)) · i·Cm
+. Let
+θ
+Cq denote the total query cost (including I/O cost). Combing all the above results, Cq can
+be estimated as follows.
+
+Cq = Cio + (|O∗| −k 1) · Cs
+
++(|O∗| −(k 1 + k2 + k3)) ·
+
+(cid:15)
+
+(cid:14)
+
+Cu + i · Cm
+
+θ
+
+(19)
+
+We remark that we overlook the cost such as adding a tuple (o, p) into (cid:18), comparing the
+geometric relation between two entities, etc., as these costs are trivial. Moreover, the span is
+a real number, hence the overhead to sort |R∗| candidate restricted areas is pretty small and
+can (almost) be overlooked compared to the overhead to execute O(|R∗|) times geometric
+
+Geoinformatica (2016) 20:19–58
+
+39
+
+subtraction operations. In the sequel, we show how to extend techniques proposed in this
+section to answer the implicit query.
+
+5 Implicit CSPTRQ
+
+We first introduce the enhanced multi-step computation, and then integrate the techniques
+proposed in Section 4.1 to answer the implicit query. The enhance multi-step computation
+is easily brought to mind, as we have discussed the multi-step computation in the previous
+section, and we can easily see that the implicit query does not need to return the appear-
+ance probabilities of qualified objects, implying that some threshold validating rules can be
+developed. Note that the performance differences between the explicit and implicit queries
+stem mainly from this step.
+
+5.1 Enhanced multi-step computation
+
+The enhance multi-step strategy includes (i) an adaptive pruning/validating mechanism,
+which is used for the uniform distribution case, and (ii) a two-way test mechanism, which
+is used for the non-uniform distribution case. Regarding to the two-way test mechanism,
+there is no much surprise. Regarding to the first mechanism, its central idea is to cleverly
+choose appropriate rule (or method) according to the specific case. A small challenge can
+be generally described as follows: given two methods and a specific case, how to determine
+which method is more suitable for this specific case? In the sequel, we discuss more details.
+(Remark: most of notations discussed later actually have already been defined in previous
+sections, if any question, please refer to Table 1 and/or Section 4.2.)
+
+5.1.1 Adaptive pruning/validating mechanism
+
+(cid:11)|s|
+
+Recall the tactic discussed in Section 4.2.1. For the first coarse-version result (CVR), it is
+i=1 α(s[i]o) at first, and then to compute the first CVR p0 based on
+to compute α(u) and
+Eq. 11. Since the implicit query does not need to explicitly return the probabilities of the
+qualified objects, clearly, it is also feasible that we first compute α(s) and α(uo), and then
+compute the first CVR p0 as follows.
+
+p0 = α(s)
+α(uo)
+
+Lemma 5 Given the probability threshold pt and the first CVR p0 (obtained by Eq. 20),
+we have that if the first CVR p0 > pt , theno can be validated safely.
+
+Proof We only need to show p > pt . The proof is the similar as the one of Lemma 3.
+
+If o cannot be validated based on Lemma 5, and the number of holes in u is not equal to
+0 (i.e., |H| (cid:7)= 0), we further compute the second CVR, and so on. Then, the kth CVR pk−1
+(1 < k ≤ |H| +1) can be derived as follows.
+
+(20)
+
+(21)
+
+pk−1 =
+
+α(s)
+(cid:11)
+
+α(uo) −
+
+k−1
+i=0 α(ui
+h)
+
+40
+
+Geoinformatica (2016) 20:19–58
+
+Note that pk−1 equals the appearance probability p when k = |H| + 1. Furthermore,
+(cid:11)
+h), since 1 < k ≤ |H| +1. Hence, from Lemma 5, we have an
+
+k−1
+i=0 α(ui
+
+(cid:11)|H|
+
+h) ≤
+i=0 α(ui
+immediate corollary below.
+
+Corollary 5 Given the probability threshold pt and the kth CVR pk−1 (obtained by
+Eq. 21), o can be validated safely, if pk−1 > pt . (cid:2)
+
+Hence, we can easily see that, if an object o cannot be pruned/validated based on the
+
+spatial information, then there are two methods to handle it.
+
+– Method 1: We compute the CVRs according to Eq. 11 or 14, and then check if o can be
+
+– Method 2: We compute the CVRs according to Eq. 20 or 21, and then check if o can be
+
+pruned based on Lemma 3 or Corollary 3.
+
+validated based on Lemma 5or Corollary 5.
+
+The naive solution is always to use one of the two methods to handle those candidate
+moving objects that cannot be pruned/validated by the spatial information. Instead, we adopt
+an adaptive pruning/validating mechanism. In brief, if o is more likely to be pruned, we use
+the “Method 1”; in contrast, if o is more likely to be validated, we use the “Method 2”. Note
+that, there is a question “given an object o, how to know it is more likely to be pruned (or
+validated)?”
+
+Specifically, we compute a reference value, which is used to estimate the trend of o
+(being more likely to be pruned/validated). Let γ denote the reference value, which is
+computed as follows.
+
+γ =
+
+(cid:11) |s|
+
+i=1 α(s[i]o)
+α(uo)
+
+(22)
+
+Geoinformatica (2016) 20:19–58
+
+41
+
+Heuristic 2 Given γ and pt , ifγ < p t , theno is more likely to be pruned. Otherwise, o is
+more likely to be validated.
+
+Algorithm 2 shows the pseudo codes of the adaptive pruning/validating mechanism.
+Lines 2-10 focus on pruning objects, and Lines 12-20 focus on validating objects. (Note that
+the meanings of the notations used in this algorithm are the same as the ones in Algorithm
+1).
+
+5.1.2 Two-way test mechanism
+
+The two-way test mechanism is a simple extension of the method in Section 4.2. For the
+sake of completeness, we present it below.
+
+Regarding to the first CVR, we can also compute it according to Eq. 16. Then, we
+
+have
+
+Lemma 6 Given the probability threshold pt , the first CVR p0 and its corresponding
+workload error δ0, we have
+
+–
+–
+
+If “p0 +δ0 < pt ”, then o can be pruned safely.
+If “p0 −δ0 ≥ pt ”, then o can be validated safely.
+
+Proof
+
+It is immediate by extending the proof of Lemma 4.
+
+If o can be neither pruned nor validated based on Lemma 6, we further compute the
+second CVR, and so on. For the kth CVR, we can also compute it according to Eq. 17. From
+Lemma 6, we have an immediate corollary below.
+
+Corollary 6 Given the probability threshold pt , thek th CVR pk−1 and its corresponding
+workload error δk−1, we have
+
+–
+–
+
+If “pk−1 +δk−1 < pt ”, then o can be pruned safely.
+If “pk−1 − δk−1 ≥ pt ”, then o can be validated safely.
+
+The pseudo codes of the two-way test mechanism are shown in Algorithm 3. We remark
+that in the two-way test mechanism, if o cannot (still) be pruned/validated by the final
+CVR, we take the object o as a qualified object, since the final CVR equals p, andp ∈
+[p − δ, p + δ], whereδ is the allowable workload error.
+
+5.2 Query processing for implicit CSPTRQ
+
+Algorithm. The spatial pruning/validating mechanisms proposed in Section 4.1 can be
+seamlessly incorporated for answering the implicit query, implying that the algorithm
+for the implicit query is the similar as the one for the explicit query. Specifically,
+we need to replace Line 2 and Lines 20-28 in Algorithm 1 with new pseudo codes.
+Clearly, Line 2 should be replaced by “(cid:18) ← (cid:18) ∪ o”, and Lines 20-28 should be
+replaced by the pseudo codes of the enhanced multi-step computation, i.e., Algorithms 2
+and 3.
+
+I/O and query cost. The I/O cost is the same as the one of Algorithm 1. The query cost
+can be estimated using the similar method presented in Section 4.3. Specifically, the i in
+
+42
+
+Geoinformatica (2016) 20:19–58
+
+Eq. 19 should be replaced with a more small value, since the enhanced multi-step
+mechanism not only prunes but also validates objects.
+
+Discussion. Up to now, we have presented the algorithms used to answer the
+explicit and implicit queries, respectively. Recall Section 1, we mentioned potential pur-
+poses/applications of the explicit and implicit queries. One is to sort the qualified objects
+according to their appearance probabilities, which is (somewhat) similar to the ranking
+query [3, 16, 23]; another is to return the number of qualified objects, which is (some-
+what) similar to the aggregate query [31, 47]. Both of tasks can be easily achieved by the
+minor modifications of our proposed algorithms. Specifically, an additional O(|(cid:18)| log |(cid:18)|)
+time can sort the qualified objects according to their probabilities, where |(cid:18)| is the cardi-
+nality of the qualified objects (note: compared to Cq in Eq. 19, this additional time can
+almost be overlooked, as the appearance probabilities are real numbers). Similarly, an addi-
+tional O(|(cid:18)|) time can obtain the number of qualified objects (again, this additional time
+can almost be overlooked). We remark that the focuses of this paper are not the so-called
+ranking and/or aggregate queries. Hence, we are not ready to discuss more details about
+them (even though there may be more efficient solutions). The real reason (we mention
+them) is to show that the explicit and implicit queries can have different potential pur-
+poses/applications (note: it actually also reminds us that we should choose the appropriate
+query scheme instead of using the explicit or implicit query scheme for all tasks). In the
+next section, we attempt to further optimize our solutions based on a new insight.
+
+6 Further optimization
+
+In previous sections, for each candidate moving object o ∈ O∗ we retrieve the set R(cid:6) of
+restricted areas from the database and then compute s, ifo cannot be pruned/validated by
+Lemma 1. Particularly, we further retrieve the set R∗ of restricted areas from the database
+and then compute u, if o cannot still be pruned by Corollary 1 (c.f., Algorithm 1). Note
+that there is an overlap between R(cid:6) and R∗ (as R(cid:6) ⊆ R∗). This implies that in this case
+we retrieve two times for the |R(cid:6)| restricted areas, which incurs the extra I/O cost. With
+the similar observation we can also realize that for different candidate moving objects, their
+
+Geoinformatica (2016) 20:19–58
+
+43
+
+Fig. 8 Illustrations of the “overlapped” restricted areas and the data structure used to manage the
+<key,value> pairs. (a) In this example the three candidate moving objects have the same candidate restricted
+areas. (b) All these data are stored in memory in order to avoid to retrieve redundant data from the database
+
+candidate restricted areas may have an overlap (see Fig. 8a for an illustration). This implies
+that previous methods retrieve multiple times for those “overlapped” restricted areas, which
+also incurs the extra I/O cost.
+
+To overcome the above limitations, we develop a novel strategy. The rationale behind this
+strategy is to track restricted areas that have been retrieved, avoiding to retrieve redundant
+data from the database. Generally speaking, for each restricted area that has been retrieved
+from the database, we use the <key,value> pair to store the ID and geometric data of
+restricted area in memory. (See Fig. 8b for an example.) For brevity, we denote by Dm the
+data structure used to manage the set of <key,value> pairs6. Furthermore, we build another
+R-tree, which is used to index restricted areas that have been retrieved. For brevity, we use
+I (cid:6)
+r to denote this R-tree. Here the leaf node does not store the detailed geometric data of
+restricted area, instead it only stores the ID and MBR of restricted area. With the help of
+Dm and I (cid:6)
+r , we can easily track the restricted areas that have been retrieved. Specifically,
+we do as follows:
+
+–
+
+–
+
+If we need to obtain R(cid:6) (or R∗), we do not directly search on Ir and fetch restricted
+area data from the database. Instead, we first search on I (cid:6)
+r , getting a set, say S1, of IDs
+of restricted areas (note: these restricted area data can be obtained by accessing Dm
+which is stored in memory); we then search on Ir , getting another set, say S2, of IDs
+of restricted areas. Let S3 be the set of IDs of restricted areas such that S3 = S2 − S1.
+We here only need to fetch restricted area data (from the database) whose IDs are in S3.
+The |S3| restricted areas fetched from the database and the |S1| ones obtained from Dm
+constitute R(cid:6) (or R∗).
+If restricted areas are fetched from the database, we immediately index these restricted
+areas using I (cid:6)
+r , and add corresponding <key,value> pairs into Dm. That is to say, we
+update I (cid:6)
+r and Dm immediately once we fetched restricted area data from the database.
+
+With the above concepts in mind, we can easily develop the improved algorithm for the
+explicit query. First, we search the set O∗ of candidate moving objects on the index Io using
+r . Next, we process each object o ∈ O∗. The
+Rb as the input. We then initialize Dm and I (cid:6)
+steps of processing each object o are the similar as the ones in Algorithm 1, except that we
+need to make minor modifications on Lines 6 and 10 (here we use the strategy proposed
+
+6Note that in our implementation, we employ the map container of C++ STL (standard template library).
+
+44
+
+Geoinformatica (2016) 20:19–58
+
+Fig. 9 Distributions of points. (a) Random distributed points. (b) Clustered California points
+
+in this section). Note that, the improved algorithm for implicit query is available by similar
+modifications. The pseudo codes of these two improved algorithms are immediate, and thus
+are omitted for saving space. In the next section, we test the effectiveness and efficiency of
+the proposed algorithms, using extensive experiments under various experimental settings.
+
+7 Experimental evaluation
+
+7.1 Experimental setup
+
+Our experiments are based on both real and synthetic data sets, and the size of 2D space
+is fixed to 10000×10000. Two real data sets called CA and LB7, are deployed. The data
+sets are the similar as the ones in [7, 12, 30, 32]. The CA contains 104770 2D points, the
+LB contains 53145 2D rectangles. We let the CA denote the (latest) recorded locations of
+moving objects, and the LB denote the restricted areas. (Remark: this paper is not interested
+in querying the trajectories, and thus does not use the trajectory data sets.) All data sets are
+normalized in order to fit the 10000×10000 2D space. Synthetic data sets also consist of
+two types of data. We generate a set of polygons to denote the restricted areas, and place
+them in this space uniformly. We generate a set of points to denote the (latest) recorded
+locations of moving objects, and let them randomly distributed in this space (note: there is a
+constraint that these points cannot be located in the interior of any restricted area). Moreover,
+we randomly generate different distant thresholds (between 20 and 50) for different moving
+objects. For brevity, we use the CL and RU to denote the real (California points together with
+Long Beach rectangles) and synthetic (Random distributed points together with Uniform
+distributed polygons) data sets, respectively. The distributions of points (used to denote the
+recorded locations of moving objects) are plotted in Fig. 9 for reference, in which all points
+being located in restricted areas are already removed.
+
+The performance metrics include the preprocessing time, update time, I/O time and query
+time. Specifically, the query time is the sum of I/O and CPU time. The update time is the
+
+7The CA is available in site: http://www.cs.utah.edu/lifeifei/SpatialDataset.htm, and the LB is available in
+site: http://www.rtreeportal.org/.
+
+Geoinformatica (2016) 20:19–58
+
+45
+
+Table 2 Parameters Used in Our Experiments
+
+Parameter
+
+Description
+
+Value
+
+N
+
+M
+
+ζ
+
+ψ
+
+(cid:6)
+pt
+η
+N1
+θ
+
+number of moving objects
+
+number of restricted areas
+
+number of edges of each r
+
+number of edges of R
+
+size of R
+
+probabilistic threshold
+
+shape of R
+
+number of pre-set points
+
+number of versions
+
+10k, 20k, 30k, 40k, 50k
+
+10k, 20k, 30k, 40k, 50k
+
+4, 8, 16, 32, 64
+
+4, 8, 16, 32, 64
+
+100, 200, 300, 400, 500
+
+0.1, 0.3, 0.5, 0.7, 0.9
+
+Sq,Ta,Dm,Tz,Cc
+
+700
+
+7
+
+sum of the time for updating the database record (i.e., lr ) and the one for updating the index
+Io, when an object reports its new location to the database server (note: we here do not
+consider the network transfer time). In order to investigate the update time, we randomly
+update 100 location records, and run 10 times for each test, and then compute the average
+value for estimating a single location update. To estimate the average I/O and query time
+of a single query, we randomly generate 50 query ranges, and run 10 times for each query
+range, and then compute the average value. Also, we run 10 times and compute the average
+value for estimating the preprocessing time.
+
+Our experiments are conducted on a computer with 2.16GHz dual core CPU and 1.86GB
+of memory. The page size is fixed to 4K. The maximum number of children nodes in the
+R-tree Io (Ir ) is fixed to 50. The (latest) recorded locations of moving objects and the
+restricted areas are stored using the MYSQL Spatial Extensions8. (Henceforth, we call them
+location records and restricted area records, respectively.) Other parameters are listed in
+Table 2, in which the numbers in bold denote the default settings. N , M and ζ are the
+settings of synthetic data sets. The default setting of each restricted area r is a rectangle
+with 40 × 10 size. Sq, Ta, Dm, Tz and Cc denote square, triangle, diamond, trapezoid and
+crosscriss, respectively. The specific settings of these geometries are listed in Table 3. These
+geometries are all bounded by the 500 × 500 rectangular box (i.e., MBR). L in Table 3 is
+500, and (x, y) are the coordinates of left-bottom point of its MBR, which are generated
+randomly. We use two types of PDFs: uniform distribution and distorted Gaussian. We use
+the UD and DG to denote them, respectively. In our experiments, the standard deviation is
+set to τ
+5 (note: τ is the distance threshold), and the mean ux and uy are set to the coordinates
+of the recorded location lr . Following the guidance of [39], we choose 700 as the number of
+pre-set points. In addition, we use 7 coarse versions for the multi-step computation, corre-
+sponding workload errors (WEs) are listed in Table 4, these data are obtained by the off-line
+test. All workload errors refer to the absolute workload errors. More specifically, CV7 is
+the average (absolute) workload error, other versions are the maximum (absolute) workload
+errors. We remark that although θ = 7 is not mandatory, a too small value weakens the
+efficiency of the multi-step mechanism, and a too large value incurs not only over-tedious
+tests, but also negligible pruning/validating power between two consecutive versions.
+
+8More information can be obtained in site: http://dev.mysql.com/doc/refman/5.1/en/spatial-extensions.html.
+
+Geoinformatica (2016) 20:19–58
+
+Table 3 Use Cases of η
+
+Shape Value
+
+46
+
+Ta
+
+Tz
+
+Dm
+
+Cc
+
+(x, y), (x + L, y), (x + L/2, y + L)
+(x, y), (x + L, y), (x + 2L/3, y + L), (x + L/3, y + L)
+(x + L/2, y), (x + 2L/3, y + L/3), (x + L, y + L/2), (x + 2L/3, y + 2L/3), (x + L/2, y + L),
+(x + L/3, y + 2L/3), (x, y + L/2), (x + L/3, y + L/3)
+[(x + L/3, y), (x + 2L/3, y), (x + 2L/3, y + L/3), (x + L, y + L/3), (x + L, y + 2L/3),
+(x + 2L/3, y + 2L/3), (x + 2L/3, y + L), (x + L/3, y + L), (x + L/3, y + 2L/3),
+(x, y + 2L/3), (x, y + L/3), (x + L/3, y + L/3)]
+
+7.2 Performance study
+
+As this paper is the first attempt to the CSPTRQ, the competitors are unavailable. We
+implemented the baseline method9 (Section 3.3), the proposed methods for the explicit
+(Section 4) and implicit (Section 5) queries, respectively. For brevity, we use the B, PE
+and PI to denote the baseline method, the proposed method for the explicit query, and the
+proposed method for the implicit query, respectively. Note that we present the results for the
+explicit and implicit queries in a mixed manner, in order to save space. We first investigate
+the impact of parameters ψ, pt and η on the performance based on both real and synthetic
+data sets, and then study the impact of parameters N , M, (cid:6), ζ on the performance based
+on synthetic data sets. Finally, we investigate the effectiveness of the optimization strategy
+proposed in Section 6.
+
+Effect of ψ. Figure 10 illustrates the results by varying ψ (the number of edges of R)
+from 4 to 64. Specifically, Figs. 10a and10b are the results when synthetic data sets are
+used. In contrast, Figs. 10c and10d are the results when real data sets are used. Furthermore,
+Figs. 10a and10c are the results by setting the PDF as the uniform distribution; Figs. 10b
+and 10d are the results by setting the PDF as the distorted Gaussian. The columns in figures
+indicate the I/O time, whereas the curves represent the query time. Each query range in this
+group of experiments is an equilateral polygon. It has the property that the distance from its
+center to vertex is 250. From these figures, we can see that, regardless of the I/O or query
+performance, the PE always outperforms the B, which demonstrates the efficiency of the
+tactics proposed in Section 4. The query time of the PI is obviously less than the one of
+the PE, which proves the efficiency of the tactics proposed in Section 5. Furthermore, we
+can see that the query time is slightly increasing when ψ increases. This is mainly because
+the time computing s increases. The I/O time of the B is almost constant. There are two
+reasons: (i) the size of MBR is a fixed value, so the number of candidate moving objects
+(i.e., |O∗|) are almost same for two queries with different ψ; and (ii) for each object o ∈ O∗,
+it always fetches restricted area records from the database only if the object o has candidate
+restricted areas (i.e., |R∗| (cid:7)= 0). Whereas the I/O time of the proposed methods are slightly
+
+9Note that, the efficiency of the baseline method for the explicit and implicit queries are identical; for ease
+of presentation, we here do not differentiate them.
+
+Geoinformatica (2016) 20:19–58
+
+47
+
+Table 4 Multiple Version Workload Errors
+
+Property
+
+(cid:15)
+
+(cid:14) k·N1
+θ
+WE
+
+CV1
+
+100
+
+CV2
+
+200
+
+CV3
+
+300
+
+CV4
+
+400
+
+CV5
+
+500
+
+CV6
+
+600
+
+CV7
+
+700
+
+0.3607
+
+0.2499
+
+0.2131
+
+0.1921
+
+0.1504
+
+0.1067
+
+0.0095
+
+increasing. This is because both the PE and PI fetch restricted area records according to
+the result of o. (cid:9) ∩R, this intersection set is more likely equal to ∅ when ψ is small; in
+this case, the proposed methods need not fetch restricted area records. On the whole, this
+set of experiments demonstrate that the number of edges of R makes small impact on the
+performance, and the proposed methods always outperform the B.
+
+Effect of pt . Figure 11 illustrates the results by varying the probability threshold pt from
+0.1 to 0.9. We can see that the size of pt makes no impact on the performance of the B,
+whereas it makes big impact on the performance of the proposed methods. Specifically,
+the query time of the PE decreases when pt increases. This demonstrates the efficiency
+of multi-step computation discussed in Section 4.2 (note: the strategies proposed in
+Section 4.1 are unrelated with the value of pt , as the parameter pt is only used in the
+threshold pruning/validating mechanisms. Figures 12a and12b reflect this fact. In the fig-
+ures |O∗| denotes the number of candidate moving objects, and k1 + k2 + k3 denotes the
+objects pruned/validated using techniques presented in Section 4.1, recall Algorithm 1 and
+Section 4.3.2). Interestingly, as pt increases, the query time of the PI first decreases (when
+pt < 0.5), and then increases (when pt > 0.5). This phenomenon is due to the enhanced
+multi-step computation. In particular, this interesting results are more obvious when the
+
+Fig. 10 Query and I/O Efficiency vs. ψ
+
+48
+
+Geoinformatica (2016) 20:19–58
+
+Fig. 11 Query and I/O Efficiency vs. pt
+
+PDF is the distorted Gaussian (see Figs. 11b and11d). This set of experiments also show
+the proposed methods always outperform the B regardless of the query or I/O performance.
+Effect of η. In this set of experiments, we adopt several typical geometries (cf. Table 3)
+as the query ranges. Figure 13 illustrates the results. From these figures, we can see that
+the I/O time of the B is almost constant. This is because these geometries have the same
+size of MBRs. Interestingly, we observe that the query time goes up when we vary η (the
+shape of R) from the Dm to the Tz. It is easy to know that, the areas of the Dm, Ta, Cc
+and Tz are L2
+3 , respectively. This implies that, for two different query
+ranges with the same size of MBRs, the one with the larger area usually is more likely to
+spend more time. This set of experiments also demonstrate the robustness and flexibility of
+our methods.
+
+2 , 5L2
+
+and 2L2
+
+3 , L2
+
+9
+
+So far, all the experiments are based on both real and synthetic data sets. For the
+two data sets, the preprocessing time and update time are illustrated in Figs. 14a and
+14b, respectively. The preprocessing process is very fast, it only takes several seconds.
+
+Fig. 12 |O∗| and k1 + k2 + k3 vs. pt
+
+Geoinformatica (2016) 20:19–58
+
+49
+
+Fig. 13 Query and I/O Efficiency vs. η
+
+(Note: recall Fig. 3d, the time is the hour level if we pre-compute a set of uncertainty
+regions). Also, the update time is very short, it only takes about tens of milliseconds. In
+the sequel, we study the impact of N , M, (cid:6) and ζ on the performance, based on synthetic
+data sets.
+
+Effect of (cid:6). Figure 15 illustrates the results by varying (cid:6) (the size of R) from 100 × 100
+to 500 × 500. From these figures, we can see that, the superiorities of the proposed methods
+are more obvious when (cid:6) is large and/or when the PDF is the distorted Gaussian. When (cid:6)
+
+preprocessing
+
+update
+
+preprocessing
+
+update
+
+datasets
+
+(a)
+
+datasets
+(b)
+
+N
+(c)
+
+preprocessing
+
+update
+
+preprocessing
+
+update
+
+)
+s
+(
+e
+m
+
+i
+t
+ 
+
+i
+
+g
+n
+s
+s
+e
+c
+o
+r
+p
+e
+r
+p
+
+)
+s
+(
+e
+m
+
+i
+
+i
+t
+ 
+g
+n
+s
+s
+e
+c
+o
+r
+p
+e
+r
+p
+
+)
+s
+(
+e
+m
+
+i
+t
+ 
+e
+t
+a
+d
+p
+u
+
+M
+(d)
+
+)
+s
+(
+e
+m
+
+i
+
+i
+t
+ 
+g
+n
+s
+s
+e
+c
+o
+r
+p
+e
+r
+p
+
+)
+s
+(
+e
+m
+
+i
+t
+ 
+
+t
+
+e
+a
+d
+p
+u
+
+)
+s
+(
+e
+m
+
+i
+
+i
+t
+ 
+g
+n
+s
+s
+e
+c
+o
+r
+p
+e
+r
+p
+
+)
+s
+(
+e
+m
+
+i
+t
+ 
+e
+t
+a
+d
+p
+u
+
+)
+s
+(
+e
+m
+
+i
+t
+ 
+
+t
+
+e
+a
+d
+p
+u
+
+Fig. 14 Preprocessing and Update Performance
+
+(e)
+
+50
+
+Geoinformatica (2016) 20:19–58
+
+Fig. 15 Query and I/O Efficiency vs. (cid:6)
+
+increases, both the I/O and query time increase for all the methods. This is because there
+are more candidate moving objects to be located in R (with the increase of (cid:6)). Naturally,
+more location records and corresponding restricted area records need to be fetched from the
+database, which incurs more I/O time. For those increased objects, we also have to compute
+their probabilities, which incurs more CPU time.
+
+Effect of N . Figures 14c and16 illustrate the experimental results by varying N (the
+number of moving objects) from 1e + 4 to 5e + 4. From these figures, we can see that the
+preprocessing time, update time, query time and I/O time increase as N increases. In terms
+of the query and I/O time, the proposed methods always outperform the B, and the (time)
+growth rate of the B is significantly faster than the ones of the proposed methods as N
+increases (especially when N > 3e + 4). This demonstrates that the proposed methods have
+better scalability.
+
+Effect of M. Figures 14d and 17 illustrate the results by varying M (the number of
+restricted areas) from 1e + 4 to 5e + 4. We can see from Fig. 14d that the preprocessing
+time increases as M increases, whereas the update time is constant as M increases. This is
+because the preprocessing process needs to construct Ir (the index of restricted areas); the
+update process however, is irrelevant with Ir . In addition, Fig. 17 shows that both the query
+and I/O time slightly increase as M increases, and the proposed methods always outperform
+the B. Similar to the last set of experiments, in terms of the query and I/O time, the growth
+rate of the B is significantly faster than the proposed methods as M increases. This further
+demonstrates that the proposed methods have better scalability.
+
+Fig. 16 Query and I/O Efficiency vs. N
+
+Geoinformatica (2016) 20:19–58
+
+51
+
+Fig. 17 Query and I/O Efficiency vs. M
+
+Effect of ζ . Figures 14e and18 illustrate the results by varying ζ (the number of edges
+of the restricted area) from 4 to 64. In this group of experiments, each restricted area r is
+set to an equilateral polygon. It has the property that the distance from its center to ver-
+tex is 20. As we expected, the update time is constant as ζ increases, which is shown in
+Fig. 14e. Interestingly, the preprocessing time increases as ζ increases. Note that, we
+stored the edges of each r together with its MBR in the database beforehand. In
+theory, constructing Ir
+is relevant with the MBRs rather than the number of edges
+of each r. The experimental results however, show the preprocessing time is posi-
+tively proportional to ζ . This is mainly because the time fetching the MBRs from
+the database goes up as ζ increases10. Even so, the preprocessing time is still short.
+It only takes about one minute even if ζ is set
+to 64. As we expected, when ζ
+increases, both the query and I/O time increase, which is shown in Fig. 18. Also, the
+proposed methods always outperform the B, and the superiorities are more obvious
+when ζ is large.
+
+Up to now, we have reported the main experimental results related to the baseline method
+and proposed methods. We are now ready to investigate the effectiveness of the optimization
+strategy proposed in Section 6. With regard to explicit and implicit queries, we use respec-
+tively the PE+O and PI+O to denote the algorithms integrated the optimization strategy
+presented in Section 6, for ease of discussion.
+
+Effectiveness of optimization strategy. Figure 19a reports the results when explicit
+queries are executed. From this figure we can easily see that the I/O time of PE+O is
+obviously less than the one of PE, i.e., the improvement factor11 is relatively large. This
+demonstrates that the strategy proposed in Section 6 is effective. Note that the query time of
+PE+O is also less than the one of PE (although the improvement factor is not as much as the
+one for I/O time). Figure 19b reports the results when implicit queries are executed, from
+which we can derive similar findings. We remark that when we vary other parameters (e.g.,
+ξ , N , M) instead of ζ , the experimental results also support our findings, i.e., the PE+O
+(PI+O) outperforms the PE (PI), and the improvement factor for I/O time is relatively large.
+To save space, we here do not plot those results.
+
+10The reason is that, for two groups of restricted area records with different ζ , the group of restricted area
+records with more edges usually occupy more disk space, which renders more time on skipping between
+different disk pages, when we fetch a series of MBRs from database. Further demonstration is beyond the
+theme of this paper.
+11Here the improvement factor refers to the ratio of time. Assume that the I/O time of PE is 0.8736 seconds
+and the one of PI+O is 0.274 seconds, for example, the improvement factor is 0.8736
+0.0.274
+
+= 3.189.
+
+52
+
+Geoinformatica (2016) 20:19–58
+
+Fig. 18 Query and I/O Efficiency vs. ζ
+
+In addition to testing the total I/O time, we also investigate the I/O time for retrieving
+restricted areas and moving objects, respectively. Figure 20 reports the results when the
+default settings are used. We can easily see that in terms of PE, most of I/O time are spent
+on retrieving restricted area data from the database. In contrast, the PE+O takes less time to
+retrieve restricted areas, as the optimization strategy discussed in Section 6 avoids to retrieve
+redundant restricted area data from the database. Another interesting finding is that when
+the CL data sets are used, the effectiveness of optimization strategy is more obvious. This
+is because the points (i.e., recorded locations of moving objects) are clustered in the CL
+data sets, rendering that different candidate moving objects easily share the same restricted
+areas. We remark that the I/O time of implicit query is the same as the one of explicit query,
+omitted for saving space.
+
+Summary. On the whole, these experimental results show us that (i) the proposed
+algorithms obviously outperform the baseline method regardless of the I/O or query
+performance; (ii) the proposed algorithms have better scalability, compared to the base-
+line method; (iii) while the I/O performance of two proposed algorithms is identical,
+they have different query performance (it is consistent with our theoretical analysis);
+(iv) the preprocessing process is fast and the update efficiency is high; (v) the opti-
+mization strategy (discussed in Section 6) can significantly improve the I/O efficiency,
+and also reduce the query time although the improvement factor is not very large. Fur-
+thermore, these experimental results also demonstrate the robustness and flexibility of
+our methods.
+
+Fig. 19 The effectiveness of optimization
+
+Geoinformatica (2016) 20:19–58
+
+53
+
+Fig. 20 Total I/O time and patial I/O time. In these figures, the term “part 1” denotes the I/O cost for
+retrieving moving objects, and the term “part 2” denotes the I/O cost for retrieving restricted areas
+
+8 Concluding remarks
+
+In this paper, we discussed the CSPTRQ for moving objects. We differentiated two forms
+of CSPTRQs: explicit and implicit ones (as they can have different solutions, performance
+results, and purposes/applications). We showed the challenges, and proposed efficient solu-
+tions that are easy-to-understand and also easy-to-implement. In brief, to answer the explicit
+query, we incorporated two main ideas: swapping the order of geometric operations; and
+computing the probability using a multi-step mechanism. We then extended these ideas
+to answer the implicit query, in which an enhanced multi-step mechanism is naturally
+developed. Furthermore, we developed a novel strategy used to retrieving restricted areas
+in a more efficient manner. While the rationales behind our solutions are simple, exten-
+sive experimental results demonstrated the effectiveness and efficiency of the proposed
+algorithms. Meanwhile, from the experiential results, we further perceived the difference
+between explicit and implicit queries; this interesting finding is meaningful for the future
+research. In the future, we prepare to study other types of probabilistic threshold queries
+(e.g., concurrent queries, kNN queries) while considering the existence of restricted areas
+(i.e., obstacles). Another interesting research topic is to extend the concept of restricted
+areas to other uncertainty models.
+
+Acknowledgments This work was supported by the National Basic Research 973 Program of China
+(No. 2015CB352403), the NSFC (No. 61202024, 61202025, 61370055, 61428204), the EU FP7 CLIMBER
+project (No. PIRSES-GA-2012-318939), the Scientific Innovation Act of STCSM (No. 13511504200), the
+RGC Project of Hongkong (No. 711110), the Natural Science Foundation of Shanghai (No. 12ZR1445000),
+Shanghai Educational Development Foundation Shanghai Chenguang Project (No. 12CG09), Shanghai
+Pujiang Program (No. 13PJ1403900), the Program for Changjiang Scholars and Innovative Research
+Team in University of China (IRT1158, PCSIRT), Singapore NRF (CREATE E2S2), the State High-Tech
+Development Plan (No. 2013AA01A601).
+
+References
+
+1. Albinsson P-A, Zhai S (2003) High precision touch screen interaction. In: International Conference on
+
+Human Factors in Computing Systems (CHI), pages 105–112
+
+2. Ali ME, Tanin E, Zhang R, Ramamohanarao K (2012) Probabilistic voronoi diagrams for probabilistic
+
+moving nearest neighbor queries. Data and Knowledge Engineering (DKE) 75:1–33
+
+3. Chaudhuri S, Das G, Hristidis V, Weikum G (2004) Probabilistic ranking of database query results. In:
+
+International Conference on Very Large Data Bases (VLDB), pp 888–899
+
+4. Cheema MA, Brankovic L, Lin X, Zhang W, Wang W. (2010) Multi-guarded safe zone: An effec-
+tive technique to monitor moving circular range queries. In: IEEE International Conference on Data
+Engineering (ICDE), pp 189–200
+
+54
+
+Geoinformatica (2016) 20:19–58
+
+5. Chen J, Cheng R (2007) Efficient evaluation of imprecise location dependent queries. In: IEEE
+
+International Conference on Data Engineering (ICDE), pp 586–595
+
+6. Cheng R, Chen L, Chen J, Xie X (2009) Evaluating probability threshold k-nearest-neighbor queries over
+uncertain data. In: International Conference on Extending Database Technology (EDBT), pp 672–683
+7. Cheng R, Kalashnikov DV, Prabhakar S (2004) Querying imprecise data in moving object environments.
+
+IEEE Transactions on Knowledge and Data Engineering (TKDE) 16(9):1112–1127
+
+8. Cheng R, Xia Y, Prabhakar S, Shah R, Vitter JS (2004) Efficient indexing methods for probabilistic
+threshold queries over uncertain data. In: International Conference on Very Large Data Bases (VLDB),
+pp 876–887
+
+9. Chung BSE, Lee W-C, Chen ALP (2009) Processing probabilistic spatio-temporal range queries over
+moving objects with uncertainty. In: International Conference on Extending Database Technology
+(EDBT), pp 60–71
+
+10. Cui B, Lin D, Impact K.-L. Tan. (2006) A twin-index framework for efficient moving object query
+
+processing. Data and Knowledge Engineering (DKE) 59(1):63–85
+
+11. Duwaer AL (1993) Data processing system with a touch screen and a digitizing tablet, both integrated
+
+in an input device. US Patent, 5231381
+
+12. Gao Y, Zheng B (2009) Continuous obstructed nearest neighbor queries in spatial databases. In: ACM
+
+International Conference on Management of Data (SIGMOD), pp 577–589
+
+13. Gedik B, Wu K-L, Yu PS, Liu L (2006) Processing moving queries over moving objects using motion-
+adaptive indexes. IEEE Transactions on Knowledge and Data Engineering (TKDE) 18(5):651–668
+14. Hofmann MO, McGovern A, Whitebread KR (1998) Mobile agents on the digital battlefield. In: Agents,
+
+pp 219–225
+
+15. Hu H, Xu J, Lee DL (2005) A generic framework for monitoring continuous spatial queries over moving
+
+objects. In: ACM International Conference on Management of Data (SIGMOD), pp 479–490
+
+16. Hua M, Pei J, Zhang W, Lin X (2008) Ranking queries on uncertain data: a probabilistic threshold
+
+approach. In: ACM International Conference on Management of Data (SIGMOD), pp 673–686
+
+17. Kuijpers B, databases W. Othman. Trajectory (2010) Data models, uncertainty and complete query
+
+languages. Journal of Computer and System Sciences (JCSS) 76(7):538–560
+
+18. McCarthy M, He Z, Wang XS (2014) Evaluation of range queries with predicates on moving objects.
+
+IEEE Transactions on Knowledge and Data Engineering (TKDE) 26(5):1144–1157
+
+19. Mokbel MF, Aref WG (2008) Sole: scalable on-line execution of continuous queries on spatio-temporal
+
+data streams. The VLDB Journal (VLDB J.) 17(5):971–995
+
+20. Mokbel MF, Xiong X, Sina W., Aref G. (2004) Scalable incremental processing of continuous queries
+in spatio-temporal databases. In: ACM International Conference on Management of Data (SIGMOD),
+pp 623–634
+
+21. Mokhtar H, Su J, Ibarra OH (2002) On moving object queries. In: International Symposium on Principles
+
+of Database Systems (PODS), pp 188–198
+
+22. Murphy RR (2014) Disaster Robotics. The MIT Press, Cambridge
+23. Olteanu D, Wen H. (2012) Ranking query answers in probabilistic databases: Complexity and efficient
+
+algorithms. In: IEEE International Conference on Data Engineering (ICDE), pp 282–293
+
+24. Pfoser D, Jensen CS (1999) Capturing the uncertainty of moving-object representations. In: International
+
+Symposium on Advances in Spatial Databases (SSD), pp 111–132
+
+25. Prabhakar S, Xia Y, Kalashnikov DV, Aref WG, Hambrusch SE (2002) Query indexing and velocity
+constrained indexing: Scalable techniques for continuous queries on moving objects. IEEE Transactions
+on Computers (TC) 51(10):1124–1140
+
+26. Qi Y, Jain R, Singh S, Prabhakar S (2010) Threshold query optimization for uncertain data. In: ACM
+
+International Conference on Management of Data (SIGMOD), pp 315–326
+
+27. Sidlauskas D, Saltenis S, Jensen CS (2012) Parallel main-memory indexing for moving-object query
+and update workloads. In: ACM International Conference on Management of Data (SIGMOD),
+pp 37–48
+
+28. Sistla AP, Wolfson O, Chamberlain S, Dao S (1997) Modeling and querying moving objects. In: IEEE
+
+International Conference on Data Engineering (ICDE), pp 422–432
+
+29. Sistla AP, Wolfson O, Chamberlain S, Dao S (1997) Querying the uncertain position of moving objects.
+
+In: Temporal Databases, pp 310–337
+
+30. Sultana N, Hashem T, Kulik L (2014) Group nearest neighbor queries in the presence of obstacles.
+In: ACM SIGSPATIAL International Conference on Advances in Geographic Information Systems
+(SIGSPATIAL/GIS), pp 481–484
+
+31. Sun W, Chen C, Zheng B, Chen C, Zhu L, Liu W, Huang Y (2013) Merged aggregate nearest neighbor
+query processing in road networks. In: ACM Conference on Information and Knowledge Management
+(CIKM), pp 2243–2248
+
+Geoinformatica (2016) 20:19–58
+
+55
+
+32. Tao Y, Cheng R, Xiao X, Ngai WK, Kao B, Prabhakar S (2005) Indexing multi-dimensional uncertain
+data with arbitrary probability density functions. In: International Conference on Very Large Data Bases
+(VLDB), pp 922–933
+
+33. Tao Y, Papadias D, Sun J (2003) The tpr*-tree: An optimized spatio-temporal access method for
+
+predictive queries. In: International Conference on Very Large Data Bases (VLDB), pp 790–801
+
+34. Tao Y., Xiao X., Cheng R. (2007) Range search on multidimensional uncertain data. ACM Transactions
+
+on Database Systems (TODS) 32(3)
+
+35. Trajcevski G (2003) Probabilistic range queries in moving objects databases with uncertainty. In:
+International ACM Workshop on Data Engineering for Wireless and Mobile Access (MobiDE), pp 39–45
+36. Trajcevski G, Choudhary AN, Wolfson O, Ye L, Li G (2010) Uncertain range queries for necklaces. In:
+
+International Conference on Mobile Data Management (MDM), pp 199–208
+
+37. Trajcevski G, Wolfson O, Hinrichs K, Chamberlain S (2004) Managing uncertainty in moving objects
+
+databases. ACM Transactions on Database Systems (TODS) 29(3):463–507
+
+38. Wang H, Zimmermann R (2011) Processing of continuous location-based range queries on moving
+objects in road networks. IEEE Transactions on Knowledge and Data Engineering (TKDE) 23(7):1065–1078
+39. Wang Z-J, Wang D-H, Yao B, Guo M (2015) Probabilistic range query over uncertain moving objects
+in constrained two-dimensional space. IEEE Transactions on Knowledge and Data Engineering (TKDE)
+27(3):866–879
+
+40. Wolfson O, Sistla AP, Chamberlain S, Yesha Y (1999) Updating and querying databases that track
+
+mobile units. Distributed and Parallel Databases (DPD) 7(3):257–387
+
+41. Wolfson O, Xu B, Chamberlain S, Jiang L (1998) Moving objects databases: Issues and solutions. In:
+International Conference on Scientific and Statistical Database Management (SSDBM), pp 111–122
+42. Wu K-L, Chen S-K, Yu PS (2006) Incremental processing of continual range queries over moving
+
+objects. IEEE Transactions on Knowledge and Data Engineering (TKDE) 18(11):1560–1575
+
+43. Xie X, Lu H, Pedersen TB (2013) Efficient distance-aware query evaluation on indoor moving objects.
+
+In: IEEE International Conference on Data Engineering (ICDE), pp 434–445
+
+44. Yuan Y, Chen L, Wang G (2010) Efficiently answering probability threshold-based shortest path queries
+over uncertain graphs. In: International Conference on Database Systems for Advanced Applications
+(DASFAA), pp 155–170
+
+45. Zhang M, Chen S, Jensen CS, Ooi BC, Zhang Z (2009) Effectively indexing uncertain moving objects
+
+for predictive queries. Proceedings of the VLDB Endowment (PVLDB) 2(1):1198–1209
+
+46. Zhang R, Jagadish HV, Dai BT, Ramamohanarao K (2010) Optimized algorithms for predictive range
+
+and knn queries on moving objects. Information Systems (IS) 35(8):911–932
+
+47. Zhang Y, Lin X, Tao Y, Zhang W, Wang H (2012) Efficient computation of range aggregates against
+uncertain location-based queries. IEEE Transactions on Knowledge and Data Engineering (TKDE)
+24(7):1244–1258
+
+48. Zheng K, Trajcevski G, Zhou X, Scheuermann P (2011) Probabilistic range queries for uncertain tra-
+jectories on road networks. In: International Conference on Extending Database Technology (EDBT),
+pp 283–294
+
+Zhi-Jie Wang is currently the fifth-year PhD candidate in the Department of Computer Science and
+Engineering, Shanghai Jiao Tong University, China. His research interests include query processing on
+uncertain data, management of moving object data, scalable data analytics, algorithm design & analysis in
+computational geometry and spatial databases.
+
+56
+
+Geoinformatica (2016) 20:19–58
+
+Bin Yao received the PhD degree in computer science from the Florida State University, the United States.
+He is currently an associate professor in the Department of Computer Science and Engineering, Shanghai
+Jiao Tong University, China. His research interests include management and indexing of large databases,
+query processing in spatial and multimedia databases, string and keyword search, and scalable data analytics.
+
+Reynold Cheng received the PhD degree in computer science from the Purdue University, the United States.
+He is currently an associate professor in the Department of Computer Science, University of Hong Kong. His
+research interests include uncertainty management and efficient execution of high-update streaming applica-
+tions such as location databases and sensor networks. He is also interested in privacy and data mining. He is
+a member of the IEEE and ACM.
+
+Geoinformatica (2016) 20:19–58
+
+57
+
+Xiaofeng Gao received the PhD degree in computer science from the University of Texas at Dallas, the
+United States. She is currently an associate professor with the Department of Computer Science and Engi-
+neering, Shanghai Jiao Tong University, China. Her research interests include indexing of large databases,
+data retrieval, distributed database systems, algorithm design, wireless communications, and combinatorial
+optimizations.
+
+Lei Zou received the PhD degree in Computer Science from the Huazhong University of Science and
+Technology (HUST), China. He is currently an associate professor in the Institute of Computer Science
+and Technology, Peking University, China. His research interests include graph database, knowledge-base
+construction & search, data mining and semantic data management.
+
+58
+
+Geoinformatica (2016) 20:19–58
+
+Haibing Guan received the PhD degree in computer science from the Tongji University, China. He is cur-
+rently a professor with the Faculty of Computer Science, Shanghai Jiao Tong University, Shanghai, China.
+His current research interests include, but not limited to, computer architecture, compiling, virtualization,
+and hardware/software codesign. He is a member of the IEEE and ACM.
+
+Minyi Guo received the PhD degree in computer science from the University of Tsukuba, Japan. He is
+currently a chair professor and a head of the Department of Computer Science and Engineering, Shanghai
+Jiao Tong University, China. His research interests include, but not limited to, embedded systems and per-
+vasive computing. He is on the editorial board of the journals IEEE TPDS and IEEE TC. He is a member of
+the ACM, and a senior member of the IEEE.
+
+

@@ -1,0 +1,2258 @@
+Geoinformatica
+https://doi.org/10.1007/s10707-017-0315-0
+
+Aggregate keyword nearest neighbor queries on road
+networks
+
+Pengfei Zhang1 · Huaizhong Lin1 · Yunjun Gao1 ·
+Dongming Lu1
+
+Received: 6 May 2017 / Revised: 2 October 2017 / Accepted: 11 December 2017
+© Springer Science+Business Media, LLC, part of Springer Nature 2017
+
+Abstract Given a group Q of query points and a set P of points of interest (POIs), aggre-
+gate nearest neighbor (ANN) queries find a POI p from P that achieves the smallest
+aggregate distance. Specifically, the aggregate distance is defined over the set of distances
+between p and all query points in Q. Existing studies on ANN query mainly consider the
+spatial proximity, whereas the textual similarity has received considerable attention recently.
+In this work, we utilize user-specified query keywords to capture textual similarity. We
+study the aggregate keyword nearest neighbor (AKNN) queries, finding the POI that has
+the smallest aggregate distance and covers all query keywords. Nevertheless, existing meth-
+ods on ANN query are either inapplicable or inefficient when applied to the AKNN query.
+To answer our query efficiently, we first develop a dual-granularity (DG) indexing schema.
+It preserves abstracts of the road network by a tree structure, and preserves detailed net-
+work information by an extended adjacency list. Then, we propose a minimal first search
+(MFS) algorithm. It traverses the tree and explores the node with the minimal aggregate
+distance iteratively. This method suffers from false hits arising from keyword tests. Thus,
+we propose the collaborative filtering technique, which performs keywords test by multi-
+ple keyword bitmaps collectively rather than by only one. Extensive experiments on both
+real and synthetic datasets demonstrate the superiority of our algorithms and optimizing
+strategies.
+
+(cid:2) Huaizhong Lin
+
+linhz@zju.edu.cn
+
+Pengfei Zhang
+zpf 2013zb@zju.edu.cn
+
+Yunjun Gao
+gaoyj@zju.edu.cn
+
+Dongming Lu
+ldm@zju.edu.cn
+
+1
+
+College of Computer Science and Technology, Zhejiang University, Hangzhou, China
+
+Keywords Nearest neighbor · Keyword search · Road network · Index structure
+
+Geoinformatica
+
+1 Introduction
+
+Aggregate nearest neighbor (ANN) queries [23, 32, 35, 40] have been widely studied, which
+find numerous real applications in spatial and multimedia databases as pointed out by [18].
+Typically, given a group Q of query points, the ANN query retrieves the optimal point of
+interest (POI) p that has the smallest aggregate distance from the underlying database P.
+The aggregate distance is defined over the set of distances between p and all query points
+in Q by an aggregate function, e.g., the max or sum function. For instance, we denote by
+Amax(p, Q) = max{dist (p, qi), ∀qi ∈ Q} the aggregate distance between p and Q w.r.t
+the max function. In particular, dist (p, qi) captures the network distance between p and qi
+in our settings.
+
+To our knowledge, the majority of existing studies on ANN queries fail to consider the
+textual similarity denoted by user-specified query keywords. In practice, however, users
+would rather to ask for a POI that has the smallest aggregate distance and meanwhile covers
+all query keywords. We say a POI p covers a set ψ of keywords if ψ ⊆ p.ψ, wherep.ψ
+denotes the associated keywords to p. Motivated by this, we propose to study the aggregate
+keyword nearest neighbor (AKNN) query. More formally, given a group Q of query points,
+a set ψ of query keywords, and a set P of POIs on the road network, it finds a POI p ∈ P
+that has the smallest aggregate distance and ψ ⊆ p.ψ. As a result, our query combines the
+spatial proximity and textual similarity to get desired results.
+
+Next, we present examples of the AKNN query. Figure 1 illustrates a road network with
+9 vertices and 9 edges. Suppose there are some apartments, e.g., p1, lying on edges. Each
+apartment is associated with a set of keywords, such as {k,s}, to capture some features of it.
+Each segment on the edge is associated with a positive number denoting the length of it. For
+instance, the length of the segment p3, p4 is 5. For two friends who work at the query points
+q1 and q2, they are to find an apartment to live together. In particular, the apartment should
+be sunny (s), quiet (q) and has a kitchen (k). On the other hand, max{||pi, q1||, ||pi, q2||}
+
+v 1
+
+2
+
+v 2
+
+2
+
+q 2
+
+2
+
+2
+p 7 { k }
+
+p 1 { k , q , s }
+5
+
+p 3 { k , s }
+5
+
+2
+v 6
+p 9 { k , s }
+
+3
+
+v 5
+
+p 4 { s }
+3
+
+v 7
+
+p 5 { k }
+3
+
+3
+
+8
+
+3
+p 2 { k , s }
+
+6
+v 3
+
+4
+
+3
+
+p 6 { q , s }
+
+v 8
+
+4
+
+q 1
+
+5
+v 4
+3
+
+3
+
+p 8 { k , q , s }
+
+v 9
+
+Fig. 1 Example of the AKNN query
+
+Geoinformatica
+
+should be smallest w.r.t the final result pi. Although both p1 and p8 meet the keyword con-
+straints, p1 has a smaller aggregate distance Amax than p8. We thus deliver p1 as the answer.
+As another example, suppose P is a collection of candidate locations on the road network,
+and Q is a set of locations of potential customers. Our query can be used to find a location
+satisfying user-specified keyword constraints to build a supermarket, which minimizes the
+maximal distance to these customers.
+
+Techniques [21–24, 26, 32, 35, 40] are proposed to answer the ANN query. However,
+they are either inapplicable or inefficient when applied to our query. Studies [21–24] explore
+the ANN query on Euclidean space rather than road network. Solutions [26, 32, 35, 40] are
+proposed for road networks. To improve the query efficiency, literature [26] proposes to
+develop approximate algorithms, whereas we target to find exact answers. Although NVD
+[32, 40] brings much benefit to the ANN query, it has difficulties in answering the AKNN
+query. This is because that: 1) building NVD for each unique keyword is infeasible since the
+number of unique keywords is large; 2) the number of network voronoi cells grows linearly
+to the number of POIs, which incurs high space and query overheads when the number of
+POIs is large. Literature [35] proposes several solutions for the ANN query. Specifically,
+IER utilizes the property that the Euclidean distance is not greater than the network distance
+for any pair of network vertices. It is inapplicable when the edge weight captures the travel
+time rather than the physical length. TA and CE expand the network around each query
+point incrementally for finding the answer, which are computationally expansive.
+
+In this work, we target to develop efficient methods for the AKNN query. Toward this
+goal, we first develop a dual-granularity (DG) indexing schema, which preserves abstracts
+of the road network by a tree structure and preserves detailed network information by the
+extended adjacency list. Then, we propose a minimal first search (MFS) algorithm. It tra-
+verses the tree structure in the top down manner, and explores the node with the minimal
+aggregate distance iteratively until the answer is found. However, this method suffers from
+the false hit problem, which arises from the keyword tests on tree nodes. Therefore, we
+develop a simple but effective technique called collaborative filtering to further enhance the
+query performance. The main idea is to perform the keyword tests on tree nodes by multi-
+ple keyword bitmaps collectively rather than by only one. As a result, this simple strategy
+achieves more steady and efficient performances.
+
+We summarize the contributions of this work as follows:
+
+– We study the novel AKNN query by introducing the keyword constraints into query
+definition, which finds numerous real applications and incurs new challenges as well.
+– We propose the DG indexing schema and develop the MFS algorithm as well as some
+
+optimizing strategies to answer our query.
+
+– We extend our algorithms to support the aggregate keyword k nearest neighbor
+(Ak2N 2) queries. In addition, we show how to maintain the DG indexing schema when
+POIs on edges change.
+Extensive experiments are conducted over both real and synthetic datasets to evaluate
+the efficiency of algorithms and effectiveness of optimizing strategies.
+
+–
+
+The remainder of this paper is organized as follows. Section 2 reviews the related
+work. Section 3 formulates the problem, introduces some index structures and reveals their
+characteristics. We elaborate the dual-granularity indexing schema and its properties in Sec-
+tion 4. We present our algorithms as well as optimizing strategies in Section 5. We discuss
+the Ak2N 2 queries and index maintenance in Section 6, and report empirical studies in
+Section 7. Finally, Section 8 concludes the paper and offers some directions for future work.
+
+Geoinformatica
+
+2 Related work
+
+In this section, we review existing studies related to the AKNN query. We mainly focus on
+aggregate nearest neighbor queries and spatial keywords queries.
+
+2.1 Aggregate nearest neighbor queries
+
+Nearest neighbor (NN) queries have been studied with various variants [1]. One particularly
+related variant to our problem is the ANN query. We proceed to review existing studies on
+the ANN query that are explored in the Euclidean space or road-network, respectively.
+
+Studies [23, 24] explore the ANN query in the Euclidean space, where R-tree is exploited
+to index spatial objects. Considering the curse of dimensionality, Luo et al. [21, 22] develop
+non-index pruning strategies using the distribution of query points. Recently, some variants
+are explored. Studies [14, 16, 18] tackle the flexible aggregate similarity (FANN) problem,
+which focuses on a subset of query points rather than whole query points. Deng et al. [8]
+study the group nearest group (GNG) query. It finds a subset from candidate points such that
+minimizes the total distance from all query points to their nearest neighbors in the retrieved
+subset. Elmongui et al. [9] study the ANN query over the data stream. Given a set of query
+keywords ψ and a group Q of query points, literature [19] retrieves top-k objects from Q
+with the smallest sum of distances to its nearest points in P, such that each nearest point
+matches at least one query keywords. Chen et al. [6] find the optimal route that covers all
+query keywords and has the smallest distance.
+
+To answer the ANN query on road networks, Yiu et al. [35] propose three methods,
+namely the Incremental Euclidean Restriction (IER), Threshold algorithm (TA) and Con-
+current Expansion (CE). Under the assumption that the Euclidean distance is not greater
+than network distance for any pair of vertices on road networks, IER prunes the search
+space by R-tree. As noted earlier, this assumption is inapplicable in our settings where
+edge weight may capture the travel time. Motivated by the search strategy of top-k queries,
+TA and CE expand the network around each query point incrementally for finding the
+aggregate point. TA computes the aggregate distance for each encountered vertex imme-
+diately, but CE postpones the computation until current vertex has been encountered by
+all query points. Based on the network voronoi diagram (NVD), studies [32, 40] answer
+the ANN query in two phases, namely searching phase and pruning phase. The objec-
+tive of searching phase is to retrieve the candidate set S, and then unqualified POIs in
+S will be filtered in the pruning phase progressively. As a result, the one that is still
+reserved in S is indeed the aggregate point. Although NVD brings much benefit to the
+ANN query, it is inapplicable in our context where keywords are considered. This is
+because that: 1) building NVD for each unique keyword is infeasible since the num-
+ber of unique keywords is large; 2) the number of network voronoi cells grows linearly
+to the number of POIs, which incurs high space and query overheads when the num-
+ber of POIs is large. To speed up the query processing, Sadasivam et al. [26] build the
+grid index over the road network. Then, they find approximate answer with some geo-
+metric properties. Literature [17] explores the aggregate query by considering additional
+preferences. In particular, they target to find an object with the highest aggregate location-
+aware preference score w.r.t a set of query points. Sun et al. [30, 31] propose to study
+the merged aggregate nearest neighbor (MANN) query. It finds the aggregate point for a
+merged set that consists of the query set and some points selected from the given candidate
+set.
+
+Geoinformatica
+
+Another related problem is the optimal meeting point (OMP) search [33, 34]. Formally,
+given a set Q of query points, it aims to find a location on the road network, which has the
+smallest aggregate distance to Q. As it does not specify P, there exists infinite number of
+potential aggregate points on edges. More recently, studies [2, 3] explore some variants of
+OMP. Specifically, literature [2] is to find the aggregate point by giving some predefined
+query paths instead of a set of query points. In [3], the authors propose the keyword-aware
+optimal location (KOL) query. It aims to find a point p on the given edges with the smallest
+sum of distances to the objects covering query keywords. Note that, KOL finds an aggregate
+point that achieves the smallest aggregate distance over a set of objects covering query
+keywords together. Clearly, its query goal is different from ours.
+
+2.2 Spatial keyword queries
+
+Spatial keyword queries have received considerable attention in the community of spa-
+tial database. Typically, they take into account both the spatial proximity and the textual
+similarity. Subsequently, we introduce several types of queries related to our problem.
+
+Given a set of query keywords, the mCK [36, 37] queries are to find a group of objects
+that together cover all query keywords and have the smallest diameter. The diameter refers
+to the maximum pairwise distance in the group. They assume that each object is associated
+with only one keyword, which seems to be restrictive in practice. Guo et al. [12] further relax
+the above constraint and propose approximate methods. Similarly, the nearest keyword set
+(NKS) [28] query tries to find a group of objects with smaller diameter such that cover all
+query keywords in multi-dimensional space. They propose a novel method called ProMiSH
+(Projection and Multi Scale Hashing). It enables fast query processing by using random
+projection and hash-based index structures. In [7], the authors are to find the answer set with
+fewer objects by introducing the cardinality of answer set into score function.
+
+The collective spatial keyword query (CoSKQ) [4, 5, 20] extends the mCK query by
+introducing one query point. Specifically, CoSKQ is to find a set of objects that cover all
+query keywords collectively and minimize the distance function. Note that, the distance
+function considers both the distances between the query point and objects in answer set as
+well as the diameter of answer set. It is easy to see that they ask for a group of objects
+with only one query point, but we are to find one aggregate point with a group of query
+points. Recently, studies [11, 29, 38] investigate the CoSKQ query on the road network.
+Specifically, Gao et al. [11] adopt the adjacency list to index the road network and answer
+the CoSKQ approximately and exactly. The group-based collective keyword (GBCK) [29]
+query aims to find a region containing a set of POIs that cover all query keywords. Mean-
+while, they are close to the group of users and are close to each other. Note that, GBCK
+targets to find a region on road networks rather than an aggregate point, which has a differ-
+ent query goal from ours. Literature [38] introduces the range and diameter constraints into
+the query definition. We summarize existing techniques in Table 1. They differ from ours in
+query goal.
+
+3 Preliminaries
+
+We start by giving the formal definition of our problem in Section 3.1. We then introduce
+some index structures in Section 3.2. Table2 summarizes all frequently used notations in
+this paper.
+
+Geoinformatica
+
+Table 1 Summary of existing techniques
+
+Technique
+
+ANN
+
+Road Network
+
+Boolean Keyword
+
+[3, 11, 29, 38],AKNN
+
+[8, 9, 14, 16, 18, 21–24]
+
+[4–7, 12, 17, 19, 20, 28, 36, 37]
+
+[2, 26, 30–35, 40]
+
+Y
+
+Y
+
+Y
+
+Y
+
+Y
+
+N
+
+N
+
+Y
+
+Y
+
+N
+
+Y
+
+N
+
+The bold symbols ‘Y’ or ‘N’ are used to denote whether the corresponding studies are ANN queries, on the
+road network and explore the boolean keyword or not
+
+3.1 Problem statement
+
+We model the road network as an undirected graph G = (V, E), where V denotes the set
+of vertices, and E denotes the set of edges. Each edge ei,j ∈ E between the vertices vi and
+vj is associated with a real number wi,j (wi,j > 0) to capture the weight of this edge. For
+convenience, we refer to the weight as distance hereafter. Note that our proposed methods
+can be applied to the case when weight captures the travel time directly. We suppose that
+the set P of POIs lie on edges. Each p ∈ P consists of a location p.(cid:3) and a set p.ψ of
+keywords. We refer to p.(cid:3) as a triple tuple (vi, vj , [vi, p]) where vi < vj . It indicates that
+p lies on the edge ei,j , and the length of segment vi, p is [vi, p]. For ease of discussion,
+we refer to an object as a vertex, POI or query point. Given any two objects oi and oj on
+the road network, we denote by ||oi, oj || the shortest distance between them, which is a.k.a
+network distance. Besides, we denote by SP(oi, oj ) the shortest path between them. That
+is, a sequence of adjacent edges or segments.
+
+In this work, we study two types of aggregate functions, namely max function Amax
+and sum function Asum. Specifically, for an object o, Amax(o, Q) = max∀qi ∈Q ||o, qi||
+and Asum(o, Q) =
+∀qi ∈Q ||o, qi||. In addition, we term the network distance between
+
+(cid:2)
+
+Table 2 Frequently used notations
+
+Notation
+
+Explanation
+
+G
+Gi
+P
+
+oi
+||oi , oj ||/SP(oi , oj )
+[oi , oj ]/oi , oj
+Q/ψ
+A(·)
+Ap/DAp
+DG
+B(Gi )/U B(Gi )
+mdA(·)
+
+the road network with node sets V and edge sets E
+the DG-G node or subnetwork with node sets Vi and edge sets Ei
+a set of POIs on the road network
+
+a vertex, POI or query point
+the shortest distance/path between oi and oj
+the length/segment between oi and oj that lie on the same edge
+the set of query points/keywords
+the aggregate function, i.e., Amax or Asum
+the best candidate aggregate point/ distance
+
+the dual-granularity indexing schema of the form: (DG-G,DG-A)
+borders/union borders of the tree node Gi
+the minimum aggregate distance
+
+Geoinformatica
+
+an object o and a query point qi ∈ Q, that is||o, q i||, as thepartial distance . We con-
+tinue to take Fig. 1 as an example. We have Amax(p1, Q) = max{||p1, q1||, ||p1, q2||} =
+max{19, 9} = 19.
+
+Definition 1 (Aggregate Keyword Nearest Neighbor Query) Given a road network
+G = (V, E) and an AKNN query of the form (Q, ψ), where Q denotes the group of query
+points, and ψ denotes the set of query keywords. Each query point qi ∈ Q is of the form
+(vi, vj , [vi, qi], wi,j ), where the first three elements are used to determine the query loca-
+tion, and wi,j denotes the length of ei,j . We denote by C the set of candidate aggregate
+points, i.e., C = {p|ψ ⊆ p.ψ ∧ p ∈ P}. The query targets to find the aggregate point
+pi ∈ C such that for ∀pj ∈ C, it holds that A(pi, Q) ≤ A(pj , Q). Here, A(·) can represent
+the max or sum function.
+
+When multiple candidate aggregate points achieve the same smallest aggregate distance,
+we deliver any one of them as the answer randomly. In addition, Definition 1 suggests that
+if p is the aggregate point then ψ ⊆ p.ψ, which can be used to refine the search space.
+
+3.2 Index structures
+
+3.2.1 Adjacency list
+
+The adjacency list [10, 27] preserves the network connectivity by a disk-based storage
+model. Figure 2 presents an example of the adjacency list. Typically, it is comprised of three
+components, as follows:
+– B+-tree: To facilitate the access to adjacency file, B+-tree is exploited to organize
+
+vertices in ascending order of their ids.
+
+– Adjacency file: It stores an entry for each vertex vi on the road network. The entry first
+records the total number of adjacent vertices to vi, and then stores an item for each
+adjacent vertex vj . The item records the id of vj , the length of ei,j and a pointer to the
+point file.
+
+Adjacency File
+2
+
+Null
+
+entry
+
+v1
+
+v2
+
+entry
+
+v2
+v6
+
+v1
+v3
+v6
+
+5
+3.5
+3
+5
+
+7
+3.5
+
+group
+
+group
+
+item
+
+Point File
+(v1,v2), 1
+
+3
+(v2,v3), 4
+1
+3
+4
+
+a,b
+
+a
+
+b
+b,c
+c
+
+5.5
+...
+
+p1
+
+p2
+p3
+p4
+p5
+
+Adjacency List
+
+B+-tree
+
+record
+
+Fig. 2 Example of the adjacency list
+
+Geoinformatica
+
+–
+
+Point file: It maintains the information about POIs. Specifically, it places POIs on the
+same edge into a group and stores them in ascending order of their lengths to the vertex
+with smaller id. For each POI p, the corresponding record stores the id, the length to
+the smaller vertex and associated keywords.
+
+We briefly discuss advantages and disadvantages of the adjacency list. As pointed out by
+[10], there is no preprocessing cost for queries over the adjacency list. However, it suffers
+from insufficient pruning power. With the adjacency list, queries have to expand the road
+network to find the aggregate point incrementally, rather than being directed to promising
+POIs by pruning strategies. In addition, B+-tree organizes the vertices in ascending order of
+their ids instead of their spatial proximity, which incurs substantial I/O costs. We proceed
+to introduce another index structure, which offers abstracts of the road network and can be
+used to refine the search space.
+
+3.2.2 G-tree
+
+Inspired by the R-tree [13], Zhong et al. [39] devise a height-balanced structure called G-
+tree. It can be constructed by two phases, namely top-down phase and bottom-up phase.
+Top-down phase partitions the network into subnetworks recursively until the cardinality,
+i.e., the number of vertices, of the last partition is less than a given threshold. Multilevel
+partitioning algorithm [15] is exploited to perform this task. After partitioning, each sub-
+network in G corresponds to one node Gi in G-tree. We denote by Gi the subnetwork or the
+corresponding tree node interchangeably hereafter. Bottom-up phase is to compute borders
+and distance matrices (to be discussed later) for G-tree nodes in the bottom up manner. With
+these precomputed results, the distance between any pair of objects can be computed easily
+by the assembly-based method. Interested readers are referred to [39] for more details.
+
+We proceed to discuss advantages and disadvantages of G-tree. It offers abstracts of the
+road network, which enables to prune the search space at high-level. That is, if a non-leaf
+node meets the query constraints, we add all its child nodes into the priority queue for further
+exploration. Otherwise, we skip the whole subtree rooted at this node. The problem is that
+G-tree [39] assumes that there is no POI lying on the edge. Some modifications are needed
+in order to apply G-tree to our context where there are multiple POIs on each edge. We
+can consider POIs on edges as newly-added vertices to the original network G. As a result,
+the newly generated network G(cid:7) may expand the scale of original road network by several
+times, thereby leading to high space and query overheads. This naive method is infeasible
+when there are many POIs on the edges.
+
+4 Index design
+
+4.1 Structure of DG
+
+Aforementioned index structures motivate us to devise a novel one that benefits from the
+best of them and meanwhile overcomes drawbacks of them. We are ready to introduce the
+dual-granularity indexing schema. In particular, we first introduce it in Section 4.1, and then
+reveal its properties in Section 4.2.
+
+In a nutshell, DG preserves abstracts of the road network by G-tree and preserves detailed
+information by the extended adjacency list. It can be constructed by three phases. We first
+
+Geoinformatica
+
+Fig. 4 The DG structure
+
+Fig. 3 A road network
+
+build the G-tree over the road network G by the top-down phase and bottom-up phase (see
+Section 3.2.2). The objective of the third phase is to store detailed information, e.g., POIs,
+in the extended adjacency list based on the spatial proximity.
+
+DG is comprised of DG-G and DG-A, where DG-G and DG-A represent the G-tree and
+
+the extended adjacency list. Subsequently, we delve into more details of them.
+
+Similar to G-tree, each node in DG-G maintains borders and a distance matrix for the
+corresponding subnetwork. Given a vertex vm ∈ Vi, we say that vm is a border of the
+subnetwork Gi if there exists an edge em,n such that vn /∈ Vi. That is, a border has at
+least one adjacent edge to another subnetwork. For instance, we mark all borders in red
+color in Fig. 3a. For convenience, we denote by B(Gi) the set of borders of Gi. We then
+define the union borders of Gi as U B(Gi) =
+is the child node of
+Gi. Specifically, for leaf node Gi, we have U B(Gi) = B(Gi). For each non-leaf node Gi,
+the associated distance matrix MGi maintains the distances between any pair of the union
+borders. But for the leaf node, it maintains the distances between borders and the vertices
+
+i ), where Gc
+
+B(Gc
+
+(cid:3)
+
+i
+
+Geoinformatica
+
+in the corresponding subnetwork. Note that, the associated distance matrix to each non-leaf
+node is symmetric. We thus use the lower triangular matrix to store it, as shown in Fig. 4a.
+For the sake of space, we only illustrate a few distance matrices as examples in Fig. 4a. In
+addition, each node Gi is associated with a keyword bitmap (or bitmap in short) [36], e.g.,
+“11111000”, which is used for keyword tests. Hereafter, we denote by Gi.ψb the associated
+bitmap to Gi. Each bit in Gi.ψb stands for a keyword. We set one bit to 1 if the corresponding
+keyword is covered by Gi. We say Gi covers a keyword ω if there exists a POI p around
+Gi such that w ∈ p.ψ. Suppose that p lies on the edge em,n, we say that p is around Gi if
+vm ∈ Vi or vn ∈ Vi. That is, ifp is inside Gi or lies on an adjacent edge to Gi.
+
+As mentioned earlier, we use DG-A to preserve detailed network information. It is com-
+prised of three components, namely hash table, adjacency file and point file. Different from
+the traditional adjacency list, we store vertices according to the spatial proximity rather than
+the order of vertex id. We achieve this by placing leaf nodes in ascending order of their
+ids, and storing all vertices in the same leaf node together (as arrows show in Fig. 4a). This
+is motivated by the observation that vertices in the same subnetwork has higher possibil-
+ity to be accessed together. By the hash table, each vertex vi ∈ V is mapped to a pair of
+“Gi, ADi”. Here, Gi denotes the leaf node containing vi, and ADi denotes the start address
+of the corresponding entry w.r.t vi in the adjacency file. Similar to the traditional adjacency
+list, we use the adjacency file and the point file to store the information about adjacent edges
+and POIs, respectively. In addition, for each adjacent edge ei,j in the adjacency file, we
+summarize and maintain all associated keywords to the POIs on ei,j in the corresponding
+item. As shown in Fig. 4b, p11 and p12 are on e3,4. We maintain the summarized keywords,
+that is {b, e}, in the corresponding item in adjacency file. These summarized keywords can
+be used to avoid accessing edges with no promising POIs.
+
+4.2 Properties of DG
+
+After introducing the structure of DG, we proceed to reveal its properties that lay the
+foundation of some optimizing strategies.
+
+Lemma 1 Given a DG-G node Gi, the setψ of query keywords. If ψ (cid:8)⊆ Gi.ψb, then we
+have ψ (cid:8)⊆ p.ψ for each POI p around Gi.
+
+Proof It is self-evident based on the definition of Gi.ψb, we omit the proof here.
+
+Lemma 2 Given a non-leaf node Gi in DG-G, we have B(Gi) ⊆ U B(Gi).
+
+Proof To prove this lemma, we only need to prove that for any vertex vm ∈ B(Gi), vm ∈
+U B(Gi) as well. We achieve this by two steps. First, we prove that for any vertex vm ∈
+B(Gi), there exists only one child node Gc
+i ). Then, we continue
+to prove that B(Gc
+
+i ) ⊆ U B(Gi), which is self-evident by the definition of U B(Gi).
+
+i of Gi such that vm ∈ B(Gc
+
+Subsequently, we focus on proving the correctness of the first step. For convenience, we
+take Fig. 5 as an example. Suppose that there are two non-leaf nodes, namely Gi and Gj . In
+addition, there exists a vertex vm ∈ B(Gi), and it has an adjacent vertex vn ∈ B(Gj ). We
+target to prove that there must exist one child node Gc
+i ). According
+(cid:3)
+i denotes the vertices in
+to the definition of G-tree [39], we know that
+the child node Gc
+i . As there is no common vertex between any two child nodes, there must
+i . Asv m has an adjacent vertex vn ∈ Vj in
+exist only one child node Gc
+
+i such that vm ∈ B(Gc
+
+i such that vm ∈ V c
+
+= Vi, where V c
+
+V c
+i
+
+Geoinformatica
+
+Fig. 5 Illustration of Lemma 2
+
+another subnetwork Gj , thus vm ∈ B(Gc
+vm ∈ U B(Gi) and thus complete the proof.
+
+i ). Combining with the second step, we have that
+
+Definition 2 (Minimum possible distance) Given a DG-G node Gi and a query point qi ∈
+Q. We define the minimum possible distance md(·) between them as follows:
+
+(cid:4)
+
+md(Gi, qi) =
+
+0
+min{||qi, v||, ∀v ∈ B(Gi)} otherwise.
+
+if qi is inside Gi,
+
+By Definition 2, we know that there are two cases when computing md(Gi, qi). Ifq i
+is inside Gi, we set md(Gi, qi) to 0; otherwise, we set it as the smallest distance between
+qi and the vertex in B(Gi). That is,md( Gi, qi) = minv∈B(Gi ) ||qi, v||. We denote by
+mdA(Gi, Q) = A{md(Gi, qi), ∀qi ∈ Q} the minimum aggregate distance between Gi and
+Q. This provides the bound of the aggregate distance for each object in Gi as presented in
+Lemma 3.
+
+Lemma 3 Given a DG-G node Gi, for any object p inside Gi, we have that mdA(Gi, Q) ≤
+A(p, Q).
+
+Proof As presented earlier, we have mdA(Gi, Q) = A{md(Gi, qi), ∀qi ∈ Q}, and
+A(p, Q) = A{||p, qi||, ∀qi ∈ Q}. To prove this lemma, it is sufficient to prove that
+md(Gi, qi) ≤ ||p, qi|| for each qi ∈ Q. We give the proof as follows.
+
+As shown in Fig. 6, there are two cases when computing md(Gi, qi). Case 1: qi is inside
+Gi (e.g., qm). In this case, based on the definition of minimum possible distance, we know
+
+Fig. 6 Illustration of Lemma 3
+
+Geoinformatica
+
+that md(Gi, qm) = 0. On the other hand, it holds that ||p, qm|| ≥ 0. Combining the above
+two conditions, we know that md(Gi, qm) ≤ ||p, qm||. Case 2: qi is not inside Gi (e.g.,
+qn). As md(Gi, qn) = minv∈B(Gi ) ||qn, v||, that is, it equals to the smallest distance between
+qn and the vertex in B(Gi). On the other hand, based on the closure property in [39], the
+shortest path from qn to any object in Gi must go through a border, e.g., vi ∈ B(Gi). Then,
+we separate this path into two parts, that is SP(qn, vi) and SP(vi, p). As md(Gi, qn) ≤
+||qn, vi|| and ||vi, p|| ≥ 0, we know that md(Gi, qn) ≤ ||qn, p||. Combing these two cases,
+we know that md(Gi, qi) ≤ ||p, qi|| holds for all cases. Besides, the above proof is valid
+for both Asum and Amax. We complete the proof.
+
+5 Minimum first search algorithm
+
+In the sequel, we introduce the minimum first search algorithm. We first present the outline
+of it in Section 5.1. Then, we delve into more details of MFS by elaborating major functions
+in Section 5.2. Finally, we further improve the query performance with the collaborative
+filtering technique in Section 5.3.
+
+5.1 Overview
+
+To answer the AKNN query efficiently, we propose the MFS algorithm. It traverses the DG-
+G tree and explores the node with the smallest mdA(·) iteratively until the termination condition
+is achieved. Before describing the main idea of it, we first introduce some concepts.
+
+Definition 3 (Query Node) Given a group Q of query points, and the dual-granularity
+indexing DG. For each query point qi ∈ Q, we define the query node QN (qi) as the leaf
+node in DG-G that contains qi.
+
+For convenience, we suppose that all query points are inside leaf nodes. However, our
+algorithms can be easily extended to the case when qi lies on an edge em,n (vm < vn), where
+vm and vn are inside different leaf nodes. In this case, we can replace qi by vm, and we know
+that vm must be inside one leaf node. Then, for each object o, ||qi, o|| can be obtained from
+||vm, o|| or ||vn, o|| easily (as shown in Lemma 4).
+
+Definition 4 (Backward Path) Given a group Q of query points, and the dual-granularity
+indexing DG. For each query point qi ∈ Q, we define the backward path BP(qi) as a
+sequence of DG-G nodes starting from QN (qi) terminates at G0, where each successor is
+the father node of the predecessor.
+
+As shown in Fig. 3a, the backward path BP(q1) = {G4, G1, G0}. Hereafter, we denote
+by Gf
+the father node of Gi. Inspired by the distance matrix, we proceed to introduce the
+i
+query distance matrix. For each node Gi, it maintains the distances between query points
+and borders in B(Gi).
+
+Definition 5 (Query Distance Matrix) Given a DG-G node Gi, we define the correspond-
+ing query distance matrix (QDM) as a two-dimensional matrix, and for each query point
+qj ∈ Q there is:
+
+MQ
+Gi
+
+[qj ][v] = ||qj , v||, ∀v ∈ B(Gi)
+
+(1)
+
+Geoinformatica
+
+Algorithm 1 MFS
+
+:
+
+Input
+Output: the aggregate point
+
+  DG
+
+1
+
+2
+
+6
+
+7
+
+8
+
+9
+
+10
+
+3
+4 while
+5
+
+if
+if
+else
+
+11 return
+
+do
+
+is a leaf node then
+
+then break;
+
+for each child node
+
+do
+
+if
+
+then
+
+We now describe the main idea of MFS algorithm, as shown in Algorithm 1. In a nut-
+shell, MFS accesses the DG-G node with the smallest mdA(·) iteratively until the aggregate
+point is found. It keeps the best aggregate point found so far and the achieved aggre-
+gate distance by Ap and DAp , respectively. It utilizes the priority queue PQ to maintain
+the pair of “Gi, mdA(Gi, Q)” in ascending order of mdA(Gi, Q). Initially, we compute
+query distance matrices for nodes on backward paths by invoking ComputeQDM() (line
+2). These computed distances are used to speed up the query processing (to be shown
+later). Then, “G0, 0” is enqueued into PQ, where 0 refers to mdA(G0, Q) since all query
+points are inside G0. Next, in each iteration of MFS, it performs following operations
+(lines 4-10). Firstly, the top entry “Gi, mdA(Gi, Q)” with the smallest mdA(·) is dequeued
+from PQ. If mdA(Gi, Q) ≥ DAp , we know that Ap is the aggregate point. Thus, we
+terminate the procedure (line 6). Otherwise, we check whether Gi is a leaf node. If yes,
+we invoke UpdateAp() to update Ap and DAp by the POIs around Gi (line 7). If no, we
+enqueue the child node Gc
+i .ψb into PQ
+for further exploration (lines 8-10). Finally, we return Ap as the aggregate point (line 11).
+In Algorithm 1, we focus on describing the main idea of MFS and leave out some details.
+Next, we proceed to introduce the major functions used by MFS, namely ComputeQDM()
+and UpdateAp().
+
+i of Gi that satisfies mdA(Gc
+
+i , Q) < DAp
+
+∧ ψ ⊆ Gc
+
+5.2 Major functions
+
+5.2.1 ComputeQDM()
+
+To compute ||vi, vj ||, we usually need to invoke the Dijkstra algorithm to expand the
+network from vi incrementally until vj is encountered. By DG-G tree, ||vi, vj || can be
+computed by the assembly-based method as shown in [39]. For any pair of vertices vi
+and vj , there exists a shortest node path on the DG-G tree that starting from leaf (vi) ter-
+minates at leaf (vj ), whereleaf (v i) and leaf (vj ) denote the corresponding leaf nodes
+containing vi and vj . As shown in Fig. 4a, the shortest node path between v9 and v6 is
+G4 − G1 − G2 − G6. To compute ||v9, v6||, we can first compute the distance between v9 and
+
+Geoinformatica
+
+the borders of G4, G1, G2 and G6 sequently (see Fig. 7a). After this, we have got ||v9, v4||.
+Then, ||v9, v6|| can be computed by adding the part of ||v4, v6|| maintained in MG6 . In
+addition, we observe that the shortest node path may be shared when computing distances.
+For example, to compute ||v9, v8||, we can reuse the computed distances between v9 and
+borders of G4, G1, G2, G6, instead of computing the distance from scratch.
+
+To reduce repeated computations, we propose the share path strategy. The basic idea
+is to compute and maintain the query distance matrix for each node on backward paths.
+Specifically, given a query point qi, and for each node Gi ∈ BP(qi), we maintain the
+distances between qi and vertices in B(Gi) by MQ
+only maintains
+Gi
+distances from these query points that are inside Gi at first. For the query point qi outside
+Gi, MQ
+[qi] are computed and maintained only when Gi is accessed by qi during the query
+Gi
+processing. By the share path strategy, repeated computations can be reduced significantly.
+
+[qi]. Note that, MQ
+Gi
+
+Algorithm 2
+
+1 for each
+2
+
+do
+
+the edge that
+
+lies on;
+
+for each
+
+do
+
+while
+
+do
+
+for each
+
+do
+
+for each
+
+if
+
+do
+
+then
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10
+
+11
+
+12
+
+13
+
+We achieve the share path strategy by ComputeQDM(), and present details in Algo-
+rithm 2. For each query point qi ∈ Q, we first identify the query node QN (qi) and the
+edge em,n that qi lies on (lines 2-3). Note that, em,n is known by the definition of qi, that
+is, (vm, vn, [vm, qi], wm,n). In addition, QN (qi) can be retrieved by the hash table (see
+Fig. 4b) with vm or vn. We then compute distances between qi and vertices in B(Gi) (line
+4), where ||v, vm|| and ||v, vn|| can be obtained from MGc . Subsequently, we compute the
+query distance matrix for each node in BP(qi) in the bottom up manner (lines 6-13). For
+each current accessed node Gp, we compute MQ
+with the computed results of its child
+Gp
+node Gc. Specifically, for each vertex vi ∈ B(Gp), we compute MQ
+[qi][vi] by using
+Gp
+MQ
+[qi] and MGp , and set it as the smallest distance (lines 9–13).
+Gc
+
+5.2.2 UpdateAp()
+
+The objective of UpdateAp() is to update Ap and DAp by POIs around the leaf node Gi
+accordingly. To this end, for each vertex vi ∈ Vi, we need to compute the partial distance
+||vi, qi|| for each qi ∈ Q. We can achieve this by invoking the SPSPSearch algorithm [39]
+
+Geoinformatica
+
+∧ qi
+
+|Q| ∗ |Vi| times, which is computationally expensive. We propose to compute distances
+for vertices in the same leaf node together. More concretely, we first get MQ
+, then the
+Gi
+distances from query points to vertices in Vi can be obtained with MGi .
+
+∈ BP(qi). Thus, MQ
+Gi
+
+[qi] for a given qi and Gi. For convenience, we
+(cid:8)(cid:11) Gi that qi is outside Gi. There are four
+i denotes the father node of Gi.
+i of Gf
+i containing qi. That is,
+[qi] (share path strategy). Case
+
+Now the problem is how to get MQ
+Gi
+denote by qi (cid:11) Gi that qi is inside Gi, andq i
+cases to consider. Case 1: qi (cid:11) Gf
+(cid:8)(cid:11) Gi, where Gf
+i
+In this case, we know that there exists another child node G(cid:7)
+[qi] can be computed with MQ
+G(cid:7)
+G(cid:7)
+i
+i
+2: qi (cid:8)(cid:11) Gf
+i
+computed. Thus, we can compute MQ
+Gi
+elaborated later). Case 3: qi (cid:11) Gf
+i
+has been computed by ComputeQDM(). Note that, the case that qi (cid:8)(cid:11) Gf
+i
+not hold, because Gi is a child node of Gf
+i .
+
+i has been
+[qi] with the progressive computation strategy (to be
+[qi]
+∧ qi (cid:11) Gi does
+
+∧ qi (cid:8)(cid:11) Gi. In this case, we know that the query distance matrix of Gf
+
+∧ qi (cid:11) Gi. That is, Gi ∈ BP(qi). We know that MQ
+Gi
+
+We proceed to introduce the progressive computation strategy. Its main idea is to use the
+query distance matrix of father node to compute that of the child nodes. For each node Gi
+that is not on any backward path, we temporarily maintain MQ
+when it is accessed by query
+Gi
+points. Then, we delete MQ
+when all its child nodes have been accessed. Figure 7b shows
+Gi
+how to get ||qi, vm||, i.e., MQ
+[qi][vm], with the query distance matrix of Gf
+.
+Gf
+Gi
+i
+Obviously, there are two paths between qi and vm, that isq i − vi − vm and qi − vj − vm. We
+have ||qi, vi|| = 25 and ||qi, vj || = 20, which are maintained in the query distance matrix
+of Gf
+i . In addition, there are ||vi, vm|| = 2 and ||vj , vm|| = 3, which are maintained in
+M
+. Thus, ||qi, vm|| = ||qi, vj || + ||vj , vm|| = 20 + 3 = 23.
+Gf
+i
+
+i and M
+
+Algorithm 3
+
+1 for each query point
+2
+
+if
+is inside
+else for each
+
+3
+
+then
+
+for each
+
+do
+
+do
+
+do
+
+if
+
+then
+
+4
+
+5
+
+6
+
+7
+
+8
+
+11
+
+12
+
+13
+
+14
+
+9 for each
+10
+
+do
+
+for each adjacent vertex
+do
+then
+
+for each
+if
+
+on
+
+of
+
+do
+
+compute
+if
+
+based on Lemma 4;
+then
+
+Algorithm 3 presents the details of UpdateAp(). There are two phases. In the first phase,
+we compute and maintain the partial distances between each query point qi and the vertices
+[qi] (lines 1-8). If qi is inside Gi, we perform the distance computation by
+in Vi by DGi
+
+Geoinformatica
+
+Fig. 7 Optimizing strategies
+
+invoking Dij kstra(qi, Vi). Otherwise, we compute the partial distance with the computed
+results in MQ
+and MGi (lines 3-7). In the second phase, we are to access POIs around Gi
+Gi
+to update Ap and DAp (lines 9-14). We compute A(p, Q) for each unfiltered POI p (to be
+described later). If A(p, Q) < DAp , we update Ap and DAp by p and A(p, Q) (line 14).
+
+Lemma 4 Given a query point q ∈ Q and a POI p on ei,j , we have:
+
+(cid:4)
+
+||p, q|| =
+
+min{[p, q], ||vi, vj || + [vi, p] + [vj , q]}
+min{||q, vi|| + [vi, p], ||q, vj || + [vj , p]} otherwise.
+
+if q is on ei,j ,
+
+Proof This lemma is self-evident (see Fig. 8), we omit the proof here.
+
+Subsequently, we show how to compute A(p, Q). Suppose p is around Gi and lies on
+ei,j . We compute A(p, Q) as follows. Specifically, there are two cases. If vi ∈ Vi ∧vj ∈ Vi,
+we know that both ||q, vi|| and ||q, vj || have been computed for each q ∈ Q. Thus, ||p, q||
+can be computed by Lemma 4. Otherwise, that is, ei,j is an adjacent edge to Gi. In this case,
+we suppose that vi ∈ Vi ∧ vj /∈ Vi. Recall that, we have supposed that q is inside one leaf
+node (see Section 5.1). Thus, q does not lie on ei,j , and we set||p, q || as ||q, vi|| + [vi, p]
+at first. When we encounter the vertex vj , ||p, q|| will be updated if ||q, vj || + [vj , p] <
+||q, vi|| + [vi, p]. Finally, A(p, Q) = A{||p, q||, ∀q ∈ Q} can be computed with these
+retrieved partial distances easily.
+
+5.3 Collaborative filtering technique
+
+Although MFS can answer our query efficiently, the query performance is unsteady (see
+Section 7). This is largely due to the false hit problem, which arises from the keyword
+
+Fig. 8 Illustration of Lemma 4
+
+Geoinformatica
+
+tests on tree nodes. Recall that, MFS performs the keyword tests on the current accessed
+node Gi with the associated bitmap Gi.ψb. The false hit problem reveals that even though
+ψ ⊆ Gi.ψb, there may contain no any POIp such that ψ ⊆ p.ψ. In this case, MFS has to
+access lots of nodes that have no candidate aggregate points. To alleviate the false hits, we
+introduce a simple but effective technique called collaborative filtering technique (CFT). It
+performs the keyword tests for each node by multiple bitmaps collectively. Subsequently,
+we introduce several operations that lay the foundation of CFT.
+
+For ease of discussion, we refer to ψbi , ψbj as two bitmaps, and denote by Sψb a set of
+
+bitmaps. We then define some operations as follows:
+
+–
+–
+–
+–
+
+dominate(ψbi , ψbj ): It returns true if ψbi dominates ψbj , that is, ψbj
+union(ψbi , ψbj ): It returns the union set of ψbi and ψbj , that is ψbi
+countCommon(ψbi , ψbj ): It returns the number of common ‘1’ in ψbi
+filter(ψbi , Sψb ): It returns a new S (cid:7)
+ψb
+from Sψb .
+
+⊆ ψbi .
+
+∪ ψbj .
+
+∩ ψbj .
+
+by removing bitmaps that are dominated by ψbi
+
+Algorithm 4 CFT
+
+Input
+:
+Output:
+
+5
+
+6
+
+7 return
+
+associated bitmaps to POIs that are around
+
+1
+2 removing bitmaps that are dominated by other bitmaps in
+3 while
+4
+
+do
+the two bitmaps with the largest countCommon
+
+Two issues arise when we are to find multiple bitmaps (i.e., Sψb ) for keyword tests on
+Gi collectively: 1) how to set the size of Sψb properly? 2) how to find these bitmaps
+for Gi? Intuitively, a larger size of Sψb is more likely to yield stronger pruning power.
+Thus, we can put all associated bitmaps to POIs that are around Gi into Sψb . It is easy to
+see that the false hit problem can be avoided by Sψb , but the space cost of storing Sψb
+and the time cost of keyword tests are high. To control the tradeoff between the prun-
+ing power and costs, we add the flexibility by setting an upper bound T for the size of
+Sψb .
+
+Next, we target to find T bitmaps that achieve the largest pruning power collec-
+tively. As finding the Sψb with the largest pruning power is computationally expensive,
+we present a simple greedy method in Algorithm 4. Initially, we put all bitmaps asso-
+ciated to POIs that are around Gi into Sψb , and update Sψb by removing bitmaps that
+| > T , we continue the iter-
+are dominated by other bitmaps in Sψb (lines 1-2). If |Sψb
+ation as follows (lines 3-6). We first get the two bitmaps ψbi and ψbj
+that have the
+largest number of common keywords. Then, we get a new bitmap ψbu by the opera-
+tion union(ψbi , ψbj ). Next, we remove bitmaps that are dominated by ψbu from Sψb .
+The iteration procedure terminates when the condition |Sψb
+| > T is broken. Finally, we
+return Sψb as retrieved bitmaps for Gi. That is, Sψb can be used to perform keyword tests
+on Gi.
+
+Geoinformatica
+
+6 Discussions
+
+6.1 Aggregate keyword k nearest neighbor queries
+
+We now discuss how to extend our proposed methods to answer the Ak2N 2 queries. Given
+a group Q of query points, a set ψ of query keywords and a retrieved size k, the Ak2N 2
+query finds a set Pk of k POIs from P. Specifically, ∀p ∈ Pk, p(cid:7) ∈ P − Pk where ψ ⊆
+p.ψ ∧ ψ ⊆ p(cid:7).ψ, it holds that A(p, Q) ≤ A(p(cid:7), Q).
+
+Clearly, we only need to modify MFS slightly for answering the Ak2N 2 query. First, we
+maintain k best candidates found so far in Pk, and set DAp as the largest aggregate distance
+achieved by POIs in Pk. Then, we continue to explore the unfiltered leaf nodes iteratively.
+If there exists candidate POIs around these leaf nodes with smaller aggregate distances than
+DAp , we update Pk and DAp accordingly. Note that, the termination condition in Algorithm
+1 (line 6) still holds. That is, if DAp is smaller than mdA(·) achieved by the current visited
+node, we can terminate the procedure safely.
+
+6.2 Index maintenance
+
+Studies [27, 39] have discussed cases when edges or vertices are inserted into (or deleted
+from) the road network. Therefore, we focus on maintaining the DG indexing structure
+when POIs are inserted into (or deleted from) edges. There are two basic operations, namely
+insert() and delete(). Both of them take a POI as input and perform the corresponding oper-
+ation. For the insert operation, the POI is of the form < pi, em,n, [pi, vm], ψ >. It indicates
+that we insert pi into the edge em,n, wherev m < vn. In addition, [pi, vm] denotes the length
+of the segment pi, vm, and ψ captures the associated keywords to pi. Similarly, for the
+delete operation, the POI is of the form < pi, em,n >. That is, we delete pi from em,n.
+
+When the POIs on edges have changed, we need to modify DG indexing structure accord-
+ingly. For the insert operation, we need to modify DG-A as follows. First, we need to
+reorganize the point file and leave some space for the newly-inserted pi. Then, we need to
+modify these items in adjacency file (e.g., the pointers to point file) affected by pi. Besides,
+we also need to modify the associated bitmaps to DG-G nodes, which reflects the changes
+of keywords. Similarly, for the delete operation, we need to reorganize the point file to fill
+the space of newly-deleted pi. Meanwhile, adjacency file and DG-G should be modified
+accordingly.
+
+As modifying DG for each inserted or deleted POI incurs high costs, we propose the
+lazy updating strategy. That is, we first cache some operations and then update DG by them
+together if the updating condition meets. As for the lazy updating strategy, two issues are to
+be addressed. The first is when to update DG (i.e., the updating condition), and the second
+is how to update it.
+
+To address the first issue, we introduce the update tree used to cache operations. In par-
+ticular, the update tree is built over DG-G tree. Figure 9 presents an update tree that is
+built over the DG-G tree in Fig. 4a. For each node Gm in DG-G tree, there is one corre-
+sponding node Um in the update tree. The non-leaf node in the update tree is of the form
+< Um, ψb, Ni, Nd , Ne >, where Um represents the update tree node id, and ψb captures
+all associated keywords to these inserted POIs that are around Gm. We keep the number of
+insert operations, delete operations and the empty records in point file w.r.t Gm by Ni, Nd
+and Ne, respectively. We define the number of empty records as Ne = Nd + N (cid:7)
+− Ni,
+e
+where N (cid:7)
+e denotes the number of empty records in the last updating. Apart from these
+information, the leaf node also needs to cache relevant operations to the POIs around Gm in
+
+Geoinformatica
+
+Fig. 9 An update tree
+
+the operation list Lo. Regarding the first issue, we are to update DG when the number of
+operations cached in a leaf node Um exceeds a predefined threshold ϒ, that is Ni +Nd > ϒ.
+We update DG by cached operations in Um together.
+
+Now, the problem is how to update DG by operations cached in Um. We first present how
+to update the point file, and then show how to modify adjacency file and DG-G. As with [10,
+25], we generate a keyword bitmap of fixed size (i.e., 64 bits in our settings) for each POI to
+represent the associated keywords. This indicates that the storage cost of each POI (i.e., one
+record in the point file) is same. Motivated by this, we propose to put newly-inserted POIs
+into nearby empty records leaved by newly-deleted POIs as much as possible. This enables
+to avoid reorganizing the point file greatly and thus improve updating efficiency.
+
+The above discussion inspires us to update the point file as follows. For the delete oper-
+ations cached in Um, we only label the corresponding records in the point file as empty. For
+the insert operations, we take the local reorganization strategy. The key idea is to use nearby
+empty records leaved by deleted POIs to store newly-inserted POIs. This strategy restricts
+the modification of the point file to neighboring pages to P(Gm), rather than the whole point
+file. We denote by P(Gm) the pages in the point file that store the POIs around Gm. Subse-
+quently, we need to find these neighboring pages whose total number of empty records is
+larger than the number of insert operations. As POIs are stored sequently in ascending order
+of the leaf node id, the neighboring pages to P(Gm) store the POIs of these leaf nodes in
+DG-G that are adjacent to Gm. As the update tree shares the same structure with DG-G, we
+thus turn to find a set SU = {Us1, ..., Um, ..., Usk} of leaf nodes adjacent to Um, such that
+(cid:2)
+Usi.Ni. To find SU , we take a simple strategy. That is, we
+
+Usi.Ne ≥
+
+(cid:2)
+
+iteratively put the leaf nodes around Um into SU until the above condition meets.
+
+Next, we update the point file with operations cached by leaf nodes in SU . We need to
+reorganize the point file to delete or insert some POIs. As shown in Fig. 10a, instead of mov-
+ing all POIs toward P(Us1) and leaving empty records in P(Usk) (basic strategy), we target
+to distribute all remaining empty records evenly among these pages (our strategy). As a
+result, we can reduce the overhead of moving records in the point file, as well as take full use
+of the empty records for the following updating operations. For instance, if we are to insert
+
+∀Usi ∈SU
+
+∀Usi ∈SU
+
+Geoinformatica
+
+Fig. 10 The lazy updating strategy
+
+a POI into P(Us1), we can insert it by replacing one empty record in P(Us1) directly. How-
+ever, the basic strategy has to reorganize the point file to insert the POI as there is no empty
+record in P(Us1). We proceed to show more details of our strategy. Suppose all vertices con-
+tained by leaf nodes in SU are placed into the set Sv = {vs1, ..., vsm} sequently according to
+the leaf node id. We are to find some split vertices, e.g., vpi, to split Sv into multiple smaller
+subsets such that the number of empty records of each subset is roughly equal. For a subset
+Svi , we define the number of empty records as
+(v.Nd − v.Ni), wherev. Nd and
+v.Ni denote the total number of deleted operations and insert operations w.r.t POIs on the
+adjacent edges to v. This can be achieved by the divide-and-conquer strategy. As shown in
+Fig. 10b, we iteratively find three split vertices, namely vp1 , vp2 and vp3 . They divide Sv
+into four smaller subsets with roughly equal number of empty records.
+
+∀v∈Svi
+
+(cid:2)
+
+After introducing how to update the point file, we proceed to briefly introduce how to
+update the adjacency file and DG-G. As noted earlier, we need to modify summarized key-
+words and pointers for these items in adjacency file corresponding to vertices in Sv. Note
+that, we need to maintain these information when modifying the point file and then use
+them to modify the adjacency file. As for DG-G, we need to update bitmaps of tree nodes
+by associated keywords to these updated POIs in the bottom up manner.
+
+7 Empirical study
+
+In this section, we experimentally evaluate proposed methods over real and synthetic
+datasets. We introduce experimental settings in Section 7.1, and elaborate experimental
+results from Section 7.2 to Section 7.5. Finally, we summarize experimental insights in
+Section 7.6.
+
+7.1 Experimental settings
+
+Datasets We deploy five real road networks used by [10, 35]. Table 3 presents some prop-
+erties of them. As these networks only consist of vertices and edges, we generate POIs and
+associated keywords for them as [25]. We also generate several synthetic datasets based
+on NA. To study the impact of the average number of keywords associated to each POI,
+we generate five datasets, namely NANK2, NANK4, NANK6, NANK8 and NANK10, by
+
+Geoinformatica
+
+Table 3 Properties of real datasets
+
+Dataset
+
+Source
+
+OL
+
+TG
+
+CA
+
+SF
+
+NA
+
+Oldenburg
+
+San Joaquin
+
+California
+
+San Francisco
+
+North America
+
+#Vertex
+
+6,105
+
+18,263
+
+21,048
+
+174,956
+
+175,813
+
+#Edge
+
+7,035
+
+23,874
+
+21,693
+
+223,001
+
+179,179
+
+varying the average number from 2 to 10. Similarly, NANP4, NANP6, NANP8, NANP10
+and NANP12 are used to study the impact of the average number of POIs on each edge.
+
+Algorithms and queries For AKNN queries, we implement two versions of MFS. We
+term the one performing keyword tests with only one bitmap as MFS, and the one with
+multiple bitmaps computed by CFT as E-MFS. Note that, we set the maximum number
+of keyword bitmaps associated to each DG-G node, that is T , to 50 as default value in
+following experiments. We compare MFS and E-MFS against three methods, namely TA,
+CE and GANN (to be shown later). TA and CE concurrently and incrementally expand
+the network around each query point to find the answer. Specifically, TA computes the
+aggregate distance for each encountered POI pi if ψ ⊆ pi.ψ. The best result found so
+far is maintained and updated if the newly-encountered POI pj (ψ ⊆ pj .ψ) has a smaller
+aggregate distance. The above procedure repeats until the current best result is better than
+all unexamined POIs. Unlike TA, CE postpones the computation of aggregate distance until
+pi has been seen by all query points during the network expansion. We get source codes
+from [35], and make the following modifications for fair. We store the road network by the
+extended adjacency list for TA and CE, where summarized keywords w.r.t each edge are
+maintained in the adjacency file. We also modify the ANN algorithms in [32] for our query,
+which consist of two phases. Firstly, it continuously computes the nearest neighbors using
+NVD for each query point until all query points find a common POI. Secondly, unqualified
+POIs are pruned with some pruning strategies. As described in Section 1, NVD is inefficient
+when the number of POIs is large and keywords are considered. We thus implement the
+searching and pruning phases as above, but use the K 2N 2 algorithm [39] rather than NVD
+to find NNs. For fair, we implement the K 2N 2 algorithm based on DG. We term this hybrid
+algorithm as GANN hereafter.
+
+For each experiment, we randomly generate 50*5=250 queries (for five parameter val-
+ues) based on the parameter settings in Table 4. Specifically, each group of queries has two
+components, that is, a set of query points Q and query keywords ψ. For each query point
+qi ∈ Q, we first randomly select one edge e.g., ei,j , from the given query rectangle area.
+We then select a location on ei,j randomly as the position of qi. We denote by [vi, qi] the
+length of segment vi, qi, which captures the position of qi. We generate ψ as methods in
+[10, 25]. That is, we utilize a bitmap of fixed size (i.e., 64 bits in our settings) to represent
+ψ. In particular, only several bits in ψ are set to ’1’ to capture query keywords. The per-
+formance metrics we measure are the number of page accesses and running time. We report
+the average performance for each experiment.
+
+Parameters To evaluate the algorithms under various settings, we vary the value of some
+parameters. Table 4 lists all parameters studied in this paper. We mainly explore the influ-
+ence of following parameters: 1) the number of query points (i.e., |Q|); 2) the average
+
+Table 4 Parameter settings
+
+Parameter
+
+Range
+
+Geoinformatica
+
+10, 20, 30, 40, 50
+
+2, 4, 6, 8, 10
+
+4, 6, 8, 10, 12
+
+1, 2, 3, 4, 5
+
+0.25, 1, 2.25, 4, 6.25
+
+|Q|
+
+NK
+
+NP
+
+QK
+
+QA(%)
+
+number of keywords associated to each POI (i.e., NK); 3) the average number of POIs on
+each edge (i.e., NP); 4) the number of query keywords (i.e., QK); 5) the query rectangle
+area of query points (i.e., QA). Note that, we only vary one parameter and fix others at their
+defaults (marked in bold) for each experiment.
+
+All algorithms are implemented in C/C++ and run in Windows 7 System on an Intel(R)
+Core(TM) i5-4590 CPU@3.30 GHz with 8GB RAM. We set the page size as 4 MB by
+default, and assume that the server maintains a buffer of 200 pages with LRU as the cache
+replacement policy.
+
+7.2 Results on AKNN queries
+
+Evaluations on datasets In this experiment, we evaluate the performance of algorithms
+on different datasets. We present the results in Tables 5 and 6. As expected, all algorithms
+achieve worse performances when the network gets larger. However, there are also some
+new findings. We find GANN performs badly on small network OL. For small networks,
+the achieved dist by two adjacent NNs found in the pruning phase does not vary much,
+which degrades the power of pruning condition dist > distagg. In addition, our algorithms
+perform better than competitors in most cases. But for OL, TA and CE incur less number
+of page accesses than MFS. This is because small networks are convenient for them to find
+candidate aggregate points by expanding the network incrementally. Therefore, the search
+space can be refined by the best result found so far. But for large networks, they have to
+traverse a large portion of the road network before finding the result, which incurs massive
+
+Table 5 Number of page accesses over datasets
+
+Dataset
+
+MFS (max)
+
+E-MFS(max)
+
+GANN(max)
+
+TA(max)
+
+CE(max)
+
+OL
+
+TG
+
+CA
+
+SF
+
+NA
+
+OL
+
+TG
+
+CA
+
+SF
+
+NA
+
+127
+
+289
+
+364
+
+335
+
+390
+
+126
+
+292
+
+351
+
+318
+
+384
+
+9
+
+13
+
+13
+
+15
+
+17
+
+9
+
+13
+
+13
+
+16
+
+15
+
+138
+
+385
+
+566
+
+1,116
+
+11,699
+
+189
+
+550
+
+726
+
+1,718
+
+14,020
+
+1,699,472
+
+1,121,947
+
+89
+
+310
+
+674
+
+9,165
+
+83
+
+631
+
+683
+
+5,683
+
+482,693
+
+88
+
+229
+
+625
+
+7,414
+
+90
+
+665
+
+834
+
+7,742
+
+2,502,394
+
+Dataset
+
+MFS(sum)
+
+E-MFS(sum)
+
+GANN(sum)
+
+TA(sum)
+
+CE(sum)
+
+Dataset
+
+MFS (max)
+
+E-MFS(max)
+
+GANN(max)
+
+TA(max)
+
+CE(max)
+
+Geoinformatica
+
+Table 6 Running time (ms) over datasets
+
+OL
+
+TG
+
+CA
+
+SF
+
+NA
+
+OL
+
+TG
+
+CA
+
+SF
+
+NA
+
+55
+
+160
+
+315
+
+600
+
+1,665
+
+72
+
+118
+
+334
+
+632
+
+1,837
+
+48
+
+96
+
+107
+
+122
+
+772
+
+47
+
+94
+
+110
+
+122
+
+803
+
+8,871
+
+1,862
+
+988
+
+1,026
+
+3,848
+
+9,280
+
+1,476
+
+996
+
+1,859
+
+4,621
+
+1,966
+
+3,504
+
+5,237
+
+7,169
+
+57,455
+
+1,197
+
+2,935
+
+3,714
+
+4,527
+
+25,067
+
+1,168
+
+2,821
+
+3,581
+
+4,566
+
+38,855
+
+1,897
+
+3,426
+
+4,569
+
+5,127
+
+51,541
+
+Dataset
+
+MFS(sum)
+
+E-MFS(sum)
+
+GANN(sum)
+
+TA(sum)
+
+CE(sum)
+
+network traversals. In these cases, DG based methods (i.e., MFS, E-MFS and GANN) can
+avoid unnecessary accesses greatly. Although TA and CE incur less number of page accesses
+on small networks, they still yield higher computational costs than our methods. This is
+because effective optimizing strategies are exploited to speed up the query processing of
+our methods.
+
+Effect of |Q| In this experiment, we explore the influence of |Q| by varying it from 10
+to 50. As shown in Fig. 11, the performance gap between our algorithms and other three
+algorithms increases rapidly when |Q| becomes larger. For TA and CE, they expand the
+network around each query point incrementally, which incurs massive random accesses to
+the extended adjacency list. On the other hand, our algorithms can be directed to promising
+POIs by DG-G. Although all of them exploit DG, our algorithms outperform GANN by
+several times. This is because: 1) the searching phase of GANN includes more candidates
+as |Q| increases, which leads to high overheads during the pruning phase; 2) K 2N 2 finds
+NNs in the bottom up manner rather than top down, which cannot take full use of the global
+insights of road network to prune unqualified POIs. In addition, E-MFS achieves a better
+performance than MFS, which demonstrates the effectiveness of CFT. We also find that TA
+and CE achieve different performances w.r.t Amax and Asum. Specifically, for Amax, we
+see that CE achieves a better performance than TA. But for Asum, TA performs better. Note
+that, the above observations are consistent with the conclusions in [35].
+
+Fig. 11 Effect of |Q|
+
+Geoinformatica
+
+Fig. 12 Effect of NK
+
+Effect of NK We now study the impact of the average number of keywords associated
+to each POI on the efficiency of algorithms. Figure 12 shows the results achieved by
+algorithms. The first observation is that all algorithms perform better with enlarging NK.
+Because they can find candidate aggregate points much more easier, which contributes to
+refine the search space. But for GANN, the performance degrades when NK is larger than
+6. This is because much more candidates are included before finding one common POI
+during the search phase. This incurs high overheads in pruning phase. The second obser-
+vation is that, the performance gap between TA and CE achieved by Asum gets larger
+when NK increases. Note that TA computes the aggregate distance for each encountered
+candidate immediately, whereas CE postpones the distance computation until it has been
+explored by all query points. When NK becomes larger, candidate aggregate points can
+be found much more easier. Therefore, TA can exploit the best result found so far to
+prune unvisited POIs. However, CE has to incur much more network traversals before get-
+ting an upper bound for the aggregate distance. In addition, the performance of E-MFS is
+more steady compared with MFS. This is largely due to CFT, which reduces the false hits
+greatly.
+
+Effect of NP To study the effect of the average number of POIs on each edge, we vary
+NP from 4 to 12. Figure 13 depicts the results. When we enlarge NP, TA and CE get better
+performances. The reason behind is that candidate aggregate points can be found much more
+easier with more POIs, thereby shrinking the search space greatly. In contrast, the running
+time and the number of page accesses w.r.t DG based methods increase slightly as NP gets
+larger. This is because they have to spend much more time verifying POIs in qualified leaf
+nodes when NP increases. Although E-MFS incurs less number of page accesses than MFS,
+
+Fig. 13 Effect of NP
+
+Fig. 14 Effect of QK
+
+it needs to spend much more time performing keyword tests with multiple bitmaps. This
+explains why MFS and E-MFS do not vary much in terms of running time.
+
+Effect of QK We now study the impact of the number of query keywords by varying QK
+from 1 to 5. As shown in Fig. 14, all algorithms achieve worse performances when we
+enlarge QK. Clearly, when QK gets larger, it is much more difficult for algorithms to find
+POIs that cover all query keywords. Different from other algorithms, E-MFS incurs less
+number of page accesses with enlarging QK. This is largely due to the effectiveness of CFT.
+Specifically, the false hit problem degrades the performance of MFS and GANN, whereas
+E-MFS can avoid massive unnecessary accesses by CFT. We notice that GANN incurs
+high costs when QK=1. In this case, GANN includes many candidates by the search phase,
+thereby leading to high overheads in pruning phase. For the case when QK=5, we find that
+CE performs better than TA w.r.t Asum. In this case, it is difficult for algorithms to find the
+aggregate point, but TA still needs to invoke the distance computation for each encountered
+candidate immediately, which is indeed computationally expensive. On the other hand, CE
+does not compute it until the current visited candidate aggregate point has been explored by
+all query points, which reduces massive unnecessary distance computations.
+
+Effect of QA We continue to study the effect of the query rectangle area of query points
+on the performance of algorithms. It captures the area of the query point distribution w.r.t
+the whole network space. As illustrated in Fig. 15, the number of page accesses and run-
+ning time increase for all algorithms as QA increases. This is because they need to traverse
+a large portion of the network to find the aggregate point. Another interesting finding is
+that the increasing trend of TA and CE becomes slow when QA is greater than 1%. The
+
+Geoinformatica
+
+Fig. 15 Effect of QA
+
+Geoinformatica
+
+Fig. 16 Evaluations of T on E-MFS
+
+reason behind is that associated summarized keywords to edges prevent them from access-
+ing unnecessary edges. On the other hand, our algorithms present much better performances
+and relative slower increasing trends compared with GANN.
+
+7.3 Evaluations of T on E-MFS
+
+To explore the effect of T on the performance of E-MFS, we generate five datasets, namely
+NAT 50, NAT 100, NAT 150, NAT 200 and NAT 250, where T varies from 50 to 250. We
+present the number of page accesses and running time achieved by two aggregate functions
+in Fig. 16. As expected, the number of page accesses decreases when we enlarge T . This is
+because the pruning power becomes stronger with enlarging T . That is, E-MFS avoids much
+more unnecessary accesses with more bitmaps. Figure 16b shows that the running time of
+two aggregate functions increases as T increases. This is because much more keyword tests
+are performed by multiple bitmaps for each qualified tree nodes.
+
+7.4 Evaluations on index structures
+
+In this experiment, we study the performance of index structures. We present the index
+creation time of DG-A (used by TA and CE) and DG (used by other three methods) in
+Table 7. Although DG-A outperforms DG by several times, we receive better query perfor-
+mances with DG. Next, we study the performance of index maintenance when POIs change.
+Specifically, we generate five set of datasets that each contains 100,000 operations. We
+vary the ratio of delete operations in these datasets from 0.3 to 0.7. For example, if we set
+the ratio of delete operations to 0.3, then there are 100,000*0.3=30,000 delete operations
+and 100,000*0.7=70,000 insert operations. We set the threshold ϒ = 105
+, where Nleaf
+Nleaf
+denotes the number of leaf nodes in DG-G tree. If the number of operations w.r.t a leaf node
+is greater than ϒ, it incurs an updating operation to DG. We measure the performance when
+
+Table 7 Index creation time
+(ms)
+
+Index Structure
+
+OL
+
+TG
+
+CA
+
+SF
+
+NA
+
+DG-A
+
+DG
+
+81
+
+754
+
+291
+
+1,394
+
+299
+
+1,498
+
+364
+
+5,447
+
+6,828
+
+18,040
+
+Geoinformatica
+
+Fig. 17 Evaluations on the index maintenance
+
+the number of updating operations varies from 2,000 to 10,000. We present the results in
+Fig. 17. It is easy to see that our updating strategy performs better when the ratio becomes
+larger. This is because we can insert much more POIs by replacing empty records when the
+number of delete operations increases. This leads to less overheads of reorganizing POIs
+in the point file. The experimental results demonstrate the effectiveness of our updating
+strategy.
+
+7.5 Results on Ak2N 2 queries
+
+In this set of experiments, we are to study the performance of algorithms when they are
+extended to answer the Ak2N 2 query. Similar to our methods, we maintain k best candidates
+found so far for TA and CE. We use these candidates to prune unseen POIs and update them
+when better candidates are found. For GANN, we find k common POIs during the searching
+phase, and then prune unqualified POIs progressively in pruning phase. In this experiment,
+we vary k from 10 to 50 and present the results in Fig. 18. In general, DG based algorithms
+outperform TA and CE by several orders of magnitude when we enlarge k. This contributes
+to the efficiency of DG. We also find that the performance gap between our algorithms and
+GANN gets larger as k increases. This is because much more candidates are included during
+the searching phase, which incurs high costs in the pruning phase. Note that, there is one
+
+Fig. 18 Results on Ak2N 2 queries vs k
+
+Geoinformatica
+
+new finding that CE performs better than TA w.r.t Asum when k is larger than 30, which is
+same as observations in Fig. 14. This is because CE postpones distance computations until
+all query points are explored, which reduces massive unnecessary computations.
+
+7.6 Summarized insights
+
+The above exhaustive experiments reveal the following important insights:
+
+–
+
+For both the AKNN and Ak2N 2 queries, DG based algorithms, that is MFS, E-MFS
+and GANN outperform TA and CE by several orders of magnitude. This is because:
+1) DG can direct the search to promising POIs by pruning unqualified POIs. But TA
+and CE have to expand the network incrementally; and 2) we can speed up distance
+computations with the precomputed distance matrix in DG. E-MFS performs better
+than MFS in terms of efficiency and stability because of CFT.
+
+– Our algorithms outperform GANN by several times, which is largely due to our pro-
+posed search methods and optimizing strategies. In addition, GANN performs K 2N 2
+algorithm over DG-G in the bottom up manner rather than top down, which cannot take
+full use of the global insights of DG-G to prune unqualified POIs. We also find that
+GANN performs badly when the number of candidate aggregate points is large or small
+as shown in Fig. 14.
+
+– When our methods are applied to answer the Ak2N 2 query, it still yield good per-
+formances compared with other three algorithms. Furthermore, the performance gap
+between our algorithms and others gets larger when we increase k for the Ak2N 2 query.
+– Our lazy updating strategy, which does not update the DG indexing schema until the
+number of operations of one leaf node exceeds the threshold ϒ, is efficient even for
+massive updating operations.
+
+8 Conclusions
+
+In this work, we study the aggregate keyword nearest neighbour (AKNN) query, which
+extends the ANN query by introducing the keyword constraints into the query definition.
+
+To answer the AKNN query, we first develop a dual-granularity (DG) indexing schema.
+In particular, it preserves abstracts of road networks by G-tree and preserves detailed net-
+work information by the extended adjacency list. With DG, we propose a minimal first
+search algorithm, which traverses DG-G tree and explores the node with the minimal aggre-
+gate distance iteratively. However, this method suffers from false hits, which arises from
+keyword tests. Therefore, we develop a simple but effective technique called collaborative
+filtering to alleviate false hits. The main idea is to perform keyword tests by multiple key-
+word bitmaps collectively rather than by only one. Besides, we also discuss how to extend
+our algorithms to answer the aggregate keyword k nearest neighbour query, as well as how
+to maintain DG when POIs change. We have conducted extensive experiments on both real
+and synthetic datasets to evaluate the performance of algorithms. Experimental results show
+that our algorithms outperform competitors from several times to several orders of magni-
+tude for both the AKNN query and Ak2N 2 query. Besides, our lazy updating strategy is
+efficient even for massive updating operations.
+
+In the future, we intend to study the AKNN query on the dynamic environment with mov-
+ing POIs. Another interesting direction for future work is to study distribution algorithms
+for the AKNN query.
+
+Acknowledgements This work was supported by National Program on Key Basic Research Project
+(i.e., 973 Program) No.2012CB725305, the NSFC Grant No.61428204, the Scientific Innovation Act
+of STCSM No.13511504200 and No.15JC1402400, National Science and Technology Supporting plan
+No.2015BAH45F01, the public key plan of Zhejiang Province No.2014C23005, the cultural relic protection
+science and technology project of Zhejiang Province.
+
+Geoinformatica
+
+References
+
+WAIM. Springer, pp 164–177
+
+pp 373–384
+
+TODS 40(2):13
+
+1. Abbasifard MR, Ghahremani B, Naderi H (2014) A survey on nearest neighbor search methods.
+
+International Journal of Computer Applications 95(25):39–52
+
+2. Ahmadi E, Nascimento MA (2016) k-optimal meeting points based on preferred paths. In: Proceed-
+ings of the 24th ACM SIGSPATIAL International Conference on Advances in Geographic Information
+Systems. ACM, p 47
+
+3. Bao J, Liu X, Zhou R, Wang B (2016) Keyword-aware optimal location query in road network. In:
+
+4. Cao X, Cong G, Jensen CS, Ooi BC (2011) Collective spatial keyword querying. In: SIGMOD. ACM,
+
+5. Cao X, Cong G, Guo T, Jensen CS, Ooi BC (2015) Efficient processing of spatial group keyword queries.
+
+6. Chen K, Sun W, Tu C, Chen C, Huang Y (2012) Aggregate keyword routing in spatial database. In:
+Proceedings of the 20th International Conference on Advances in Geographic Information Systems.
+ACM, pp 430–433
+
+7. Choi DW, Pei J, Lin X (2016) Finding the minimum spatial keyword cover. In: ICDE. IEEE, pp 685–696
+8. Deng K, Sadiq S, Zhou X, Xu H, Fung GPC, Lu Y (2012) On group nearest group query processing.
+
+9. Elmongui HG, Mokbel MF, Aref WG (2013) Continuous aggregate nearest neighbor queries. GeoInfor-
+
+TKDE 24(2):295–308
+
+matica 17(1):63–95
+
+networks. TKDE 27(5):1205–1218
+
+networks. TITS 17(2):469–480
+
+SIGMOD. ACM, pp 405–418
+
+10. Gao Y, Qin X, Zheng B, Chen G (2015) Efficient reverse top-k boolean spatial keyword queries on road
+
+11. Gao Y, Zhao J, Zheng B, Chen G (2016) Efficient collective spatial keyword query processing on road
+
+12. Guo T, Cao X, Cong G (2015) Efficient algorithms for answering the m-closest keywords query. In:
+
+13. Guttman A (1984) R-trees: a dynamic index structure for spatial searching, vol 14. ACM
+14. Houle ME, Ma X, Oria V (2015) Effective and efficient algorithms for flexible aggregate similarity
+
+search in high dimensional spaces. TKDE 27(12):3258–3273
+
+15. Karypis G, Kumar V (1995) Analysis of multilevel graph partitioning. In: Proceedings of the 1995
+
+ACM/IEEE conference on Supercomputing. ACM, p 29
+
+16. Li F, Yi K, Tao Y, Yao B, Li Y, Xie D, Wang M (2016) Exact and approximate flexible aggregate
+
+17. Li M, Chen L, Cong G, Gu Y, Yu G (2016) Efficient processing of location-aware group preference
+
+similarity search. VLDB J 25(3):317–338
+
+queries. In: CIKM. ACM, pp 559–568
+
+18. Li Y, Li F, Yi K, Yao B, Wang M (2011) Flexible aggregate similarity search. In: SIGMOD. ACM,
+
+pp 1009–1020
+
+IEEE, pp 15–21
+
+19. Li Z, Xu H, Lu Y, Qian A (2010) Aggregate nearest keyword search in spatial databases. In: APWEB.
+
+20. Long C, Wong RCW, Wang K, Fu AWC (2013) Collective spatial keyword queries: a distance owner-
+
+21. Luo Y, Chen H, Furuse K, Ohbo N (2007) Efficient methods in finding aggregate nearest neighbor by
+
+driven approach. In: SIGMOD. ACM, pp 689–700
+
+projection-based filtering. ICCSA pp 821–833
+
+22. Luo Y, Furuse K, Chen H, Ohbo N (2007) Finding aggregate nearest neighbor efficiently without
+indexing. In: Proceedings of the 2nd international conference on Scalable information systems. ICST,
+p 48
+
+23. Papadias D, Shen Q, Tao Y, Mouratidis K (2004) Group nearest neighbor queries. In: ICDE. IEEE,
+
+24. Papadias D, Tao Y, Mouratidis K, Hui CK (2005) Aggregate nearest neighbor queries in spatial
+
+pp 301–312
+
+databases. TODS 30(2):529–576
+
+Geoinformatica
+
+computations. TKDE 9(1):102–119
+
+28(3):741–755
+
+networks. Inf Process Lett 118:83–90
+
+25. Rocha-Junior JB, Nørv˚ag K (2012) Top-k spatial keyword queries on road networks. In: Proceedings of
+
+the 15th international conference on extending database technology. ACM, pp 168–179
+
+26. Sadasivam S, Baba AI, Ku WS, Chen H (2015) A2n2: approximate aggregate nearest neighbor queries
+on road networks. In: Proceedings of the 4th ACM SIGSPATIAL International Workshop on Mobile
+Geographic Information Systems. ACM, pp 13–22
+
+27. Shekhar S, Liu DR (1997) Ccam: a connectivity-clustered access method for networks and network
+
+28. Singh V, Zong B, Singh AK (2016) Nearest keyword set search in multi-dimensional datasets. TKDE
+
+29. Su S, Zhao S, Cheng X, Bi R, Cao X, Wang J (2017) Group-based collective keyword querying in road
+
+30. Sun W, Chen C, Zheng B, Chen C, Zhu L, Liu W, Huang Y (2013) Merged aggregate nearest neighbor
+
+query processing in road networks. In: CIKM. ACM, pp 2243–2248
+
+31. Sun W, Chen C, Zheng B, Chen C, Zhu L, Liu W, Huang Y (2015) Fast optimal aggregate point search
+
+for a merged set on road networks. Inform Sci 310:52–68
+
+32. Sun WW, Chen CN, Zhu L, Gao YJ, Jing YN, Li Q (2015) On efficient aggregate nearest neighbor query
+
+processing in road networks. JCST 30(4):781–798
+
+33. Yan D, Zhao Z, Ng W (2011) Efficient algorithms for finding optimal meeting point on road networks.
+
+34. Yan D, Zhao Z, Ng W (2015) Efficient processing of optimal meeting point queries in euclidean space
+
+Proceedings of the VLDB Endowment 4(11)
+
+and road networks. KIS 42(2):319–351
+
+17(6):820–833
+
+35. Yiu ML, Mamoulis N, Papadias D (2005) Aggregate nearest neighbor queries in road networks. TKDE
+
+36. Zhang D, Chee YM, Mondal A, Tung AK, Kitsuregawa M (2009) Keyword search in spatial databases:
+
+Towards searching by document. In: ICDE. IEEE, pp 688–699
+
+37. Zhang D, Ooi BC, Tung AK (2010) Locating mapped resources in web 2.0. In: ICDE. IEEE, pp 521–532
+38. Zhao S, Cheng X, Su S, Shuang K (2017) Popularity-aware collective keyword queries in road networks.
+
+39. Zhong R, Li G, Tan KL, Zhou L, Gong Z (2015) G-tree: an efficient and scalable index for spatial search
+
+GeoInformatica 21:1–34
+
+on road networks. TKDE 27(8):2175–2189
+
+40. Zhu L, Jing Y, Sun W, Mao D, Liu P (2010) Voronoi-based aggregate nearest neighbor query processing
+in road networks. In: Proceedings of the 18th SIGSPATIAL International Conference on Advances in
+Geographic Information Systems. ACM, pp 518–521
+
+Pengfei Zhang received the BS degree in computer science and technology from HeFei University of Tech-
+nology, China, in 2013. He is currently working toward the PhD degree in the College of Computer Science,
+Zhejiang University, China. His research interests include geo-social data processing, spatio-textual data
+processing, and exploratory search.
+
+Geoinformatica
+
+Huaizhong Lin is currently an associate professor of computer science in Zhejiang University. He received a
+Ph.D. degree in Computer Science from Zhejiang University in 2002. His research interests are database and
+data mining, spatial database, information retrieval etc., he has published over 40 research papers in journals
+and conferences, and has been granted 6 patents.
+
+Yunjun Gao received the PhD degree in computer science from Zhejiang University, China, in 2008. He
+is currently a professor in the College of Computer Science, Zhejiang University, China. His research inter-
+ests include spatio-temporal databases, metric and incomplete/uncertain data management, geo-social data
+processing, and database usability. He is a member of the ACM and the IEEE, and a senior member of the
+CCF.
+
+Geoinformatica
+
+Dongming Lu mainly focuses on the digital media network technology and system, heritage digital pro-
+tection and culture passing technology, wireless and next generation internet technology and network
+information security technology. He has published more than 60 articles and 11 invention patents in the past
+five years. He is currently the executive director of the Computer Society, Computer Society of network
+technical, director and members of the special committee of the China Digital Museum of Zhejiang Province.
+
+

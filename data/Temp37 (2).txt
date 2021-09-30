@@ -1,0 +1,2195 @@
+Geoinformatica
+https://doi.org/10.1007/s10707-020-00394-y
+
+Building socially-enabled event-enriched maps
+
+Faizan Ur Rehman1,2 · Imad Afyouni3
+Saleh Basalamah5
+
+· Ahmed Lbath2 · Sohaib Khan4 ·
+
+© Springer Science+Business Media, LLC, part of Springer Nature 2020
+
+Abstract
+With the advancement of social sensing technologies, digital maps have recently wit-
+nessed a tremendous evolution with the aim of integrating enriched semantic layers from
+heterogeneous and diverse data sources. Current generations of digital maps are often
+crowd-sourced, allow interactive route planning, and may contain live updates, such as traf-
+fic congestion states. Within this context, we believe that the next generation of maps will
+introduce the concept of extracting Events of Interest (EoI) from crowdsourced data, and
+displaying them at different spatial scales based on their significance. This paper introduces
+Hadath1, a scalable and efficient system that extracts social events from unstructured data
+streams, e.g. Twitter. Hadath applies natural language processing and multi-dimensional
+clustering techniques to extract relevant events of interest at different map scales, and to
+infer the spatio-temporal scope of detected events. Hadath also implements a hierarchical
+in-memory spatio-temporal indexing scheme to allow efficient and scalable access to raw
+data, as well as to extracted clusters of events. Initially, data packets are processed to dis-
+cover events at a local scale, then, the proper spatio-temporal scope and the significance of
+detected events at a global scale is determined. As a result, live events can be displayed at
+different spatio-temporal resolutions, thus allowing a smooth and unique browsing experi-
+ence. Finally, to validate our proposed system, we conducted experiments on real-time and
+historical social media streams.
+
+Keywords Social media · Event-enriched maps · Multi-resolution ·
+Spatio-temporal scope
+
+1 Introduction
+
+The advent of the twenty-first century has seen a tremendous revolution in Map design with
+the aim of disseminating knowledge layers derived from heterogeneous and diverse data
+
+Hadath is an arabic word for an event or an unusual happening within a specified time and space.
+(cid:2) Faizan Ur Rehman
+
+fsrehman@uqu.edu.sa
+
+Extended author information available on the last page of the article.
+
+Geoinformatica
+
+sources. With the wide-spread access to tablets and smartphones, and the ease of availability
+of positioning technologies like GPS, the frequency of usage of maps, mainly for navigation,
+is unprecedented. Starting from paper maps thousands of years ago, maps have always been
+used to aid travelers navigating through their places of interest [18]. As information science
+emerged and the need for new ways to disseminate information grew, mapping began to
+include themes. Accordingly, maps went to a new era were people can browse various lay-
+ers of the map, such as points of interest, roads and terrains. At that time, new layers were
+mainly seeded by central mapping agencies of the government, and map-making was often
+considered an activity that has national security implications. However, today’s digital maps
+are often crowd-sourced, allow interactive route planning, and may contain live updates,
+such as traffic congestion state. Consequently, digital mapping applications are nowa-
+days leveraging live data to improve navigation services, and to detect traffic congestion
+states.
+
+Our vision for the next generation of maps is based on the observation that a lot of rel-
+evant spatio-temporal information is embedded in social media streams. We believe that
+a major additional functionality that can be integrated into maps will be displaying live
+and historical events, extracted dynamically from user-generated content or crowd-sourced
+data. If intelligent mapping systems can discover relevant information from these unstruc-
+tured data sources, the map browsing experience can be enriched significantly. We define
+an (Event-Enriched Map) as a map that intelligently updates itself with a knowledge on
+Events of Interest (EoI) extracted dynamically at multiple map resolutions from social data
+sources. Fundamentally, Event-Enriched Maps are about answering the what-is-happening-
+around? question. Unlike traditional systems where spatio-temporal information can be
+inferred with an on-demand basis, a mapping system that extracts and updates dynamic
+events in a near real-time fashion along with their spatio-temporal scope, can indeed serve
+as a city explorer engine, where events of interest can be identified at different scales. For
+example, a spike in tweets talking about an accident at a particular location, coupled with a
+fast spreading of related tweets on a large spatial scope up until it covers the whole country,
+might tell us that a celebrity or a public figure might have been affected by that accident.
+Whereas, another spike in tweets talking about food at a particular location coupled with
+new Foursquare check-ins, can indicate the opening of a new restaurant. The result of stage
+is an event-enriched map that shows the interesting dynamic events extracted from social
+media sites. Other examples of extracted events are illustrated in Fig. 1, which include a
+free entry to the Louvre Museum, a live music concert, an opening of a temporary mar-
+ket hall, but also some statistical analyses that show accident-prone roads and non-safe
+zones.
+
+The challenge in identifying new information to display on the map is multifold. First,
+we need to infer map-worthy events and dynamic updates about places of interest from
+social media streams. This is challenging from natural language understanding and context
+extraction perspectives. Secondly, to display such events on a map, their significance and
+spatio-temporal extent, referred to as the event scope later in this paper, must be established,
+so that as a user changes the zoom level, only events of appropriate scope are displayed.
+For example, based on users’ interactions, a soccer match may be displayed at the city
+scale, the opening of a new restaurant at sub-urban scale and a house-warming party at
+the neighborhood scale. Thus, not only it is necessary to extract the events themselves, but
+also to establish their significance and how they span across space and time, so that they
+can be displayed appropriately in a clutter-free manner. Finally, an efficient and scalable
+management of input streams and extracted events should be provided in (near) real-time so
+that updates can be handled and displayed smoothly.
+
+Geoinformatica
+
+Fig. 1 Conceptual
+illustration of Event-Enriched Maps: Findings automatically discovered from live
+streams, such as a restaurant opening, a neighborhood party, an accident prone road segment, warnings on
+demonstrations and emergency cases, etc
+
+To address these challenges, we present Hadath, a proof-of-concept implementation
+to demonstrate the feasibility and adaptability of building Event-Enriched Maps by dis-
+playing real-time events and unusual happenings by collecting and managing unstructured
+social data. Hadath implements different algorithms for the extraction, clustering, scope
+determination, and effective mapping of social data streams. Our approach aims at pro-
+viding an efficient and scalable framework for the management of a large number of
+microblogs that are disseminated worldwide, by employing a multidimensional in-memory
+indexing scheme, and a hierarchical clustering technique of candidate data points. Hadath
+digests incoming streams into a unique data packet format; and uses an approximate string
+matching technique (i.e., Tf-Idf and Cosine similarity) to extract candidate packets with
+an event corpus in order to identify potential event classes and properties. Moreover,
+the system develops an unspecified topic detection method that extracts spatio-temporal
+peaks and unusual happenings based on the occurrence score and diffusion sensitivity
+of topics.
+
+Local events that are extracted within limited spatial ranges, as calculated by the spatial
+index, can then be aggregated with similar events in neighboring areas in a hierarchical
+manner, so that the spatial and temporal scope of that aggregated event can be determined.
+Clustering of events is performed depending on the spatial and temporal dimensions, as well
+as the cosine similarity between related packets. Inferring the scope for a given event helps
+determining the map zoom level(s) for which this event should be displayed; thus providing
+an effective and smooth browsing experience of dynamic events.
+
+This paper presents a major extension of our previous work [32, 33] by introducing a
+fully-fledged system named Hadath that handles multiple types of data sources, and devel-
+ops algorithms for an efficient extraction, clustering, and mapping of live crowd-sourced
+events. This paper builds on top of our previous work by thoroughly developing the different
+
+Geoinformatica
+
+system components, and methods for clustering events at different levels of details based on
+their significance and scope. Hadath consists of several components as follows. Data collec-
+tion involves gathering social data with different forms: data chunks and streams. The data
+preprocessing component digests streaming data, and packs data into structured packages
+from unstructured social streams. Another task of data preprocessing is to identify potential
+events and clean unnecessary raw data. The data manager stores data by implementing a
+two-level temporal and multi-level spatial pyramid indexing schemes to allow efficient and
+scalable access to raw data streams, as well as to extracted events. The events of interest
+detection module classifies and extracts events based on a multidimensional and hierarchical
+clustering technique, which later helps defining the spatial scope and the level of abstraction
+of detected events. The event detection module is not a part of the query engine, so instead
+of querying spatio-temporal events with an on-demand basis, Hadath works continuously to
+process data from incoming streams in order to extract and update EoIs. The query engine
+creates best query plan based on map zoom level, spatial and temporal characteristics, and
+executes the query plan in order to retrieve EoIs efficiently. The visualizer provides a new
+dimension to existing maps by illustrating extracted knowledge from live collected data as
+live events at different levels of abstraction.
+
+The remainder of this paper is as follows. Section 2 highlights the main challenges in
+designing multiscale event-enriched maps. Section 3 presents the related work from sev-
+eral perspectives. Section 4 highlights the main concepts in event-enriched maps, and then
+presents the system overview and the main architecture components. Section 5 describes
+the spatial scope finder and its related algorithms. Section 6 discusses the implementation
+details, while Section 7 demonstrates the experimental results. Finally, Section 8 draws
+conclusions and discusses future challenges.
+
+2 Design challenges
+
+There are several challenges related to knowledge extraction, determination of spatial
+and temporal scopes of events, visualization of events with respect to the multiple map
+resolutions, and finally, the big data challenge towards building efficient and scalable
+event-enriched mapping systems. Other challenges related to the integration and fusion of
+multimodal data sources, and multilingual data processing are out of the scope of this paper.
+
+2.1 Challenge 1: Discovering events of interest
+
+Unlike existing system where events are extracted based on user’s request, the key concept
+behind Event-Enriched Maps is to dynamically extract knowledge by digesting microblog
+social data streams. Three relevant dimensions are mainly required to be extracted for
+any given event: i) the actual content about the nature of the event, ii) its spatio-temporal
+details, including the location and duration of the event, and iii) its scope or extent, which
+is described as an independent challenge in the next subsection due to its importance.
+Extracted events can be classified into two different categories [7, 46]: specified and unspec-
+ified events. Specified events require building a classification model that indicates whether
+a given stream represents or can be part of a predefined topic, and if so, labeling that stream
+with the type or category as provided in the trained data set. In contrast, unspecified events
+are spatio-temporal peaks that represent important unknown topical happenings. These
+unusual happenings are extracted based on an unsupervised learning model by analyzing
+the textual, spatial, and temporal features of streams. Moreover, events can be discovered
+
+Geoinformatica
+
+more efficiently on small-scale regions based on nearby locations and text similarity, but it
+becomes more challenging to efficiently merge clusters from different regions that represent
+identical events.
+
+2.2 Challenge 2: Understanding spatio-temporal scope
+
+It is necessary to extract not only the event information and location, but also its spatio-
+temporal scope. In mapping applications, the context of what to display is set by the spatial
+scope of the visualized entity. When viewing the entire city, events that have a city-level
+interest should be displayed. As the user zooms in, events of progressively narrower scope
+must be displayed. For example, a soccer match can be of interest at the city scale, whereas
+a wedding may be of interest only at the local scale. However, even in the case of a wedding,
+that event may need to be displayed on higher levels of abstraction if it involves lots of
+streaming input from other neighborhoods or cities, as may be the case, for example, of
+a celebrity wedding. A framework to extract the spatial scope from live data streams is
+essential if a reasonable map browsing experience needs to be generated. Many challenging
+questions are raised in this context: 1) how do define the significance level of a detected
+event, and based on which criteria (e.g., number of interacting users, the nature of the event,
+etc.)? 2) how do we assign a geographical extent to an evolving event? and 3) on which
+map zoom level(s) should a particular event be displayed? These questions are considered
+as part of the multi-resolution event visualization process, which one of the most pressing
+challenges in building event-enriched maps. Indeed, selecting the appropriate items to be
+displayed on a given map extent, and with a given zoom level is a primary challenge in
+GIS systems, and is referred to as cartography generalization [12, 22]. However, this issue
+becomes more significant when applying on dynamic events with an evolving spatial scope.
+For instance, we need to make sure that a map point that is associated with a particular event
+is placed in a topologically correct region (e.g., on the right side of a river, not in the middle
+of the sea or desert). Furthermore, the temporal scope needs also to be established in order
+to clean old or unnecessary events after a certain time period. Due to their dynamic nature,
+events usually tend to be active on maps within a certain threshold, and as long as, users
+keep interacting around those evolving events.
+
+2.3 Challenge 3: Efﬁciency and scalability
+
+Browsing event-enriched maps requires a smooth and fast panning and zooming capabil-
+ities. Events of different levels of abstraction are shown on the fly depending on the user
+navigation behavior. An important challenge here consists in managing input data streams
+as well as extracted events for efficient processing and retrieval. With the large volume of
+incoming streams, data indexing and the distributed processing of data represent an essen-
+tial part of this system. Both real-time and historical data need to be managed and processed
+for extracting the different categories of events. A framework for event stream processing
+should do the hard work of collecting and preprocessing data, extracting events at differ-
+ent scales, making sure their scope and ‘time to live’ are regularly updated, visualizing
+results on screen with smooth panning and zooming capabilities, scaling to a larger number
+of executing nodes if the load is high, and handling failures. While data stream manage-
+ment tools have been largely adopted for faster insight discovery and efficient processing of
+incoming streams, advanced spatial and temporal indexing schemes need to be developed
+so that events on a world wide map can be extracted and displayed at multiple zoom levels
+depending on their significance and computed scope.
+
+Geoinformatica
+
+3 Related work
+
+Enriching maps with high-level extracted knowledge in real-time is of key interest to many
+areas of research, including real-time recommendation systems. Leveraging publicly avail-
+able data allows for extracting up-to-date information about surroundings, thus enriching
+conventional spatio-temporal queries. This section highlights the state-of-the-art on topics
+related to: 1) existing digital mapping; 2) data collection towards event-enriched maps; 3)
+events of interest detection; and 4) performance and scalability.
+
+3.1 State-of-the-art mapping technologies
+
+The use of digital maps is tremendously increasing with the aim of sharing preeminent infor-
+mation about current locations and spatial characteristics of the surroundings. Researchers,
+authorities, and industries generate thousands of map-based analytics every year to meet
+their social and economic needs[23]. Moreover, map giants including Google, Yahoo, Tom-
+tom and Bing provide dynamic layers of traffic updates such as jams, accidents, and
+congestions to help users in their navigation needs.
+
+Today’s maps make use of the ‘Volunteered Geographic Information (VGI)’ [16] concept,
+where users can seed maps with their contributed data for certain types of features. In addi-
+tion, ‘Live Maps’ now contain data that is updated in real-time. For example, live updates
+of bus schedules, traffic conditions, restaurant opening hours, and road accidents can be
+displayed on Google Maps, and Waze, among others. With the wide spread of social net-
+works, people started to post their own social contributions on live maps, such as Foursquare
+check-ins,1 Flickr images,2 and tweets (Taghreed [3], MapD3), points of interest (POIs)
+reviews,4 and news RSS feed [41]. Moreover, NLP techniques were embedded to extract
+spatially-referenced news from online newspapers and tweets [5].
+
+Our proposed Hadath system will enhance existing map solutions by detecting and dis-
+playing events of interest such as incidents, disasters, concerts, elections and parties. The
+novel Hadath system will help in decision making and can be used by market firms, city
+development authorities, trip planners, and traffic departments, to interactively visualize
+past, current, and (near) future events on the map, along with their spatio-temporal.
+
+3.2 Event detection from social media
+
+An Event of Interest (EoI) can be defined as an occurrence or happening at a certain place
+and within a specific time period, that holds several properties and a given level of signifi-
+cance. Many real-world applications continuously collect data to detect or predict unusual
+happenings [7]. Early detection of such events can be helpful to society, users, and author-
+ities to take proper actions or decisions on time. Event detection can be divided into two
+classes based on the Topic Detection and Tracking program as defined in [44]: (i) New
+Event Detection (NED) and Retrospective Event Detection (RED). NED has been broadly
+used to find events from real-time data feeds. RED has been used to discover event from his-
+torical data. Other works proposed a more generic classification of events depending on the
+approach used for detecting and extracting event properties [7, 46]. As a result, events can be
+
+1http://www.4sqmap.com/checkins/map
+2https://www.flickr.com/map
+3https://www.mapd.com/demos/tweetmap/
+4https://www.yelp.com/wordmap/
+
+Geoinformatica
+
+classified according to the event type (specified or unspecified), detection task (retrospec-
+tive or new event detection), and detection method (supervised or unsupervised). Supervised
+techniques are based on a classification model to label incoming streams with predefined
+event topics based on trained data sets [10]. In contrast, unsupervised approaches cluster
+streams based on commonly used features (spatial, temporal, and textual) to detect spikes
+that represent important unknown topical happenings [2].
+
+Several algorithms and methods were recently proposed to discover events by clustering
+matching streams from social media or other user-generated content [20, 31, 47]. Event
+detection from social network data were mainly used to 1) detect a domain-specific type
+of events such as earthquakes, and to broadcast alarming situations to all affected users [9,
+11, 19]; 2) extract social happenings by clustering of multimedia data [24, 31] , twitter data
+[20], and Flickr data [39]; 3) forecast popularity for upcoming events [47]; and 4) detect
+traffic flow and traffic constraints including accidents, road closed or blocked [4, 17]. For
+instance, the authors in [29] detect events by analysing multi-type historical news data of
+web articles, microblog messages, TV programs, and newspapers. Event discovery from
+Twitter in real-time using semantic class clustering technique was proposed in [25], by
+filtering out old events with a time identification module. The authors in [40] consider the
+changes in user interests to model the evolution of hot events, while taking tweet messages
+into account to improve the quality of topic detection. An approach to detect spatio-temporal
+scopes of events at local and global scales was presented in [13]. However, this work did not
+thoroughly cover the different visualization scales based on event significance, and did not
+focus on mapping those events to the different spatio-temporal resolutions in digital maps.
+Unlike existing systems, Hadath dynamically detects EoIs from social data at differ-
+ent levels of spatio-temporal granularities which can be beneficial to enhance conventional
+spatio-temporal queries. Moreover, our approach does not consider specific types of events,
+or tied to a specified region in space, but rather covers any kind of unusual happening on
+multiple map scales based on event spatio-temporal scope.
+
+3.3 Performance and scalability perspectives
+
+With the large volume of incoming streams, data management and the distributed processing
+of data streams represent an essential part of any system that implements ‘event-enriched
+maps’. Over the last decade, Data Stream Management Systems (DSMS) have been increas-
+ingly adopted for processing and mining high-speed data streams [15]. In general, data
+stream processing leverages a continuous manipulation and execution of unbounded stream-
+ing data. Many proprietary DSMS systems are available in the market such as Google
+Cloud Dataflow,5 IBM Streams,6 Amazon Kinesis.7 On the other hand, open-source
+frameworks for data stream processing include Spark Streaming,8 Apache Storm,9 Elastic
+Search,10 Kafka Streams,11 and Flink.12 The common aim of these projects is to provide a
+
+5https://cloud.google.com/dataflow/
+6https://ibmstreams.github.io/
+7https://aws.amazon.com/kinesis/
+8https://spark.apache.org/streaming/
+9https://storm.apache.org/
+10https://www.elastic.co/
+11https://kafka.apache.org/documentation/streams/
+12https://flink.apache.org/
+
+Geoinformatica
+
+high-throughput, low-latency platform for handling real-time data feeds. Stream process-
+ing is usually divided into two types: (i) Native stream processing: which means that each
+incoming record is processed as soon as it arrives, without delay; and (ii) batch processing.
+The difference between stream and batch processing is that the latter processes data with
+some delay (usually a few minutes), which, for some applications, is acceptable.
+
+Beyond data stream processing, an efficient management and retrieval of detected events
+at different map scale is required. Therefore, a spatio-temporal indexing structure is needed,
+which allows fast retrieval and updates on existing clusters, in order to accommodate
+new streaming data. Many recent attempts were introduced to integrate spatial and spatio-
+temporal indexing in non-relational distributed databases [14, 27, 43, 45]. Consequently, an
+approach that integrates an efficient data stream processing, along with a robust multidimen-
+sional indexing scheme for managing evolving events of interest is going to be presented in
+this paper for the development of multi-resolution event-enriched maps.
+
+3.4 Similar systems
+
+Several works have presented systems that visualize geo-tagged social streams on maps,
+such as Flickr images, tweets [1, 3], Yelp reviews, and spatially-referenced news [5, 38].
+Taghreed system [3] provides a mechanism to querying and visualizing tweets on maps by
+using spatio-temporal indexing techniques to run in real-time on current and historical data.
+Other works have been presented to detect communities of interest, event popularity, rec-
+ommend optimized paths based on traffic constraints or to forecast upcoming events [17,
+30, 34]. The authors in [26] developed a system to detect crime and disaster events from
+tweets along with their spatial and temporal patterns. NewsStand [5] is a scalable system
+that extracts news from RSS feeds and visualize them on a worldwide map. Furthermore, the
+system can apply spatio-temporal and keyword-based filtering of news. However, this sys-
+tem displays news by only ranking them based on the number of views, without clustering
+events of interest based on their spatio-temporal scopes. TwitterStand [38] extends News-
+Stand to identify tweets related to late-breaking news and visualizes those tweets on maps.
+Moreover, the authors used a naive Bayes classifier to remove noise, i.e. tweets that are not
+related to news, and a leader-follower clustering algorithm to cluster tweets that belong to
+the same news. Consequently, although TwitterStand appear to be the closest work to our
+proposed system, it lacks a thorough understanding of any kind of unusual happenings as it
+only focuses on news. Also, this system does not consider the multi-sale nature of detected
+events.
+
+4 Event-enriched maps
+
+An Event of Interest can be any happening occurring within a spatio-temporal peak includ-
+ing concerts, sport events, competitions, accidents, birthdays, meetings, hirings, natural
+disasters, etc. In philosophy, “Jaegwon Kim”13 theorized an event with an Object, property,
+and time. Taking this concept a shift forward, the spatial extent is associated to an event of
+interest, so that we can assess and visualize the significance of events on maps.
+
+In event-enriched maps, the context of what to display is set by the spatial scope of the
+detected events. When viewing the entire city, events that have a global intere st should be
+
+13Jaegwon Kim (1993) Supervenience and Mind, page 37, Cambridge University Press
+
+Geoinformatica
+
+displayed. As the user zooms in, events of progressively narrower scope must be displayed.
+For example, a soccer match can be of interest for the global scale, whereas a wedding may
+be of interest only at the district scale. However, even in the case of a wedding, the same
+event may need to be displayed on higher levels of abstraction if it involves lots of stream-
+ing input from other neighborhoods or cities, as may be the case of a celebrity wedding. In
+addition, unlike existing systems where knowledge is extracted based on users’ requests, the
+key principle behind Event-Enriched Maps is to dynamically extract knowledge by digest-
+ing social data streams and to infer its spatial scope, whether it covers a neighborhood,
+town, county, state, national or international level. In the following, we describe the main
+concepts used to develop event-enriched maps, and then we discuss the system architecture
+and salient components.
+
+An event of Interest is formally represented as follows: EoI = (DP, S, T , L)
+where DP is the set of data packets that form the extracted event, S is a spatial geometry
+that depicts the point or region where this event occurred, T is the temporal extent for this
+event, and L is the level(s) of detail where this event should be displayed on map.
+
+The set of data packets ‘DP’ is represented as follows: (cid:2)P1, P2, ..., Pm(cid:3)
+where all ’P1...m ∈ P’ are related to a same real-world occurrence with similar properties
+and within a limited spatio-temporal range. The event spatial geometry S is determined by
+the centroid of all data packets locations that form the event.
+
+Data Packet: A data packet depicts a generic structured form of data by cleaning and fil-
+tering multiple types of unstructured data sources. Formally, a data packet is defined by
+P(cid:2)H eader, P ayload(cid:3) where a ‘Header’ is represented by (cid:2)id, time, geom, city, country,
+isEvent, eventClass, eventP roperties(cid:3) and ‘Payload’ is (cid:2)tags, f ollowers, text,
+viewers, userN ame, language, url(cid:3) Each data packet has a meta-data header that
+includes the source, location, time, event class, and other properties; and a payload mainly
+encapsulates the multimedia content, user details, along with the of predefined tags. The
+value of the isEvent flag determines whether this event is specified or unspecified.
+
+Speciﬁed Events of Interest: A specified event of interest falls into a limited list of
+expected event categories (e.g., concert, football match, birthday, hiring, storm); those
+events are repeatable and can match with existing corpora.
+
+Unspeciﬁed Events of Interest: An unspecified event of interest depicts an unknown
+spatio-temporal peak, where the content does not match with existing corpora (e.g.
+authorities giving a new name to a hurricane such as Mathew,Agnes, Floyd).
+
+It is necessary to extract not only the specified or unspecified event information, but also
+its spatio-temporal extent. In mapping applications, the context of what to display is set by
+the spatial extent of the visualized point or event of interest.
+
+Spatial Scope: A spatial scope of an event represents the geographical extent where this
+event has been disseminated. This helps in identifying the importance of an event at multiple
+map resolutions. As a result, when viewing the entire city, events that have a city-wide
+interest should be displayed. As the user zooms in, events of progressively narrower scope
+must be highlighted.
+
+Temporal Scope: A temporal scope of an event determines the period of time this event
+remains alive. We consider an event to be alive, as long as some users are still communicat-
+ing about that particular event. The temporal scope allows to track the temporal evolution of
+
+Geoinformatica
+
+an event depending on users’ interaction, and to clean old or unnecessary events when their
+time period is drained.
+
+Three main parameters are considered when determining the temporal scope: a) ‘birth
+time’ that indicates the existence of a new event in our system whenever we calculate the
+first cluster of data packets related to that event; b) ‘time of occurrence’ that marks the actual
+happening time of the event (e.g., next Monday); and c) ‘time to live’ (TTL) to depict the
+survival time of an event based on users’ interaction.
+
+Event Level of Signiﬁcance: The level of significance LS for an event is a mapping
+between the spatial scope and the map zoom levels in order to provide a unique and dynamic
+map browsing experience at different abstraction levels.
+
+Given the above concepts and definitions, we formulate our problem as follows. For a
+given batch file ‘BFts’ with a sliding window of ‘t’ hours from a data source ‘s’, our aim is
+to generate a list of indexed data packets ‘DP’ of potential specified and unspecified events.
+Extracted events at the local scale, that are related to same real-world occurrences should
+then be clustered together based on spatio-temporal and text similarity parameters, among
+other factors. Several EoI layers should be computed for event with similar significance
+levels (e.g., district, county, city or country levels). An EoI LayerLS at a given significance
+layer LS is represented by (cid:2)EoI1, EoI2, ..., EoIk(cid:3), should be displayed on map with unique
+panning and zooming capabilities.
+
+4.1 System overview
+
+This section presents Hadath: a novel map-based platform that collects social data streams
+from multiple sources, processes data to find events of interest (EoI) and visualizes detected
+events in correspondence to the scale of the view. Figure 2 illustrates an overview of our
+Hadath architecture with the salient components, which are highlighted as follows.
+
+–
+
+The Data collection module involves gathering data from unstructured social media
+data. Our focus is on Twitter data since Twitter has a worldwide popularity and is one of
+
+Social Data Collection
+
+Data Preprocessing
+
+Data Indexing
+
+Data Cleaning
+
+Packaging
+
+Extracted Events
+
+Spatiotemporal 
+Scope Finding
+
+Smart Map Builder
+
+packet
+
+EoI 
+Cluster
+
+Feature Extraction & 
+NLP Processing
+
+Potential Event 
+Classification
+
+Peak Detection From 
+Unspecified Events
+
+Smart Map Visualization
+
+Fig. 2 Hadath Architecture
+
+Spatiotemporal EoI Indexing
+
+Local Event Detection
+
+Geoinformatica
+
+the most visited social networks [36]. Digesting data streams is performed by running
+crawlers that collect bulks of streams based on windows of a specified temporal scope
+(e.g., a few minutes).
+
+–
+
+–
+
+– Data Preprocessing includes cleaning and packaging of input data streams into a
+generic structured form. Although this paper focuses on only source of data, our
+approach is to design a wrapper whose major task is to digest data from multiple
+sources and bundle it into a unique packet with a meta-data header and a payload. This
+allows for fast integration of other sources within our platform, thus enriching the event
+detection process. Data preprocessing also involves assigning a confidence level and
+classifying data streams based on their potential to reflect some event category.
+The Data Indexing component consists in implementing a hierarchical spatial pyramid
+index, and a temporal index to allow for efficient and scalable access to candidate pack-
+ets. This also includes a hierarchical clustering and indexing of EoIs in order to detect
+the spatial scope and the level of significance for a particular event.
+Local Event Detection module classifies and extracts events within different categories,
+such as, social events (e.g., concert, match, graduation party), road accidents, incidents,
+accident prone areas, non-safe area, and other breaking news. The event detection mod-
+ule works continuously to process data from incoming streams in order to extract new
+clusters or update existing clusters with new packets.
+The EoI Indexing phase is necessary to make sure that event clusters are indexed
+by taking the spatial and temporal characteristics. The component supports the effi-
+cient retrieval pre-processed events based on the main querying attributes, that are, the
+spatial, temporal, and map level of detail.
+The Spatiotemporal Scope Finding represents a unique stage where the significance
+and level of detail of a particular event is computed. This is a very crucial component in
+our Hadath system, since for every map zoom level, our system must determine which
+events are relevant to that particular level of detail. Therefore, different layers of event
+clusters are generated after determining events scope, so that fast and smooth browsing
+experience is ensured.
+The Map Building & Visualization phase provides a new dimension to existing maps
+by illustrating extracted knowledge from live streams in the form of live events with
+different spatial scopes and at different levels of abstraction. This allows us to show
+live events in correspondence to the map level of detail (LOD), that is, when viewing at
+a city scale, events of higher significance are displayed; whereas, when zooming in to
+a given neighborhood, events of a more local interest are highlighted. The final output
+creates a unique and dynamic map browsing experience.
+
+–
+
+–
+
+–
+
+4.2 Data collection
+
+The data we collect is from Twitter. Other sources such as Instagram and flicker will be
+considered in our future research, so that multi-modal data streams can be integrated with
+twitter text streams. We use Twitter’s restful API to get a considerable portion of the dataset.
+However, Twitter’s API is limited in how much data it will let you collect. Therefore and
+since the Twitter crawler is insufficient, we also wrote script to web crawling using html
+parsers and Selenium14 platform to grab links and navigate to new pages from Twitter. Sele-
+nium has the functionality of browsing Twitter and saving any data that appears to be in the
+
+14https://www.seleniumhq.org
+
+Geoinformatica
+
+inputted scope. We also use some existing datasets from previous similar works as a training
+dataset for the unspecified event detection phase. Only geotagged tweets are considered for
+the limited scope of the paper. However, an approach for extending the coverage to locate
+non-getagged twitter streams can be integrated [48].
+
+Following are the different ways used to collect Twitter data: i) Batch retrieval used to
+group newly arrived data streams into files once every few minutes; and ii) stream retrieval
+where raw data is continuously crawled from social media sites and processed on the fly.
+In batch processing, newly arriving streaming data is gathered into batches. Each batch is
+then processed in a near-real time fashion defined by a specific temporal window. Batches
+of several are preferred in this context over stream processing, where each new piece of
+data is processed when it arrives, because batches allow for easier and faster detection of
+spikes within a given spatio-temporal constraint. Also, Hadath system aims to achieve near
+real-time processing of new clusters of events, which is usually sufficient for this kind of
+applications.
+
+4.3 Data preprocessing
+
+This phase includes data cleaning and packaging with the aim of providing an efficient
+and generic mechanism to handle incoming streams, and also allowing for future integra-
+tion of new data sources (e.g., Flickr) to be easily plugged to the platform, by supporting
+new crawlers at the data collection level without affecting the other processing compo-
+nents. Major tasks for the data cleaner and wrapper are: 1) to clean irrelevant fields and
+digest incoming streams into a unique data packet format. Like the analogy of TCP proto-
+col, each data packet has a meta-data header, containing source, location, time, type, and a
+payload, containing the actual contents including user profile details. This allows our sys-
+tem to digest different types of data input, and to generate structured data from unstructured
+streams; 2) to use specified string matching technique that detect and match candidate pack-
+ets with our event classifier corpus in order to identify potential event classes and properties.
+This approach helps us to extract relevant packets related to known event classes includ-
+ing social, disaster, religious, weather, job, traffic, sports, political/government and musical
+events ; and 3) to apply unspecified topic detection method that extract spatio-temporal
+spikes and unusual happenings based on the top frequent words. This approach helps us
+to detect unknown events that are not a part of any predefined corpus but their presence is
+considered significant within a given spatio-temporal constraint. To add new source in our
+Hadath, we just need to add small piece of code with out impacting other components of the
+system. The header and payload are populated in different ways for different data sources.
+For example, ‘event properties’ may be populated by the parsing hashtags, noun, verb in
+case of Twitter, and hashtags in case of a Flickr. Hence, a different data filter will be written
+for each new source which is added to the system. This allows our system to digest differ-
+ent types of data input, and to generate structured data from unstructured streams. These
+packets are then processed to extract Events of Interest, and can be dealt with in a consistent
+manner by the higher layers of the system.
+
+The algorithm for determining the event class (specified or unspecified events), and event
+properties, and for converting unstructured streams into a generic composite event packet
+works as follows. Every window-based bulk of geo-tagged tweet T is processed in order
+to generate unified structured list of packets with metadata (i.e., Header) and (i.e., Payload)
+P(cid:2)H eader, P ayload(cid:3). The ‘Header’ contains the time, event class, event properties, poten-
+tial event flag, city, country, geo-tagged type, and location; whereas the ‘Payload’ contains
+the list of tags, title, text, number of viewers/followers, screen name of the user, display
+
+Geoinformatica
+
+Table 1 NLP for a given text
+with type and confidence score
+
+Token
+
+Here
+
+with
+
+my
+
+mate
+
+Ben
+
+...
+
+https://t.co/Sk0P1BthDU
+
+Type
+
+Confidence score
+
+R
+
+P
+
+D
+
+N
+
+ˆ
+
+...
+
+U
+
+0.9737
+
+0.9995
+
+0.9990
+
+0.9982
+
+0.9973
+
+...
+
+0.9966
+
+name of the user, the language and url. Figure 3 shows an example of data packets generated
+from twitter data with potential event flag, event class name, and event properties. Packets
+that show no relevancy with respect to the above steps are discarded at this phase. Each T
+has to go through the following steps:
+
+–
+
+Tokenization: Hadath takes a window-based bulk of geo-tagged tweet as input, and
+applies preprocessing techniques including part of speech and tokenization to return
+a list of tokenized strings. In Twitter, users have a limited number of characters so
+they prefer to use short-forms or out-of-vocabulary words. Table 6 shows part of the
+tokenization result for a given tweet “Here with my mate Ben for the Broods con-
+cert @2degrees (@ The Opera House in Wellington Central, Wellington) https://t.co/
+Sk0P1BthD’’. The first column in the table denotes the token, the middle column shows
+the type, including ‘R’ for adverb, ‘P’ for pre or post-position or subordinating con-
+juction, ‘D’ for determiner, ‘N’ for Noun, ‘ ˆ’ for proper noun, and ‘@’ to mention
+other users. The last column shows the confidence score for each tokenized substring
+(Table 1).
+
+– After tokenization, the k most frequent words are calculated based on occurrences in the
+current bulk of tweets. Irrelevant tokens including punctuation, url, pre or post positions
+are avoided at this level, so that only significant types with high value of confidence
+score are considered.
+
+– Next, the process of structuring streams into unified packets along with meta-data is
+performed as follows. Hadath employs tf-Idf and Cosine similarity as an approximate
+string matching technique to extract candidate packets with an event corpus in order
+to identify potential event classes and properties. As a result, extracted tokens will be
+matched to identify a potential event class, if any, in addition to other event properties
+and a potential flag.
+If an event class is null, which means it is not in the corpus of known events, we
+will check for a potential unusual happening (i.e., unspecified events) by looking into
+
+–
+
+Fig. 3 Sample Data Packet from Twitter
+
+Geoinformatica
+
+frequents words. The system develops an unspecified topic detection method that iden-
+tifies spatio-temporal spikes and unusual happenings based on the occurrence score and
+diffusion sensitivity of topics.
+if an event class is still null then this means it is neither specified nor unspecified event.
+Packets that show no relevancy with respect to the above steps are discarded at this
+phase.
+Finally, the algorithm returns a list of composite candidate packets for a given window-
+based bulk of geo-tagged tweet.
+
+–
+
+–
+
+4.4 Data manager
+
+The data manager implements an in-memory spatial indexing scheme to allow an efficient
+and scalable access to data packets. The spatial index is a multi-resolution data structure
+(similar to a partial quad tree originally introduced in [37]). Leaves in this data structure
+correspond to cells that represent the minimum bounding rectangles comprising data pack-
+ets. Figure 4 displays a snapshot of indexed data packets at a fine level of the hierarchical
+tree, and with a single day specified as a time threshold. Cells are colored lighter to darker
+based on data packet counts; darker-colored cells are further expanded at deeper levels in
+the tree as compared to lighter-colored cells. Hadath employs a big data mechanism that
+continuously process data packets within the different cells on several execution nodes. The
+manager also indexes detected EoIs in order to fetch them efficiently based on the map
+zoom level and scope. Using this multi-resolution indexing scheme, hierarchical clustering
+of events can be applied for efficient determination of their content and spatial scope. For
+temporal aspects and cleaning of EoIs, Hadath incorporates three parameters: a) ‘birth time’
+that indicates the existence of a new event in the system whenever the first cluster of data
+packets related to that event is computed; b) ‘time of occurrence’ that marks the actual hap-
+pening time of the event (e.g., next Monday); and c) ‘time to live’ (TTL) is the survival time
+of an event within the system. Whenever we receive new data packets related to an exist-
+ing event, we increase its TTL by T number of hours. Moreover, processed data packets
+are moved to disks based on temporal and memory thresholds. The main task of the disk
+indexer is to index outdated data packets and events on disk using an R*-tree spatial index
+to allow efficient retrieval for historical queries.
+
+Fig. 4 A snapshot of indexed data packets at a fine level of the hierarchical tree
+
+Geoinformatica
+
+4.4.1 Main memory indexer
+
+The main memory spatial index is a multi-resolution data structure that stores packets in a
+hierarchical scheme based on stream density. Other indexes are implemented on the basis
+of temporal and keywords attributes. For the spatial index, we used a multi-level pyramid
+structure with a geohashing technique that divides the geographic space into buckets of a
+grid shape. Geohash converts two-dimensional spatial queries into one-dimensional string
+matching. With this advantage, Geohash can execute queries faster on indexed packets or
+event clusters, with O(1) time complexity. The keyword search is managed by an inverted
+index that maps a page-centric data structure (page→words) to a keyword-centric data
+structure (word→pages). Instead of searching text, it searches for the word index first and
+then find the document (e.g., tweet) related to that word. For temporal indexes, we divided
+each spatial segment and keyword segment in ’T’ hours where ’T’ hours can be configurable
+based on the size of main memory.
+
+Following are the benefits of indexing techniques with respect to our system, 1) It helps
+to detect local events (i.e. within specific cell based on different precision); 2) It helps to
+detect the spatial scope efficiently; 3) When memory reaches to its threshold, we can easily
+flush the previous ’T’ hours to disk.
+
+4.4.2 Histrorical data
+
+To get better understanding about the place, users’ may also be interested in old EoIs apart
+from current or upcoming EoIs such as if a user wants to book an hotel in new city then she
+can browse nearby area and see what happened around in the past. To support EoIs for long
+periods, our system store data from main-memory to disk based on main memory threshold
+or based on temporal threshold. However, the disk index is a bit different from the main
+memory with respect to temporal parameters. Figure 5 shows an overview of the hierarchical
+disk index implementation in Hadath. To access EoIs efficiently, we distribute temporal
+data packets to monthly and daily bases. The monthly distribution stores month with year
+whereas daily distribution inside monthly distribution stores actual EoIs of particular day in
+a same pyramid manner explained in main memory section. For example, if a user requests
+
+Fig. 5 Multi-level spatio-temporal index
+
+Geoinformatica
+
+data of june 2017, then the query processor needs to access 30 indexes inside the june month
+to fetch EoIs and keyword indexes.
+
+4.4.3 Memory cleaning
+
+The main task of memory cleaning manager is to clean expired data packets and EoIs from
+memory. An expired data packet is determined on the basis of temporal constraints at the
+TTL of the event. We have used periodic approach to clean EoIs periodically in conjunction
+with the piggybacking approach over the querying process. Whenever an EoI happens, we
+can check all EoIs for that particular type and update it.
+
+4.5 Event of interest detection
+
+After cleaning, wrapping and indexing of data packets, the event of interest detection mod-
+ule starts from the base level within the multi-resolution data structure to detect events at
+a local spatio-temporal scope. The base level contains cells of a fine resolution, that are
+considered as leaves within the hierarchical pyramid data structure. Within each leaf cell,
+Hadath adopts the graph analogy where data packets are considered as nodes and the value
+of the ‘text similarity (TF-IDF)’ between data packets is computed as the weight of the bidi-
+rectional edges. Data packets with a high text similarity value within each cell are clustered
+together using the hierarchical density-based spatial clustering (HDBSCAN) algorithm [28].
+The HDBSCAN algorithm is suitable in our approach as, unlike most of the other clustering
+methods, it does not require a prior knowledge of the minimum number of clusters. Indeed,
+predefining the number of clusters in advance, would mean that other less significant clus-
+ters would be discarded and not displayed on map, which impacts the overall accuracy of
+our event detection technique. For unspecified events that are not matching our training cor-
+pus, this module detects frequent tags and keywords, in order to identify spatio-temporal
+peaks.
+
+To create new event clusters within the leaf cells, an algorithm is developed so that sim-
+ilar packets within the local spatio-temporal scale are grouped together, or can be grouped
+within existing event clusters in the corresponding cell. Figure 6 shows stages of an event
+of interest detector in the following four different stages. A) shows leaf level cluster with
+existing clusters ( blue circle ) and non clustered data packets (light green square) before the
+arrival of the newly indexed data packets. B) shows new indexed data packets (red square)
+in the same leaf level. Overall, it shows a list of Old clusters, old packets and New Packets;
+C) New clusters are formed and old ones are updated with new packets. Clusters and pack-
+ets are considered as nodes in the cell, and distances between them are computed based on
+
+Fig. 6 Local EoI Detection within the leaf cells A) List of existing clusters and packets, B) shows arrival
+of new indexed data packets, C) Merging new packets within an existing cluster, forming a new cluster, and
+cleaning old packets and clusters based on a threshold value, D) resultant leaf cells
+
+Geoinformatica
+
+the cosine similarity value. As a result, some packets are merged with existing clusters (dot-
+ted circle), and the combination of some old and new packets forms a new cluster (dotted
+square). Also, cleaning of old packets and clusters is performed at this level, based on their
+temporal threshold and TTL parameter (dotted hexagon). D) shows the final output of local
+event detection in leaf cells after creating new clusters, updating old clusters and cleaning
+of old packets and clusters.
+
+As illustrated in Algorithm 1, every leaf cell of the hierarchical Spatial Tree ST has to
+go through the following actions in order to detect local events. Packets are received as a
+window-based bulk of data DP, and are indexed depending on the spatio-temporal dimen-
+sions. Packets within the leaf cells are then clustered based on their contextual similarities.
+Details of the algorithm are explained as follows:
+
+–
+
+–
+
+indexNewPackets() indexes new data packets in the existing hierarchical spatial tree
+ST , and returns the list of updated leaf cells in Cleaf (Line 2).
+for each leaf cell ci ∈ Cleaf do the following actions (Line 3):
+
+Geoinformatica
+
+–
+
+–
+
+–
+
+–
+
+–
+
+retrieveExistingClusters() to extract the list of existing event clusters in OC ∈ ci from
+CLci. Existing clusters are required to merge new packets with them, and to update
+their time to live ‘TTL’ (Line 4).
+retrieveExistingNonClusteredPackets() returns the list of existing data packets in OP
+∈ ci that are not part of any cluster from the hierarchical tree ST . Old non-clustered
+packets are retrieved to check whether they can create new clusters with newly coming
+packets (Line 5).
+retrieveNewPackets() returns the list of existing data packets ∈ N P ∈ ci that are not
+part of any cluster from the hierarchical tree ST . We need new packets ∈ N P to
+check whether they are eligible to form new clusters or to be merged with old packets
+or clusters (Line 6).
+computeCosineSimilarity function calculates the cosine similarity between OC,
+OP , N P (new packets, old packets and old clusters), and stores the result in D. D[][]
+is a matrix that shows the cosine similarity Dij where Di and Dj can be in N P , OP
+or OC (Lines 7,8).
+for each new indexed packet p ∈ N P that is not a part of any cluster, do the following
+actions (Line 9):
+
+–
+
+–
+
+checkSimilarityWithClusters() checks clustering eligibility between old clus-
+ters OC and the new packet p. If p matches with any existing cluster,
+the function will return the cluster id CLk. if CLk is not null (i.e., cluster
+already exists), then add p to the cluster CLk and update TTL for CLk by
+incrementing by ‘timeT hreshold’ (Lines 10-12).
+If no cluster matches with p, then the checkSimilarityWithPackets function
+checks clustering eligibility of p with old packets OP . If p matches the cri-
+teria and threshold for clustering with old packets, the function will return the
+list of packets forming the new cluster in CP . Packets in CP will be marked
+as part of the cluster CLk (Lines 13-16).
+
+–
+
+cleanOldClusters() function cleans old packets based on temporal threshold ‘T’, as well
+as existing clusters if their TTL are elapsed (Line 18).
+
+Figure 7 illustrates diverse types of events as a result our event detection module. This
+forms an event portal that can be very useful for a city explorer or any decision maker, but
+due to clustered and overlapped events, it is difficult for someone to browse such types of
+maps without enhanced visualization of those events.
+
+It is worth emphasizing that this phase is applied to every local cell in the search tree.
+Therefore, the resulting clusters generated within each cell are independent from each other
+and cannot be merged further, and newly joining packets can be merged with one and only
+one local cluster within that particular cell. However, clusters generated from the different
+cells in this phase can be redundant. Consequently, there is a need for a hierarchical clus-
+tering of similar local events into a larger one with a higher significance and updated scope.
+
+5 Spatial scope ﬁnder
+
+As events can be discovered more efficiently on small-scale regions, a bottom-up approach
+for clustering close-by and similar events is developed, so that redundant events on dif-
+ferent spatial resolutions can be aggregated, and their spatial scope can be upgraded. In
+order to update the granularity level and identify the spatial scope for a given event, Hadath
+
+Geoinformatica
+
+Fig. 7 Visualization of Event of Interest without spatial scope
+
+implements a hierarchical clustering technique that detects an event spatial scope starting
+from leaf nodes. This technique consists in aggregating nearby and matching events, so that
+redundant events in the sibling cells are merged, and a new cluster with a larger spatial
+scope is determined. This phase is repeated successively at higher levels of abstraction to
+incrementally increase events’ spatial scope.
+
+For instance, merging clusters (Cl1ci, Cl2cj ) from different cells (Ci, Cj ) at a depth
+level ‘n’ in the tree, will result in upgrading their horizontal spatial scope from zoom level
+k which, for example, corresponds to the district level on map, to zoom level k - 1 which
+corresponds to a city level, as shown in Fig. 8A. The horizontal spatial scope depicts the
+spreading of an event on a larger spatial scope over time. If an event cannot be merged
+with its siblings, then we check the vertical evolution of the event, which we refer to as
+the vertical spatial scope, to infer the event impact in a very limited spatio-temporal peak.
+For example, consider an opera/concert going live where attendees of the event are send-
+ing localized tweets in a very limited space and time, as compared to nearby sibling cells.
+The vertical spatial scope for such events can be upgraded, so that it can be displayed
+at higher zoom levels. For instance, an event with a significant vertical scope may be
+
+Fig. 8 Spatial Scope. A) Horizontal and B) Vertical
+
+Geoinformatica
+
+displayed starting from the zoom level k (e.g., that corresponds to neighborhood level on
+map) to zoom level k - n (e.g., which corresponds to city level) where the value of ‘n’ is com-
+puted based on the total number of tweets related to that event, and the number of unique
+users involved as shown in Fig. 8B. Consequently, the system clusters matching events at
+higher levels of abstraction, and incrementally increases their spatial scope so that they can
+be displayed at different map zoom levels.
+
+Figure 9 explains the concept of horizontal scope by considering a different set of
+detected events from several cells at the leaf level of the hierarchical tree. Clusters of events
+that are illustrated with the same color present similar content and can be merged at higher
+levels of the tree (e.g., red colored events). At the depth level ‘X-1’, we analyze children
+of each cell for potential cluster aggregation. If two or more events in child clusters are
+merged, then a new aggregated cluster is created at the level ‘X-1’ with an upgraded hor-
+izontal scope. At the depth level ‘X-2’, we can see three events (two red and one orange)
+after merging events in their respective child cells (Events 1,2,3,4, 8,9,10,11, and Events
+6,7,12,13). At the level ‘X-3’, we can see only one red color event after merging events from
+lower levels. The scope of the red color event is the highest, and it is visualized on map
+from a higher abstraction level as compared to the orange colored event (depth level ‘X-2’).
+The purple colored event is not merged with any sibling events so it will be visualized on
+the map at a detailed zoom (li.e., less significant).
+
+An event cluster in a Cli is represented as follows:
+
+Cli = (cid:2)id; ptGeom; cellI d; childrenI ds;
+totalN onEmptyCells; eventClass; eventP roperties;
+packetI Ds; topContent; imageU RLs; scopeUpdated;
+uniqueU serI Ds, zoomLevelStart; zoomLevelEnd(cid:3)
+
+Fig. 9 Sample horizontal spatial scope of events from Depth ‘X’ to ‘X-4’
+
+Geoinformatica
+
+where ‘id’ is the cluster identifier, ‘pointGeom’ is the centroid point location,‘cellId’ is
+the cell identifier of the cell, ‘childrenIds’ contains the list of children cell identifiers of
+merged clusters, ‘totalNonEmptyCells’ is the number of non-empty cells that has one or
+
+Geoinformatica
+
+more data packets, ‘eventClass’ and ‘eventProperties’ depict the event class(es) and a list
+of top frequent meaningful words within the cluster, ‘packetIDs’ is the list of data packets
+identifiers forming that cluster, ‘imageURLs’ is the list top selected image URLs, ‘topCon-
+tent’ is the list top selected tweets text, ‘scopeUpdated’ is the flag to check whether the
+cluster spatial scope is processed, ‘uniqueUserIDs’ is the list of unique users, and finally
+the ‘zoomLevelStart, and zoomLevelEnd’ correspond to the multiple resolutions where this
+event is available to be displayed on map. The details behind using the above cluster prop-
+erties are highlighted in Algorithm 2. This algorithm runs multiple times for each level X
+of the hierarchical tree ST , starting from X = Leaf level of ST up until reaching the root.
+At the beginning of this algorithm, we assume that all clusters at the leaf cells have been
+detected and indexed in corresponding cells. Moreover, this algorithm is repeated from level
+X-1 until reaching the root level, so that each loop will consist in re-assessing the set clusters
+in a given subtree and if any merging is possible, new clusters at higher levels of the tree are
+created with an upgraded spatial scope. As illustrated in Algorithm 2, every non-leaf cell
+c ∈ CX−1 at level X − 1 of the hierarchical Spatial Tree ST has to go through the following
+actions (Line 2).
+
+–
+
+–
+
+–
+
+–
+
+–
+
+–
+
+If c has child cells, the algorithm looks into all child cells of c and retrieves all child
+clusters into clusters[] using getAllClustersFromChildCells(c) met-hod (Lines 3-4, see
+Fig. 9).
+For each cluster cli ∈ clusters[], we check whether cli scope has been previously
+updated (Lines 6). if cli scope is not set, then we define a new list of aggregated clusters
+aggCl[] that may encapsulate multiple clusters starting from cli (Line 7).
+In the second loop, we look into other existing clusters clj ∈ clusters[], and verify their
+matching similarity criteria as described in Algorithm 1 (Lines 8-11). θ is a specified
+threshold to determine the matching eligibility between clusters of sibling cells. Match-
+ing clusters are added to aggCl so that they be merged at a higher level of the tree.
+If the aggCl[] list size is equal to one, this means that no other cluster from sibling
+cells can be merged with cli. Therefore, we do not need to check for the horizontal
+spatial scope, as sibling cells have not leveraged that particular event. However in this
+case, the algorithm checks for a potential vertical significance of cli. It calculates the
+number of packets and the number of unique users that formed the cli cluster. If the
+ratio of the number of users to the number of packets is more than the vertical threshold
+τ , the algorithm upgrades the vertical spatial scope of cli by adjusting the start and
+end zoom levels based on the current zoom and subtree levels (i.e., X − 1 in this case)
+(Lines 12-15). Here, we consider the number of users to identify scams or inputs from
+virtual bots. This approach helps us in identifying on-going events such as an Opera or
+Concerts, where users attending the event are more proactive in updating their status
+from the same location as compared to sibling cells.
+For the horizontal spatial scope, if aggCl[] list size is more than a given threshold ζ ,
+then the algorithm creates a new cluster acl in c at the level X − 1 if the tree, by
+merging all cluster identifiers from the lower level, and by upgrading the spatial scope
+as well as the zoom start and end to be displayed on map. A new cluster location is then
+determined based on a weighted centroid of the different sub-clusters forming acl. The
+new cluster will also have its top content updated by refining the top frequent words
+and topics from all related sub-clusters (Lines 16 - 22).
+Finally, the algorithm sets the flag for updated spatial scope as true so that non-visited
+clusters will be considered in the next rounds for further changes with respect to their
+vertical or horizontal scope (Line 23).
+
+Geoinformatica
+
+This algorithm is repeated from level X-1 until reaching the root level, so that each
+loop will consist in re-assessing the set clusters in a given subtree and if any merging is
+possible, new clusters at higher levels of the tree are created with an upgraded spatial scope.
+Consequently, the same detected event might be represented by different clusters that are
+encapsulated one within the other, and each one is given a relative scope so it appears on
+a specific range of zoom levels. For instance, on a map with zoom levels ranging from 1
+to 20 (such as google maps), clusters that are found at the leaf level of the tree are shown
+on a zoom level from 18 to 20, and those that are aggregated together at higher levels can
+be displayed at various zoom level starting from 17 till level 3 or 4 (country and continent
+levels) depending on their significance.
+
+5.1 Map building & visualization
+
+Visualization of events with diverse significance or impact should take into consideration
+the map spatial resolution, thus allowing a clutter-free and natural map browsing experience.
+Visualization of events with the same spatial resolution on maps does not make sense, since
+these events have different scopes from spatio-temporal perspectives. For instance, events
+of someone’s birthday cannot be displayed at a national level, except if that person is a
+celebrity, and that event was spread throughout the country.
+
+Consequently, the smart map builder in Hadath takes the aggregated clusters of events
+along with their range of zoom levels where they are supposed to be displayed, and generates
+a set of knowledge layers that correspond to the levels of detail defined in a mapping system.
+For instance, in Google maps, the local events detected based on the approach described in
+Section 4.5, will be displayed in zoom levels 18 and 17, while aggregated clusters at the
+neighborhood level should be displayed in zoom levels 14 to 16, and so on. This match-
+ing between clusters computed at different scales and the map zoom levels is necessary to
+achieve smooth browsing of events based on their inferred spatio-temporal scope.
+
+6 Implementation details
+
+To validate our approach, Hadath was developed as a proof-of-concept system based on
+a big data framework towards efficient data management and visualization of events of
+interest on maps. Our methods were tested with more than 30 million geotagged tweets.
+The front-end is a map-based application that visualizes spatio-temporal events at different
+scales. The implementation is done in Java 1.7. We are using i7-4712 HQ-CPU @ 2.30GHz
+with 16GB DDR-2 RAM at the back-end for processing using the following libraries and
+software [33]:
+
+– NLP: We used Ark-tweet-NLP [6] library for part-of-speech and annotation. This library
+is trained for Twitter and produces better results than Stanford NLP. It handles the out-
+of-vocabulary words, and stop words used in Twitter.
+
+– Clustering Algorithm: Data packets with a high text similarity value are clustered using
+HDBSCAN clustering algorithm [28]. HDBSCAN is suitable in our approach since,
+unlike most of the other clustering methods, it does not require a prior knowledge of
+the minimum number of clusters. Taghreed Crawler: [3] crawler was used to collect
+geotagged tweets.
+
+– Big Data Processing: Summarizing data into squeezed information is very important
+as computation of high-performance geospatial data requires a lot of data operations.
+
+Geoinformatica
+
+Therefore, it is mandatory to take advantage of a distributed processing environment
+while maintaining an in-memory indexing scheme to build an efficient and scalable sys-
+tem. Aggregating geospatial data is an effective summarization technique for visualizing
+geospatial data on maps. Summarization will not only reduce the overall processing
+cost, but will also effectively handle the bandwidth because of a huge data transmission.
+
+Elasticsearch for Apache Hadoop (ES-Hadoop) is a special library that allows for link-
+ing Hadoop jobs into Elasticsearch.15 ES-Hadoop serves as a link between Hadoop’s big
+data analytics and Elasticsearch. Data nodes (for data storage) and TaskTracker (for data
+processing) are the two nodes that were installed. The following terminology is adopted in
+Elasticsearch task processing: i) a node is a virtual machine or a core where an elacstic-
+search process s running; ii) a cluster can be formed by one or more nodes and is identified
+by its cluster name; iii) an index defines the way elasticsearch distributes data around nodes
+in a cluster; and iv) a shard is an element of an index. An index is usually formed of multiple
+shared distributed across the different processing nodes.
+
+The following machine specification were adopted for Hadoop deployment. 2x1TB hard
+drives and 2 quad-core CPUs, running at 2.5GHz and 32GB of RAM. For in-memory oper-
+ations and to leverage efficient storage and retrieval of data streams, Rabbit MQ server was
+installed as a RAM node.
+
+Geo-SpatialDataaggregation: The Grid-based and Distance-based clustering represent
+the two commonly used techniques for geo-clustering in online maps [8]. The Grid-based
+clustering works on the principle of a latitude, longitude geocode system, referred to as
+‘Geohash’, which is designed by Gustavo Niemeyer. Therefore, the principle of grid-based
+clustering consists in dividing the world map into rectangular cells, and then grouping data
+points within each cell hierarchically. Geohash has a character value that helps in postulating
+the accuracy of the hash value and determining the location. For example, the latitude and
+longitude coordinates of 40.78, -73.96 fall within the geohash box of ‘dr’ that it is a part
+of New York city, USA. Adding a character to the string ‘dr’ will lead to more specified
+geographical subsets of the original string [27]. Figure 10 highlights the number of the
+packets in nine neighbouring cells, along with the cell geohash ids at the 5ˆth precision
+level. The size of each cell at precision five is 4.9 km x 4.9 km. The different map views
+with 2, 4 and 6 characters of geohash strings and their corresponding zones on map are
+also displayed in Fig. 11. Therefore, different levels of the geohash value are used by the
+grid-based clustering technique to group data points located in nearby cells.
+
+One of the advantages of the geohash technique is that it translates two-dimensional spa-
+tial queries into one-dimensional string search. Therefore, it can solve search queries with
+O(1) time complexity. The length of the geohash string is considered as the precision level
+for a specified zone. As the geohash strings are shortened, less precise zones are covered.
+
+For real time processing and analytics, Elasticsearch is used to index and store the dif-
+ferent clusters of summarized data at different zoom levels. The data summarization layer
+processes data points and classifies them into geohash clusters. Using the live data streams,
+aggregated live geohash clusters are prepared for each zoom level.
+
+Archived Data Storage: Hadoop/HDFS represents the second level of repository, which
+archives historical and recent datasets. Unlike real-time processing, the second repository
+layer stores historical records in persistent memory and is used for statistical analytics over
+
+15https://www.elastic.co/products/hadoop
+
+Geoinformatica
+
+Fig. 10 Number of potential indexed packet at precision 5 level
+
+a specified spatio-temporal window in the past. It is effectively used for huge volume infor-
+mation retrieval. The Hadoop/HDFS ecosystem has proved to be efficient when the volume
+of historical data is huge [21]. Moreover, the recovery of data is very efficient because of
+the distributed storage and processing mechanism.
+
+7 Evaluation
+
+To evaluate the performance of Hadath system, we analyzed the efficiency as well as the
+quality of results for event detection. For efficiency, our evaluation shows the processing
+time in the different phases starting from processing raw data streams, indexing of data
+packets, determining the spatial scope, and finally, map browsing and visualization of EoIs
+
+Fig. 11 Map view with different zoom lebels (aggregated geo-clusters representing covered areas with
+respect to location strings (e.g., 2, 4, and 6 digits corresponding to different resolutions: 1,250km * 625km,
+39.1km * 19.5km, and 1.22km * 0.61km respecively)
+
+Geoinformatica
+
+at different zoom levels. On the other hand, we also evaluated the effectiveness of results
+by calculating the precision, recall and F1 scores for event detection and spatial scope com-
+putation at the different map levels. Finally, we present the final output of Hadath system
+along with map-based visualizations.
+
+7.1 Efﬁciency
+
+The crawler collects around 100K tweets as a batch collection of raw data streams in a time
+frame of a few minutes. The full dataset collected between December 23rd to January 2nd,
+2016 was about 40 million tweets. The data collected represents a full twitter sample, and
+includes geo-tagged, non-geotagged and tweets from different languages. We considered
+geo-tagged and English language tweets only (around 10% of the original data). This section
+presents our findings in terms of efficiency at the different phases, and then shows the
+processing time of querying events at multiple levels of detail.
+
+Preprocessing: Figure 12 shows the processing time for generating indexed data packets
+after cleaning and wrapping of 15 batch collections with each file containing around 100K
+tweets. As demonstrated, a period of around ninety seconds is required for each bulk of data
+for preprocessing and packaging of 100K tweets. This phase is relatively costly, because
+text processing to detect specified and unspecified events is also occurring at this stage.
+Moreover, parallel and distributed processing can be performed in this stage to optimize the
+performance. Figure 13 displays a number of potential packets with header and payload after
+removing noise and discarded non-potential tweets. Based on the evaluation of 15 batch
+collections, we found that in average 48.4% percent of potential packets were classified as
+specified events, and 51.6% were potential packets with unspecified topic detection.
+
+Indexing: Sequential and Bulk are two modes of indexing in elastic search. For testing
+purposes, we indexed a sample of 15,000 data packets using both modes on a single node
+with one shard. Sequential indexing took long time, whereas bulk indexing with error check
+took 8.24 seconds and with out error check took 2.05 seconds as shown in Table 2. Error
+code checks acknowledgment of each bulk indexing data and in case of any error it will
+resend the bulk data again.
+
+SpatialScope: To evaluate Hadath’s efficiency with event detection, we tested the hierar-
+chical event clustering process with 4 million tweets distributed over 40 batch collections
+
+Fig. 12 Processing time for generating data packets from 100K tweets
+
+Geoinformatica
+
+Fig. 13 Number of Potential specified and unspecified packets from 100K tweets
+
+containing 100K tweets each. The total number of detected events at the local level was
+171,498 events. The code for local event detection runs on every batch in order to extract
+local events from raw data. The program ran on a single execution node without parallel
+and distributed optimizations. Figure 14 shows the time in seconds at each level for pro-
+cessing one batch collection of 100K tweets. Extracting local events from raw data is the
+most expensive stage, whereas aggregating clusters at higher levels of detail exhibits a much
+faster processing time. To deduce the total processing time for each batch, the execution
+time in this phase should be added to the delay of preprocessing which 90 seconds per batch
+is around. Table 3 illustrates the total processing time of the full dataset for event detection at
+different map scales. Since the hierarchical spatial clustering algorithm naturally works on
+distributed cells, this process can be easily applied to multiple execution nodes to decrease
+processing time.
+
+QueryingEoIs: Figure 15 shows a query to fetch EoIs at zoom level 17 and a sample result
+to demonstrate the structure of an EoI cluster. In the query result, we can see that it took
+179 milliseconds to return 1,35,681 EoIs using 28 shards (i.e., execution processes) with
+100% success rate. Each EoI contains, name of index as ‘ index’, properties of events as
+‘eventType’, total number of packets and their identifiers involved in clustering as ‘pack-
+etcount’ and ‘packets’ respectively, the timestamp, identifier, and the zoom level range on
+map as ‘zoomStart’ and ‘zoomEnd’, which tells on which levels this event should be dis-
+played. Moreover, other parameters are included such as a geohash value of the cell as
+‘cellkey’ containing the cluster, and the centroid location of a cluster calculated by taking
+into consideration the location of all packets in clusters.
+
+The performance measures are illustrated in Fig. 16, where the average processing time
+of five different runs in milliseconds for querying EoIs from zoom level 6 to zoom level 17
+
+Table 2 Indexing time for
+15,000 packets
+
+Method
+
+Time in seconds
+
+Bulk (with error check)
+
+Bulk (without error check)
+
+8.24
+
+2.05
+
+Geoinformatica
+
+Fig. 14 Event Detection: Batch Processing Time
+
+is calculated. The zoom level 18 shows a very limited area on maps, and so was not taken
+into consideration for EoI visualization. The average processing time at the zoom level 17
+is the highest as this is where most of the local events in the leaf cells get detected.
+
+7.2 Effectiveness
+
+To evaluate the performance of determining the spatial scope, we assess the event detection
+process at different map scales starting from local events to higher levels of abstraction. The
+exact number of map scales differ depending on applications and countries. However, there
+is a matching between these map scales and the map zoom levels as defined by the map
+provider (e.g., twenty levels of detail are introduced in Google maps). This section presents
+our findings in terms of quality and accuracy of results, and then provides an overview of
+the final output as discovered by Hadath system.
+
+7.2.1 Experimental setup
+
+To design this experiment, we tested the hierarchical spatial scope performance over a dense
+geographic zone of 350 ∗ 150km2, so that we can evaluate the correctness and precision of
+detected events over the different map scales. For our experiments, we consider the follow-
+ing map scales: the neighborhood level displays EoIs of nearby streets and covers an area
+on map up to 1.2 ∗ 0.61km2; the sub-locality visualizes EoIs in local region and covers area
+
+Table 3 Total Processing time of
+4 Million tweets for calculating
+EoIs at different levels
+
+Scope
+
+Total processing
+
+Total number
+
+time (4M)
+
+of EoIs
+
+Potential Packets and Local
+
+Neighborhood
+
+Sub-Locality
+
+Locality
+
+City
+
+3564
+
+699.8
+
+26.07
+
+15.62
+
+6.9
+
+171,498
+
+6,266
+
+261
+
+77
+
+44
+
+Geoinformatica
+
+Fig. 15 Query and a sample EoI of zoom level 17
+
+of up to 3.05 ∗ 2.85km2; the group of sub-localities includes locality of the city and covers
+area of up to is 4.9 ∗ 4.9km2; and the group of localities is considered at the city level and
+covers area of up to 22 ∗ 12.2km2. We calculated the precision, accuracy and F1 score for
+each level to find out the effectiveness in extracting the right events, and in producing the
+correct clusters at different map scales.
+
+The challenge in accuracy evaluation is to construct a trustful ground truth, and to manu-
+ally verify the quality of detected events at different levels of detail. Considering the whole
+dataset on a world wide map is also very challenging due to the huge amount of data. There-
+fore, to evaluate the effectiveness, we considered a geographical zone of size 156*156km
+which covers the city of Lagos, Nigeria’s largest city. Lagos is one of the fastest growing
+city of the world and the most populous city in Africa, and also presented the highest num-
+ber of packets for the evaluated time period. One full day of twitter data was considered for
+this experiment, with around 4 million raw data streams collected. We calculated the ‘True
+Positives’, ‘True Negatives’, ‘False Positives’ and ‘False Negatives’ for each of the derived
+map scales. Later, we computed the precision, accuracy and F1 score for each spatial scale
+using the following formulas:
+
+P recision =
+
+T rueP ositive
+T rueP ositive + F alseP ositive
+
+Fig. 16 Processing time for event discovery at the different map zoom levels
+
+Geoinformatica
+
+Table 4 True Positives (TP), True Negatives (TN), False Positives (FP) and False Negatives (FN) at different
+map scales
+
+Scale
+
+TP
+
+TN
+
+FP
+
+FN
+
+Local
+
+Neighborhood
+
+Sub-Locality
+
+Locality
+
+City
+
+18.92%
+
+44.15%
+
+16.67%
+
+54.31%
+
+55.84%
+
+72.20%
+
+48.33%
+
+80.35%
+
+43.75%
+
+43.45%
+
+Total correct
+
+predictions
+
+91.12 %
+
+92.48%
+
+97.02%
+
+98.07%
+
+99.29%
+
+4.11%
+
+3.45%
+
+1.80%
+
+0.90%
+
+0.00%
+
+4.75%
+
+4.07%
+
+1.18%
+
+0.81%
+
+0.71%
+
+T otal
+
+T rueP ositive
+Recall =
+T rueP ositive + F alseN egative
+Accuracy = T rueP ositive + T rueN egative
+F 1 − Score = 2 ∗ P recision ∗ Recall
+P recision + Recall
+To calculate these scores, we constructed a ground truth by manually labeling events
+at the different map scales by three independent users, and the decision of considering a
+cluster as an event or not was taken based on majority. The labeled events were calculated
+for each level of detail, and based on the hierarchical spatial resolutions that define these
+map scales. For instance, at the neighborhood level, two events talking about a similar topic
+in two different adjacent neighborhoods are considered as separate events. However, at a
+higher level of detail, these two event are going to be merged by the hierarchical clustering
+algorithm, and its spatial scope is going to be updated.
+
+7.2.2 Results on eﬀectiveness
+
+The first line in Tables 4 and 5 present the results of our local event detection technique.
+Local events are extracted at the points of interest level (e.g., buildings, shopping malls,
+etc.). At this local level, true positives represent the actual events that are detected by our
+system, and the true negatives depicts the raw data streams that do not represent any event,
+and are trully discarded by our system. In contrast, false positives are not true events but
+detected by our system; and finally the false negatives are the real-events that were discarded
+by Hadath. As shown in Table 4, true positives are around 19%, whereas true negatives are
+around 72%, since most of the raw data streams in social networks do not represent any
+particular event. False positives and false negatives count each of them around 4%. The
+total number of local events detected is 8654. This number covers many redundant events,
+
+Table 5 Precision, Recall,
+Accuracy, and F1-Score at
+different map scales
+
+Scale
+
+Local
+
+Neighborhood
+
+Sub-Locality
+
+Locality
+
+City
+
+0.82
+
+0.93
+
+0.95
+
+0.98
+
+1
+
+Precision
+
+Recall
+
+Accuracy
+
+F1
+
+0.80
+
+0.92
+
+0.98
+
+0.98
+
+0.99
+
+0.91
+
+0.92
+
+0.99
+
+0.99
+
+0.99
+
+0.81
+
+0.92
+
+0.96
+
+0.99
+
+0.99
+
+Geoinformatica
+
+Fig. 17 False positive and False Negative results at different levels
+
+because no aggregation was performed at this level. Although, the aim of our system was
+not to provide the best approach for local event detection, but rather to define the event
+significance and scope on a multi-resolution map, the results are comparatively very good
+and consistent with existing approaches [13, 24, 35, 42]. The value of precision, recall,
+accuracy and F1 score at the local level are 0.82, 0.80, 0.91 and 0.81 respectively (see
+Table 5).
+
+For neighborhood level, we clustered events from neighboring cells in the search tree
+at the 6th depth level of geohash index (i.e. 1.2km *0.61km). Here, true positives are the
+clustered events that are correctly merged with similar event from neighboring cells. True
+negatives are local events that are not aggregated at the neighborhood level, mostly due to
+single or very limited number of occurrences. False positives are events that are clustered
+local events but are not related to each other e.g. “Happy Birthday Sam” and “Happy Birth-
+day Pam” are two different birthday events but cosine similarity treated them as same and
+false negatives are positives events that are supposed to be clustered but discarded by our
+system. As shown in Table 4, true positives are around 44.15% but true negatives are around
+48.33% whereas false positives and false negatives are around 4%. The value of precision,
+recall, accuracy and F1 score are 0.93, 0.92, 0.92 and 0.92 respectively.
+
+Similarly, clustering of similar events from lower map scale (e.g., sub-locality and local-
+ity) to an upper one (e.g., city or state level) is performed, and events scope is upgraded
+accordingly. Figures 17 and 18 demonstrates how the percentage error (FP+FN) is reduced
+to less than 1%, while the accuracy and F1 score are converging to ≈ 1 from local
+
+Fig. 18 Accuracy and F1 score at different levels
+
+Geoinformatica
+
+Table 6 Some potential EoIs that are detected from a window-based bulk of tweets of 26-December-2016
+(07:50 am to 08:34 am GMT +000)
+
+Type
+
+Tweet ID
+
+Potential EoI
+
+Tweet
+
+Unpecified
+
+813290877149999104
+
+Joblessman Kidnaps
+
+Nephew
+
+Specified
+
+813290897068605440
+
+Jobs
+
+If you’re looking for work in
+
+Specified
+
+813290936406941696
+
+Job Engineering
+
+We’re #hiring! Click to apply:
+
+Specified
+
+813290983102312448
+
+Killed
+
+2 Killed In Suicide Bomb Attacks
+
+Specified
+
+813291603687260160
+
+Traffic Update
+
+Closed due to accident in #Jackson
+
+Unspecified
+
+813291414192787456
+
+Boxing Day
+
+Boxing Day in full flow...beach style
+
+Specified
+
+813291603737608192 Weather Snow
+
+Hello snow (ice rain) #japan #jr #snow
+
+Specified
+
+813291788953944064 Merry Christmas
+
+Merry Christmas from Not-Paris-
+
+Specified
+
+813292598228033536
+
+Birthday
+
+Happy Birthday sistur @ CITTA
+
+Specified
+
+813293091452952576 Wedding
+
+Happy wedding tante Anik (with panji,
+
+Unspecified
+
+813294578400800769
+
+House Fire
+
+#Essex: UPDATED: Mother and
+
+Joblessman Kidnaps Little
+Nephew˘2026 Demands N4m
+Ransom https://t.coWror4ecDxb
+
+#EastHaven, CT, check out this #job:
+
+https://t.cowXDeXa0mwD #trucking
+
+#truckers #flatbed #Transportation
+
+Sr. Verification Engineer - https://t.
+
+coLu6mPSvXXA#Job #Engineering
+
+#Beijing, Beijing #Jobs #CareerArc
+
+In Cameroon https://t.coGDotuC9bCx
+
+on I-49 SB between 85th St. and
+
+Blue River Rd #KCtraffic
+
+#Oman #beach #sun #gonnaburn
+
+#vacation #sea #sand #relax
+
+https://t.col8lhjH5F8k
+
+@ Shin-Hakodate-Hokuto Station
+
+https://t.comYhBuAkTBt
+
+France! @ Paris Las Vegas Hotel;
+
+Casino https://t.coztrLwRCzGk
+
+Mall https://t.coStnwrJOTzH
+
+Rangga, and 5 others at @solobistro)
+
+https://t.coVn7VTtaESw
+
+daughter killed in tragic house fire
+
+named locally https://t.co29ZZ9HnwCh
+
+https://t.coMCwfmSkHz8
+
+Front https://t.coFXigQ7fyWW
+
+Unspecified
+
+813298131509137408
+
+Public Places
+
+Just posted a photo @ Lake Taupo Water
+
+Unspecified
+
+813301360321961984
+
+South Korea
+
+Ban Ki-moon may emerge next South
+
+President
+
+Korea president
+
+Geoinformatica
+
+Table 6
+
+(continued)
+
+Type
+
+Tweet ID
+
+Potential EoI
+
+Tweet
+
+Unspecified
+
+813301644414722049
+
+RIP
+
+Specified
+
+744499906040078338
+
+Social events/concert
+
+Today is the WI Brass Quintet’s
+
+Specified
+
+813298082133774336 Music
+
+Specified
+
+813293195350052864
+
+Social events/concert
+
+Truly saddened by our loss of a
+
+Specified
+
+813296286329880576
+
+Sports Golf
+
+@piesportsbooze: Golf on ice, it ain’t
+
+Specified
+
+813291704744890368
+
+Offer and Discount
+
+Last last last Christmas he gave
+
+us his heart and this Christmas
+
+he’s gone! #RIP #GeorgeMichael6
+
+https://t.coopdMZ5dIii
+
+concert! Come on down to Saint.
+
+https://t.co/VQ8y6RCMTQ
+
+#nowplaying #pitbull #neyo
+
+#afrojack #nayer Pitbull feat.
+
+Ne-Yo, Afrojack Nayer —
+
+Give Me Everything ———
+
+#bbradio #rockt #berlin
+
+true pop music superstar. Here’s a
+
+great concert in Paris a few
+
+https://t.coC1DhLpgDcw
+
+happening... https://t.co31SgvTuisv
+¨@ChrisDuhamelJsy
+Good morning lady’s Here we are
+
+again Happy Monday -30% OFFER
+
+on ALL services above 5kd Call
+
+https://t.con2YPhDSV2Q
+
+to city level. As we move, upwards towards city level, TP +TN increases and FP+FN
+decreases which proves that the correctness improves further with the cluster aggregation
+of EoIs.
+
+7.3 Final output
+
+Table 6 shows the result of our event detection module, where, a list of some specified
+and unspecified potential EoIs are extracted from one window-based bulk of tweets 26-
+December-2016 (07:50 am to 08:34 am). Specified are the events that are matched with our
+existing EoI corpus, and unspecified are the ones that are detected due to a high spatio-
+temporal peak in a given window-based bulk of tweets. For instance, the announcement
+for the Iowa Craft Brew Festival is an example of a non-specified event detect at that
+day.
+
+As previously mentioned, the aim of Hadath system is to users to interact with event-
+enriched maps smoothly, and browse events at different levels of details on a world wide
+map with an efficient panning and zooming capabilities. The following results intend to
+demonstrate the usage and performance of our prototype in discovering the spatio-temporal
+scope of social events. For instance, Fig. 19 illustrates an interactive tag/word clouds of
+events of interest that are dynamically adapted when changing the specified spatio-temporal
+
+Geoinformatica
+
+Fig. 19 Interactive Tag/Word Cloud of EoIs
+
+scope (i.e., by zooming, panning or applying a rectangular range selection). The multi-
+resolution event-enriched map visualization, where events of global significance are
+displayed at higher abstraction levels and local significance are shown at lower abstraction
+levels are are shown in Figs. 20 and 21.
+
+Figure 21 displays a detailed map view at the neighborhood level in New York city.
+The nature of events is clearly distinguished at such a local scale, as we can find clusters
+of events discussing incidents, parties, hiring opportunities, or some other gathering in the
+district. Of course, such local event can be expanding further at higher levels of abstraction
+depending on how people interact with such disruptive news (e.g., a hiring announcement
+can, for instance, start at a local scale but a more global interest depending on the hiring
+
+Fig. 20 High Abstraction Map View with Country Level Social Events
+
+Geoinformatica
+
+Fig. 21 Detailed Map View for the City of New York
+
+company). It is also worth noting that some unspecified event, such as ‘Carolines Broadway
+Video’, were discovered by utilizing our scoring technique to compute the keyword peaks
+while users are posting tweets on some unknown unusual happening.
+
+8 Conclusions
+
+This paper introduces Hadath, a system that builds multi-resolution event-enriched maps
+by handling social data streams, and by developing different algorithms for the efficient
+extraction, clustering, and mapping of live events. Hadath wraps incoming unstructured data
+streams into data packets, that is, a generic structured format of a potential event. These
+packets are then processed to extract EoIs based on a hierarchical clustering technique,
+which defines the spatio-temporal scope for each event. The system can provide valuable
+knowledge from crowd-sourced data to authorities, market firms, event organizers, and end-
+users to help in decision making. In future, we plan to merge multiple data sources (e.g.,
+Flickr, online newspapers) to increase correctness and conciseness of detected events using
+deep learning on multi-core techniques. Furthermore, a comprehensive study on location
+identification from textual features, and understanding of the different languages used in
+social networks, are some fo the remaining challenges to be addressed. We also need to
+handle historical data by developing statistical learning tools towards a better understanding
+of urban data and user behavior. We believe Hadath can help in building the next generation
+of maps platform by intelligently extracting relevant knowledge from crowd-sourced data
+in real-time.
+
+Acknowledgments We kindly acknowledge Prof. Mohamed F. Mokbel from the University of Minnesota,
+for their useful suggestions. We would like to thank Shahbaz Atta for his development support in the big
+data processing. We extend our gratitude to King Abdul Aziz City for Science and Technology (KACST),
+Kingdom of Saudi Arabia for funding this research project through NSTIP grant number 14-INF2461-10.
+
+References
+
+1. MapD. http://www.mapd.com
+2. Aiello LM, Petkos G, Martin C, Corney D, Papadopoulos S, Skraba R, G¨oker A, Kompatsiaris I, Jaimes
+
+A (2013) Sensing trending topics in twitter. IEEE Trans Multimed 15(6):1268–1282
+
+Geoinformatica
+
+3. Magdy A et al (2014) Taghreed: a system for querying, analyzing, and visualizing geotagged microblogs.
+In: Proceedings of the 22nd ACM SIGSPATIAL International Conference on Advances in Geographic
+Information Systems. ACM, pp 163–172
+
+4. Rehman FU et al (2014) Toward dynamic path recommender system based on social network data. In:
+Proceedings of the 7th ACM SIGSPATIAL International Workshop on Computational Transportation
+Science, IWCTS ’14. ACM, New York, pp 64–69
+
+5. Samet H et al (2014) Reading news with maps by exploiting spatial synonyms. Commun ACM
+
+6. Gimpel K et al (2011) Part-of-speech tagging for twitter: Annotation, features, and experiments. In:
+Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Lan-
+guage Technologies: Short Papers - Volume 2, HLT ’11. Association for Computational Linguistics,
+Stroudsburg, pp 42–47
+
+7. Atefeh F, Khreich W (2015) A survey of techniques for event detection in twitter. Comput Intell
+
+57(10):64–77
+
+31(1):132–164
+
+8. Atta S, Sadiq B, Ahmad A, Saeed SN, Felemban E (2016) Spatial-crowd: a big data framework for
+efficient data visualization. In: 2016 IEEE international conference on Big data (big data). IEEE, pp
+2130–2138
+
+9. Avvenuti M, Cresci S, Marchetti A, Meletti C, Tesconi M (2014) Ears (earthquake alert and report
+system): a real time decision support system for earthquake crisis management. In: Proceedings of the
+20th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining, KDD ’14.
+ACM, New York, pp 1749–1758
+
+10. Benson E, Haghighi A, Barzilay R (2011) Event discovery in social media feeds. In: Proceedings of the
+49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies-
+Volume 1, pp 389–398. Association for Computational Linguistics
+
+11. Boettcher A, Lee D (2012) Eventradar: a real-time local event detection scheme using twitter stream.
+In: Proceedings of the 2012 IEEE International Conference on Green Computing and Communications,
+GREENCOM ’12. IEEE Computer Society, Washington, pp 358–367
+
+12. Brassel KE, Weibel R (1988) A review and conceptual framework of automated map generalization. Int
+
+13. Dong X, Mavroeidis D, Calabrese F, Frossard P (2015) Multiscale event detection in social media. Data
+
+J Geograph Inf Syst 2(3):229–244
+
+Min Knowl Discov 29(5):1374–1405
+
+14. Fox A, Eichelberger C, Hughes J, Lyon S (2013) Spatio-temporal indexing in non-relational distributed
+
+databases. In: 2013 IEEE International conference on big data. IEEE, pp 291–299
+
+15. Garofalakis M, Gehrke J, Rastogi R (2016) Data stream management: Processing High-Speed data
+
+streams. Springer, Berlin
+
+221
+
+16. Goodchild MF (2007) Citizens as sensors: the world of volunteered geography. GeoJournal 69(4):211–
+
+17. Gutierrez C, Figuerias P, Oliveira P, Costa R, Jardim-Goncalves R (2015) Twitter mining for traffic
+events detection. In: 2015 Science and information conference (SAI), pp 371–378. https://doi.org/10.
+1109/SAI.2015.7237170
+
+18. Harley JB, Laxton P (2002) The new nature of maps: essays in the history of cartography. JHU Press
+19. Hua T, Chen F, Zhao L, Lu CT, Ramakrishnan N (2016) Automatic targeted-domain spatiotemporal
+
+event detection in twitter. GeoInformatica 20(4):765–795
+
+20. Kaleel SB, Abhari A (2015) Cluster-discovery of twitter messages for event detection and trending. J
+
+Comput Sci 6:47–57
+
+21. Karun AK, Chitharanjan K (2013) A review on hadoop - hdfs infrastructure extensions. In: 2013 IEEE
+Conference on information communication technologies, pp 132–137. https://doi.org/10.1109/CICT.
+2013.6558077
+
+22. Kraak MJ, Ormeling FJ (2013) Cartography: visualization of spatial data. Routledge
+23. Krygier J, Wood D (2011) Making maps: a visual guide to map design for GIS. Guilford Press,
+
+New York
+
+24. Li H, Ji H, Zhao L (2015) Social event extraction: Task, challenges and techniques. In: Proceedings of
+the 2015 IEEE/ACM International Conference on Advances in Social Networks Analysis and Mining
+2015, ASONAM ’15. ACM, New York, pp 526–532. https://doi.org/10.1145/2808797.2809413
+
+25. Li Q, Nourbakhsh A, Shah S, Liu X (2017) Real-time novel event detection from social media. In:
+2017 IEEE 33Rd international conference on data engineering (ICDE), pp 1129–1139. https://doi.org/10.
+1109/ICDE.2017.157
+
+26. Li R, Lei KH, Khadiwala R, Chang KCC (2012) Tedas: a twitter-based event detection and anal-
+ysis system. In: 2012 IEEE 28Th international conference on data engineering, pp 1273–1276.
+https://doi.org/10.1109/ICDE.2012.125
+
+Geoinformatica
+
+2(11):205
+
+27. Liu J, Li H, Gao Y, Yu H, Jiang D (2014) A geohash-based index for spatial data management in dis-
+tributed memory. In: 2014 22Nd international conference on geoinformatics, pp 1–4. https://doi.org/10.
+1109/GEOINFORMATICS.2014.6950819
+
+28. McInnes L, Healy J, Astels S (2017) hdbscan: Hierarchical density based clustering. J Open Sourc Softw
+
+29. Pan Y, Blevis E (2011) A survey of crowdsourcing as a means of collaboration and the implications of
+crowdsourcing for interaction design. In: 2011 international conference on Collaboration technologies
+and systems (CTS), pp 397–403. https://doi.org/10.1109/CTS.2011.5928716
+
+30. Papadopoulos S, Kompatsiaris Y, Vakali A, Spyridonos P (2012) Community detection in social media.
+
+Data Min Knowl Disc 24(3):515–554
+
+31. Petkos G, Papadopoulos S, Kompatsiaris Y (2012) Social event detection using multimodal clustering
+and integrating supervisory signals. In: Proceedings of the 2Nd ACM International Conference on Mul-
+timedia Retrieval, ICMR ’12. ACM, New York, pp 231–238. https://doi.org/10.1145/2324796.2324825
+32. Rehman FU, Afyouni I, Lbath A, Basalamah S (2017) Understanding the spatio-temporal scope of multi-
+scale social events. In: Proceedings of the 1st ACM SIGSPATIAL Workshop on Analytics for Local
+Events and News. ACM, pp 1–7
+
+33. Rehman FU, Afyouni I, Lbath A, Khan S, Basalamah S, Mokbel MF (2017) Building multi-resolution
+event-enriched maps from social data. In: Proceedings of the 20th International Conference on Extending
+Database Technology, EDBT 2017, Venice, pp 594–597
+
+34. Rehman FU, Lbath A, Sadiq B, Rahman MA, Murad A, Afyouni I, Ahmad A, Basalamah S (2015)
+A constraint-aware optimized path recommender in a crowdsourced environment. In: 2015 IEEE/ACS
+12Th international conference of computer systems and applications (AICCSA), pp 1–8
+
+35. Robinson B, Power R, Cameron M (2013) A sensitive twitter earthquake detector. In: Proceedings of the
+
+22nd international conference on world wide web. ACM, pp 999–1002
+
+36. Sakaki T, Okazaki M, Matsuo Y (2010) Earthquake shakes twitter users: real-time event detection by
+social sensors. In: Proceedings of the 19th international conference on World wide web. ACM, pp 851–
+860
+
+37. Samet H (1984) The quadtree and related hierarchical data structures. ACM Comput Surv (CSUR)
+
+16(2):187–260
+
+38. Sankaranarayanan J, Samet H, Teitler BE, Lieberman MD, Sperling J (2009) Twitterstand: News in
+tweets. In: Proceedings of the 17th ACM SIGSPATIAL International Conference on Advances in
+Geographic Information Systems, GIS ’09. ACM, New York, pp 42–51
+
+39. Schinas M, Papadopoulos S, Petkos G, Kompatsiaris Y, Mitkas PA (2015) Multimodal graph-based event
+detection and summarization in social media streams. In: Proceedings of the 23rd ACM International
+Conference on Multimedia, MM ’15. ACM, New York, pp 189–192
+
+40. Shi LL, Liu L, Wu Y, Jiang L, Hardy J (2017) Event detection and user interest discovering in social
+
+media data streams. IEEE Access 5:20,953–20,964
+
+41. Teitler BE, Lieberman MD, Panozzo D, Sankaranarayanan J, Samet H, Sperling J (2008) Newsstand:
+a new view on news. In: Proceedings of the 16th ACM SIGSPATIAL International Conference on
+Advances in Geographic Information Systems, GIS ’08. ACM, New York, pp 18:1–18:10
+
+42. Walther M, Kaisser M (2013) Geo-spatial event detection in the twitter stream. In: European conference
+
+on information retrieval. Springer, pp 356–367
+
+43. Whitby MA, Fecher R, Bennight C (2017) Geowave: Utilizing distributed key-value stores for mul-
+tidimensional data. In: International symposium on spatial and temporal databases. Springer, pp
+105–122
+
+44. Yang Y, Pierce T, Carbonell JG (1998) A study on retrospective and on-line event detection
+45. Yu J, Wu J, Sarwat M (2015) Geospark: a cluster computing framework for processing large-scale spatial
+data. In: Proceedings of the 23rd SIGSPATIAL International Conference on Advances in Geographic
+Information Systems. ACM, pp 70
+
+46. Zarrinkalam F, Bagheri E (2016) Event identification in social networks. CoRR arXiv:1606.08521
+47. Zhang X, Chen X, Chen Y, Wang S, Li Z, Xia J (2015) Event detection and popularity prediction in
+
+microblogging. Neurocomputing 149:1469–1480
+
+48. Zheng X, Han J, Sun A (2018) A survey of location prediction on twitter. IEEE Trans Knowl Data Eng
+
+30(9):1652–1671
+
+Publisher’s note
+and institutional affiliations.
+
+Springer Nature remains neutral with regard to jurisdictional claims in published maps
+
+Geoinformatica
+
+Faizan Ur Rehman is a Research Associate and Consultant in Umm Al-Qura University, where he is work-
+ing as a Principal Investigator and Co-Investigator in couple of projects. He is also a post-doc candidate in
+Department of Computer Science at University of Grenoble Alpes, France from where he has completed his
+PhD in 2018. He received the Bachelor’s and Master’s degree in Computer Applications from Jamia Ham-
+dard, Delhi, India in 2005 and 2008 respectively. He has previously worked as a research assistant in Science
+and Technology Unit, Umm Al-Qura University. He also has industrial experience, working as a Software
+Engineer in Aricent and Samsung Engineering Lab, India. His research interests include spatiotemporal
+databases, algorithms, and human-computer interaction.
+
+Imad Afyouni is an Assistant Professor in Computer Science at the University of Sharjah, UAE. He is
+developing several research activities in two main research fields: Big Data Mining and Multimedia, and
+Machine Learning and Natural Language Processing. He has previously worked as a Researcher and Principal
+Investigator at the Technology Innovation Center in Wadi Makkah, Saudi Arabia, and before as an Assistant
+Professor in Computer Science at the American University of the Middle East, Kuwait. He has also served
+as a Research and Development Engineer in Galigeo Inc., Paris, France from 2013 to 2014. He received a
+Master’s degree in Computer Science from Joseph Fourier University in 2009 (Grenoble, France), and a Ph.D.
+in Computer Science at the Naval Academy Research Institute in 2013 (Brest, France), where he worked as
+a teaching and research assistant from 2009 to 2013. His main research interests includes data management
+and mining, spatio-temporal databases, location-based services, and serious games for ehealth.
+
+Ahmed Lbath is a full Professor of Computer Science at University of Grenoble Alpes (MRIM/LIG Lab-
+oratory), and he is also conducting research in collaboration with ITL Lab NIST in Washington DC metro
+area where he carried out research activities as visiting professor. He is the IUT Deputy Director, former
+Head of CNS Department, and former Director of R&D in a French company. He received his PhD degree
+in computer science from the University of Lyon and hold a “Habilitation a Diriger des Recherches”. He is
+currently acting as project manager coordinating scientific collaborations in the domain of Cyber Physical
+Systems and smart cities. His research interests include cyber physical human systems, smart cities, mobile
+cloud computing, recommendation systems, web services, GIS, and software design. He published several
+patents, papers in books, journals, and conferences and he regularly serves as co-chair and/or member of
+several committees of International conferences, journals, and research programs.
+
+Sohaib Khan is Co-Founder and CEO of Hazen.ai, a Saudi Arabia based startup specializing in computer
+vision and deep learning algorithms for traffic analytics. He was formerly Research Director at GIS Technol-
+ogy Innovation Center, Umm-ul-Qura University in Makkah Al Mukarramah, and before that, the Department
+Chair of Computer Science, LUMS, Lahore. Dr Khan earned his PhD in Computer Science from University
+of Central Florida in 2002, specializing in computer vision. He has been a member of Foundation Coun-
+cil and Entrepreneurship Working Group at LUMS, which led the development of the LUMS Center for
+Entrepreneurship and a Founding Director of Technology for People Initiative at LUMS, a center dedicated to
+solving fundamental problems of governance, public policy and socio-economic development through novel
+technological interventions.
+
+Saleh Basalamah is an Associate Professor at Umm Al-Qura University. He is the former dean of the College
+of Computing. He co-founded the GIS Technology Innovation Center. He worked on several research areas
+including computer vision, spatial systems and multimedia. Basalamah has a PhD in bioengineering from
+Imperial College London. He published several patents, papers, chapters in books, journals, and conferences.
+He’s a senior member of IEEE and a member of ACM.
+
+Faizan Ur Rehman1,2 · Imad Afyouni3
+Saleh Basalamah5
+
+· Ahmed Lbath2 · Sohaib Khan4 ·
+
+Geoinformatica
+
+Aﬃliations
+
+Imad Afyouni
+iafyouni@sharjah.ac.ae
+
+Ahmed Lbath
+Ahmed.Lbath@univ-grenoble-alpes.fr
+
+Sohaib Khan
+sohaib@hazen.ai
+
+Saleh Basalamah
+smbasalamah@uqu.edu.sa
+
+1
+
+2
+
+Institute of Consulting Research and Studies, Umm Al-Qura University, Mecca, Saudi Arabia
+
+LIG, University of Grenoble Alpes, Paris, France
+
+3 Department of Computer Science, University of Sharjah, Sharjah, UAE
+4 Hazen.ai, Saudi Arabia
+5
+
+College of Computer and Information Systems Umm Al-Qura University, Makkah, Saudi Arabia
+
+

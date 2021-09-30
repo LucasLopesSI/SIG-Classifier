@@ -1,0 +1,3287 @@
+Geoinformatica
+DOI 10.1007/s10707-013-0185-z
+
+TARS: traffic-aware route search
+
+Roy Levin · Yaron Kanza
+
+Received: 21 August 2011 / Revised: 6 May 2013 / Accepted: 18 June 2013
+© Springer Science+Business Media New York 2013
+
+Abstract In a traf f ic-aware route search (TARS), the user provides start and target
+locations and sets of search terms. The goal is to find the fastest route from the start
+location to the target via geographic entities (points of interest) that correspond to
+the search terms, while taking into account variations in the travel speed due to
+changes in traffic conditions, and the possibility that some visited entities will not
+satisfy the search requirements. A TARS query may include temporal constraints
+and order constraints that restrict the order by which entities are visited. Since
+TARS generalizes the Traveling-Salesperson Problem, it is an NP-hard problem.
+Thus, it is unlikely to find a polynomial-time algorithm for evaluating TARS queries.
+Hence, we present in this paper three heuristics to answer TARS queries—a local
+greedy approach, a global greedy approach and an algorithm that computes a linear
+approximation to the travel speeds, formulates the problem as a Mixed Integer
+Linear Programming (MILP) problem and uses a solver to find a solution. We
+provide an experimental evaluation based on actual traffic data and show that using
+a MILP solver to find a solution is effective and can be done within a limited running
+time in many real-life scenarios. The local-greedy approach is the least effective in
+finding a fast route, however, it has the best running time and it is the most scalable.
+
+Keywords Geographic information systems · Route search · Temporal constraints ·
+Probabilistic data · Heuristic algorithms · Traffic
+
+R. Levin (B) · Y. Kanza
+
+Taub Building, Technion Israel Institute of Technology, Haifa 32000, Israel
+e-mail: royl@cs.technion.ac.il
+
+Y. Kanza
+e-mail: kanza@cs.technion.ac.il
+
+Geoinformatica
+
+1 Introduction
+
+Geographical search is a fundamental part of the World-Wide Web, e.g., Bing
+Maps, Google Maps and Yahoo! Local are popular geographical search engines. Re-
+cently, geographical applications have also become ubiquitous by being prevalently
+available on hand-held devices, such as smart phones, PDAs, and car navigation
+systems. The commonly-used geographic search applications receive keywords and
+depict relevant points of interest on a map or find a route between two specified
+addresses. Points of interest represent different real-world geographical entities such
+as buildings, shops, train stations, parks, tourist attractions, etc.
+
+An important difference between geographical search and ordinary non-
+geographical keyword search is that in a geographical search users frequently con-
+duct the search with an intention to actually visit the geographical entities of the
+result. Thus, in many scenarios the result of a geographical search should be a route,
+and it may be desired that the route will go via several points of interest that represent
+different types of geographical entities. The task of formulating such search query
+and answering it is called route search.
+
+In a route search, the user specifies a start location, a target destination and a set of
+geographical search subqueries. A typical search query comprises a set of keywords
+where the keywords specifies the type of geographical entities the user wants to visit.
+The goal is to find a route that goes from the start location to the target location
+via geographical entities that are returned by the search subqueries. The following
+example illustrates such a route search.
+
+Example 1 A businessperson, Alice, has an important out-of-town meeting. Prior to
+the meeting, she needs to find a computer store for replacing the failing battery of her
+laptop computer. In addition, she needs to go via a gas station to fuel up her car, and
+she wants to have lunch in a vegetarian restaurant, either before or after the meeting.
+Searching for the relevant entities using an ordinary geographical search engine and
+planning an effective route via the entities is a difficult task. Taking into account
+traffic conditions and temporal constraints, such as the start time of the meeting,
+increases the intricacy of the problem. All this also needs to be done under conditions
+of uncertainty where some computer stores may not have a suitable battery for the
+specific model of Alice’s laptop, yet this will only be discovered upon arrival at these
+stores. Thus, the route may need to go via several computer stores—not too many
+so that the route will not be longer than necessary, and not too few so that with high
+probability Alice will find an appropriate battery.
+
+Dealing with the uncertainty caused by the possibility that entities will fail
+to satisfy the user increases the complexity of computing a route even further.
+The difficulty is because users may discover whether an entity satisfies the search
+requirements only upon arrival at the entity. For instance, in Example 1 Alice will
+know for certain whether a computer store has in its stock a suitable battery for her
+laptop only upon arrival at the store.
+
+Based on statistical analysis of historical queries, the probability of satisfying
+the user can be assigned to each entity returned by a subquery. We refer to a
+set of entities with their assigned success probabilities as a probabilistic dataset. In
+
+Geoinformatica
+
+a probabilistic dataset, a probability value is attached to each represented entity.
+This value specifies the likelihood of the entity to satisfy the user with respect to
+the corresponding subquery. The probabilities must be considered when computing
+a route. First, probabilities define a preference relationship where an entity with
+high probability is preferred to an entity with low probability. Secondly, when
+constructing a route, it is important to have a recovery plan, so that if certain entities
+along the route fail to satisfy the user, the user can visit more entities of the same
+type without increasing the travel time more than necessary. Several papers have
+dealt with route search over non-probabilistic datasets (see [17, 32, 39]) and other
+investigated route search over probabilistic datasets (see [9, 23–25, 37]). Some papers
+addressed the problem of dealing with partial order constraints [17, 24]. However,
+they did not handle route search in the presence of traffic and temporal constraints.
+To deal with tasks such as the search in Example 1, subqueries should include
+order constraints and temporal constraints. An order constraint specifies that entities
+of some type should only be visited after visiting an entity of some other type. In
+Example 1, Alice should go by a computer store before reaching the meeting place.
+Temporal constraints specify limitations on the time during the day when entities
+should be arrived at. In Example 1, a temporal constraint would specify that
+Alice should arrive at the place of the meeting before the meeting starts. Another
+constraint may limit the visit at the restaurant to be around noon, so that lunch would
+not be too early or too late.
+
+In addition to constraints that are part of the query, there are temporal constraints
+in the dataset. For instance, institutions, such as a museum, have opening hours.
+The user should arrive at a museum during the opening hours. However, reaching
+a museum five minutes before closing time is pointless. Thus, the route should
+be computed while taking into account an estimated stay duration in the entities.
+Estimated stay durations are also required for determining the departure time, and
+the departure time affects the time it takes to travel to the next entity (because travel
+times are inconstant).
+
+An answer to a route-search query is a route that travels via entities of all the
+specified types (e.g., in Example 1 the route should go via a gas station, computer
+stores, a restaurant and the meeting place) where the times of the visits should adhere
+to the order and temporal constraints. Note that in this context, a route must also
+include a departure time since it affects the travel duration and the satisfaction of the
+temporal constraints.
+
+When calculating the travel time of a route and planning the route so that it will
+adhere to the temporal constraints of the query, it is necessary to effectively model
+travel durations. Unlike distances, travel durations are variable. In many cities, the
+travel speed on major arteries during rush hours is significantly slower than during
+other hours, yet, it is difficult to calculate the effect of the traffic load, because road
+networks are unevenly affected by congestion [19]. Previous papers on route search
+have focused on finding the shortest route. They did not address the issue of varying
+traffic conditions and handling time constraints, although finding the fastest route
+while satisfying temporal constraints is required in many real-world scenarios. In this
+paper, the goal is to find the fastest route along with an optimal departure time, while
+considering traffic conditions and temporal constraints.
+
+Note that merely finding a route that visits the entities within their temporal con-
+straint is a constraint-satisfaction problem. Such problems may not have a solution at
+
+Geoinformatica
+
+all or may have multiple solutions. Generally, constraint satisfaction problems are
+NP-complete [7]. Hence, a route-search problem with temporal constraints, even
+when assuming constant travel speeds (i.e., assuming constant traffic conditions), is
+both a hard routing problem and a hard scheduling problem. We refer to a route
+search in the presence of varying traffic conditions, temporal constraints, and order
+constrains as Traf f ic-Aware Route Search (TARS). This paper formally models the
+problem and presents three heuristic algorithms for answering TARS queries while
+striving to minimize the overall travel time. We tested and compared the proposed
+algorithms using real road networks and actual traffic data.
+
+Route search can be performed as an interactive process. The interactive (or
+online) approach (see [13, 23, 24]) is designed for users that apply the search using a
+device such as a smartphone. In such search the route is computed in real time, (i.e.,
+while users are traveling). The smartphone allows the user to provide feedbacks to
+the systems and it can present the result of modifications in the route, thus it supports
+construction of routes interactively. The non-interactive approach has the form of a
+pre-planned search (see [9, 17, 25, 32, 37, 39]), and it is designed for setting in which
+planning is required, e.g., for determining an optimal departure time. This approach
+is also useful in cases where the search is conducted using a device that has a limited
+network connectivity or no GPS receiver. In this setting the goal is to plan an optimal
+pre-calculated route that will take into account possible failures, of visited entities,
+to satisfy the user. The two approaches both deal with different cases and are hence
+complementary methods. In this paper we deal with the pre-planned setting.
+
+This paper is organized as follows. Section 2 illustrates how users can formulate
+TARS queries using a simple user interface which is part of a system we have de-
+veloped to pose and answer TARS queries. In Section 3, we present our framework
+and formally define TARS. Section 4 presents three algorithms for answering TARS
+queries. These algorithms take into account order constraints, temporal constraints
+and varying traffic conditions. In Section 5, we present an experimental evaluation
+of the algorithms. We compare the effectiveness of the algorithms in finding a fast
+route and their running time efficiency. Section 6 surveys related work. Finally, in
+Section 7, we conclude.
+
+2 TARS queries
+
+In this section we illustrate the formulation of TARS queries using a graphical user
+interface. The purpose of this section to show that while TARS queries have a
+complex definition, as they comprise different types of constraints, their formulation
+can be simple. We do not try to provide here a comprehensive study of user interfaces
+for route search.
+
+Systems that support TARS queries can either be designed to serve experts in
+the context of specific domains or can be intended for laymen users by providing a
+suitable user interface. Examples of domain-specific applications are planning guided
+tours, planning routes for interviewers to efficiently conduct face-to-face surveys,
+planning routes for scientific exploration missions, finding fast routes for rescue
+vehicles such as ambulances, etc. Such tasks are typically done by professionals. To
+be suitable for laymen users, the task of posing a query should remain simple, while
+the complexities involved in answering it stay hidden behind the scenes.
+
+Geoinformatica
+
+To conduct our research, we developed a system that answers TARS queries and
+allows users to easily formulate them [18]. The formulation of a TARS query involves
+three simple steps. First, the user sets the origin and the destination. Secondly, the
+user specifies the types of entities (stops) that should be visited along the route.
+Thirdly, temporal and order constraints can be added.
+
+Figure 1 illustrates a formulation of a TARS query using the system. The user
+begins by providing North Beach, San Fransisco as the origin address (the start
+location can also be obtained as a GPS measure), followed by Sunset District, San
+Fransisco as the destination address (the target). The user proceeds by adding the
+search terms, (1) cof fee, (2) ATM, (3) shoe store and (4) vegetarian restaurant as
+her desired stops. Next, the user can optionally set the temporal constraints for the
+origin, destination and stops. The temporal constraints consist of earliest and latest
+arrival times and, for stops, an estimated stay duration. There is an option to set
+an importance degree (priority), for each stop. This value indicates the importance
+of visiting a satisfying entity of the corresponding type. Increasing it will typically
+cause the resulting route to go via more entities of that type so that if one entity
+fails to satisfy the user, there are alternative entities of the same type along the route
+to the target destination. Finally, the user expresses a requirement to visit an ATM
+before arriving at the shoe store. This is done by adding an order constraint on these
+two stops.
+
+Fig. 1 An illustration of a TARS query formulated using the graphical user interface. The query
+is posed over an area in the city of San Fransisco. The icons depicted on the map represent spatial
+entities that match the given search terms. Stops represent the entities that should be visited. The
+columns shown for the stops are as follows: (1) “Stop name” presents the search terms that define
+the type of the entity, (2) the symbol “#” indicates the maximal number of required search results,
+(3) “Start” and “End” refer to the earliest and latest allowed arrival times, (4) “Mins” is the estimated
+duration at the stops, and (5) “Priority” indicates the importance of visiting a satisfying entity. Under
+“Constraints”, there is an order constraint to specify that an ATM should be visited before any shoe
+store
+
+Geoinformatica
+
+TARS is useful not only for complex route planning, it can also facilitate ordinary
+daily tasks. As an example, consider a user who needs to buy groceries on the way
+home from work. Current route search approaches can find for the user the shortest
+route home via a grocery store. However, the provided route would not indicate the
+optimal departure time and it will not necessarily be the fastest route for a specific
+departure time. Formulating this task as a TARS query will allow the user to find an
+effective route while taking into account limitations on the departure time and the
+traffic in the area.
+
+3 Framework
+
+In this section, we present our framework, we formally define the concept of Traffic-
+Aware Route Search (TARS), and we explain how order constraints, temporal
+constraints and traffic conditions are modeled. The model is designed to include all
+the route search aspects that have been considered in previous papers to provide a
+comprehensive solution.
+
+Dataset A geospatial dataset is a collection of geospatial objects. Each object
+represents a real-world geographical entity, and its location is the same as that of the
+entity. An object may have additional spatial attributes, such as height or shape, and
+non-spatial attributes, such as type or name. We assume that locations are points.
+Thus, for objects that are represented by a polygonal shape and do not have a
+specified point location, an arbitrary point inside them is chosen to be the point
+location. Generally “object” and “entity” are considered synonyms, however in our
+terminology, an object is a representation of a real-world entity.
+
+An object may have an opening time and a closing time, which represent the time
+during the day when the entity is available. For example, a museum opening times
+may be from 10:00 till 18:00. To simplify the model we only consider cases where
+the opening times are continuous. Cases where opening times are discontinuous can
+easily be solved by cloning objects and assigning to each clone a continuous fragment
+of the opening times. Similarly, cases where opening hours change from one day to
+another can be solved by cloning objects so that each clone will represent the opening
+hours on a different day, and then use the appropriate clone according to the day of
+the travel. For objects that are open 24 h a day, we consider the opening time to be
+00:00 and the closing time to be 23:59. For an object o(cid:2), we denote by to(o(cid:2)) and tc(o(cid:2))
+the opening time and closing time of o(cid:2).
+
+Search subqueries Users specify the entities they wish to visit using search sub-
+queries (subqueries, for short). A search subquery contains a set of keywords, and it
+may include different constraints on the spatial and non-spatial attributes of objects.
+The result of a subquery is represented as a probabilistic dataset, where each object
+is assigned a value 0 ≤ p ≤ 1, called probability of success (or probability, for short).
+The probability of an object o indicates the likelihood that the entity represented
+by o actually satisfies the requirements of the user. For example, a restaurant called
+“Pizza House” is more likely to satisfy a search for a vegetarian restaurant than a
+place called “Steak House”. Assigning probabilities to objects can be done using a
+
+Geoinformatica
+
+combination of information-retrieval techniques and statistical analysis of historical
+user feedback data. However, how to do so is beyond the scope of this paper.
+
+A user may need to visit several entities of the same type to satisfy a search
+subquery. This is because the dataset is probabilistic, and because in many cases
+only upon arrival at the entity the user knows whether the subquery is satisfied. For
+example, before finding a pair of satisfactory shoes, the user may visit several shoe
+stores that are too expensive or that are not his style. Thus, when planning a route,
+the visited entities are determined before the travel starts, and only the probability
+of success is known a priori.
+
+Note that in our context, whether a visited object o satisfies a user is either true
+or false. It merely indicates whether the user wants to visit additional objects of the
+same type as o. For instance, after buying a laptop battery, Alice (from Example 1)
+will not visit additional computer stores.
+
+In a temporal search subquery, there are three types of temporal constraints. The
+earliest arrival time and latest arrival time specify lower and upper bounds on the
+arrival time. For example, a user may specify that she wishes to arrive at a coffee shop
+no earlier than 9:00 and no later than 11:00. The estimated duration time specifies the
+expected length of the stay at the entity. For example, a user may estimate a stay
+duration of an hour at a shopping mall. We denote a temporal subquery as a four-
+tuple Q = (q, e, l, d) where q is a set of keywords, e and l are the earliest and latest
+arrival times, and d is the estimated duration time.
+
+TARS queries A user specifies her search requirements in the form of a TARS
+query. A query comprises start and end locations, denoted s and t, a set Q of temporal
+search subqueries to define the types of entities that the route should visit, and a set
+O of order constraints that define the order by which entities should be visited.
+
+Formally, a TARS query is a four-tuple T = (¯s, ¯t, Q, O). The start point ¯s =
+(s, [es, ls]) defines that the route should start in the location s, where the departure
+time from s should not be before es or after ls. The target point ¯t = (t, [et, lt])
+defines a destination location t, such that the arrival at t should be not before et or
+after lt.
+
+The set Q = {(Q1, τ1) . . . , (Qm, τm)} defines m temporal subqueries of the form
+Qi = (qi, ei, li, di), where qi is a set of keywords, ei is the earliest allowed arrival time,
+li is the latest allowed arrival time and di denotes the estimated stay duration. Each
+subquery has a corresponding probability threshold τi. The probability threshold τi of
+Qi requires the following: The probability that at least one visited object will satisfy
+Qi should not be smaller than τi. (In the system that was illustrated in Section 2,
+the threshold is computed based on the importance degree of the subquery.) For
+instance, consider a subquery Qi with search terms “French restaurant” and a
+probability threshold τi = 0.8. There is a chance that the first visited entity will not
+satisfy the user, e.g., there are no available tables at the restaurant. Thus, the route
+should go via several objects that satisfy the search subquery, i.e., through several
+French restaurants. The probability threshold τi specifies the importance of visiting
+a French restaurant, and hence, it affects the number of restaurants on the route. In
+this case, the chances of satisfying the user should be at least 80 percent. Accordingly,
+the algorithms may prefer clusters of relevant entities on isolated entities. If, when
+traversing the route, the user is satisfied with one of the restaurants, she can skip the
+following restaurants along the route.
+
+Geoinformatica
+
+Table 1 Notations of a TARS query
+
+Notations
+T = (¯s, ¯t, Q, O)
+¯s = (s, [es, ls])
+
+¯t = (t, [et, lt])
+
+Q = {(Q1, τ1) . . . , (Qm, τm)}
+
+Qi = (qi, ei, li, di)
+
+p
+O ⊂ Q × Q
+
+Description
+
+TARS query represented by a 4-tuple
+Location s denotes the start location. The interval specifies
+that the departure time from s should not be before es or
+after ls
+
+Location t denotes the target location. The interval denotes
+that the arrival time at t should not be before et or after lt
+
+An m-tuple defining m temporal search subqueries and a
+
+minimum probability thresholds for each subquery
+
+A search subquery, where qi is a set of keywords, ei and li
+
+denote the earliest and latest allowed arrival times,
+respectively, and di denotes the estimated stay duration
+Probability of success of an object in O, where 0 ≤ p ≤ 1
+A set of order constraints
+
+Finally, O ⊂ Q × Q is a set of pairs (Qi, Q j) that specify order constraints on the
+search subqueries. A pair (Qi, Q j) specifies an order where objects that satisfy Q j
+should only be visited after visiting the objects that satisfy Qi. The notations are
+listed in Table 1.
+
+Road network TARS queries are posed over a road network. A road network is
+a directed graph G = (V, E) whose nodes V represent junctions and the edges E
+represent roads. Each junction has a point location and a road is represented by
+a polygonal line that connects two junctions. In the presence of traffic, the travel
+time on each road depends on the traffic condition, and hence it changes according
+to the departure time. Given a road r ∈ E, from junction u to junction v, and a
+departure time td, the average travel time on r at td is the average time it takes for
+vehicles to get from u to v, on r, when the departure time is td. The travel-time
+function, denoted fTT , is a function that maps each road r ∈ E, and a departure
+time td to the average travel time on r at td.1 This function can be used to find
+the fastest route between any two junctions in G, for any given departure time,
+e.g., using a variation of Dijkstra’s Algorithm. Several papers present methods for
+calculating the time-dependent fastest route between two given locations in a road
+network [8, 11, 15, 41]. Such methods can be applied either offline (for predefined
+departure times) or online. Similar methods are also used in industrial applications,
+e.g., the Bing Maps API2 allows calculating the fastest route between two locations
+based on live traffic data. Different companies, such as Google, Waze, TomTom, and
+others provide similar services.
+
+Search network Given a TARS query T = (¯s, ¯t, Q, O) over a dataset D, the answer
+sets of a temporal search subquery Qi, denoted Ai, is the set of objects of D that are
+
+1In practice, the travel-time function depends on the date, e.g., the travel-time function for workdays
+may not be the same as the one for weekends, however, this is a technical issue, which we ignore to
+simplify the model. It can be handled by using different time functions according to the day of the
+travel.
+2See http://msdn.microsoft.com/en-us/library/cc966826.aspx.
+
+Geoinformatica
+
+i=1 Ai ∪ {s, t}, of all the objects that are relevant
+relevant to Qi. We call the set P = ∪m
+to some search subquery, including the start and destination locations s and t, the
+points-of-interest (POIs, for short) of T and D.
+
+TT
+
+A search network SN is constructed from a TARS query and a road network by
+computing for the POIs P the travel-time function. Given two POIs, oi and o j, and a
+(oi, o j, td) returns the time it takes to
+departure time td, the travel-time function fTT
+drive from oi to o j, on the road network, when leaving oi at time td. In Section 5.1.3
+we explain how an approximation of the travel-time function can be computed in real
+time and in a scalable fashion.
+
+The inverted travel-time function f i
+
+returns for a triplet (oi, o j, ta) of an object
+oi, an object o j, and arrival time ta, the latest departure time from oi for which it is
+possible to get to o j at ta, when considering the traffic.
+
+A search network SN = (P, fTT
+
+, d, e, l) includes the functions d, e and l that
+represent the expected stay duration, and the earliest and latest possible arrival
+times at each POI in P, respectively. The earliest and latest arrival times of a POI
+are a combination of the opening hours of the POI and the time constraints in
+the corresponding subquery. For example, if o represents a shoe store that is open
+between 10:00 to 17:00 and the user wishes to visit it not earlier than 12:00 and
+not later than 18:00, with an intention to spend 60 min there, we set the earliest
+and latest arrival times to be 12:00 and 16:00, respectively. For a subquery Qi =
+(qi, ei, li, di) and an object o ∈ Ai, we define e(o) and l(o) as follows. Let to(o) and
+tc(o) denote the opening and closing hours of o. Then, e(o) = max(to(o), ei) and
+l(o) = min(tc(o) − di, li). For an object o, we refer to [e(o), l(o)] as its arrival time
+interval. If l(o) < e(o) then this interval is considered empty and the time constraint
+is unsatisfiable.
+
+For convenience, we consider P as an array of N + 2 POIs, in which, the first index
+(0) is reserved for s and the last index (N + 1) is reserved for t. With a slight abuse
+of notation, oi, di, ei and li denote an index of a POI in P, its expected stay duration
+and its earliest and latest arrival times, respectively. This notation is used henceforth.
+The notations are summarized in Table 2.
+
+Route A route over a search network SN is a sequence ρ = s, o1, . . . , on, t, where
+{s, o1, . . . , on, t} are POIs of SN. The arrival function, denoted α, maps each object of
+ρ to the time of the arrival at that object. Similarly, the departure function, denoted
+β, maps each object of ρ to the time of departure from that object. For the start
+and destination locations, the arrival time is equal to the departure time, that is
+α(s) = β(s) and α(t) = β(t). With a slight abuse of notation, we also refer to the triplet
+(ρ, α, β) as a route.
+
+Table 2 Notation table for a search network
+
+Description
+
+Notations
+
+Ai
+P = ∪m
+fTT
+
+i=1 Ai ∪ {s, t}
+
+(oi, o j, td)
+
+SN = (P, fTT
+
+, d, e, l)
+
+A set of D objects which represent an answer to Qi
+Represents the POIs that are relevant to a TARS query Q
+A function that returns the time it takes to drive from oi to o j,
+
+on the road network, when leaving oi at time td
+
+The search network, where d, e and l represent functions
+of the the expected stay duration, and the earliest and
+latest possible arrival times at each POI in P, respectively
+
+Geoinformatica
+
+Given a TARS query T = (¯s, ¯t, Q, O), the restriction of ρ to Qi is the set ρ|Qi
+
+=
+
+Ai ∩ ρ, of the objects of ρ that are in the answer set of Qi.
+
+To answer a TARS query, we need to satisfy all the subqueries and all the
+constraints of T. A route ρ = s, o1, . . . , on, t satisf ies a TARS query T = (s, t, Q, O)
+if the following conditions hold.
+
+1. Subqueries are satisf ied: For each (Qi, τi) ∈ Q, the probability that at least one
+object of the answer set of Qi will satisfy Qi is at least τi. That is, given that for
+each o j, its success probability is p j, τi ≤ 1 −
+
+(1 − p j).
+
+(cid:2)
+
+2. Order constraints are satisf ied: For every order constraint (Qi, Q j) ∈ O and
+, ok1 appears in ρ before ok2 , i.e.,
+
+and ok2
+
+∈ ρ|Q j
+
+∈ ρ|Qi
+
+o j∈ρ|
+
+Qi
+
+every pair of objects ok1
+k1 < k2.
+
+3. Temporal constraints are satisf ied: (1) The arrival time at oi should be within its
+arrival time interval, that is, ei ≤ α(oi) ≤ li for every 1 ≤ i ≤ n. (2) The departure
+time for oi (cid:8)= s is β(oi) = α(oi) + di and e0 ≤ β(s) ≤ l0. (3) The arrival at the
+target t should be within its arrival time interval, that is, et ≤ α(t) ≤ lt.
+
+4. The travel time should comply with the traf f ic conditions: The time it takes to
+reach oi+1 from object oi, at departure time td, should not be smaller than the
+actual travel time between these objects, at td. That is, for every oi in ρ, α(oi+1) −
+β(oi) ≥ fTT
+
+(oi, oi+1, β(oi)).
+
+The overall travel time of a route ρ = s, o1, . . . , on, t is α(t) − β(s). The relevant
+
+notations are summarized in Table 3.
+
+Answer to a TARS query Given a TARS query T over a dataset D and a network
+N, an answer to T is a route ρ that satisfies T. An optimal answer to a query T is a
+route ρ that satisfies the following: (1) it is an answer to T, and (2) for every route ρ(cid:2)
+that is an answer to T, the overall travel time of ρ does not exceed the overall travel
+time of ρ(cid:2).
+
+Estimating the stay duration Estimating the stay duration is intricate. For some
+types of POIs, the duration of staying in entities that satisfy the user is different
+from the duration of staying in entities that do not satisfy the user. For example,
+compare the duration of dining at a restaurant to the delay at a restaurant that the
+user only checked out before deciding to have lunch in another place. For other
+types of POIs, the stay duration is constant. For example, a shopper is likely to spend
+similar time at a shoe store where he finds what he needs and at a shoe store that
+does not satisfy him.
+
+Table 3 Route notation table
+
+Description
+
+Notations
+(ρ, α, β)
+ρ = s, o1, . . . , on, t A sequence of objects over the search
+network SN
+
+A route
+
+α
+
+β
+
+An arrival function which maps each object
+of ρ to its corresponding time of arrival
+A departure function which maps each object
+of ρ to its corresponding time of departure
+
+Geoinformatica
+
+We refer to these two types as satisfaction-dependent and satisfaction-independent
+stay durations. For types of entities with satisfaction-independent stay durations,
+we assign the given stay duration to each POI of that type. Determining whether
+a subquery is satisfaction-dependent can be done by examining historical data. Such
+data indicate the average stay durations at relevant objects and allow us to categorize
+subqueries into satisfaction-dependent and satisfaction-independent.
+
+Modeling types of entities with satisfaction-dependent stay durations is difficult,
+because for such types the full stay duration will only be spent at a POI that satisfies
+the user, however, we do not know which one among the POIs of the type will be the
+satisfying one. To deal with this, we assume that the full stay duration is spent only
+at the first visited POI of the type and a short stay duration at the others.
+
+Note that by assigning the full stay durations to the first POI of each type, we
+guarantee that if the user is satisfied with these POIs, she will reach the other POIs
+of the route no later than their latest allowed arrival-time interval (assuming that
+the actual stay duration in POIs is not greater than the estimated stay duration).
+However, assigning the full stay duration to any POI other than the first POI of each
+type would result in a misleading plan, where a user may reach a POI too late, i.e.,
+later than the allowed arrival-time. To see this, consider an example of a route via
+restaurants and a museum. Suppose we assign a stay duration of an hour to the first
+restaurant on the route and indeed the user stays an hour in that restaurant before
+reaching the museum. Then, a stay of an hour prior to visiting the museum is already
+assumed in the calculations of the route. However, if the first restaurant is assigned
+only a five-minute stay duration, then an actual stay of an hour at this restaurant,
+may cause an hour-late arrival at the museum.
+
+In this solution there are POIs of the same type with different stay duration.
+This can be achieved by rewriting the given TARS query such that subqueries
+which refer to satisfaction-dependent types are duplicated and an order constraint
+is added to specify that the entity of the first subquery should be visited before the
+entities of the second subquery. The first subquery is assigned a full stay duration
+while the second will have a short stay duration. Note that for each subquery, at
+most one duplication is needed. For example, consider a TARS query according
+
+Fig. 2 Illustration of a
+query rewrite when a
+satisfaction-dependent
+subquery is detected
+
+Geoinformatica
+
+, Q4) is added so that the restaurant of Q(cid:2)
+
+to Example 1 that includes a search subquery Q4 for “vegetarian restaurant”. The
+rewriting of the query is done by adding a search subquery Q(cid:2)
+4 that also comprises the
+keywords “vegetarian restaurant”. The probability threshold of Q(cid:2)
+4 is set to be very
+low so that there will only be a single entity of Q(cid:2)
+4 in the produced route. An order
+constraint (Q(cid:2)
+4 will be the first restaurant
+4
+on the produced route. The stay duration for the restaurant of Q(cid:2)
+4 is set to be the
+duration of a lunch, say one hour, whereas the stay duration for the restaurants
+of Q4 is set to be the time it takes to examine a restaurant, say ten minutes.
+Figure 2 illustrates an example of such a query rewriting operation. Note that by
+duplicating a subquery, the same entity is expected to appear twice in the route. For
+instance, the same vegetarian restaurant will appear first due to the subquery Q(cid:2)
+4 and
+immediately after that as an answer to the subquery Q4 where the travel time from
+the restaurant to itself is zero. Such duplicate appearance is needed for a correct
+computation of the success probability of Q4 and it can simply be ignored when the
+route is presented to the user. All this is being done by the system. Thus, in the
+next sections we assume that it does not affect the formulation of queries and their
+evaluation.
+
+4 Algorithms
+
+TARS is a generalization of the Traveling Salesperson Problem (TSP). That is, we
+can define any given TSP problem as a TARS as follows. Given a road network and
+a start location, as the input to a TSP problem, we build a TARS query in which each
+node of the given network is the unique answer, with probability one, to a different
+subquery, without any temporal or order constraints and with a travel-time function
+that is constant and is proportional to the distances between nodes. It is easy to see
+that a solution to the TARS query is also a solution to the TSP problem.
+
+TARS also generalizes several variations of TSP, by considering travel times
+as constants. In the Generalized Traveling Salesperson Problem (GTSP) [38], the
+objects of a TSP problem are partitioned into categories and the goal is to find
+the shortest route while visiting a single object from each category. Thus, TARS
+where all the success probabilities are equal to one, having no temporal constraints
+and having no order constraints, is similar to GTSP. In a Prize Collecting TSP
+(PCTSP) [2], prize values are attached to the objects of a TSP problem and the goal
+is to find the shortest route for which the sum of the prizes on visited objects exceeds
+a given quota. Since prizes are similar to probabilities, a TARS query with a single
+subquery can express PCTSP. Providing a route that travels via a set of predefined
+addresses with temporal constraints, (assuming constant travel speeds) is similar to
+TSP with Time Windows [45]. Finally, TSP with Pickup and Delivery [21] deals with
+satisfying order constraints. In all these problems the goal is to find the shortest route
+and they are all NP-hard. TARS combines all these problems for the case of varying
+traffic conditions under the goal of finding an optimal departure time and the fastest
+route.
+
+Since TARS generalizes NP-hard problems, we do not expect
+
+to find a
+polynomial-time algorithm for TARS, and we settle for polynomial-time heuristics.
+In this section we describe three heuristics to answer TARS queries. Throughout this
+
+section we assume that the TARS query has the form T = (¯s, ¯t, Q, O) and that it is
+posed over a data set D and a road network G, as presented in Section 3.
+
+Geoinformatica
+
+4.1 Greedy search (GS)
+
+The first algorithm we present, as Algorithm 1, is a greedy-search algorithm. The
+algorithm consists of two nested loops—an outer loop over departure times and an
+inner loop of greedy extension steps. The outer loop iterates over possible departure
+times. Given eo and l0—the earliest and latest departure times from s—and a time
+interval δ, the algorithm generates the sequence σ = e0, e0 + δ, e0 + 2δ, . . . , e0 +
+((cid:10)(l0 − e0)/δ(cid:11))δ of departure times. It examines departure from s at any time in σ
+(Line 4 of Algorithm 1). For example, if e0 and l0 are 10:00 and 10:30, respectively,
+and δ is 10 min, then the algorithm iterates over the departure times 10:00, 10:10,
+10:20, 10:30. (Note that we later examine the significance of δ and the manner by
+which its value is determined.) The answer is the shortest route among the candidate
+routes that are computed in the inner loop for the possible departure times. If there
+are no candidate routes the algorithm reports a failure by returning an empty route.
+In the inner loop (beginning at Line 7 of Algorithm 1), the algorithm starts with
+a route s, t, comprising merely the source s and the target t. In each iteration, the
+algorithm extends the partial route that was built in previous iterations by calling the
+method ExtendPath (Line 8). It does so by adding a POI that satisfies those query
+constraints that are still unsatisfied, while it strives to minimize the overall travel
+time. This inner loop terminates when no further POIs can (or need to) be added
+to the route. In such case, R(cid:2) = ∅ in Line 9. At this stage, if the route satisfies the
+given TARS query, it becomes a candidate route. If its travel time is smaller than
+the travel times of routes computed in previous iterations, we keep it (by assigning it
+to R). Otherwise, it is discarded. Eventually, R is the route whose travel time is the
+smallest among the routes computed for different departure times.
+
+Adding a POI to a partial route may cause other POIs in that route to become
+redundant. Consider, for example, a search query Qi that looks for a “restaurant”
+where the probability threshold is 0.8. Suppose that a POI o represents a restaurant
+with a success probability of 0.75, and o is added to the partial route at some iteration.
+Also consider that in a later iteration, the algorithm adds to the route another POI
+o(cid:2) that represents a restaurant and has a success probability of 0.85. (Note that
+in such scenario, o(cid:2) was not added first because adding it would have increased
+the overall travel time more than the addition of o). However, adding o(cid:2) causes
+o to become redundant, thus o can be removed. Therefore, after each extension
+step (see the sub-method ExtendPath), the algorithm checks if any of the existing
+objects can be removed without violating any constraint that has already been
+satisfied.
+
+The sub-method ExtendPath receives a sequence ρ and extends it by adding
+to it an object. It does so by iterating over the relevant objects (Line 4) and all
+the positions in the route where the object can be added (Line 5). Only objects
+that contribute to the satisfaction of the query and do not violate the constraints
+are considered (Line 7). The addition for which the travel time of the constructed
+sequence R(cid:2) is the smallest is chosen and returned.
+
+The value of δ affects the accuracy of the result. How large is this effect? In
+general, when computing a route using time interval δ(cid:2) (where δ(cid:2) < δ), the algorithm
+
+Algorithm 1 The GS Algorithm
+GreedySearch(T, ρ, e0, l0)
+Input: A TARS query T, a partial route ρ, time limits e0 and l0 for the departure
+from s
+Output: An answer to T
+
+Geoinformatica
+
+while there exists Qi that is not satisfied by R(cid:2) do
+
+R(cid:2) ← ExtendPath(T, R(cid:2), td)
+if R(cid:2) = ∅ then
+
+1: R ← ∅
+2: (cid:8) ← ∞
+3: σ = e0, e0 + δ, e0 + 2δ, . . . , e0 + ((cid:10)(l0 − e0)/δ(cid:11))δ
+4: for each td in σ do
+R(cid:2) ← ρ
+5:
+6: (cid:8)(cid:2) ← ∞
+7:
+8:
+9:
+10:
+11: (cid:8)(cid:2) ← overall travel time of R(cid:2) departing at time td
+12:
+13:
+14:
+15: return R
+ExtendPath(T, ρ, td)
+Input: TARS query T, partial route ρ, departure time td
+Output: Extended route R
+
+if R(cid:2) (cid:8)= ∅ and (cid:8)(cid:2) < (cid:8) then
+
+R ← R(cid:2)
+(cid:8) ← (cid:8)(cid:2)
+
+break
+
+1: R ← ∅
+2: (cid:8) ← ∞
+3: let ρ = o0, . . . , on
+4: for each POI o do
+for k = 1 to n do
+5:
+6:
+7:
+8:
+9:
+10:
+11:
+12:
+13: return R
+
+R(cid:2) ← o0, . . . , ok−1, o, ok, . . . , on
+if R(cid:2) satisfies the temporal and order constraints of T then
+
+remove redundant POIs from R(cid:2)
+(cid:8)(cid:2) ← overall travel time of R(cid:2) departing at td
+if (cid:8)(cid:2) < (cid:8) then
+R ← R(cid:2)
+(cid:8) ← (cid:8)(cid:2)
+
+is expected to compute a route that is faster by at most δ − δ(cid:2) from the route
+computed using δ. For example, choosing δ to be 3 min instead of 10 min is expected
+to decrease travel time by no more than 7 min. Hence, the value of δ can be chosen
+based on the level of accuracy required by the user, i.e., setting the value of δ to be 10
+min will likely be accurate enough for most practical purposes. The following lemmas
+present this formally.
+
+Geoinformatica
+
+Lemma 1 shows that for a specific route, a delay of δ in the departure time can
+
+decrease the overall travel time by no more than δ.
+
+Lemma 1 Given a route ρ, let T1 be the fastest travel time on ρ when the departure
+time is t and let T2 be the fastest travel time on ρ when departing at time t + δ. Suppose
+that T2 < T1, then T1 − T2 ≤ δ.
+
+Proof The proof is by contradiction. Consider a route ρ = (o1, ..., on−1, on). Suppose
+the fastest travel time of a user u1 that departs from o1 at t is longer by more than δ
+than the fastest travel time of a user u2 that departs from o1 at t + δ. This means that
+u2 arrives at on before u1. We examine two cases.
+
+The first case (see Fig. 3) is when u1 and u2 travel on the same path from o1 to on,
+i.e., on exactly the same road segments of the network. In this case, there is a point
+p(cid:2) where u1 and u2 are at the same distance from on. We refer to this as the “meeting
+point”.
+
+When two users arrive at different times at a road segment, and both travel at
+the maximal possible speed according to traffic, the one who arrives later cannot
+complete the traversal of the road segment before the first one (although it may
+spend less time traversing the segment).
+
+From the meeting point, the travel time of u2 to on is smaller than the travel time
+of u1 to on. Since both users travel on the same path, u1 could travel from this point
+to on at the same travel speed as u2, so both users should arrive at the same time.
+This is a contradiction to the assumption that u2 arrives at on before u1. It is also a
+
+Fig. 3 Illustration of the ﬁrst case in Lemma 1. User u1 begins the route at time t and user u2 begins
+the route at time t + δ. P(cid:2) denotes their meeting point
+
+Geoinformatica
+
+contradiction to T1 being the travel time of u1 (because in such case, u1 could have
+traveled faster).
+
+The second case (see Fig. 4) is when u1 and u2 travel on different paths, via the
+same objects o1, . . . , on. In such a case, we define T (cid:2)
+1 to be the travel time on the path
+of u2 when departing at time t. The travel time T1 of u1 is not greater than T (cid:2)
+1 because
+T1 is the minimal travel time from o1 to on when departing at t. In addition, T (cid:2)
+− T2 ≤
+1
+δ, as explained for the first case. Hence, T1 ≤ T (cid:2)
+≤ T2 + δ, in contradiction to the
+1
+(cid:15)(cid:16)
+assumption that T1 > T2 + δ (i.e., the assumption that u1 arrives after u2).
+
+Lemma 2, which is concluded from Lemma 1, asserts that for a given TARS query,
+the optimal answer for departure at time t + δ can be faster by at most δ than the
+optimal answer for departure at t.
+
+Fig. 4 Illustration of the second case in Lemma 1
+
+Geoinformatica
+
+Lemma 2 Consider a TARS query Q. Suppose that ρ1 and ρ2 are the optimal answers
+to Q (fastest routes), for departure times t and t + δ, respectively. Let T1 and T2 be the
+travel times of ρ1 and ρ2. Then, T1 − T2 ≤ δ.
+
+Proof Let T (cid:2)
+to Lemma 1, T (cid:2)
+2
+holds that T1 ≤ T (cid:2)
+
+2 be the travel time on route ρ2 with departure time t. Then, according
+− T2 ≤ δ. Since ρ1 is the fastest answer to Q for departure time t, it
+2. Hence, T1 − T2 ≤ T (cid:2)
+(cid:15)(cid:16)
+
+− T2 ≤ δ.
+
+2
+
+Lemma 2 considers the effect of the departure time on the travel duration of
+optimal answers to TARS queries. However, the GS algorithm is merely a heuristics,
+and hence, it may not compute the optimal answer. The following proposition
+illustrates the effect of the departure time on the travel duration of routes computed
+by GS.
+
+Proposition 1 Given a TARS query Q, suppose that ρ GS
+2 are the routes GS
+computes for the departure times t and t + δ, respectively. Let ρ opt
+2 be the
+optimal answers to Q, for departure times t and t + δ, respectively. Consider T GS
+1 ,
+1 and T opt
+2 , T opt
+T GS
+2 . Then,
+2
+≤ δ + T GS
+− T GS
+T GS
+1
+2
+1
+
+to be the fastest travel times on routes ρ GS
+
+1 and ρ opt
+
+1 and ρ GS
+
+1 and ρ opt
+
+− T opt
+1 .
+
+2 , ρ opt
+
+1 , ρ GS
+
+Proof Since ρ opt
+2
+− T GS
+Hence, T GS
+2
+1
+− T opt
+= T GS
+T opt
+1
+1
+2
+
+is the optimal answer to Q, for departure time t + δ, T GS
+2
+≤ T GS
+≤ δ. Thus, T GS
+1
+1
++ T opt
+1
+
+2 . From Lemma 2, follows T opt
+1
++ δ.
+≤ T GS
+1
+
+− T opt
+− T opt
+2
+
+≥ T opt
+2 .
+−
+(cid:15)(cid:16)
+
+− T opt
+1
+
+− T opt
+2
+
+− T opt
+1
+
+The subexpression T GS
+1
+
+in Proposition 1 is the difference between the
+optimal travel duration and the travel on the route computed by GS. This difference
+is due to GS being a heuristics rather than an exact algorithm. Its size depends on the
+quality of the heuristics, not on δ. Thus, when increasing δ, the reduce in the accuracy
+of GS is at the size of the increase (i.e., at the size of the change in δ). Decreasing δ
+improves the accuracy, similarly.
+
+4.2 One-pinned greedy search
+
+GS works in a greedy fashion, and hence, it has no mechanism to escape a local
+minimum which can either lead to a failure in finding a solution or cause finding a
+sub optimal solution. To mitigate this problem we developed the, more exhaustive, 1-
+Pinned Greedy-Search Algorithm (1-PGS). Intuitively, 1-PGS forces GS to consider
+each POI as part of the answer. It does so by calling GS with initial partial routes
+of the form s, o, t, instead of applying GS with an initial route s, t. We refer to the
+object o as the pinned object. Iteratively, 1-PGS examines all the possible POIs as the
+pinned object, and it returns the route with the minimal overall travel time among all
+the routes it generated for the pinned objects.
+
+In practice, we do not consider all the objects of the dataset as potential pinned
+objects. We only examine as pinned objects those objects that are located in areas
+relevant to the search. We elaborate on this in Section 5 when we explain how we
+implemented the algorithms.
+
+Geoinformatica
+
+4.3 Mixed integer linear programming
+
+The 1-PGS algorithm is an improvement of GS. As such, it is guaranteed to always
+match or outperform the former. It can, in some cases, escape the local minimum
+problem that hinders GS, however, it may fail in doing so. Therefore, 1-PGS may
+not be able to find a solution when a solution exists or it may find a suboptimal
+solution. To ward off this problem it is necessary to use an approach that is based
+on a global search rather than a local greedy approach. A naive solution is using
+a brute-force exhaustive search. This is done by examining all the permutations of
+POIs for any feasible selection of POIs that can potentially satisfy the given TARS
+query and examining the possible departure times for each such route. Even without
+addressing the departure times, the number of options that need to be examined
+is large. At worst, in a map containing n POIs, all with a non-zero probability, the
+number of permutations such an algorithm would need to examine is n!. Even for
+very small values of n, say 15, this requires 15! > 1012 permutations. Examining a
+permutation requires checking if it represents a route that satisfies all the query
+constraints. Optimistically, assuming this process requires merely 100 nanoseconds,
+the entire computation would still require more than 4 years. As the number of
+POIs increases, even slightly, the exhaustive search quickly becomes far beyond the
+computational capabilities of any existing machine.
+
+Since TARS is an intricate combinatorial optimization problems, formulating
+TARS requires a model that is highly expressive. Achieving a practical solution also
+requires the model to be accompanied with a powerful framework that can solve
+the evaluation problem within a reasonable time frame. Hence, we opt to model the
+TARS problem as a Mixed Integer Linear Program (MILP) whose solution yields
+an approximation of the optimal route. MILP is highly expressive and it can be
+computed using one of the many solvers that were developed for it.
+
+There are a few difficulties with this approach we need to overcome. Firstly, MILP
+problems are NP-Hard, however, as a heuristic, we can limit the computation time
+and let the solver return the best solution it discovered within the limited time frame.
+Secondly, if the travel-time function is non-linear it is impossible to formulate it
+within the context of a linear program. To deal with this problem we use a few
+heuristics which will be explained in the following sections. Thirdly, approaches for
+modeling TSP problems as integer programming problems generally examine the
+entire map, and include a variable for each road in the network (see [36]). However,
+the number of roads in a city can be large (tens of thousands of roads). Thus, running
+a MILP solver with a variable for each road is unfeasible. We observe that the
+number of POIs in a search network is much smaller than the total number of nodes
+or roads in the entire road network. Hence, by using the search network defined
+in Section 3 and ignoring junctions and other non-POIs, we reduce the number of
+variables and constraints significantly. A TARS query typically contains about three
+or four search subqueries, and for each query we can choose the top ten objects with
+the highest probability in the area of the search. Modeling TARS this way allows
+reducing the number of objects in the problem to be around forty, or less.
+
+To model the TARS problem as a MILP problem, we need to represent all the
+constraints of the problem as linear constraints. A MILP problem consists of: (1) a
+set of decision variables, some of which are limited to assignments of integer values
+only; (2) a set of linear constraints on the values of the decision variables; (3) a linear
+
+Geoinformatica
+
+objective function that is being minimized (or maximized). The first step is linearizing
+the travel-time function fTT .
+
+4.3.1 Linearizing the travel-time function
+
+The travel-time function fTT returns an estimation of the time it takes to reach a given
+target POI from a given source POI when starting the travel at a specified time. For
+(oi, o j, td) returns, for a departure time td,
+any two POIs oi and o j, the function fTT
+the estimated travel time from oi to o j. This function is typically not linear. Since
+the constraints and the objective of a MILP expression must be specified using linear
+functions, we need to obtain, for every two POIs oi and o j, an approximated linear
+(oi, o j, td). To achieve a good approximation, we restrict the function
+function for fTT
+to a time interval [e(cid:2)
+, l(cid:2)
+] that represents the possible times for traveling from oi to o j,
+i
+i
+according to the specifications of the problem.
+
+Using sampling we select a set of points within the departure-time interval [e(cid:2)
+i
+
+, l(cid:2)
+]
+i
+(oi, o j, td) with respect to this interval. The
+
+and produce a linear approximation of fTT
+following section explains how to compute the interval [e(cid:2)
+i
+
+, l(cid:2)
+i
+
+].
+
+4.3.2 Intervals of arrival and departure
+
+(oi, o j, td), we apply linear regression over
+To achieve a good approximation of fTT
+time intervals that are as short as possible. This is done by considering, for each oi
+and o j, only the relevant times to travel from oi to o j, according to possible departure
+times, from oi. For example, if oi represents a restaurant that is open from 10:00 and
+the expected stay duration is one hour, we limit the departure time from oi to be not
+before 11:00. Similarly, we take into account restrictions of the user (e.g., the user
+wants to eat after 12:00), the order constraints and the minimal travel time to get to
+oi from the start location s. We also need to consider the departure time from o j and
+limit the interval so that arrival to o j will not be too late, according to the constraints
+of the problem.
+
+Using merely the arrival time interval, which consists of opening times and TARS
+constraints, to compute these time intervals, provides a crude estimation. We can
+improve the estimation by considering for each POI its position in possible routes.
+To do so, if o is the k-th object in a route ρ then we say that o is in position k in ρ.
+We denote by I
+the interval that represents the possible arrival time at o j in routes
+that contain o j in position k. Note that for some j and k, there is no possible route
+where POI o j is in position k. In such case, I
+
+is an empty set.
+
+(k)
+j
+
+(k)
+j
+
+To compute the values of the time intervals, we apply a process where each
+
+interval induces constraints on other intervals, iteratively, as described next.
+
+Let N be the number of nodes in the search network, other than s and t. Assuming
+that o0 is s and oN+1 is t, the indexes of objects in the network are 0, . . . , N + 1. Let
+K be an upper bound on the number of objects in possible routes. (We discuss the
+estimation of K later.) We start by constructing the Arrival-Time Matrix (ATM), as
+presented in Fig. 5. The figure represents the initial possible arrival-time intervals of
+each POI o j, for 0 ≤ j ≤ N + 1, in each possible position 1 ≤ k ≤ K.
+
+Every element I
+, l
+
+(k)
+j of the arrival-time matrix that is not denoted by an empty set
+(k)
+has the form [e
+represent the earliest and latest arrival times
+j
+at o j, respectively, in routes that contain o j in the k-th position. Initially, for each
+
+(k)
+j and l
+
+] where e
+
+(k)
+j
+
+(k)
+j
+
+Fig. 5 Initial arrival-time
+matrix (ATM)
+
+Geoinformatica
+
+(k)
+j
+
+(k)
+j
+
+= e j and l
+(1)
+j
+
+= ∅ for j ≥ 1. Since s is only visited as the first POI, I
+
+= l j. Note that the first object of the route must be s (i.e.,
+object o j, e
+= ∅ for
+o0), and hence, I
+k ≥ 2. For m search subqueries, the route must include at least m + 2 POIs (m objects
+to satisfy the subqueries, s and t). Thus, the target t (i.e., oN+1) can only be visited in
+position that is greater than m + 1. Hence, I
+= ∅ for 1 ≤ k ≤ m + 1. Obviously,
+(K)
+the last object of the route must be t, so I
+j
+
+(k)
+N+1
+= ∅ for j < N + 1.
+
+(k)
+0
+
+(cid:3)
+
+(cid:4)
+
+, l
+
+, I
+
+(k)
+j
+
+(k)
+j
+
+(k)
+j
+
+(k)
+0
+
+(k)
+1
+
+(k)
+N+1
+
+, ..., I
+
+, where I
+
+We explain now how to compute the arrival-time intervals. Suppose that the
+=
+
+arrival-time intervals for the k-th position are
+], for 1 ≤ j ≤ N + 1. So, if a user arrives at a POI o j as the k-th object of
+[e
+(k)
+and the earliest arrival time at oi
+the route, the earliest arrival time at o j is e
+(cid:5)
+j
+(k)
++ d j
+o j, oi, e
+as the k + 1-st POI is e
+—the earliest arrival time at
+j
+o j plus the stay duration d j at o j plus the travel time from o j to oi, according to
++ d j.
+the travel-time function fTT , when leaving o j as early as possible, i.e., at e
+Consequently, the earliest arrival time at any oi as in the k + 1-st position is
++ d j
+min0≤ j≤N+1
+. This is because fTT is a monotonically
+increasing function (i.e., an increase in the departure time cannot cause a decrease in
+the arrival time.)
+
+(cid:5)
+o j, oi, e
+
++ d j + fTT
+
++ d j + fTT
+
+(cid:5)
+e
+
+(k)
+j
+
+(k)
+j
+
+(k)
+j
+
+(k)
+j
+
+(cid:6)(cid:6)
+
+(cid:6)
+
+I
+
+Algorithm 2 presents the iterative computation by which the intervals of the initial
+ATM are reduced. We apply a similar algorithm BackwardReducedATM to reduce
+the latest arrival times l j,k. The three main differences in BackwardReducedATM in
+comparison to Algorithm 2 are (1) the external iteration is from K − 1 down to 1,
+(2) we use the inverted travel-time function f i
+, and (3) we replace max by min and
+replace min by max.
+
+TT
+
+If after applying the two reduction algorithms, interval I
+
+is empty, then it is
+impossible to visit POI o j at position k. Furthermore, if for all the POIs of an answer
+set of a search query, all their time intervals are empty, then the TARS query is
+] =
+unsatisfiable. The corresponding departure-time interval for o j is I
+[e
+
+(k)
+j
+Finally, for every pair of POIs o j, oi and 1 ≤ k ≤ K, we use linear regression to
+(oi, o j, td) within the departure time interval
+
++ d j, l
+
++ d j].
+
+= [e
+
+(cid:2)(k)
+j
+
+(cid:2)(k)
+j
+
+(cid:2)(k)
+j
+
+(k)
+j
+
+, l
+
+approximate the travel time function fTT
+(cid:2)(k)
+I
+j
+
+) and produce a
+
+(since td ∈ I
+
+(k)
+i, j td + b
+
+(cid:2)(k)
+j
+
+(k)
+i, j .
+
+(k)
+j
+
+4.3.3 Modeling TARS as a MILP problem
+
+We continue now with our main goal of modeling TARS as a MILP problem.
+Table 4 defines the notations we use in the formulation. Note that we formulate
+
+Geoinformatica
+
+Table 4 Notations for
+modeling a TARS query T
+over a search network N
+
+i ∈ 0, N + 1
+
+A = {A1, A2, ..., Am}
+(cid:8)
+
+(cid:7)
+i1, i2, ..., i|Ai|
+
+Ai =
+
+(cid:7)
+
+O =
+
+(q, q(cid:2)) | q, q(cid:2) ∈ 1, m
+
+(cid:8)
+
+set Ai
+
+POI indexes, where 0 and N + 1
+represent the start and target
+nodes
+
+Answer sets of the subqueries
+
+of T
+
+Indexes of the POIs in the answer
+
+Order constraints specified using
+
+subquery indexes
+
+The probability of o j satisfying
+
+subquery Qi
+
+Linearized earliest-arrival-time
+
+function at POI j as the route’s
+k-th POI where β(i) is the
+departure time from i
+
+Expected stay duration time at
+
+node j.
+
+Earliest and latest allowed arrival
+times at node j as the route’s
+k-th POI
+
+Minimum probability threshold
+
+of subquery Qi
+
+pi, j ∈ (0, 1)
+
+(k)
+a
+i, j
+
+β(i) + b
+
+(k)
+i, j
+
+d j
+
+(k)
+j
+
+e
+
+, l
+
+(k)
+j
+
+τi ∈ (0, 1)
+
+the problem over a search network, which is typically small, and not over the entire
+dataset, as described in Section 3. To simplify the notation, we denote by 0, n the set
+{0, 1, . . . , n}.
+
+Def ining the decision variables (I)
+approach to define the decision variables of the MILP problem.
+
+In Table 5 we present the straightforward
+
+The objective is to minimize the total travel time of the route. That is, to minimize
+
+αN+1 − β0.
+
+Before we present the constraints, let us examine the number of decision variables
+according to the definitions in Table 5. The number of variables is (N + 2)2+
+(N + 1) + 1. Formulating the MILP problem using O(N2) decision variables is likely
+to significantly degrade the performance of any solver.
+
+Def ining the decision variables (II) To reduce the number of decision variables and
+improve the efficiency, we present a different approach that is based on the use of an
+estimated upper bound K on the number of objects in the computed route. That is,
+we find K such that computed routes contain at most K POIs.
+
+Table 5 Decision variables (straightforward, inefficient)
+∀i, j ∈ 0, N + 1 : xi, j ∈ {0, 1}
+∀i ∈ 1, N + 1 : αi ∈ [0, 1]
+β0 ∈ [0, 1]
+
+Variable xi, j = 1 iff the route goes from POI i to POI j
+Arrival time at node i
+Departure time from node 0, i.e., from s
+
+A decision variable is defined for every pair of relevant POIs indicating whether the route traverses
+from the first POI to the second POI
+
+Geoinformatica
+
+Algorithm 2 Decrease interval of arrival times, forward
+ForwardReducedATM(M)
+Input: An arrival-time matrix M
+Output: A reduced arrival-time matrix M
+
+, l
+
+(k)
+i
+
+] or ∅}
+
+for i = 1 to N + 1 do
+
+(k)
+1: {in M, each cell M[k, i] is a pair [e
+i
+2: for k = 2 to K do
+3:
+4:
+5:
+6:
+7:
+
+else
+
+if M[k − 1, j] = ∅ for all 0 ≤ j ≤ N + 1 then
+M[k, j] ← ∅, for every 0 ≤ j ≤ N + 1
+
+{ﬁnd minimal arrival time at oi in position k}
+
+(cid:9)
+
+μ ← min
+
+0≤ j≤N+1
+(cid:6)
+
+(cid:5)
+
+(k−1)
+j
+
+e
+
++ d j + fTT
+
+(o j, oi, I
+
+(k−1)
+j
+
++ d j)
+
+(cid:10)
+
+8:
+
+9:
+
+(k)
+e
+i
+
+if l
+
+(k)
+μ, e
+← max
+i
+(k)
+(k)
++ di then
+≥ e
+i
+i
+(k)
+(k)
+M[k, i] ← [e
+i
+i
+
+, l
+
+]
+
+10:
+11:
+12:
+13: return M
+
+else
+
+M[k, i] ← ∅
+
+Table 6 presents the decision variables in this approach. The number of variables is
+2 · (N + 1) · K + 1. Note that it is affected by K, and hence, it is important to estimate
+K as accurately as possible—when K is too large, the computation is not efficient.
+When K is too small, we may find a suboptimal solution or may not find a solution
+at all.
+
+To compute K, we use a heuristic that estimates the expected number of POIs
+in constructed routes. Let p(cid:2)
+i denote the harmonic mean of the probabilities of all
+the POIs in the answer set of the subquery Qi. The expression (1 − p(cid:2)
+)Ki is the
+i
+probability of failing Ki times to satisfy the user by objects whose probability is p(cid:2)
+i.
+Hence, 1 − (1 − p(cid:2)
+)Ki estimates the probability to satisfy subquery Qi by visiting Ki
+i
+POIs. Thus, we require this probability to be at least τi—the probability threshold
+of Qi—that is 1 − (1 − p(cid:2)
+(1 − τi), that is
+i
+
+)Ki = τi. From this follows Ki = log1− p(cid:2)
+
+i
+
+Table 6 Decision variables (second attempt)
+
+(1)
+x
+0
+
+= 1
+
+(k)
+∀i ∈ 1, N + 1, ∀k ∈ 1, K : x
+i
+∀i ∈ 1, N + 1, ∀k ∈ 1, K : α(k)
+α(1)
+0
+β(1)
+0
+
+= e0
+∈ [0, 1]
+
+i
+
+∈ {0, 1}
+∈ [0, 1]
+
+A constant value indicating that a route should begin
+
+at the source POI
+(k)
+= 1 iff POI i is in position k of the route
+x
+i
+Arrival time at POI i when it is in position k
+Source arrival time is equal to its earliest departure time
+Departure time from the source
+
+A decision variable is defined for each POI and each position of that POI in the constructed route
+
+Geoinformatica
+
+Ki = log(1−τi)
+i=1 Ki = 2 +
+) . Finally, we define K = 2 +
+log(1− p(cid:2)
+i
+added to take into account the start and target locations.
+
+m
+
+(cid:11)
+
+(cid:11)
+
+m
+i=1
+
+log (1−τi)
+log (1− p(cid:2)
+i
+
+) , where 2 is
+
+Objective Minimize the total travel time, that is,
+
+minimize
+
+α(k)
+N+1
+
+− β(1)
+0
+
+(cid:14)
+
+(cid:12)
+
+K(cid:13)
+
+k=2
+
+Next, we need to define the constraints of the MILP. The constraints are defined
+with the following aim. Any assignment of values, to the decision variables, that
+satisfies the constraints corresponds to a route that satisfies the given TARS query.
+
+Linear constraints
+
+(1) The target t is the last node in the route.
+
+∀ k ∈ 1, K − 1, x
+
+(k)
+N+1
+
++
+
+(k+1)
+x
+i
+
+≤ 1
+
+N+1(cid:13)
+
+i=1
+
+Note that for a given k, x
+(k+1)
+constraint requires x
+i
+
+(k)
+N+1
+
+= 1 if f t is in position k. In such case, the
+
+= 0 for every i, i.e., no object in position k + 1.
+
+(2) There is at most one node in each position.
+
+(3) A node cannot appear in more than one position.
+
+∀ k ∈ 1, K,
+
+(k)
+x
+i
+
+≤ 1
+
+N+1(cid:13)
+
+i=1
+
+∀ i ∈ 0, N + 1,
+
+K(cid:13)
+
+k=1
+
+(k)
+x
+i
+
+≤ 1
+
+(cid:11)
+
+K
+k=1 x
+
+(k)
+N+1
+
+= 1.
+
+The target must be visited, thus,
+
+(4) There are no “empty” positions in the middle of the route, i.e., the number of
+nodes in position k is equal to the number of nodes in position k + 1, unless t is
+in k.
+
+(5)
+
+For each subquery, the probability of success is not below the threshold τi.
+(cid:15)
+
+(cid:11)
+
+∀ i ∈ 1, m, 1 −
+
+(1 − pi, j)
+
+K
+k=1 x
+
+(k)
+
+j ≥ τi
+
+∀ k ∈ 1, K,
+
+(k)
+x
+i
+
+=
+
+(k+1)
+j
+
+x
+
+N+1(cid:13)
+
+j=1
+
+N(cid:13)
+
+i=0
+
+j∈Ai
+
+Note that (1 − pi, j) is the probability that j does not satisfy Qi,
+is 1
+if j appears in the route and 0 otherwise. Thus, the product is the probability
+that all the visited objects of Ai failed, and by reducing it from 1, we receive the
+
+K
+k=1 x
+
+(k)
+j
+
+(cid:11)
+
+probability that at least one object satisfied Qi. This constraint is not linear, so
+we change it to be linear, as follows:
+
+Geoinformatica
+
+(a)
+
+(b)
+
+(c)
+
+(d)
+
+(cid:2)
+
+log
+(cid:11)
+
+(cid:11)
+
+(1 − pi, j)
+
+j∈Ai
+(cid:5)(cid:2)
+
+(cid:11)
+
+(k)
+
+K
+k=1 x
+
+j ≤ 1 − τi
+(cid:11)
+K
+k=1 x
+
+(k)
+j
+
+(cid:6)
+
+(1 − pi, j)
+j∈Ai
+(cid:5)
+(1 − pi, j)
+(k)
+j
+
+≤ log (1 − τi)
+≤ log (1 − τi)
+log(1 − pi, j) ≤ log (1 − τi)
+
+K
+k=1 x
+
+K
+k=1 x
+
+log
+(cid:11)
+
+(k)
+j
+
+(cid:6)
+
+(cid:11)
+
+j∈Ai
+
+j∈Ai
+
+(6) Arrival times of visited POIs must be valid.
+
+(k)
+∀ i ∈ 1, N + 1, ∀ k ∈ 1, K, if I
+i
+
+(cid:8)= ∅
+
+(k)
+x
+i
+
+(k)
+· e
+i
+
+≤ α(k)
+i
+
+(k)
+≤ x
+i
+
+· l
+
+(k)
+i
+
+Departure from the source s must be valid.
+
+(1)
+0
+
+e
+
+≤ β(1)
+0
+
+≤ l
+
+(1)
+0
+
+(7) Arrival times must be consistent with the linearized arrival-time function.
+
+∀ j ∈ 1, N + 1, ∀ k ∈ 2, K − 1,
+
+(cid:6)
+
+(cid:14)
+
+α(k+1)
+j
+
+≥
+
+· (α(k)
+i
+
++ di) + b
+
+(k)
+i, j
+
+(k)
+· x
+i
+
+· x
+
+(k+1)
+j
+
+(cid:6)
+
+(cid:5)
+(k)
+a
+i, j
+
+N+1(cid:13)
+
+i=1
+
+The sum on the right side of the equation is equal to
+
+(cid:5)
+(k)
+a
+i, j
+
+N+1(cid:13)
+
+i=1
+
+· α(k)
+i
+
+(k)
+· x
+i
+
++ a
+
+(k)
+i, j
+
+(k)
+· di · x
+i
+
++ b
+
+(k)
+i, j
+
+(k)
+· x
+i
+
+(k+1)
+j
+
+.
+
+x
+
+From Constraints (6) follows α(k)
+i
+the above sum can be written as
+(cid:12)
+
+(k)
+= 0 ⇔ x
+i
+
+(k)
+= 0. Hence, x
+i
+
+· α(k)
+i
+
+= α(k)
+i
+
+, and
+
+N+1(cid:13)
+
+i=1
+
+N+1(cid:13)
+
+i=1
+
+(k)
+a
+i, j
+
+· α(k)
+i
+
++
+
+(a
+
+(k)
+i, j
+
+· di + b
+
+(k)
+i, j
+
+(k)
+)x
+i
+
+(k+1)
+j
+
+x
+
+The multiplication by x
+
+makes this equation non-linear. To solve this, note
+
+that when x
+
+(k+1)
+j
+
+= 1, the constraint should be
+
+(k+1)
+j
+
+N+1(cid:13)
+
+i=1
+
+α(k+1)
+j
+
+≥
+
+(k)
+a
+i, j
+
+· α(k)
+i
+
++
+
+(a
+
+(k)
+i, j
+
+· di + b
+
+(k)
+i, j
+
+(k)
+)x
+i
+
+N+1(cid:13)
+
+i=1
+
+(k+1)
+j
+
+and when x
+constraint, i.e., α(k+1)
+(k)
+di + b
+) · x
+i
+constraints can be formulated as
+
+= 0, the node j is not in position k + 1, so we do not need any
+(k)
+N+1
+·
+i=1 a
+i, j
+≤ 1. Thus, to express the above two cases, the right side of the
+
+≥ 0. We observe that
+
+≤ 1 and
+
+· α(k)
+i
+
+N+1
+i=1
+
+(k)
+i, j
+
+(k)
+i, j
+
+(a
+
+(cid:11)
+
+(cid:11)
+
+j
+
+N+1(cid:13)
+
+i=1
+
+N+1(cid:13)
+
+i=1
+
+(k)
+a
+i, j
+
+· α(k)
+i
+
++
+
+(a
+
+(k)
+i, j
+
+· di + b
+
+(k)
+i, j
+
+(k)
+) · x
+i
+
+− 2 · (1 − x
+
+(k+1)
+j
+
+)
+
+Geoinformatica
+
+Finally, we can write the constraint as a linear equation:
+
+α(k+1)
+j
+
+≥
+
+(k)
+a
+i, j
+
+· α(k)
+i
+
++
+
+(a
+
+(k)
+i, j
+
+· di + b
+
+(k)
+i, j
+
+(k)
+) · x
+i
+
++ 2 · x
+
+(k+1)
+j
+
+− 2
+
+N+1(cid:13)
+
+i=1
+
+N+1(cid:13)
+
+i=1
+
+Similarly, for j ∈ 1, N + 1 and k = 1,
+
+α(2)
+j
+
+≥ a0, j · β(1)
+
+0
+
++ b
+
+(k)
+i, j
+
+(k)
+· x
+i
+
++ 2 · x
+
+(k+1)
+j
+
+− 2
+
+(8) Order constraints must be satisfied
+
+∀ (q, q(cid:2)) ∈ O, ∀ k ∈ 1, K,
+
+(cid:11)
+
+if
+
+(k)
+(cid:2) x
+i
+
+i∈Aq
+
+= 1 then 1 −
+
+(cid:2)
+
+(cid:2)
+k
+k(cid:2)=1
+
+(1 − pq, j)x
+
+j∈Aq
+
+(k
+
+(cid:2) )
+j ≥ τi.
+
+j∈Aq
+
+(k(cid:2))
+j
+
+(cid:11)
+k
+k(cid:2)=1 x
+
+We linearize the constraints as we did for Constraints (5), and receive
+(cid:11)
+· log(1 − pq, j) − log(1 − τi) ≤ 0. Now, we can remove the con-
+ditional part of the equation above by using a constant M = −2 · log(1 − τi),
+and we rewrite the equation in the following linear form:
+⎛
+
+⎞
+
+(k(cid:2))
+j
+
+x
+
+· log(1 − pq, j) − log(1 − τi) ≤ M ·
+
+⎝1 −
+
+⎠
+
+(k)
+x
+i
+
+(cid:13)
+
+i∈Aq
+
+(cid:2)
+
+(cid:13)
+
+k(cid:13)
+
+j∈Aq
+
+k(cid:2)=1
+
+(cid:11)
+
+(k)
+(cid:2) x
+i
+
+i∈Aq
+
+When
+
+= 1, the left side of the equation is equal to 0 and this is the
+= 0, the condition of the “if” statement
+constraint we need. When
+does not hold, so there is no need for a constraint. The constant M was chosen
+so that in such case, the inequality is always satisfied.
+
+(k)
+(cid:2) x
+i
+
+i∈Aq
+
+(cid:11)
+
+4.4 Complexity analysis
+
+(cid:20)
+
+(cid:21)
+
+l0−e0
+δ
+
+Let N denote the number of POIs in the TARS problem. Let d =
+denote the
+total number of departure times examined by the algorithms. The time complexity
+of GS is O(N · d · K2), where K is the number of POIs in the constructed route. This
+is because the algorithm checks, for each possible POI, at most K insertion positions
+and it does so for d different departure times. In practice, however, d can be bounded
+by a constant, so the time complexity is O(N · K2). Algorithm 1-PGS, calls GS N
+times. Hence, its time complexity is O(N2 · K2). For the MILP algorithm there are
+two stages to consider. The first is the formalization of the MILP problem, which
+comprises the following three steps. (1) Producing the time of departure intervals,
+by creating and reducing the ATM. This requires |ATM| = (N + 2) · K iterations.
+(2) Computing a linear approximating of the travel-time function, for every pair of
+distinct objects and for every 1 ≤ k ≤ K. This has O((N + 2) · (N + 1) · K · TC) time
+complexity, where TC is the time required for the linear regression process. Since
+TC is independent of N and K, we can consider it as a constant, so this step has
+O(N2 · K) time complexity. (3) Constructing the 7 sets of linear constraints for the
+MILP solver requires producing O((N + 1) · K) constraints (see Constraint (5) and
+Constraint (6)). Hence, the overall time complexity of this stage is O(K · N2), and it is
+
+Geoinformatica
+
+quadratic in N. The second stage to consider is solving the MILP problem. Solving a
+MILP problem has exponential time complexity in the number of variables. (Recall
+that in our model, we use 2 · (N + 1) · K + 1 variables.) However, effective MILP
+solvers use advanced heuristics to compute a solution. Based on that, in Section 5
+we show that by limiting the running time of the solver we can achieve good results
+within a reasonable time frame.
+
+5 Experimental evaluation
+
+In this section, we present an experimental evaluation of the algorithms that were
+presented in Section 4. We describe our experimental setting—the data and the
+methodology we used—and we analyze the results. Our goals are to compare the
+algorithms according to (1) their rate of success in finding a solution to given TARS
+queries, (2) their ef fectiveness, that is, the overall travel time of the computed routes,
+and (3) their ef f iciency, that is, the running time that it takes to compute a solution.
+
+5.1 Setting
+
+5.1.1 Dataset
+
+In our experiments we used the dataset and the queries that are presented below.
+
+We used the Yahoo Local Search API3 to generate the dataset. We posed, using this
+API, the following 7 search queries: (1) “ikea”, (2) “gas station”, (3) “pharmacy”,
+(4) “bank”, (5) “shoe store”, (6) “cinema” and (7) “post office”, limited to an area in
+the city of San Francisco, and retrieved the first 10 objects of each result. We denote
+these queries by Q1, . . . , Q7. Retrieving 10 objects from each result was based on
+the tendency of geographic search engines to provide results in batches of size 10
+(e.g., see maps.google.com). There are additional, more sophisticated, methods for
+deciding which objects should serve as candidate POIs. For instance, previous papers
+have shown how to reduce the number of objects that need to be considered when
+answering a route-search query, including the use of spatial indexes [6, 32, 39]. Their
+methods can be combined with our algorithms for the step of constructing the search
+network. Furthermore, the user can also manually filter some of the search results
+which she considers as irrelevant to the search.
+
+We assigned success probabilities to the objects based on their position in the
+search results, that is to say, if an object o1 precedes an object o2 in the search
+result then o1 was assigned a higher probability than o2. The reason for setting the
+probabilities in this way is that search engines rank the objects by their relevance
+to the search terms. That is, we strive to make the probabilities proportional to the
+relevance scores. The assigned probabilities were constructed in the range [0.4, 0.9]
+using the distribution function e−γ ·(i−1) − (1 − ph), where γ = − ln(1+ ph− pl)
+, ph = 0.9,
+pl = 0.4, nr = 10, and 1 ≤ i ≤ 10 is the position of the object in the search result.
+
+nr−1
+
+3http://developer.yahoo.com/search/local/V3/localSearch.html
+
+Geoinformatica
+
+This represents a behavior that is similar to the well known “long tail” phenomenon
+in search. The dataset that we used is available online as an XML document
+(see [31]).
+
+5.1.2 Search queries
+
+(cid:23)
+
+(cid:22)
+7
+4
+
+We generated a set of TARS queries, from the search queries Q1, . . . , Q7 as follows.
+= 35 TARS queries of size 4 by constructing all
+First, we created a set of
+the possible selections of 4 queries among Q1, . . . , Q7. The start and destination
+locations of each query were chosen arbitrarily in the area of San Fransisco. The
+time constrains for the start and destination locations, and the minimum probability
+threshold of each subquery are presented in Table 7. The durations where not
+set in the query. Instead, they were arbitrarily set for each POI to be within the
+range (0, max-duration]. From this initial set of queries, we generated two groups
+of queries—queries with time constraints, denoted TC4, and queries without time
+constraints, denoted NTC4. The time constraints of the first group are provided in
+Table 7. Note that in the presence of time constraints, some queries do not have a
+solution. Accordingly, TC4 denotes the set of 25 queries, among the queries with
+time constraints, for which we were able to find a solution (using various methods).
+It is difficult to find a solution for queries of TC4, thus, we used this set to test the
+success rates of the algorithms and their effectiveness when handling queries with
+constraints that are not easy to satisfy. We used NTC4 to test the effectiveness of the
+algorithms on queries that are being satisfied relatively easily.
+
+Similarly, we created a set of
+
+= 21 TARS queries of size 5, i.e., queries that
+comprise 5 subqueries. We constructed from it two sets of queries—a set TC5 of
+queries with time constraints, and a set NTC5 of queries without time constraints.
+Among the 21 queries with time constraints, only to 11 queries we were able to find
+a solution. TC5 denotes the set of these 11 queries. Note that the queries of TC5
+and NTC5 are larger and more complicated than the queries of TC4 and NTC4.
+The total number of queries we issued is |TC4| + |NTC4| + |TC5| + |NTC5| = 25 +
+35 + 11 + 21 = 92.
+
+(cid:23)
+
+(cid:22)
+7
+5
+
+Table 7 Time constraints we used for the queries
+
+Search
+query
+
+Source
+Target
+“Ikea”
+“Gas station”
+“Bank”
+“Shoe store”
+“Post office”
+“Cinema”
+“Pharmacy”
+
+Earliest
+arrival
+
+10:00
+10:00
+11:30
+06:00
+13:00
+15:00
+11:00
+16:00
+06:00
+
+Latest
+arrival
+
+12:00
+18:30
+14:30
+23:59
+15:00
+16:00
+17:00
+16:05
+23:59
+
+Max stay
+duration
+
+0
+0
+90
+15
+45
+45
+60
+120
+20
+
+Threshold
+(τ )
+Irrelevant
+Irrelevant
+0.95
+0.1
+0.1
+0.95
+0.95
+0.1
+0.85
+
+“Earliest” and “Latest” refer to the arrival-time constraints. Stay max-duration refers to the maximal
+stay duration at POIs of this type and is given in minutes. Actual stay durations for POIs matching
+each of the above search terms where arbitrarily selected to be within (0, max-duration]
+
+Geoinformatica
+
+5.1.3 Building a scalable travel-time function
+
+To generate a travel-time function, we collected travel-time data for selected pairs of
+POIs, using the Bing Maps API.4 This API receives a start location and a destination.
+It returns the fastest route between these locations, at the time of the search, taking
+into account live traffic data. Collecting and storing the time it takes to travel from
+every possible location to every other possible location at any given departure time is
+not feasible. Instead, we implement a simple approximation method using a heuristic
+which is inspired by hierarchical shortest path algorithms (see [14, 22, 42]) and
+hierarchical networks [20].
+
+Given a set of predefined POIs, we sampled the travel time between each
+pair, for different departure times. The measures were conducted in intervals of
+approximately k minutes for a period of 24 h. We refer to k as our sampling rate and it
+is a configurable parameter. Based on this sample, we created a travel-time function,
+that for any given hour and a pair of objects, returns the travel time between these
+objects at the given hour. We used linear interpolation to complete the travel-time
+function for departure times that were not measured.
+
+For each pair of distinct POIs, the data contains a set of time-dependent travel-
+time samples in intervals of k minutes, for a 24-h time period. Hence, for a dataset of
+n objects, the number of time samples is 24 · 6 · n · (n − 1) = 144(n2 − n). Therefore,
+using this approach for every possible pair of POIs in a city is not scalable. To provide
+scalability, we partitioned the city of San-Fransisco into 50 areas. In each area we
+arbitrarily selected 50 POIs and generated a travel-time function for every pair of
+POIs, as described above. Similarly, we choose the center of each area, and for each
+pair of centers, we constructed a travel-time function.
+
+To obtain the travel-time for any given pair of POIs (o1, o2) and a departure time
+t based on the above partition, we conduct the following procedure. We begin by
+finding the two closest POIs to o1 and o2. Suppose that o(cid:2)
+2 are these points.
+Note that we use d to denote the network distance between two points. We next
+proceed as follows:
+
+1 and o(cid:2)
+
+1.
+
+2.
+
+1 and o(cid:2)
+
+1 and o(cid:2)
+
+2 are in the same area, the approximated travel-time function for
+) multiplied by the ratio of network
+
+If o(cid:2)
+, o(cid:2)
+the pair (o1, o2) is defined as that of (o(cid:2)
+1
+2
+distances between the points, i.e., by d(o1,o2)
+2) .
+d(o(cid:2)
+,o(cid:2)
+If o(cid:2)
+2 are not in the same area, let (c1, c2) be the centers of the areas
+in which they reside. The travel-time function is the sum of the travel-time
+functions for the pairs (o(cid:2)
+, c1), (c1, c2) and (c2, o(cid:2)
+) multiplied by the network
+2
+1
+distances between the points. That is, we multiply the travel time by the ratio
+d(o(cid:2)
+
+d(o1,o2)
+,c1)+d(c1,c2)+d(c2,o(cid:2)
+
+1
+
+2) .
+
+1
+
+Using this method we can approximate the travel time for any two POIs in a city, in
+a scalable fashion.
+
+5.1.4 Environment
+
+Our algorithms were implemented using the Microsoft .Net Framework. Our experi-
+ments were conducted on a computer with a 64 bit ICore 5 Dual Core Intel processor
+
+4http://msdn.microsoft.com/en-us/library/cc966826.aspx
+
+Geoinformatica
+
+Table 8 Error ratios over 100 runs between the real and approximated travel times
+
+Approx-2 (%) Approx-5 (%) Approx-10 (%) Approx-30 (%) Constant scaling (%)
+
+Arithmetic mean 14.5
+10.2
+Std. deviation
+62.1
+Maximum
+
+14.6
+10.3
+62.4
+
+14.7
+10.3
+62.4
+
+14.8
+10.5
+63.7
+
+29.8
+17.7
+71.2
+
+and with 4 GB of RAM. We used the Gurobi Optimizer5 version 4.01 for solving the
+Mixed Integer Linear Program that was presented in Section 4. This optimizer is
+a high-end library for math programming, capable of solving Mixed Integer Linear
+Programming problems.
+
+5.2 Evaluating our travel-time function approximation
+
+To test the effectiveness of our approximated travel-time function, as defined in
+Section 5.1.3, we ran the following experiments. We randomly choose 100 pairs
+of locations within the city of San-Francisco, and at arbitrary departure times, we
+issued queries against the Bing API to find the fastest route between them. We then
+approximated the arrival time by using our approximation algorithm, and compared
+the approximated travel time to the actual travel time obtained by the API. Note
+that our approximation algorithm used historical data which were one week old.
+We ran the same test for different sampling rates (i.e., for different values of k).
+We refer to the approximation algorithm, when run with a sampling rate of k, as
+Approx-k. In Table 8, we report the arithmetic mean, the standard deviation and the
+maximum error ratios. As a baseline for our algorithm, we also report the results of
+a basic approximation algorithm which simply scales the travel times according to
+the travel distances. To do so, it multiplies the distance by an optimal pre-calculated
+constant. The pre-calculated constant is the average speed in the test area, and it was
+43.7 kilometers per hour, in our tests.
+
+The results in Table 8 show that the approximation algorithm we use produces
+better approximations than the baseline constant scaling. They also show that the
+sampling rate has only a minor effect on the quality of the approximation.
+
+When running the approximation algorithm, we need to load the relevant histori-
+cal data into memory, only once. After loading the data, the average time it takes to
+calculate the approximated travel time, for any source, target and departure time, is
+around 37 ms.
+
+5.3 Results
+
+We applied the GS, 1-PGS and MILP algorithms on the data described above. For
+our travel time approximation algorithm we used a sampling rate of k = 10 min.
+Note that as our algorithms rely on the travel-time approximation algorithm, the
+ratios of the approximated arrival and departure times to the actual ones are similar
+to the results reported in Table 8. We tested the MILP algorithm with a time limit
+that was enforced on the Gurobi solver. This time limit was implemented using the
+
+5http://www.gurobi.com/
+
+Fig. 6 For each algorithm, the
+average on the ratio of the
+success rate of the algorithm to
+the best computed success
+rate, for the queries of TC4
+and TC5
+
+Geoinformatica
+
+callback mechanism of Gurobi, to monitor the amount of time that passed since
+the computation was initiated. We limited the running time of the solver to 5, 10,
+30 and 480 s and named the algorithms MILP05, MILP10, MILP30 and MILP480,
+respectively. Figure 6 shows the success rate in finding a solution, for each of the
+algorithms. The figure refers to the query groups TC4 and TC5, which contain 25
+and 11 solvable queries, respectively.
+
+Figure 7 presents the effectiveness of the algorithms. It shows the average ratio
+of the overall travel time of routes computed by MILP480 to those computed by the
+other algorithms. These results were obtained by applying the different algorithms
+on identical queries from the query groups NTC4 and NTC5 (i.e., queries without
+time constraints). These query groups contain 35 and 21 different queries each,
+respectively, and the results refer to the average ratio of the travel times. In this
+test, the queries can be satisfied easily. Thus, all the algorithms were successful in
+finding a solution to each one the 56 (35 + 21) queries.
+
+Figures 6 and 7 show that MILP480 has the highest success rate and it is the
+most effective among the algorithms we tested. MILP30 is almost as effective as
+MILP480 in the cases we examined. Figure 7 also shows that, in this setting, there are
+diminishing improvements in the effectiveness when allocating larger time windows
+for MILP. Additional tests show that this trend continues even when allowing MILP
+to run for more than an hour. The main reason for this is that a near optimal solution
+is discovered after a relatively short period of time and the additional time is used
+for very mild improvements in the effectiveness of the route.
+
+Fig. 7 The average ratio of
+the travel times of the routes
+computed by each one of the
+algorithms to those of
+MILP480, for the queries of
+NTC4 and NTC5
+
+Geoinformatica
+
+Further analysis of the results shows that MILP30 and MILP480 consistently
+dominate the other algorithms, both in terms of success rate and effectiveness.
+A comparison between 1-PGS, MILP05 and MILP10 shows that, on the average,
+MILP05 and MILP10 outperform 1-PGS in terms of effectiveness and success rate.
+In all cases, GS had the worst success rate and effectiveness among the tested
+algorithms.
+
+To test the efficiency of the algorithms, we measured their running times. The
+results are depicted in Fig. 8. The figure shows the time it takes for each algorithm
+to compute the result route, from the moment the user issues her query. Note that,
+on one hand, the running-time limitations on MILP refer only to the Gurobi MILP
+solver. Hence, the time it takes to construct the problem for the solver, e.g., create
+the constraints, may cause the running time to be larger than the specified time limit.
+On the other hand, when MILP is limited to a certain number of seconds, it may
+require less time than the limit to complete the computation, because the optimal
+route can be discovered before reaching the time limit. The times presented in Fig. 8
+are the averages over all the runs.
+
+Some of the running times presented in in Fig. 8 may be considered too high for
+online systems, however, since TARS is being used for planning and an answer to a
+TARS query may be a route with a future departure time, route calculations do not
+always have to be instantaneous.
+
+5.4 Additional tests
+
+To verify that our results are general and not specific to one setting, we conducted
+additional tests. First, we computed our queries using different start locations and
+different destinations. The results we obtained in these tests were very similar to
+those we presented in the previous section. This shows that our results are not biased
+by the selection of specific start and destination locations. Secondly, we computed
+the queries with various order constraints. Adding order constraints decreased the
+running times of all the algorithms because it decreased the search space of possible
+solutions. Effectiveness and success rate were not affected by the addition of order
+constraints. We do not further elaborate on these experiments as they do not provide
+any additional insights.
+
+We ran tests on datasets of different sizes, to examine how well each of the
+algorithms scales, in terms of running time, success rate and effectiveness. To that
+
+Fig. 8 The average running
+times of the algorithms when
+applied over the different
+query groups. Times are
+presented on a logarithmic
+scale
+
+Geoinformatica
+
+end, we used the datasets SF5, SF10 and SF20 that were produced by posing search
+queries over San Francisco, as described in Section 5.1.1, where in SF5 we only
+retrieved the top 5 results of each search, in SF20 we retrieved the top 20 results
+of each search, and SF10 is the dataset we used in the previous section. TA100 is
+a dataset that was constructed by posing search queries over a map of Tel-Aviv. It
+contains approximately 100 objects for each one of the 7 search queries.
+
+Table 9 presents the performances of the algorithms on TA100. MILP05 and
+MILP10 are not presented in this table because their time limits did not enable
+them to achieve worthwhile results on datasets of this magnitude. The table shows
+that MILP480 significantly outperforms GS and 1-PGS, in terms of success rate and
+effectiveness. On TA100, the success rate of MILP30 is lower than that of 1-PGS,
+however, MILP30 is more effective than 1-PGS. This is because 1-PGS is forced to
+examine many objects as the pinned object. By that, it reaches solutions that include
+objects that MILP30 does not get to examine, due to its time limit. MILP30, on the
+other hand, examines many variations with those objects that are likely to appear
+in the route. So, in most cases, MILP30 will find a faster route and will not waste
+computation time on irrelevant objects. On some cases, 1-PGS will find a solution
+when MILP30 fails to do so because it explores those objects that MILP30 ignores.
+
+On smaller datasets (SF5, SF10 and SF20), MILP30 and MILP480 always outper-
+formed 1-PGS, because they were able to cover well the set of possible potential
+routes. MILP05 and MILP10 tend to outperform 1-PGS on SF5 and SF10. However,
+on SF20, 1-PGS outperforms MILP05 and MILP10, in terms of success rate and
+effectiveness. This is, again, because the time given to the solver in MILP05 and
+MILP10 was insufficient for examining enough routes to find a good solution. Note
+that in this case, the running time of 1-PGS on SF20 is much higher than the running
+times of MILP05 and MILP10. GS has the worst success rate and effectiveness in all
+cases, because it examines merely one option without a comprehensive view of the
+problem.
+
+Figure 9 shows a comparison in terms of success rate and effectiveness of MILP05,
+MILP10 and MILP30 to MILP480 over the datasets SF5, SF10 and SF20. It shows
+that if sufficient time is given to the solver, an increase in the size of the dataset has
+only a mild effect on the success rate and on the effectiveness of the algorithm.
+
+Figure 10 shows the running times of the algorithms when tested over datasets of
+different sizes. The results confirm that the running times of GS and 1-PGS tend to
+increase linearly and quadratically, in the number of POIs, respectively. Moreover, as
+the number of POIs increases, the time required for the MILP algorithm to formalize
+the MILP problem for the Gurobi solver increases as well. Hence, the running times
+of the restricted MILP versions change when the size of the dataset grows. In SF5,
+the time required to formalize the problem for MILP is approximately 450 ms, which
+is only 10 % of the time given to the solver in MILP05. The results show that the
+
+Table 9 Performances of the algorithms on TA100
+
+Success rate
+Effectiveness
+
+GS
+
+0.2
+1.54
+
+1-PGS
+
+0.75
+1.24
+
+MILP30
+
+0.66
+1.14
+
+The f irst row presents the ratio of the success rates of the algorithms to the success rates of MILP480.
+The second row presents the ratio of the travel times of the routes computed by the algorithms to the
+travel times of the routes computed by MILP480
+
+Geoinformatica
+
+Fig. 9 The left f igure shows the success rate of the different MILP versions. The right f igure shows
+the ratio of the effectiveness of the tested algorithm to the effectiveness of MILP480
+
+running time required for the MILP algorithm to formalize the MILP problem scales
+quadratically. This is due to the fact that most of this time is spent on linearizing the
+time-dependent arrival time function for every pair of objects. Yet, on TA100 (the
+larger dataset), MILP480 is roughly 2.5 times faster, on the average, than 1-PGS (11
+min versus 28 min), and still consistently and significantly outperforms 1-PGS.
+
+5.5 Analysis of the results
+
+Figure 6 shows that the success rate plummets when increasing the number of
+subqueries from 4 to 5. The reason to this is that the difficulty to satisfy the TARS
+queries increases when the number of subqueries increases, due to the increase in
+the number of constraints. Figure 6 also shows that the plummet of MILP05 and
+MILP10 is sharper than that of 1-PGS. This is because the size of the search network
+increases when the number of subqueries increases. Hence, a time limit of 5 or 10 s is
+insufficient to produce results of the same quality as in evaluation of smaller queries.
+Figure 8 shows that an increase in query size (i.e., in the number of subqueries)
+increases the running time. This is not surprising, since, as mentioned earlier, larger
+queries result in larger search networks. Another observation is that the running
+times increase when queries do not have time constraints. On the one hand, these
+queries are easy to satisfy, which means that finding a route that satisfies the query
+constraints can be done more easily. On the other hand, choosing the most optimal
+route among the possible routes becomes more difficult because the number of
+candidate routes becomes larger.
+
+Fig. 10 Running times, in
+seconds, of the algorithms over
+datasets of different sizes.
+Times are presented on a
+logarithmic scale
+
+Geoinformatica
+
+We use the notation alg1 (cid:19) alg2 to indicate that alg2 outperforms alg1 in all cases,
+both in terms of success rate and effectiveness. In our experiments, we see that
+GS (cid:19) 1-PGS. This is obvious, because 1-PGS choses the best route from a set of
+routes that includes the route the GS returns. We also observe that MILP05 (cid:19)
+MILP10 (cid:19) MILP30 (cid:19) MILP480. Obviously, allowing MILP more processing time
+can only improve the results. The more interesting comparison is, therefore, between
+GS and 1-PGS to the different MILP versions. For SF5, SF10 and SF20 we have
+seen that 1-PGS (cid:19) MILP30. For TA100, this no longer holds, however, 1-PGS (cid:19)
+MILP480 does hold. A conclusion from all these cases and the running times in
+Fig. 10 is that for different settings we need to use different time limits for MILP
+in order to achieve good success rate, effectiveness and efficiency, in comparison to
+1-PGS.
+
+The GS algorithm is highly efficient and scalable—its running time is linear in the
+number of POIs. However, in most cases, it produces results that are much worse
+than the results of the other algorithms, in terms of success rate or effectiveness.
+Hence, GS is only useful on huge datasets in which it becomes unfeasible to run the
+other algorithms.
+
+Another important conclusion from the fact that MILP480 outperforms the other
+algorithms is that the linear approximation of the arrival-time function, defined in
+Section 4.3.1, and the approximation of K (the upper bound for the number of POIs
+in the route), are accurate enough in practice.
+
+5.6 Illustration of an actual search
+
+The following example illustrates the complexity of traffic-aware route search and
+the difference between the algorithms, even on a dataset of only 5 objects.
+
+Example 2 Consider the TARS query that is depicted in Fig. 11, over the area of
+San Francisco. The start location is the point indicated by the green balloon marked
+by S and the destination is at the point indicated by the green balloon marked by
+D. Suppose that the user needs to be at a specific bank branch (Citibank at Rhode
+Island) at 7:00. The position of the bank is indicated by the red (or blue) square
+with a dollar sign on it. In addition, the user should visit a coffee shop among the two
+alternatives for coffee shops that are indicated by the squares with an icon of a coffee
+cup. The expected stay duration in the bank is 90 min and for the coffee shop, the
+expected stay duration is 60 min.
+
+In this scenario, GS provides a route that typical users may naively choose. The
+planed route is indicated by the blue symbols. It reaches the bank at 7:00 and the
+coffee shop at 9:20. This route requires an overall travel time of 3:29 h. The route
+that MILP computed, goes via the places that are marked by red symbols. It reaches
+the bank at 7:00, goes to the near coffee shop at 8:34 and arrives at the destination
+with an overall travel time of 2:55 h, that is, more than half an hour earlier than the
+first option.
+
+Example 2 is based on real travel-time data and it shows how taking into account
+traffic data can significantly affect travel times even for daily routine travels. More
+importantly, it shows that merely using travel times, e.g., using a greedy approach, is
+insufficient, and thus, elaborate algorithms such as MILP are needed.
+
+Geoinformatica
+
+Fig. 11 An illustration of different routes that were computed by GS and MILP on a dataset
+containing 5 objects. The dollar icon denotes a bank and the coffee icons denote coffee shops
+
+6 Related work
+
+In this section, we compare our work to similar, theoretical and practical, studies
+in the area of route search. The most known related problem is the Traveling
+Salesperson Problem (TSP). It is the problem of finding a minimum cost Hamiltonian
+cycle on a given graph [16]. TSP has many variations, one of which is the Generalized
+Traveling Salesperson Problem (GTSP) [38]. This variation has some properties in
+common with the problem of finding an answer to a TARS query. In GTSP, the
+vertexes of the graph are partitioned into sets, and the goal is to find the shortest
+route that visits a single object of each set. Both TSP and GTSP are NP-Hard
+problems. Answering a TARS query is a more intricate problem than solving TSP or
+GTSP. First, the travel time on the edges changes during the travel. Secondly, GTSP
+does not include temporal constraints or order constraints. Thirdly, to satisfy a TARS
+query it is sometimes necessary to traverse via multiple objects of a set due to the
+uncertainty whether objects satisfy the search requirements. Furthermore, in terms
+of complexity, approaches for modeling TSP problems as Integer Programming
+Problems [29, 36] generally examine the entire map, including all the roads. In
+Section 3 we showed that such models cannot be used for solving TARS problems
+efficiently.
+
+Several other TSP variations have also been studied [2, 12, 21, 45], however, none
+of them can be used to answer a TARS query. Moreover, papers that have dealt
+with TSP variations in the past did not provide methods for modeling actual search
+problems as TSP variants.
+
+There are various approaches for computing static (i.e., time-independent) and
+dynamic (i.e., time-dependent) travel speeds on urban roads, in the presence of
+traffic [3, 4]. Several papers studied the problem of finding the fastest route between
+two given locations when travel times on roads vary [8, 11, 15, 41, 48], or considered
+the costs of turns in route-planning tasks [5, 28, 46]. Tian et al. [44] studied the
+
+Geoinformatica
+
+problem of finding a minimal cost path from a source location to a destination
+in a road network with cost updates. They propose PathMon, an efficient system
+for monitoring minimal cost paths in dynamic road networks. Several papers study
+personalized routing where the system should learn individual driving preferences
+of the user [30], take into account different criteria when considering the cost of a
+path [35] or handle cases where the user needs to perform tasks during the travel
+from the origin to the destination [1]. Many papers dealt with the task of planning
+escape routes, for evacuation in case of a disaster [26, 27, 33, 34, 49, 50].
+
+Answering a TARS query is much more difficult than finding the fastest route
+between two locations because there are different constraints to satisfy and because
+the problem is NP-hard. This is illustrated in Example 2 which also shows that being
+able to calculate the fastest route from one location to another does not guarantee
+that the overall route will also be optimal in terms of travel time. Scheduling
+problems over networks with varying travel speeds have also been investigated [47],
+however, their work does not deal with the need to visit specific types of entities
+when traveling from one location to another.
+
+Recently there has been a growing interest in the subject of answering route
+queries. Some papers (e.g., [10, 17, 32, 39, 40, 43]), have dealt with non-probabilistic
+datasets, while others (e.g., [9, 23–25, 37]) have dealt with uncertainty pertaining to
+the user satisfaction with the objects being visited. However, past work, only dealt
+with the problem of finding the shortest route. In comparison, this paper presents an
+overall solution, by modeling and dealing with travel durations, in a way that provides
+a mechanism for (1) planning the fastest route (along with its departure time), and
+(2) handling temporal constraints.
+
+7 Conclusion
+
+In this paper we presented the Traffic Aware Route Search (TARS) problem. In
+TARS, a user provides a search query containing free form search terms, time
+constraints and order constraints, and the goal is to find the fastest route that satisfies
+all the constraints. TARS queries are useful for planning both simple and complex
+travels, while taking into account varying traffic conditions, temporal constraints
+(such as opening hours of institutions and services) and restrictions on the order by
+which geographical entities should be visited in the travel.
+
+We presented three heuristic algorithms, two of which are based on a greedy
+approach, either locally (GS) or globally (1-PGS), and a more elaborate algorithm
+(MILP) that heuristically formulates the problem as a Mixed Integer Linear Program
+and uses a solver to compute a solution. We tested the algorithms using real traffic
+data obtained using the Bing Maps API and actual POIs obtained using the Yahoo!
+Local Search API. An analysis of the results shows that MILP is the superior
+algorithm among the three algorithms we presented, both in terms of success rate
+and in terms effectiveness, i.e., finding the fastest route. The analysis also shows that
+MILP maintains its superiority on datasets of various sizes, and it does so while being
+more efficient than 1-PGS over large datasets. The GS algorithm is very efficient and
+also scales well for larger datasets, however, it is significantly outperformed by the
+other algorithms when considering effectiveness and success rate.
+
+Geoinformatica
+
+Finally, since MILP is effective, especially when the time limit is high, it can also
+serve as a baseline for testing scalable heuristic algorithms for TARS. That is, one
+can run MILP with a large time limit, say a few hours, and compare its results to the
+results of the algorithms whose effectiveness is tested.
+
+As future work, we plan to investigate TARS in interactive setting, in which the
+search is conducted using a mobile device and the user can provide feedbacks as she
+visits the POIs. We intend to examine algorithms that use dynamic programming for
+this task.
+
+References
+
+1. Abdalla A, Frank AU (2012) Combining trip and task planning: how to get from a to passport.
+In: Proceedings of the 7th international conference on geographic information science. Lecture
+notes in computer science, vol 7478. Springer, pp 1–14
+
+2. Balas E (1989) The prize collecting traveling salesman problem. Networks 19:621–636
+3. Bertsimas D, Simchi-Levi D (1996) A new generation of vehicle routing research: robust algo-
+
+rithms, addressing uncertainty. J Oper Res 44(2):286–304
+
+4. Booth J, Sistla P, Wolfson O, Cruz IF (2009) A data model for trip planning in multimodal trans-
+portation systems. In: Proceedings of the 12th international conference on extending database
+technology: advances in database technology, EDBT ’09. ACM, New York, NY, USA, pp 994–
+1005
+
+5. Caldwell T (1961) On finding minimum routes in a network with turn penalties. Commun ACM
+
+4(2):107–108. doi:10.1145/366105.366184
+
+6. Chen H, Ku WS, Sun MT, Zimmermann R (2008) The multi-rule partial sequenced route
+query. In: Proceedings of the 16th ACM SIGSPATIAL international conference on advances
+in geographic information systems, GIS ’08. ACM, New York, NY, USA, pp 10:1–10:10
+
+7. Dechter R (2003) Constraint processing. Elsevier Morgan Kaufmann
+8. Ding B, Yu JX, Qin L (2008) Finding time-dependent shortest paths over large graphs. In:
+Proceedings of the 11th international conference on extending database technology: advances
+in database technology, EDBT ’08. ACM, New York, NY, USA, pp 205–216
+
+9. Dolev N, Kanza Y, Doytsher Y (2008) Efﬁcient orienteering-route search over uncertain spatial
+
+datasets. In: FIG working week—integrating generations, Stockholm (Sweden)
+
+10. Doytsher Y, Galon B, Kanza Y (2011) Storing routes in socio-spatial networks and supporting
+social-based route recommendation. In: Proceedings of the 3rd ACM SIGSPATIAL interna-
+tional workshop on location-based social networks, LBSN ’11. ACM, New York, NY, USA,
+pp 49–56
+
+11. Evangelos K, Yang D, Tian X, Donghui Z (2006) Finding fastest paths on a road network with
+speed patterns. In: Proceedings of the 22nd international conference on data engineering. IEEE
+12. Feiyue L, Bruce G, Edward W (2005) Solving the time dependent traveling salesman prob-
+lem. In: The next wave in computing, optimization, and decision technologies. Operations re-
+search/computer science interfaces series, vol 29. Springer, pp 163–182
+
+13. Friedman R, Hefez I, Kanza Y, Levin R, Safra E, Sagiv Y (2012) Wiser: a web-based interactive
+route search system for smartphones. In: Proceedings of the 21st international conference com-
+panion on World Wide Web, WWW ’12 Companion. ACM, New York, NY, USA, pp 337–340
+14. Geisberger R, Sanders P, Schultes D, Delling D (2008) Contraction hierarchies: faster and
+simpler hierarchical routing in road networks. In: McGeoch C (ed) Experimental algorithms
+(Lecture notes in computer science), vol 5038. Springer Berlin Heidelberg, pp 319–333
+
+15. Gonzalez H, Han J, Li X, Myslinska M, Sondag JP (2007) Adaptive fastest path computation on
+a road network: a trafﬁc mining approach. In: Proceedings of the 33rd international conference
+on very large data bases, VLDB ’07. VLDB Endowment, pp 794–805
+
+16. Gutin G, Punnen A, Barvinok A, Gimadi EK, Serdyukov AI (2002) The traveling salesman prob-
+lem and its variations (Combinatorial Optimization), 1st edn. Springer. http://link.springer.com/
+book/10.1007/b101971/page/1
+
+17. Haiquan C, Wei-Shinn K, Min-Te S, Roger Z (2011) The partial sequenced route query with
+
+traveling rules in road networks. GeoInformatica 15:541–569
+
+Geoinformatica
+
+18. Hefez I, Kanza Y, Levin R (2011) Tarsius: a system for trafﬁc-aware route search under condi-
+tions of uncertainty. In: Proceedings of the 19th ACM SIGSPATIAL international conference on
+advances in geographic information systems, GIS ’11. ACM, New York, NY, USA, pp 517–520
+19. Hill AV, Benton WC (1992) Modelling intra-city time-dependent travel speeds for vehicle
+
+scheduling problems. J Oper Res Soc 43:343–351
+
+20. Hoel EG, Heng WL, Honeycutt D (2005) High performance multimodal networks. In: Proceed-
+ings of the 9th international conference on advances in spatial and temporal databases, SSTD’05.
+Springer, Berlin, Heidelberg, pp 308–327
+
+21. Irina D, Stefan R, Jean-Francois C, Gilbert L (2010) The traveling salesman problem with pickup
+and delivery: polyhedral results and a branch-and-cut algorithm. Math Program 121:269–305
+22. Jagadeesh G, Srikanthan T, Quek KH (2002) Heuristic techniques for accelerating hierar-
+chical routing on road networks. IEEE Trans Intell Transp Syst 3(4):301–309. doi:10.1109/
+TITS.2002.806806
+
+23. Kanza Y, Levin R, Safra E, Sagiv Y (2009) An interactive approach to route search. In:
+Proceedings of the 17th ACM SIGSPATIAL international conference on advances in geographic
+information systems, GIS ’09. ACM, New York, NY, USA, pp 408–411
+
+24. Kanza Y, Levin R, Safra E, Sagiv Y (2010) Interactive route search in the presence of order
+constraints. Proc The International Journal on Very Large Data Bases Endow 3(1–2):117–128
+25. Kanza Y, Safra E, Sagiv Y, Doytsher Y (2008) Heuristic algorithms for route-search queries over
+geographical data. In: Proceedings of the 16th ACM SIGSPATIAL international conference on
+advances in geographic information systems, GIS ’08. ACM, New York, NY, USA, pp 11:1–11:10
+26. Kim S, George B, Shekhar S (2007) Evacuation route planning: scalable heuristics. In: Proceed-
+ings of the 15th annual ACM international symposium on advances in geographic information
+systems, GIS ’07. ACM, New York, NY, USA, pp 20:1–20:8
+
+27. Kim S, Shekhar S, Min M (2008) Contraﬂow transportation network reconﬁguration for evacua-
+
+tion route planning. IEEE Trans Knowl Data Eng 20(8):1115–1129
+
+28. Kirby RF, Potts RB (1969) The minimum route problem for networks with turn penalties and
+
+prohibitions. Transp Res 3(3):397–408. doi:10.1016/S0041-1647(69)80022-5
+
+29. Laporte G, Nobert Y (1983) Generalized traveling salesman problem through n-sets of nodes–
+an integer programming approach. Information Systems and Operational Research (INFOR)
+21(1):61–75
+
+30. Letchner J, Krumm J, Horvitz E (2006) Trip router with individualized preferences (trip):
+incorporating personalization into route planning. In: Proceedings of the 18th conference on
+innovative applications of artiﬁcial intelligence, IAAI’06, vol 2. AAAI Press, pp 1795–1800
+
+31. Levin R (2011) Web site. http://db64.cs.technion.ac.il/tars/. Accessed 24 June 2011
+32. Li F, Cheng D, Hadjieleftheriou M, Kollios G, Teng SH (2005) On trip planning queries in
+spatial databases. In: Proceedings of the 9th international conference on advances in spatial and
+temporal databases, SSTD’05. Springer, Berlin, Heidelberg, pp 273–290
+
+33. Lu Q, George B, Shekhar S (2005) Capacity constrained routing algorithms for evacuation
+planning: a summary of results. In: Proceedings of the 9th international symposium on advances
+in spatial and temporal databases. Springer, pp 291–307
+
+34. Lu Q, George B, Shekhar S (2007) Evacuation route planning: a case study in semantic comput-
+
+ing. Int J Semant Comput 1(2):249–303
+
+35. Pahlavani P, Delavar MR, Frank AU (2012) Using a modified invasive weed optimization
+algorithm for a personalized urban multi-criteria path optimization problem. Int J Appl Earth
+Obs Geoinf 18(0):313–328. doi:10.1016/j.jag.2012.03.004. http://www.sciencedirect.com/science/
+article/pii/S0303243412000487
+
+36. Pop PC (2007) New integer programming formulations of the generalized travelling salesman
+
+problem. Am J Appl Sci 4(11):932–937
+
+37. Safra E, Kanza Y, Dolev N, Sagiv Y, Doytsher Y (2007) Computing a k-route over uncertain
+geographical data. In: Proceedings of the 10th international conference on advances in spatial
+and temporal databases, SSTD’07. Springer, Berlin, Heidelberg, pp 276–293
+
+38. Srivastava SS, Kumar S, Garg RC, Sen P (1969) Generalized traveling salesman problem through
+
+n sets of nodes. Canadian Operational Research Society Journal 7:97–101
+
+39. Sharifzadeh M, Kolahdouzan M, Shahabi C (2008) The optimal sequenced route query. The
+International Journal on Very Large Data Bases 17(4):765–787. doi:10.1007/s00778-006-0038-6
+40. Sharifzadeh M, Shahabi C (2008) Processing optimal sequenced route queries using voronoi
+
+41. Sung K, Bell MG, Seong M, Park S (2000) Shortest paths in a network with time-dependent ﬂow
+
+diagrams. GeoInformatica 12:411–433
+
+speeds. Eur J Oper Res 121:32–39
+
+Geoinformatica
+
+42. Tatomir B, Rothkrantz L (2006) Hierarchical routing in trafﬁc using swarm-intelligence. In:
+
+International conference on intelligent transportation. IEEE, pp 230–235
+
+43. Terrovitis M, Bakiras S, Papadias D, Mouratidis K (2005) Constrained shortest path computa-
+tion. In: Proceedings of the 9th international symposium on advances in spatial and temporal
+databases, pp 923–923
+
+44. Tian Y, Lee KCK, Lee WC (2009) Monitoring minimum cost paths on road networks.
+In: Proceedings of the 17th ACM SIGSPATIAL international conference on advances in
+geographic information systems, GIS ’09. ACM, New York, NY, USA, pp 217–226
+
+45. Tsitsiklis JN (1992) Special cases of traveling salesman and repairman problems with time
+
+46. Winter S (2002) Modeling costs of turns in route planning. GeoInformatica 6(4):345–361.
+
+windows. Networks 22:263–282
+
+doi:10.1023/A:1020853410145
+
+47. Woensel T, Kerbache L, Peremans H, Vandaele N (2007) A queueing framework for routing
+problems with time-dependent travel times. Journal of Mathematical Modelling and Algorithms
+6(1):151–173. doi:10.1007/s10852-006-9054-1
+
+48. Xu J, Guo L, Ding Z, Sun X, Liu C (2012) Trafﬁc aware route planning in dynamic road
+networks. In: Proceedings of the 17th international conference on database systems for advanced
+applications, DASFAA’12, vol Part I. Springer, Berlin, Heidelberg, pp 576–591
+
+49. Yang K, Gunturi VMV, Shekhar S (2012) A dartboard network cut based approach to evacuation
+route planning: A summary of results. In: Proceedings of the 7th international conference on
+geographic information science. Springer, pp 325–339
+
+50. Zhou X, George B, Kim S, Wolff JMR, Lu Q, Shekhar S (2010) Evacuation planning: a spatial
+
+network database approach. Knowledge and Data Engineering 33(2):26–31
+
+Roy Levin is a Ph.D. student in the Department of Computer Science at the Technion–Israel
+Institute of Technology. In addition, he is also employed as a researcher at the IBM Haifa Research
+Lab (2012) in the Social Technologies & Analytics group. In the past Roy worked as a lead engineer
+at Toluna Israel (2007) and as a researcher at the IBM Haifa Research Lab (2000) in the field of
+Optimizations Technology. His current research interests are on social networks and on route-search
+over geospatial datasets.
+
+Geoinformatica
+
+Yaron Kanza is an assistant professor at the Department of Computer Science of the Technion–
+Israel Institute of Technology. He received his Ph.D. degree in computer science from the Hebrew
+University of Jerusalem (2005). Previously, he received a B.Sc. in mathematics and computer science
+and an M.Sc. in computer science (summa cum laude) from the Hebrew University of Jerusalem.
+He was a post-doctoral fellow at the database group of the University of Toronto, during the years
+2004–2006 and joined the Technion in 2007. His research interests include: Database Systems and
+Database Theory (data integration, data exchange, uncertainty and incompleteness, access control);
+Managing data on the World-Wide Web (querying XML, XML retrieval, the Semantic Web); and
+Geographic Information Systems.
+
+

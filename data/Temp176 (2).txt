@@ -1,0 +1,1274 @@
+Geoinformatica (2006) 10: 423–445
+DOI 10.1007/s10707-006-0341-9
+
+Indexing Fast Moving Objects for kNN Queries
+Based on Nearest Landmarks
+
+Dan Lin · Rui Zhang · Aoying Zhou
+
+Received: 29 January 2004 / Revised: 3 May 2005 /
+Accepted: 27 September 2005
+© Springer Science + Business Media, LLC 2006
+
+Abstract With the rapid advancements in positioning technologies such as the
+Global Positioning System (GPS) and wireless communications, the tracking of
+continuously moving objects has become more convenient. However, this devel-
+opment poses new challenges to database technology since maintaining up-to-date
+information regarding the location of moving objects incurs an enormous amount
+of updates. Existing indexes can no longer keep up with the high update rate while
+providing speedy retrieval at the same time. This study aims to improve k nearest
+neighbor (kNN) query performance while reducing update costs. Our approach is
+based on an important observation that queries usually occur around certain places
+or spatial landmarks of interest, called reference points. We propose the Reference-
+Point-based tree (RP-tree), which is a two-layer index structure that indexes moving
+objects according to reference points. Experimental results show that the RP-tree
+achieves signiﬁcant improvement over the TPR-tree.
+
+Keywords moving object · index · nearest neighbor · query
+
+1 Introduction
+
+Rapid advancements in positioning technologies, such as the Global Positioning Sys-
+tem (GPS) and wireless communications, have enabled the tracking of continuously
+
+D. Lin (B) · R. Zhang
+
+Department of Computer Science, The National University of Singapore, Singapore
+e-mail: lindan@comp.nus.edu.sg
+
+R. Zhang
+e-mail: zhangru1@comp.nus.edu.sg
+
+A. Zhou
+Department of Computer Science and Engineering, Fudan University,
+Shanghai, China
+e-mail: ayzhou@fudan.edu.cn
+
+424
+
+Geoinformatica (2006) 10: 423–445
+
+moving objects. Many applications can beneﬁt from the proliferation of such track-
+ing technologies. For example, in a transportation system, via tracking vehicles,
+congestion can be alleviated by diverting some vehicles to alternative routes, and
+taxis can be dispatched quickly to passengers. In order to keep track and manage
+a large number of moving objects, the locations of moving objects are maintained
+in databases; and the efﬁcient processing of queries on databases of moving objects
+has become an important problem. To avoid the problem of having to constantly
+update the location of objects as they move, moving objects are typically modelled as
+functions of time, which are updated only when there are signiﬁcant changes to the
+parameters of the functions.
+
+An important query type in moving objects databases is the k nearest neighbor
+(kNN) query, which is to ﬁnd the k objects (from among the moving objects in an
+input dataset) that are nearest to a given query location at a given future time t.
+More formally, the kNN problem can be deﬁned as follows. Consider a set of moving
+objects O = {o1, o2, · · · , on}. Given a query location q, a future time t (which is
+equal to or greater than the current time), and a positive integer k, the kNN query
+computes the subset of k objects O(cid:2) ⊆ O that are nearest to location q at time
+t. Note that the kNN query in moving objects databases is slightly different from
+the conventional kNN query for static data due to the consideration of the time
+parameter.
+
+Of the few structures that have been proposed for moving objects so far, the
+TPR-tree [13] is the only practical spatial-temporal index for the predictive query
+described above. However, we observe that the TPR-tree is still inefﬁcient in real
+applications, where moving objects are not uniformly distributed, but are instead
+usually assembled around locations of interest, such as cities, commercial centers,
+trafﬁc junctions, etc. An example based on the Singapore map [1] is shown in Fig. 1,
+where the internal solid lines are the motorways, RPs are the locations of interest
+selected from real landmarks, and shaded regions denote high vehicle density. For
+convenience, we shall refer to a location of interest as a reference point.
+
+Figure 1 depicts the distribution of vehicles. If we use the TPR-tree to index
+vehicles in this map, some unnecessary search may be executed due to the minimum
+bounding rectangles (MBRs) enlarged over time or the MBRs across neighborhoods
+
+Fig. 1 An example
+
+Geoinformatica (2006) 10: 423–445
+
+425
+
+Fig. 2 Unnecessary search in the TPR-tree
+
+of different reference points. Let us look at two examples by zooming in on two
+enlarged MBRs, R1 and R2 at timestamp T1 in Fig. 1. The detailed pictures are shown
+in Fig. 2. At creation time T0, MBR R1 should tightly bound objects p1 and p2; at
+a later timestamp T1, R1 grows as shown in Fig. 2a. For the query q1 at T1, R1 has
+to be searched due to the overlap with the query circle of q1 (Dk is the distance
+between the query point and its kth nearest neighbor) although there is no object
+in the overlapping region. Then, consider R2 (as shown in Fig. 2b), which bounds
+objects p3 and p4 in the neighborhood of RP5 and RP6, respectively. For the query
+q2 in the neighborhood of RP6, whose k nearest neighbors usually belong to the
+same neighborhood due to the high density of vehicles near the reference point, p4
+is almost unlikely to be the answer for q2 but still has to be checked by the TPR-
+tree. In this case, if we index p3 and p4 separately according to the reference points
+RP6 and RP5, we can save some unnecessary search. Therefore, our motivation is
+to avoid such wasteful operations so as to speed up query processing. We propose
+a new index structure: the Reference-Point-based tree or RP-tree, in which we
+partition the whole space into subspaces, and attach moving objects to their nearest
+reference points.
+
+Besides the proposed RP-tree, we also consider the concurrency control scheme
+in our algorithms as multi-user environments are popular nowadays and good
+ability to parallelize has become an important requirement of database applications.
+Furthermore, we demonstrate the effectiveness of our new indexing method via a
+comprehensive performance study which shows that the RP-tree outperforms the
+TPR-tree considerably for both search and update.
+
+The rest of the paper is organized as follows: in Section 2, we review the related
+work; in Section 3, we describe the structure of the RP-tree and our algorithms;
+Section 4 presents a cost model to estimate the disk page accesses of the kNN search.
+Section 5 reports the performance experiments. Finally, Section 6 concludes with
+directions for future work.
+
+2 Related work
+
+Traditional indexes [6] for multi-dimensional databases, such as the R-tree [7] and its
+variants: R+-trees [14], R*-trees [3], SS-trees [20] etc., have been designed mainly to
+
+426
+
+Geoinformatica (2006) 10: 423–445
+
+speed up retrieval in applications where queries are relatively much more frequent
+than updates. However, this is invalid in applications for managing moving objects,
+where the workload is characterized by a heavy load of index updates and frequent
+queries. For indexing moving objects, some new index structures have been proposed
+recently. A detailed survey can be found in [11]. These index structures can be
+classiﬁed into two main categories: those indexing the historical locations of spatial
+objects and those indexing the current locations of spatial objects. Our approach falls
+into the latter one.
+
+In the ﬁrst category, the historical movements of objects are represented by their
+trajectories. Pfoser et al. [12] proposed the Spatio-Temporal R-tree (STR-tree) and
+Trajectory-Bundle tree (TB-tree). The STR-tree organizes line segments not only ac-
+cording to spatial properties, but also by attempting to group the segments according
+to the trajectories they belong to. The TB-tree aims only for trajectory preservation
+and leaves other spatial properties aside, thus performing more efﬁciently than the
+STR-tree. Another example of this category is the Multi-version 3D R-tree (MV3R-
+tree) [15], which is a combination of multi-version B-trees and 3D R-trees. However,
+such a database would be very large as it has to capture the great deal of information
+generated by objects that are moving all the time. Hence, the critical problem is to
+decide what are good historical data and how to store them efﬁciently.
+
+The structures in the second category either index the locations of moving objects
+or use functions to approximate movement. The Lazy Update R-tree (LUR-tree)[10]
+reduces update cost by ignoring deletions of objects that do not move out from
+the current minimum bounding rectangle (MBR). Tayeb et al. [18] introduced the
+issue of indexing moving objects to query their present and future positions by
+using the time function, and proposed the PMR-Quadtree. A hybrid tree structure
+called Q+Rtree [21] differentiates fast moving objects from quasi-static objects
+and stores them in the Quad-tree and the R*-tree, respectively. A notable index
+for moving objects is the Time-Parameterized R-tree (TPR-tree) [13]. Due to its
+importance to our proposed RP-tree, we shall give more details of the TPR-tree
+in the next paragraph. Algorithms for both nearest neighbor queries and reverse
+nearest neighbor queries on moving objects have been proposed based on the
+TPR-tree [4]. Nearest neighbor queries are also studied in [2], [8]. The TPR*-tree [16]
+improved the TPR-tree by employing a new set of insertion and deletion algorithms.
+The TPR-tree is a variant of the R*-tree, in which the velocity of the moving
+objects are stored as well as its position at certain time. The current location of a
+moving point is calculated according to that position, velocity and the time elapsed.
+The coordinates of the bounding rectangles are also functions of time, which means
+that in each dimension, the lower bound of an MBR is set to move with the minimum
+velocity of the enclosed objects, while the upper bound is set to move with their
+maximum velocity (as shown in Fig. 3). This ensures that the bounding rectangles are
+indeed bounding at all time considered. But conservative bounding rectangles never
+shrink, and are minimum only at some point of time. As time passes, the enlarged
+MBRs will overlap and adversely affect query performance. Therefore, there is a
+need to adjust the bounding rectangles (the so- called “tightening” of the rectangles),
+and it is desirable to make the adjustment every time any of the moving objects or
+rectangles that they bound are updated. While the tightening of bounding rectangles
+increases query performance, it negatively affects update performance, which is also
+a very important issue.
+
+Geoinformatica (2006) 10: 423–445
+
+427
+
+Fig. 3 An example of
+time-parametric MBRs in a
+TPR-tree
+
+3 The RP-tree
+
+In this section, we present our proposed index structure: the Reference-Point-based
+tree (RP-tree), which facilitates the kNN query of moving objects and also reduce
+the update cost, in both single-user and multi-user environments. Then we give the
+update and query algorithms.
+
+3.1 The structure of the RP-tree
+
+Our approach is motivated by the observation that moving objects are not uniformly
+distributed in the real world, but assemble around certain places (like shopping malls,
+commercial centers, etc.) that serve as sources and destinations of moving objects.
+Queries often follow the distribution of moving objects as people tend to be more
+interested in places where activities are frequently carried out. We refer to these
+locations of interest as reference points (RP for short).
+
+In our algorithm, we treat reference points as pre-known data, which can be
+obtained by either clustering objects in the datasets or selecting places of interest
+in the real world. Given these reference points, we use the Voronoi diagram to
+partition the entire space into disjoint subspaces (as shown in Fig. 4a, broken lines).
+Each subspace is called a control area and it has the following important property:
+an object falling into the control area of a reference point is closer to this reference
+point than to any other reference points. We now construct the RP-tree, which is a
+general tree structure comprising two layers. The upper layer indexes the locations of
+all reference points with their control areas as attributes. Note that such information
+is static. Each reference point exploits a second layer index to manipulate all moving
+objects inside its control area, and an auxiliary data table (ADT) to maintain the
+information of objects from other control areas that may enter this control area at
+some future time. In this paper, we choose the R*-tree as the upper layer index and
+the TPR-tree (which has been described in the previous section) as the lower layer
+index (see Fig. 4b). Other structures can also be used if necessary.
+
+The ADT is a table of records, which are in the form (cid:4)node_ pointer, enter_time,
+MBR(cid:5). node_pointer points to a disk page (or node) that contains an object which
+
+428
+
+Geoinformatica (2006) 10: 423–445
+
+Fig. 4 Overall representation
+
+may enter this control area at some future time enter_time. MBR is the time-
+parameterized minimum bounding rectangle of the node that the node_ pointer
+points to. Figure 4a gives an example. At time T0, a car p1 in the control area of RP4
+travels towards RP5 along a highway. If the car kept this velocity, it would enter the
+control area of RP5 at time T2. If T2 is before the next update time, a pointer to the
+leaf node containing p1, the entering time T2, and the MBR of the leaf node is stored
+in the ADT of RP5. When a query q in the control area of RP5 is issued at time T1
+for kNN at the future time T3 (T3>T2>T1>T0), we check the ADT of RP5 to see
+which objects from other control areas may come in. ADTs is organized as sequential
+ﬁles. We initially allocate certain space for each RP. The size of the ADT is enlarged
+when necessary. Typically, the ADT is one to two pages large as observed from our
+experiments.
+
+There are several advantages of the RP-tree. First, different from the TPR-tree,
+which uses a single hierarchical structure to organize the entire set of moving objects
+and thus requires searching a large index tree to process kNN queries, the RP-tree
+requires searching only a few (often, only one) smaller “local” TPR-trees. This
+is because queries often concentrate on the reference points, and the answers to
+queries most likely exist in the control area of the reference points. Second, indexing
+objects separately in each control area may save unnecessary search occurring along
+the borders of the control area. The partition largely avoids the inefﬁcient cases
+in the TPR-tree as described in Fig. 2. Moreover, local TPR-trees are relatively
+independent of each other. This allows more freedom for concurrent operations.
+
+3.2 Index creation
+
+Figure 5 presents the essence of the insertion algorithm. Given a new object o, we
+ﬁrst ﬁnd the nearest RP (reference point) of o in the upper level of the RP-tree
+and insert object o to the corresponding TPR-tree. Then, we adjust the ADTs of
+RPs whose control area o may pass by before its next update. The enter_time in the
+ADT should be maintained as the earliest time when the leaf node overlaps with the
+control area. When a leaf node splits, the affected ADTs are the original ones and
+
+Geoinformatica (2006) 10: 423–445
+
+429
+
+Identify the nearest reference point RPi of o in the upper level of the RP-tree
+Insert o to the TPR-tree of the RPi
+If there is a split in the leafnode
+
+For each object oi in the two new leafnodes
+
+Algorithm Insertion: (o)
+/* Input: o is the object to be inserted */
+1.
+2.
+3.
+4.
+5.
+6.
+7.
+End Insertion
+Algorithm Adjust_ADT: (o)
+1.
+
+Invoke Adjust_ADT(oi)
+
+Invoke Adjust_ADT(o)
+
+Else
+
+2.
+3.
+
+4.
+
+5.
+6.
+7.
+
+For all RPs whose control area that o may pass by according to its current
+location and velocity within the maximum update interval
+
+new_entertime is the time when o will enter the control area of RPi
+If there exists a pointer in one of the tuples of ADT of RPi pointing to the
+leaf node containing o
+
+Compare the new_entertime with the enter_time in that tuple and
+modify enter_time to the earlier one
+Update the MBR in that tuple
+
+Else
+
+Create a new tuple (cid:4)new_nodepointer, new_entertime, new_mbr(cid:5)
+/*new_nodepointer points to the leaf node containing o,
+new_mbr is the corresponding MBR of the leaf node */
+Add the new tuple to the ADT of RPi
+
+8.
+End Adjust_ADT
+
+Fig. 5 Algorithm of insertion.
+
+those introduced by the newly inserted object. We would then need to recalculate
+their enter_time and modify the pointers.
+
+It is worth mentioning that we generally predict the future trajectory of one object
+within the maximum update interval for the ADT. That means an object that must
+have been updated before the query time (not query starting time) will not be treated
+as an answer. For example, an object o is inserted at time 0 and the maximum update
+interval is 120. Suppose a query is issued at time 90 and has the query time 140,
+and the object o has not been updated yet. We do not need to retrieve object o
+since it will be deﬁnitely updated before 120, which means we can not use its current
+moving function to predict its position after time 120. We believe that this rule is
+rational because if we already know that an object has been updated, it would be
+meaningless to use its outdated data for predictions. In the experiments, for the
+fairness of comparison, this constraint is also applied to the TPR-tree.
+
+To remove an object o, there are two steps. First, we remove o from the TPR-tree
+of its nearest RP. Second, we check the ADTs containing the pointers to the leaf node
+o, and modify the enter_time in the corresponding tuple or delete the tuple from the
+ADT. Note that when a leaf node underﬂows, we ﬁrst load in the related ADTs and
+
+430
+
+Geoinformatica (2006) 10: 423–445
+
+delete the tuples belonging to this leaf node, then reinsert entries in the leaf node to
+the TPR-tree, adjust these ADTs in the mean time, and ﬁnally write in the modiﬁed
+ADTs.
+
+3.3 kNN query
+
+Figure 6 presents the kNN search algorithm. Given a query point q, we ﬁrst identify
+its nearest RP by searching the upper level of the RP-tree. Then we search the
+TPR-tree of this RP to get k candidate nearest neighbors by the search algorithm
+
+2.
+3.
+4.
+
+Algorithm KnnQuery: (q, k, t)
+/* Input: To ﬁnd k nearest neighbors of q at future time t */
+1.
+
+Identify the nearest reference point RPi of the q in the upper level of
+the RP-tree
+Search in the TPR-tree of RPi
+Store the k candidate nearest neighbors in a list L
+Dqc is the distance between q and its nearest boundary of the control
+area of RPi
+Dqk is the distance between q and the k-th candidate nearest neighbor
+Invoke Search_ADT(q, k, t, RPi, Dqk, L)
+If (Dqc < Dqk)
+
+Invoke Enlarged_Search(q, k, t, RPi, Dqk, L)
+
+5.
+6.
+7.
+8.
+9.
+Return L
+End KnnQuery
+Algorithm Search_ADT: (q, k, t, RPi, Dqk, L)
+1.
+2. While (adt is not null)
+3.
+4.
+5.
+6.
+7.
+End Search_ADT
+Algorithm Enlarged_Search: (q, k, t, RPi, Dqk, L)
+1.
+
+Return (Dqk, L)
+
+mindist is the minimum distance between q and adt.MBR
+If (adt.enter_time < t and mindist < Dqk)
+
+Search the leaf node that adt → NodePointer points to
+Modify L that stores knn candidates and adjust Dqk
+
+adt = the pointer to the ﬁrst tuple in the ADT of RPi
+
+Sort RPs according to the minimum distance between q and boundaries of
+control area of RP in an ascending order
+
+2. While (Dqk exceeds the sum of control area of searched RPs)
+3.
+4.
+5.
+6.
+Return (Dqk, L)
+7.
+End Enlarged_Search
+
+Pick the RPi according to the sorted order
+Invoke Search_ADT(q, k, t, RPi, L)
+Search in the TPR-tree of RPi
+Adjust L and Dqk
+
+Fig. 6 Algorithm of kNN query.
+
+Geoinformatica (2006) 10: 423–445
+
+431
+
+proposed in [5]. Next, we search the ADT of this RP and modify the Dk (the distance
+between query point q and its kth nearest neighbor). If the query circle (centered
+at q, with radius equal to Dk) is wholly inside the control area of this RP, the
+algorithm terminates. Otherwise, we perform an enlarged search: (a) ﬁnd the RPs
+whose control areas overlap with the query circle from the upper level of the RP-tree;
+(b) search their ADTs (also using mindist as a pruning metric) and local TPR-trees,
+adjust the radius of the query circle (i.e., Dk); and (c) repeat (a) (b) until the query
+circle is bounded in the sum of control areas of the accessed RPs. Note that during the
+enlarged search, some leaf nodes which are stored in both ADTs and local TPR-trees
+are only checked once.
+
+3.4 Concurrency control scheme
+
+In order to support multi-user concurrent access to the database via the indexes,
+the issue of concurrency control scheme must be addressed. A naive solution to this
+problem is to have the whole tree locked when one operation is executed, which
+is very inefﬁcient. An efﬁcient algorithm is the R-link tree proposed in [9], which
+introduces few lock-coupling and guarantees that insertion can be performed without
+blocking search processes. R-link is a right-link, a pointer from every node to its right
+sibling at the same level. Besides right links, a unique logical sequence number (LSN)
+is assigned to each node. Each entry in a node contains the LSN that it expects the
+child node to have. If a node has to be split, the new right sibling is assigned the
+old node’s LSN and the old node receives a new LSN. A process traversing the tree
+can detect the split even if it has not been installed in the parent by comparing the
+expected LSN, as taken from the entry in the parent node, with the actual LSN. If
+the later is higher than the former, there was a split and the process moves right.
+When the process ﬁnally meets a node with expected LSN, it knows that this is the
+rightmost node split off the old node.
+
+We employed this algorithm to the TPR-trees in the RP-tree. For ADT, we simply
+lock the tuple in the ADT when its tuple is being used. And the R*-tree in the upper
+level does not need any lock since it is a static structure.
+
+4 Cost model
+
+In this section, we present a cost model to estimate the disk access cost of the kNN
+search of the RP-tree. Tao et al. [17] has proposed a method to estimate the kNN
+search cost for static databases, which uses a rectangle of equal volume to replace
+a query circle. Our cost model is based on the formulas in [17], but we need to
+modify these formulas to capture the features of a moving object database. We
+mainly study moving objects in two-dimensional space (the data space has unit length
+in each dimension), therefore the cost analysis is also conﬁned to two-dimensional
+space. Generalization to higher dimensions is straightforward. Notations used in the
+analysis are summarized in Table 1.
+
+432
+
+b
+Dk
+f
+h
+I O
+k
+L
+ni
+N
+Nr
+P
+si
+Tq
+Vol
+(cid:2)(q, r)
+(cid:3)(R, d)
+
+Table 1 Notations used in equations.
+
+Notation
+
+Description
+
+Geoinformatica (2006) 10: 423–445
+
+Maximum capacity of a node
+Distance between the query point and its kth nearest neighbor
+Average fan-out of a node
+The height of a tree
+Query cost measured as number of disk page accesses
+Number of nearest neighbors required
+Side length of a square
+Number of nodes at level i
+Number of objects in the dataset
+Number of reference points
+Probability
+Average extent of a level-i node of a hierarchical structure
+Predictive time length of a query
+Volume
+The query circle with center q and radius r
+The Minkowski region of a rectangle R with distance d
+
+4.1 The kth nearest neighbor distance
+
+In [17], the kth Nearest Neighbor Distance Dk is estimated by the following equation.
+
+⎡
+
+(cid:4)
+
+⎣1 −
+
+1 −
+
+(cid:5)
+
+(cid:6) 1
+
+⎤
+
+d
+
+⎦
+
+k
+N
+
+Dk = 2
+Cv
+
+where
+
+√
+
+π
+
+Cv =
+
+(cid:9)
+
+(cid:5)(d/2 + 1)
+
+(cid:10)
+
+1
+d
+
+, (cid:5)(x + 1) = x · (cid:5)(x), (cid:5)(1) = 1, (cid:5)(1/2) = π 1/2
+
+and the d is dimensionality of the data space.
+
+Here, we let d = 2 and get the following equation.
+
+⎡
+
+(cid:4)
+
+Dk = 2√
+π
+
+⎣1 −
+
+1 −
+
+(cid:6) 1
+
+2
+
+⎤
+
+⎦
+
+(cid:5)
+
+k
+N
+
+4.2 Disk page accesses with the R*-tree and the TPR-tree
+
+The average disk page accesses of general queries on hierarchical structures are
+given by Eq. 3 [19]. Note that a disk page is a node, so page and node are used
+interchangeably in the sequel.
+
+I O(N) =
+
+(cid:13)
+
+ni · PI Oi
+
+h−1(cid:11)
+
+(cid:12)
+
+i=0
+
+(1)
+
+(2)
+
+(3)
+
+Geoinformatica (2006) 10: 423–445
+
+Fig. 7 Minkowski region
+
+433
+
+(4)
+
+(5)
+
+(6)
+
+(7)
+
+(8)
+
+h is the height of the tree (leaf nodes are at level 0). PI Oi is the probability that a
+node at level i of the tree is accessed. ni is the total number of nodes at level i of
+the tree. In turn, h and ni can be estimated as h = 1 + (cid:8)log f N/b (cid:9) and ni = N/ f i+1,
+respectively, where b is the maximum capacity of a node, and f is the average node
+fanout (typically, f = 69% · b ).
+
+The number of node accesses is equal to the number of nodes whose MBRs
+intersect the query circle (cid:2)(q, Dk). An MBR R intersects (cid:2)(q, Dk), if and only if
+its Minkowski region (cid:3)(R, Dk) contains q (see Fig. 7a). In the unit data space U,
+the intersection probability equals the volume of (cid:3)(R, Dk)
+U. To calculate this
+probability, we ﬁrst need the average extent of a node (i.e., the extent of an MBR R)
+at level i. In the R*-tree, the average extent of a node is given by Eq. 4 [17]. In the
+TPR-tree, MBRs are time-parameterized, thus we consider the enlargement of the
+MBRs after a period of time by its maximum and minimum velocity (see Fig. 7b and
+Eq. 5).
+
+(cid:14)
+
+si =
+
+1
+(ni)]/2
+2[log2
+
+=
+
+(cid:5)
+
+(cid:6) 1
+
+2
+
+1
+
+N
+f i+1
+
+(0 ≤ i ≤ h − 1)
+
+(cid:2)
+
+s
+i
+
+= si + (cid:6)v · t,
+
+(cid:6)v = vmax − vmin
+
+In two-dimensional space, the Minkowski sum of the rectangle R with distance Dk
+
+is given by Eq. 6.
+
+Vol((cid:3)(R, Dk)) = s2
+R
+
++ 4Dk · sR + π D2
+k
+
+When the Minkowski region is approximated by a square of the same volume [17],
+
+the side length of the square LR is given by Eq. 7.
+
+LR =
+
+Vol((cid:3)(R, Dk))
+
+(cid:15)
+
+(cid:6)
+2
+
+Then, the probability of a node at level i of the tree being accessed is
+
+PI Oi
+
+=
+
+⎧
+⎪⎨
+
+⎪⎩
+
+(cid:5)
+
+1
+
+Li−(Li/2+si/2)2
+1−si
+
+i f Li + si < 2 (0 ≤ i < h)
+
+otherwise.
+
+434
+
+Geoinformatica (2006) 10: 423–445
+
+Combining Eqs. 1–8, we obtain Eq. 9 to estimate the kNN search cost of the
+i, respectively, in Eq. 9, we obtain Eq. 10
+
+R*-tree. By replacing si and Li with s(cid:2)
+to estimate the kNN search cost of the TPR-tree.
+
+i and L(cid:2)
+
+I Or∗(N, k) =
+
+(cid:20)
+
+N
+log f
+b(cid:11)
+
+(cid:5)
+
+N
+f i+1
+
+·
+
+Li − (Li/2 + si/2)2
+1 − si
+
+(cid:6)
+
+(cid:21)
+
+2
+
+i=0
+
+(9)
+
+Tq(cid:22)
+
+(cid:20)
+
+N
+log f
+b(cid:11)
+
+(cid:23)
+
+N
+f i+1
+
+·
+
+(cid:2)
+
+L
+i
+
+(cid:2)
+
+/2 + s
+i
+
+− (L
+i
+(cid:2)
+1 − s
+i
+
+(cid:2)
+
+/2)2
+
+(cid:24)2 (cid:21)
+
+I Otpr(N, k) =
+
+i=0
+
+0
+
+dt
+
+(10)
+
+4.3 Disk page accesses with the RP-tree
+
+In the RP-tree kNN search algorithm, we ﬁrst locate the control area of the reference
+point nearest to the query point q. Second, we search the local TPR-tree of the
+reference point and the corresponding ADT. If the kth candidate is outside the
+control area of the reference point, the enlarged search is executed.
+
+The disk accesses to the RP-tree consist of two parts. One part comes from
+accesses to the R*-tree to search the nearest referent point of a given query point.
+The other part is caused by the accesses to MRBs referenced by local TPR-trees or
+ADTs. For each reference point whose control area overlaps with (cid:2)(q, Dk), its local
+TRP-tree and ADT will be searched. However, it is difﬁcult to estimate how many
+control areas will overlap, because the distribution of moving objects in reality is not
+uniform and hard to be described with a function. Therefore, we use the sampling
+strategy to estimate the number of control area that overlaps with (cid:2)(q, Dk), i.e., we
+test a number of queries that follow the same distribution as the data and obtain an
+average number of control areas being affected.
+
+Finally, we summarize the number of disk page accesses for kNN queries in the
+
+RP-tree as follows.
+
+I Orp(N, k) = I Or∗(Nr, 1)+
+
+[I O(local T PR − tree)+I O(lea f nodes in ADT)]
+
+(cid:11)
+
+accessed
+
+(11)
+
+5 Performance evaluation
+
+In this section, we examine the efﬁciency of the RP-tree and evaluate the accuracy
+of the cost model. We compare the kNN query and update performance of the TPR-
+tree and RP-tree through extensive experiments.
+
+All the experiments were conducted on a computer with 1.6 G PentiumIV CPU
+and 256 M memory. The disk page size was 4 KB, and the resulting leaf node
+capacity was 204 entries for both the TPR-tree and the RP-tree. We used two kinds
+of datasets. One is based on a synthetic network. The other is based on real road
+network in Singapore (see Fig. 1). The generations consist of three steps as follows:
+First, we need to decide the reference points. For the synthetic dataset, some num-
+ber of reference points were generated randomly, simulating locations of interest.
+
+Geoinformatica (2006) 10: 423–445
+
+Table 2 Parameters and their settings.
+
+Parameter
+
+Page size
+Node capacity
+Space
+Dataset
+Dataset size
+Maximum velocity of inter-objects
+Maximum velocity of intro-objects
+Ratio between inter-objects and the total number of objects
+Maximum update interval
+Number of reference points
+Number of queries
+Number of nearest neighbors
+Maximum predictive interval
+
+435
+
+Setting
+
+4 K
+204
+5, 000 × 5, 000
+Synthetic, Real
+100 K, ... , 1 M
+10
+6
+0, 0.1, ... , 0.5, ... , 1
+120
+1, 25, 50, 75, 100, 125,150
+500
+1, 20, 40, 80, 160, 320
+60
+
+For the real-network-based dataset, commercial centers are picked up as the ref-
+erence points. Second, some moving objects were generated around the reference
+points, simulating vehicles moving within areas close to the locations of interest,
+with a relatively low speed varying from 0 to 6 (the extent of each dimension of
+the space was set as 5,000). These objects are called the intra-objects. Finally, some
+moving objects were generated in a network of two-way routes which connected the
+reference points. These objects simulated vehicles travelling on the motorways, with
+a relatively high speed varying from 0 to 10, and they are called the inter-objects.
+
+In the experiments, we varied the number of objects in the datasets from 100 K
+to 1 M and the ratio between the number of inter-objects and the total number of
+objects from 0 to 1. The average interval between two successive updates of an object
+was set as 60 time units and the maximum interval was set as 120 time units. The
+distribution of the query points followed the same distribution of the moving objects,
+with predictive time ranging from 0 to 60 time units after the starting time.
+
+Unless otherwise noted, the experiment results we present in the following are of
+datasets with 100 K objects and the ratio between the number of inter-objects and
+total number of objects was 0.5; the number of reference points was 100. We shall
+discuss the effects of the number of reference points in Section 5.3. We created the
+RP-tree on a dataset at timestamp 0. After that, 500 20-NN queries were performed.
+The average number of disk page accesses was used as the metric of performance
+of kNN search and updates, while throughput and response time were measured
+in evaluating concurrency control issues. The parameters used are summarized in
+Table 2, where values in ital denote default values used.
+
+5.1 Query performance
+
+In this set of experiments, we compared the query performance of the TPR-tree
+and the RP-tree by varying the size of the dataset, the ratio of inter-objects and
+total objects, the number of updates, and the number of required nearest neighbors.
+Finally, we investigate the performance of both indexes by using the real-network-
+based dataset.
+
+436
+
+Geoinformatica (2006) 10: 423–445
+
+Fig. 8 Query performance for
+varying number of moving
+objects
+
+5.1.1 Effect of dataset size
+
+In the ﬁrst experiment, we ﬁxed the number of reference points to 100, and compared
+the search performance (queries were issued at timestamp 0) when the number of
+objects in the dataset ranged from 100 K to 1 M. As shown in Fig. 8, the RP-tree
+scales up better than the TPR-tree. More than 50% I/O cost is reduced. This indicates
+that the search algorithm of the RP-tree, which restricts the search area often in one
+subspace, is more effective than that of the TPR-tree.
+
+We also examine the size of ADT that may affect the search performance of
+the RP-tree. Figure 9 shows both the average and maximum size of ADT of all
+the subspaces. We can observe that the average size of ADT is small and increases
+slowly with the dataset size. Whereas, the maximum size of ADT is much bigger.
+The possible reason is that central subspaces may have objects coming into it from
+every directions which results in the big ADT size. This may not degrade the search
+performance, because one query needs to search only a few nodes that the ADT
+
+Fig. 9 The size of ADT for
+varying number of moving
+objects
+
+Geoinformatica (2006) 10: 423–445
+
+437
+
+Fig. 10 Query performance
+for varying ratio (inter-objects/
+total objects)
+
+refers to. Recall that, the ADT stores the MBR information of the node, which avoids
+unnecessary node accesses.
+
+5.1.2 Effect of ratio between inter-objects and total objects
+
+In this experiment, we varied the ratio between inter-objects and total objects from
+0 to 1. As shown in Fig. 10, the query costs of both trees are lower when the ratio
+is equal to 0 or 1, and reach the maximum value when the ratio equals 0.5. This
+behavior could be explained as follows. When the ratio equals 0, it means all objects
+are intra-objects with low speed. Accordingly, the MBRs containing such objects also
+expand at lower speed. When the ratio equals 1, it means all objects are inter-objects
+that move in the route of the network interconnecting the reference points. In this
+case, the MBRs may contain objects moving towards the same direction and move
+with these objects. Finally, when the ratio is between 0 and 1, the MBRs containing
+both slow-moving objects and fast-moving objects may enlarge seriously because
+slow moving objects usually move around reference points while fast moving objects
+travel among reference points.
+
+Again, we study the average and maximum size of the ADT (see Fig. 11). Observe
+that the average size of the ADT is almost the same for the different ratios. The
+maximum size of the ADT ﬁrst increases and then shrinks, which shows the similar
+trend of the query performance of the RP-tree. This is because the ADT stores
+pointers to the nodes that contain objects may enter the current control area. When
+all the objects are slow or fast, objects that may enter the control area of other
+reference points are usually stored in the same nodes, and hence the ADT will
+contain less tuples.
+
+5.1.3 Effect of the number of updates
+
+To study the character of the indexes with time, we measured the performance of the
+TPR-tree and the RP-tree using the same query workload after every 10 K updates.
+Figure 12 shows the query cost as a function of the number of updates. We observe
+that the deterioration of the TPR-tree is considerably faster, whereas the RP-tree
+
+438
+
+Geoinformatica (2006) 10: 423–445
+
+Fig. 11 The size of ADT for
+varying ratio (inter-objects/
+total objects)
+
+keeps almost constant performance. In particular, after 100 K updates, the query
+cost of the TPR-tree is up to four times higher than the RP-tree. This is because,
+as mentioned in Section 3.1, each local TPR-tree of the RP-tree is relatively smaller
+than a single TPR-tree indexing the entire dataset, and small TPR-trees would be
+more efﬁcient in search operation and less inﬂuenced by the increase in the overlap
+of the MBRs as time passes.
+
+5.1.4 Effect of k
+
+Figure 13 shows the query performance when the number of required neighbors (k) is
+varied. The search cost of both the RP-tree and the TPR-tree increase as k increases,
+since the search circle is larger for greater k. The RP-tree always outperforms
+the TPR-tree and the cost of the RP-tree increases much slower than that of the
+TPR-tree.
+
+Fig. 12 Query performance
+for varying number of updates
+
+Geoinformatica (2006) 10: 423–445
+
+439
+
+Fig. 13 Query performance
+for varying k
+
+5.1.5 Real data set
+
+Finally, we compare the search performance of the TPR-tree and the RP-tree by
+using the real-network-based datasets. The number of reference points is ﬁxed to 35.
+Figure 14 shows the results. As expected, the RP-tree always performs better than
+the TPR-tree. The reason is similar as that for Fig. 8.
+
+5.2 Update performance
+
+We now compare the average update cost (amortized over insertion and deletion) of
+the RP-tree against the TPR-tree. For 100 K moving objects, we performed 100 K
+updates and computed the average update cost of every 10 K updates. Note that for
+each update, one deletion and one insertion were issued, which kept the size of the
+tree unchanged after updates. From Fig. 15, we can see that the RP-tree maintains
+nearly constant update cost while the cost of the TPR-tree increases signiﬁcantly over
+time. This is because each deletion must perform a query to retrieve the object to be
+
+Fig. 14 Query performance
+for real-network-based
+datasets
+
+440
+
+Geoinformatica (2006) 10: 423–445
+
+Fig. 15 Update performance
+for varying number of updates
+
+removed, and the cost of this query increases with the number of updates. The RP-
+tree restricts the query to a few (and often one) local TPR-trees, and thus achieves
+better performance.
+
+5.3 Effects of the number of reference points
+
+All the above experiments were conducted when the number of reference points was
+100. To see how the number of reference points affects the performance of the RP-
+tree, we also carried out experiments on datasets with different numbers of reference
+points as shown in Fig. 16. Observe that the query and update costs both decrease
+quickly at ﬁrst, because the TPR-tree in the RP-tree becomes smaller when the
+number of reference points increases. Then, the query cost increases slightly, because
+the control area of one reference point becomes too small and more neighbor TPR-
+trees need to be checked during one query process. The update cost has the same
+increasing trend because the size of the ADT grows when the number of reference
+points increases. Thus, the maintenance cost of the ADTs counteracts the savings
+
+Fig. 16 Performance for
+varying number of reference
+points
+
+Geoinformatica (2006) 10: 423–445
+
+441
+
+Fig. 17 Throughput
+
+from the smaller TPR-trees. According to these observations, we have use 100 as the
+default number of reference points in our experiments.
+
+5.4 Concurrency control
+
+In this section, we compare the performance of the TPR-tree (also employing the
+R-link technique) and the RP-tree under multi-user environments. We used multi-
+thread programs to simulate multi-user environments. We number of threads varies
+from 1 to 6. The workload was deﬁned as one searcher and a varying number
+of updaters (since update is more frequent than query in applications of moving
+objects). We investigated the throughput and response time of search and update
+operations on the index. Throughput is the rate at which operations could be served
+by the system. Response time is the time interval between issuing an operation and
+getting the response from the system when the task was successfully completed. Both
+the TPR-tree and the RP-tree reached their maximum throughput with two threads
+(one searcher and one updater). The results are shown in Figs. 17 and 18. Throughput
+
+Fig. 18 Response time
+
+442
+
+Geoinformatica (2006) 10: 423–445
+
+Fig. 19 Cost model evaluation
+
+of the RP-tree is over 30% higher than that of the TPR-tree while the response time
+of the RP-tree is always less than that of the TPR-tree. The main reason for this
+behavior is that the local TPR-trees in the RP-tree are independent of each other. In
+addition, the ADT search would only lock leaf nodes.
+
+5.5 Cost model evaluation
+
+Finally, we evaluate the accuracy of our cost model for the RP-tree. The data set used
+contains objects varies from 100 K to 1 M. We performed 500 20-NN queries on each
+data set and obtained the average I/Os. The result is shown in Fig. 19. The maximum
+relative error between the estimated cost and the actual cost is 10%.
+
+6 Conclusion
+
+With the wireless technique becoming increasingly popular, query efﬁciency is an
+important issue that challenges the systems that are based on it. In this paper, we
+have examined using the indexing technique to enhance performance for k nearest
+neighbor (kNN) queries.
+
+Through the careful analysis of some existing index structures, we have discovered
+that traditional spatial index structures do not work well in moving object environ-
+ments which are characterized by a large number of continuously moving objects
+and concurrent active queries over these objects. A new index structure called the
+RP-tree has therefore been proposed. Different from the existing approaches, the
+RP-tree indexes moving objects based on an important observation that queries
+usually occur around certain places, i.e., reference points. The RP-tree partitions the
+whole space into separate subspaces according to the reference points, and constructs
+individual TPR-trees in each subspace, with an auxiliary data structure, the ADT. We
+presented the kNN search and update algorithms for the RP-tree with concurrency
+control considerations. We also developed a cost model to estimate the disk page
+access cost of the RP-tree kNN search. Our experimental study demonstrates that
+
+Geoinformatica (2006) 10: 423–445
+
+443
+
+the RP-tree achieves considerable improvement over the TPR-tree in both single-
+user and multi-user environments and our cost model is accurate.
+
+Currently, we are extending the RP-tree to integrate network information, that is,
+performing kNN queries with network route distance instead of Euclidean distance
+since the route distance would be more helpful in the real applications. The difﬁculty
+lies in two factors. First, it is usually costly to maintain and retrieve network informa-
+tion. Second, trajectory prediction of moving objects become complex, because we
+have taken the constraints imposed by roads into account.
+
+References
+
+1. “Digital chart of the world server,” in http://www.maproom.psu.edu/dcw/.
+2. C. C. Aggarwal and D. Agrawal. “On nearest neighbor indexing of nonlinear trajectories,” in
+Proc. of ACM SIGACT-SIGMOD-SIGART Symposium on Principles of Database Systems, San
+Diego, California, USA, pp. 252–259, June 2003.
+
+3. N. Beckmann, H. Kriegel, R. Schneider, and B. Seeger. “The r*-tree: an efﬁcient and robust
+access method for points and rectangles,” in Proc. of ACM SIGMOD Int. Conf. on Manag. of
+Data, Atlantic City, New Jersey, USA, pp. 322–331, May 1990.
+
+4. R. Benetis, C.S. Jensen, G. Karciauskas, and S. Saltenis. “Nearest neighbor and reverse nearest
+neighbor queries for moving objects,” in Proc. of Int. Database Engineering and Applications
+Symposium, Edmonton, Canada, pp. 44–53, July 2002.
+
+5. K.L. Cheung and A.W.C. Fu. “Enhanced nearest neighbor search on the r-tree,” ACM SIGMOD
+
+6. V. Gaede and O. Gunher. “Multidimensional access methods,” ACM Computing Surveys, Vol.
+
+Record, Vol. 27(3):16–21, 1998.
+
+30(2):170–231, 1998.
+
+7. A. Guttman. “R-trees: a dynamic index structure for spatial searching,” in Proc. of ACM SIG-
+
+MOD Int. Conf. on Management of Data, Boston, Massachusetts, pp. 47–57, June 1984.
+
+8. G. Kollios, D. Gunopulos, and V.J. Tsotras. “Nearest neighbor queries in a mobile environ-
+ment,” in Proc. of Int. Workshop on Spatio-Temporal Database Management, Hong Kong, China,
+pp. 119–134, September 1999.
+
+9. M. Kornacker and D. Banks. “High-concurrency locking in r-trees,” in Proc. of Int. Conf. on
+
+Very Large Data Bases, Zurich, Switzerland, pp. 134–145, September 1995.
+
+10. D. Kwon, S. Lee, and S. Lee. “Indexing the current positions of moving objects using the lazy
+update,” in Proc. of Int. Conf. on Mobile Data Management, Singapore, pp. 113–120, January
+2002.
+
+11. B.C. Ooi, K.L. Tan, and C. Yu. “Fast update and efﬁcient retrieval: an oxymoron on moving
+object indexes,” in Proc. of Int. Web GIS Workshop, Keynote, Singapore, December 2002.
+12. D. Pfoser, C.S. Jensen, and Y. Theodoridis. “Novel approaches in query processing for moving
+objects,” in Proc. of Int. Conf. on Very Large Data Bases, Cairo, Egypt, pp. 395–406, September
+2000.
+
+13. S. Saltenis, C.S.Jensen, S.T. Leutenegger, and M.A. Lopez. “Indexing the positions of contin-
+uously moving objects,” in Proc. of ACM SIGMOD Int. Conf. on Mangement of Data, Dallas,
+Texas, USA, pp. 331–342, May 2000.
+
+14. T. Sellis, N. Roussopoulos, and C. Faloutsos. “The r+-tree: a dynamic index for multi-
+dimensional objects,” in Proc. of Int. Conf. on Very Large Data Bases, Brighton, England,
+pp. 507–518, September 1987.
+
+15. Y. Tao and D. Papadias. “Mv3r-tree: a spatio-temporal access method for timestamp and interval
+queries,” in Proc. of Int. Conf. on Very Large Data Bases, Roma, Italy, pp. 431–440, September
+2001.
+
+16. Y. Tao, D. Papadias, and J. Sun. “The tpr*-tree: an optimized spatio-temporal access method
+for predictive queries,” in Proc. of Int. Conf. on Very Large Data Bases, Berlin, Germany,
+pp. 790–801, September 2003.
+
+17. Y. Tao, J. Zhang, D. Papadias, and N. Mamoulis. “An efﬁcient cost model for optimization
+of nearest neighbor search in low and medium dimensional spaces,” IEEE Transactions on
+Knowledge and Data Engineering, Vol. 16(10):1169–1184, 2004.
+
+444
+
+Geoinformatica (2006) 10: 423–445
+
+18. J. Tayeb, O. Ulusoy, and O. Wolfoson. “A quadtree-based dynamic attribute indexing method,”
+
+The Computer Journal, Vol. 41(3):185–200, 1998.
+
+19. Y. Theodoridis and T. Sellis. “Model for the prediction of r-tree performance,” in Proc. of ACM
+SIGACT-SIGMOD-SIGART Symposium on Principles of Database Systems, Montreal, Quebec,
+Canada, pp. 161–171, June 1996.
+
+20. D.A. White and R. Jain. “Similarity indexing with the ss-tree,” in Proc. of Int. Conf. on Data
+
+Engineering, New Orleans, Louisiana, pp. 516–523, February 1996.
+
+21. Y. Xia and S. Prabhakar. “Q+rtree: efﬁcient indexing for moving object data bases,” in Proc. of
+Int. Conf. on Database Systems for Advanced Applications, Kyoto, Japan, pp. 175–182, March
+2003.
+
+Dan Lin received the BSc degree (First Class Honors) in computer science from Fudan University,
+China in 2002. Currently, She is a Ph.D. student in the department of computer science at the
+National University of Singapore. Her research interest is the spatio-temporal databases.
+
+Rui Zhang is a lecturer in the department of computer science and Software Engineering at the
+University of Melbourne. He obtained his Bachelor’s degree from Tsinghua University in China,
+and received his Ph.D. degree from National University of Singapore. His research interests include
+multi-dimensional indexing, spatio-temporal data management and data streams.
+
+Geoinformatica (2006) 10: 423–445
+
+445
+
+Aoying Zhou is currently a professor in computer science at Fudan University, Shanghai, China. He
+received his Bachelor and Master degree in computer science from Sichuan University in Chengdu,
+Sichuan, China in 1985 and 1988, respectively, and his Ph.D. degree from Fudan University in 1993.
+He severed as the program co-chair of WAIM’2000, the conference co-chair of ER’2004, and PC
+member of EDBT’2006, VLDB’2005, ICDCS’2005, DASFAA, FAKDD, etc. His research interests
+include Data Mining and Business Intelligence, Data Streams, XML/Web Data Management, Web
+Services, Peer-to-Peer Computing.
+
+

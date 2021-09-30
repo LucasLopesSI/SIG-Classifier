@@ -1,0 +1,3994 @@
+Geoinformatica (2008) 12:313–356
+DOI 10.1007/s10707-007-0035-y
+
+Efﬁcient Implementation Techniques for Topological
+Predicates on Complex Spatial Objects
+
+Reasey Praing · Markus Schneider
+
+Received: 19 December 2006 / Revised: 10 July 2007 /
+Accepted: 14 August 2007 / Published online: 4 October 2007
+© Springer Science + Business Media, LLC 2007
+
+Abstract Topological relationships like overlap, inside, meet, and disjoint uniquely
+characterize the relative position between objects in space. For a long time, they
+have been a focus of interdisciplinary research as in artiﬁcial intelligence, cognitive
+science, linguistics, robotics, and spatial reasoning. Especially as predicates, they
+support the design of suitable query languages for spatial data retrieval and analysis
+in spatial database systems and geographical information systems. While, to a large
+extent, conceptual aspects of topological predicates (like their deﬁnition and reason-
+ing with them) as well as strategies for avoiding unnecessary or repetitive predicate
+executions (like predicate migration and spatial index structures) have been empha-
+sized, the development of robust and efﬁcient implementation techniques for them
+has been largely neglected. Especially the recent design of topological predicates
+for all combinations of complex spatial data types has resulted in a large increase
+of their numbers and stressed the importance of their efﬁcient implementation. The
+goal of this article is to develop correct and efﬁcient implementation techniques of
+topological predicates for all combinations of complex spatial data types including
+two-dimensional point, line, and region objects, as they have been speciﬁed by
+different authors and in different commercial and public domain software packages.
+Our solution consists of two phases. In the exploration phase, for a given scene of
+two spatial objects, all topological events like intersection and meeting situations
+are summarized in two precisely deﬁned topological feature vectors (one for each
+argument object of a topological predicate) whose speciﬁcations are characteristic
+
+This work was partially supported by the National Science Foundation (NSF) under grant
+number NSF-CAREER-IIS-0347574.
+
+R. Praing · M. Schneider (B)
+
+Department of Computer and Information Science and Engineering,
+University of Florida, Gainesville, FL 32611, USA
+e-mail: mschneid@cise.uﬂ.edu
+
+R. Praing
+e-mail: rpraing@cise.uﬂ.edu
+
+314
+
+Geoinformatica (2008) 12:313–356
+
+and unique for each combination of spatial data types. These vectors serve as input
+for the evaluation phase which analyzes the topological events and determines the
+Boolean result of a topological predicate (predicate veriﬁcation) or the kind of
+topological predicate (predicate determination) by a formally deﬁned method called
+nine-intersection matrix characterization. Besides this general evaluation method,
+the article presents an optimized method for predicate veriﬁcation, called matrix
+thinning, and an optimized method for predicate determination, called minimum
+cost decision tree. The methods presented in this article are applicable to all known
+complete collections of mutually exclusive topological predicates that are formally
+based on the well known nine-intersection model.
+
+Keywords spatial database · complex spatial object · topological predicate ·
+predicate veriﬁcation · predicate determination · topological feature vector ·
+exploration phase · evaluation phase · nine-intersection matrix characterization ·
+matrix thinning · minimum cost decision tree
+
+1 Introduction
+
+Topological predicates (like overlap, meet, inside) between spatial objects (like
+points, lines, regions) have for a long time been a main area of extensive research on
+spatial data handling, reasoning, and query languages in a number of disciplines like
+artiﬁcial intelligence, linguistics, robotics, and cognitive science. They characterize
+the relative position between two (or more) objects in space, are of purely qualitative
+nature, deliberately exclude any consideration of quantitative, metric measures
+like distance or direction measures, are associated with notions like adjacency,
+coincidence, connectivity, inclusion, and continuity, and are preserved under afﬁne
+transformations such as translation, scaling, and rotation. In particular, they support
+the design of suitable query languages for spatial data retrieval and analysis in
+geographical information systems and spatial database systems. The focus of this
+research has been on the conceptual design of and reasoning with these predicates
+as well as on strategies for avoiding unnecessary or repetitive predicate executions.
+The two central conceptual approaches, upon which almost all publications in
+this ﬁeld have been based and which have produced very similar results, are the
+nine-intersection model [12] and the RCC model [10]. Until recently, topological
+predicates have only been formally deﬁned for simple spatial objects that include
+single points, continuous lines, and simple regions. In this article, we are especially
+interested in topological predicates for complex spatial objects which comprise point
+objects containing several single points, line objects consisting of a ﬁnite number
+of curves, and regions consisting of several faces possibly with holes. Complex
+spatial objects have been proposed in a number of publications and are available
+in several commercial and public domain software packages. Topological predicates
+on complex spatial objects have been recently speciﬁed in [35] on the basis of the
+nine-intersection model. In addition, we also consider dimension-reﬁned topological
+predicates [26] which take into account the dimensions of the intersections of two
+spatial objects and enable the posing of more ﬁne-grained than purely topological
+queries.
+
+Geoinformatica (2008) 12:313–356
+
+315
+
+1.1 Motivation
+
+In contrast to the large amount of conceptual work, implementation issues of
+topological predicates as well as optimization issues for their efﬁcient evaluation have
+been widely neglected. Since topological predicates are expensive predicates that
+cannot be evaluated in constant time, the strategy in query plans has consequently
+been to avoid their computation. The extensive work on spatial index structures as a
+ﬁltering step in query processing is an important example of this strategy. It aims at
+identifying a hopefully small collection of candidate pairs of spatial objects that could
+possibly fulﬁl the predicate of interest and at excluding a large collection of pairs of
+spatial objects that deﬁnitely do not satisfy the predicate.
+
+However, efﬁcient implementation techniques for the topological predicates
+themselves cannot be found in the literature. Due to the transition from simple to
+complex spatial objects and the consequential increase of the number of topological
+predicates between them, novel implementation and optimization techniques turn
+out to be indispensable. They are challenging for four main reasons.
+
+First, although the plane sweep paradigm [1] is widely accepted as an appropriate
+implementation concept for topological predicates, the question arises whether each
+topological predicate requires an own, tailored plane sweep algorithm. This would
+lead to a large number of algorithms.
+
+A second issue is what kind of information a plane sweep algorithm should output
+
+so that this information can be leveraged for predicate evaluation.
+
+Third, the two implementation alternatives of a single, specialized algorithm for
+each predicate or a single algorithm for all predicates with an exhaustive case analysis
+are error-prone and thus unacceptable options from a correctness point of view. The
+reason is that each single algorithm ﬁnally represents an ad hoc implementation
+from which we do not know whether it really covers all possible cases that make
+the predicate true. We also do not know whether its result is mutually exclusive to
+all other predicate results. This means if a predicate implementation yields true for
+a particular spatial conﬁguration, all the other predicate implementations have to
+return false. If it yields false, exactly one of the other predicate implementations has
+to return true. Altogether, this is a correctness problem.
+
+A fourth issue deals with the kind of query posed since this has impact on the
+evaluation process. Given two objects A and B of any complex spatial data type
+for point, line, or region objects, we can pose at least two kinds of topological
+queries: (1) “Do A and B satisfy the topological predicate p?” and (2) “What is
+the topological predicate p between A and B?”. Only query 1 yields a Boolean
+value. It is of interest for the query processing of spatial joins and spatial selections
+in spatial databases; we call it hence a veriﬁcation query. Query 2 returns a predicate
+(name), is hence called determination query, and is interesting for all applications
+analyzing the topological relationships of spatial objects. The only alternative would
+be to transform this query into a large number of veriﬁcation queries and terminate
+this process as soon as one of them yields true. For both query types, we can even ask
+more ﬁne-grained queries that include the dimension of an intersection. For example,
+the topological predicate meet between two region objects can be dimensionally
+reﬁned into 0-meet, 1-meet, and 01-meet respectively. This states that the two region
+objects meet in a point object (0D), a line object (1D), and a point object and a line
+object (0D+1D) respectively.
+
+316
+
+Geoinformatica (2008) 12:313–356
+
+1.2 Goals and overall solution
+
+The overall goal of this article is to develop and present systematic, correct, robust,
+and efﬁcient implementation strategies and optimized evaluation methods for topo-
+logical predicates between all combinations of the three complex spatial data types
+for point, line, and region objects. The strategies and methods are supposed to solve
+the four main issues mentioned in Section 1.1 and are universal in the sense that they
+can be leveraged for all available spatial type systems offering simple and/or complex
+spatial data types and for all complete collections of mutually exclusive topological
+predicates based on the nine-intersection model.
+
+We distinguish two phases of predicate execution: In an exploration phase, a plane
+sweep scans a given conﬁguration of two spatial objects and identiﬁes all topological
+events like intersections and meeting situations. These events are stored in two
+precisely deﬁned topological feature vectors (one for each argument object of the
+topological predicate) whose speciﬁcations are characteristic and thus unique for
+each of the six spatial data type combinations point/point, point/line, point/region,
+line/region, and region/region (the remaining three combinations are symmetric).
+In other words, different type combinations lead to different topological feature
+vectors. The exploration phase solves the ﬁrst and second issue from Section 1.1.
+The ﬁrst issue is solved in the sense that for each of the six type combinations only a
+single algorithm is necessary to compute the suitable topological information for all
+topological predicates of that type combination. Topological feature vectors as the
+only required output are the answer to the second issue.
+
+These vectors serve as input for the evaluation phase which analyzes the topolog-
+ical data and determines the Boolean result of a topological predicate (query 1) or
+the kind of topological predicate (query 2). For this purpose, we introduce a general
+method called nine-intersection matrix characterization that can be leveraged for both
+predicate veriﬁcation and predicate determination and that depends on the spatial
+data type combination under consideration. A slight extension of this method can
+then be used for the matching of dimension-reﬁned topological predicates. A ﬁne-
+tuning of the nine-intersection matrix characterization leads to two optimized ap-
+proaches called matrix thinning for predicate veriﬁcation and minimum cost decision
+trees for predicate determination. The evaluation phase solves the third and second
+issue from Section 1.1. The third issue is solved by formally proving the correctness
+of the approach. The fourth issue is answered by designing general and optimized
+solutions for both predicate determination and predicate determination
+
+Section 2 discusses related work about spatial data types as well as available
+design and implementation concepts for proper and dimension-reﬁned topological
+predicates. Section 3 deals with the exploration phase for collecting topological in-
+formation. By using the plane sweep paradigm, we extract the needed topological
+information from a given scene of two spatial objects and determine the topolog-
+ical feature vectors that are speciﬁc to each type combination. Section 4 focuses
+on the evaluation phase and matches the acquired topological feature vectors with
+characteristic properties of the topological predicates by the nine-intersection matrix
+characterization. Section 5 presents the two ﬁne-tuned and optimized approaches
+of matrix thinning for predicate veriﬁcation and minimum cost decision trees for
+predicate determination. In Section 6, we give a brief overview of the implementation
+
+Geoinformatica (2008) 12:313–356
+
+317
+
+environment, present our testing strategy, and present an assessment of our overall
+approach. Finally, Section 7 draws some conclusions.
+
+2 Related work
+
+In this section we present related work on spatial data types as the argument types
+of topological predicates (Section 2.1), give an overview of the essential conceptual
+models for topological relationships (Section 2.2) and dimension-reﬁned topological
+relationships (Section 2.3), and discuss implementation aspects of topological predi-
+cates (Section 2.4).
+
+2.1 Spatial data types
+
+In the spatial database and GIS community, spatial data types (e.g., [11], [19], [20],
+[29], [32], [38]) like point, line, or region have found wide acceptance as fundamental
+abstractions for modeling the structure of geometric entities, their relationships,
+properties, and operations. They form the basis of a large number of data models
+and query languages for spatial data and have gained access into commercial software
+products. Topological predicates operate on spatial objects as instances of these data
+types. The literature distinguishes simple spatial data types (e.g., [11], [19], [29]) and
+complex spatial data types (e.g., [5], [20], [25], [27], [32], [35], [38]), depending on the
+spatial complexity they are able to model. We use the terms “simple spatial data
+type” and “complex spatial data type” also as neutral, unifying notations for the
+various naming schemes of these types in different approaches. Simple spatial data
+types only provide simple object structures like single points, continuous lines, and
+simple regions (Fig. 1a–c). Until recently, topological relationships have only been
+formally deﬁned for them (e.g., [13]). However, from an application perspective,
+simple spatial data types have turned out to be inadequate abstractions for real
+spatial applications since they are insufﬁcient to cope with the variety and complexity
+of geographic reality. From a formal perspective, they are not closed under the
+geometric set operations intersection, union, and difference. This means that these
+operations applied to two simple spatial objects can produce a spatial object that is
+not simple. Complex spatial data types solve these problems. They provide universal
+and versatile spatial objects and are closed under geometric set operations. They
+allow objects with multiple components, region components that may have holes, and
+line components that may model ramiﬁed, connected geometric networks (Fig. 1d–f).
+
+a
+
+b
+
+c
+
+d
+
+e
+
+f
+
+Fig. 1 Examples of a simple point object (a), a simple line object (b), a simple region object (c),
+a complex point object (d), a complex line object (e), and a complex region object (f)
+
+318
+
+Geoinformatica (2008) 12:313–356
+
+Implementations of complex spatial data types (under different names) are avail-
+able in a number of commercial and public domain software systems. Examples are
+ESRI’s Spatial Database Engine (ArcSDE) [17], the Informix Geodetic DataBlade
+[23] (only complex regions), Oracle Spatial [28], DB2’s Spatial Extender [24], and
+the JTS Topology Suite [37]. All these spatial data type implementations (at least
+partially) support the speciﬁcations of the Open Geospatial Consortium [27], [25]
+and can be used as a basis for the predicate implementation and evaluation concepts
+proposed in this article.
+
+2.2 Conceptual models for topological relationships
+
+The conceptual study and determination of topological relationships has led to the
+two fundamental approaches of the nine-intersection model [12], which is based on
+point set theory and point set topology [18], and the RCC model [10], which is based
+on spatial logic. Despite rather different foundations, both approaches come to very
+similar results. Our implementation strategy relies heavily on the nine-intersection
+model since it enables us to create a direct link between the concepts of this model
+and our implementation approach described in this article as well as to prove the
+correctness of our strategy.
+
+Based on the nine-intersection model, a complete collection of mutually exclusive
+topological relationships can be determined for each combination of simple and
+recently also complex spatial data types. The model is based on the nine possible
+intersections of the boundary (∂A), the interior (A◦), and the exterior (A−) [18] of
+a spatial object A with the corresponding components ∂ B, B◦, and B− of another
+spatial object B. Each intersection is tested with regard to the topologically invariant
+criteria of non-emptiness and emptiness. The topological relationship between two
+spatial objects A and B can be determined by evaluating the 3 × 3-matrix in Fig. 2a.
+We call each matrix element a matrix predicate. A total number of 29 = 512 different
+conﬁgurations is possible from which only a certain subset makes sense depending
+on the deﬁnition and combination of the spatial data types considered. For each
+combination of spatial types, this means that each of its predicates is associated with
+a unique nine-intersection matrix so that all predicates are mutually exclusive and
+complete with regard to the topologically invariant criteria of non-emptiness and
+emptiness.
+
+Topological relationships have been ﬁrst investigated for simple spatial objects
+(Fig. 2b), i.e., for two simple regions (disjoint, meet, overlap, equal, inside, contains,
+covers, coveredBy) [8], [12], for two simple lines [6], [13], and for a simple line
+and a simple region [14]. Topological predicates involving simple points are trivial.
+
+a
+
+b
+
+Fig. 2 The nine-intersection matrix (a) and the numbers of topological predicates between two
+simple/complex spatial objects (b)
+
+Geoinformatica (2008) 12:313–356
+
+319
+
+The implementation concepts in this article can be applied to all these predicate
+collections.
+
+Two restricted attempts to a deﬁnition of topological relationships on more com-
+plex spatial objects are the TRCR (topological relationships for composite regions)
+model [7], which only allows sets of disjoint simple regions without holes and does
+not derive topological relationships systematically from the underlying model, and
+the approach in [16], which only considers topological relationships of simple regions
+with holes, does not permit multi-part regions, and depends on the number of holes
+of the operand objects. Our predicate implementation concepts are not applicable to
+these approaches.
+
+Our main target is the implementation of an own, thorough, systematic, and
+complete speciﬁcation of mutually exclusive topological relationships for all combi-
+nations of complex spatial data types [35] that is also based on the nine-intersection
+model. This approach uses rules to exclude invalid nine-intersection matrices as well
+as prototypical drawings of spatial scenarios to show the correctness of the remaining
+matrices and to visualize the corresponding topological predicates. Figure 2b shows
+the increase of topological predicates between complex objects compared to those
+between simple objects and underpins the need for sophisticated and efﬁcient
+predicate execution techniques. For example, we know 33 topological relationships
+between two simple line objects but 82 relationships between two complex line
+objects.
+
+2.3 Conceptual models for dimension-reﬁned topological relationships
+
+A replacement of the topological invariant of non-emptiness and emptiness of an
+intersection by the topological invariant of the dimension of an intersection leads
+from the nine-intersection matrix (Fig. 2a) to the nine-intersection dimension matrix
+(Fig. 3a). The dimension-extended model [4], [8] considers the dimension of intersec-
+tions and combines it with topological predicates for simple spatial data types. The
+implementation concepts in this article can be applied to these approaches.
+
+However, our main target is the implementation of an own concept of so-called
+dimension-reﬁned topological predicates [26] for all combinations of complex spatial
+data types that is based on the nine-intersection dimension matrix and that gener-
+alizes the aforementioned approaches. In [26] we have explored which predicates
+can be derived on the basis of the dimension matrix. It turns out that these predi-
+cates are reﬁnements of the topological predicates on spatial data types. Figure 3b
+shows the numbers of these predicates for all combinations of simple spatial data
+types and for all combinations of complex spatial data types. A comparison with
+Fig. 2b reveals that all type combinations that include the type point cannot be
+
+a
+
+b
+
+Fig. 3 The nine-intersection dimension matrix (a) and the numbers of dimension-reﬁned topological
+predicates between two simple/complex spatial objects (b)
+
+320
+
+Geoinformatica (2008) 12:313–356
+
+dimension-reﬁned. This is only possible if one-dimensional components of a spatial
+object like the interior of a line object or the boundary of a region object are involved.
+These one-dimensional components can interact in several different ways. Either
+they are disjoint, or they only share a point object, or they only share a line object,
+or they share a point object and a line object. Consequently, the dimension of the
+intersection is empty, only zero-dimensional, only one-dimensional, or zero- and
+one-dimensional. This leads to different reﬁnements of the underlying topological
+predicates. Our approach enables us to evaluate them.
+
+2.4 Implementation aspects of topological predicates
+
+In queries, topological predicates usually appear as ﬁlter conditions of spatial selec-
+tions and spatial joins. At least two main strategies can be distinguished for their
+processing. Either we attempt to avoid the execution of topological predicates since
+they are expensive predicates and cannot be executed in constant time, or we design
+sophisticated implementation methods for them. The latter strategy is always needed
+while the former strategy is worthwhile to do.
+
+Avoidance strategies for expensive predicate executions can be leveraged at
+the algebraic level and at the physical level. At the algebraic level, consistency
+checking procedures examine the collection of topological relationships contained in
+a query for topological consistency by employing topological reasoning techniques
+[31]. Optimization minimizes the number of computations needed [9] and aims at
+eliminating topological relationships that are implied uniquely by composition [15].
+At the physical level, several methods pursue the concept of avoiding unnecessary or
+repetitive predicate evaluations in query access plans. Examples of these methods are
+predicate migration [22], predicate placement [21], disjunctive query optimization
+[3], and approximation-based evaluation [2]. A subsequent, important method is the
+deployment of spatial index structures to identify those candidate pairs of spatial
+objects that could possibly fulﬁl the predicate of interest. This is done by a ﬁltering
+test on the basis of minimum bounding rectangles.
+
+At some point, avoidance strategies are of no help anymore, and the application
+of physical predicate execution algorithms is necessary. To the authors’ knowledge,
+there has so far been no published research on the efﬁcient implementation and
+evaluation of topological predicates, their optimization, and their connection to the
+underlying theory. All three aspects are main objectives of this article. Only in two
+own, initial, ad hoc attempts [33], [34], the authors extend the concept of the eight
+topological predicates for two simple regions to a concept and implementation of
+these eight predicates for two complex regions.
+
+Implementations of topological predicates for complex spatial objects are pro-
+vided by all spatial data management and analysis packages mentioned in Section 2.1.
+However, the named topological predicates focus on the eight well known predi-
+cates disjoint, meet, overlap, equal, inside, contains, covers, and coveredBy that are
+generalized to and uniﬁed for all combinations of complex spatial data types. A
+special method allows the explicit speciﬁcation of a nine-intersection matrix which
+is evaluated for two operand objects. In all cases, a formal deﬁnition of the behavior
+of these predicates is missing since descriptions are only informal.
+
+The open source JTS Topology Suite [37] implements the aforementioned eight
+topological predicates for complex spatial objects through a topology graph. Such
+
+Geoinformatica (2008) 12:313–356
+
+321
+
+a graph stores topology explicitly and records for each node (endpoint) and edge
+(segment) of a spatial object whether it is located in the interior, in the exterior, or on
+the boundary of another spatial object. Computing the topology graphs and deriving
+the nine-intersection matrix from them require quadratic time and quadratic space
+in terms of the nodes and edges of the two operand objects. Our solution requires
+linearithmic (loglinear) time and linear space due to the use of the plane sweep
+paradigm.
+
+3 The exploration phase for collecting topological information
+
+For a given scene of two spatial objects, the goal of the exploration phase is to
+discover appropriate topological information that is characteristic and unique for
+this scene and that is suitable both for veriﬁcation queries (query type 1) and deter-
+mination queries (query type 2). Our general approach is to scan such a scene from
+left to right by a plane sweep algorithm and to collect appropriate topological data
+during this traversal in so-called topological feature vectors. We call such an algorithm
+exploration algorithm. Later in the evaluation phase, the topological feature vectors
+help us conﬁrm, deny, or derive the topological relationship between both objects.
+From both phases, due to the use of plane sweep algorithms, the exploration phase
+is the computationally (much more) expensive one since topological information has
+to be explicitly derived by geometric computation.
+
+In Section 3.1, we sketch the well known plane sweep technique and introduce
+some needed geometric concepts and notations as well as some robust geometric
+primitives. Section 3.2 motivates the concept of topological feature vectors. The
+remaining subsections formally deﬁne the topological feature vectors for the six
+different combinations of complex spatial data types.
+
+3.1 Preliminaries
+
+All exploration algorithms are special instances of the plane sweep paradigm.
+The plane sweep technique is a well known algorithmic scheme in Computational
+Geometry [1]. Its central idea is to reduce a two-dimensional geometric problem
+to a simpler one-dimensional geometric problem. A vertical sweep line traversing
+the plane from left to right stops at special event points which are stored in a queue
+called event point schedule. The event point schedule must allow one to insert new
+event points discovered during processing; these are normally the initially unknown
+intersections of line segments. The state of the intersection of the sweep line with
+the geometric structure being swept at the current sweep line position is recorded
+in vertical order in a data structure called sweep line status. Whenever the sweep
+line reaches an event point, the sweep line status is updated. Event points which are
+passed by the sweep line are removed from the event point schedule. Due to space
+limitations, we will not discuss the specialties of each exploration algorithm in detail.
+The interested reader can ﬁnd their detailed description in [36].
+
+The deﬁnition of the topological feature vectors requires some geometric concepts
+and notations. Due to space limitations, we only explain them informally here; their
+detailed, formal description can be found in [36]. A point object F is represented as
+a sequence of lexicographically ordered points. Let P(F) be the set of all points of F.
+A line object F is represented as a sequence of ordered halfsegments. A halfsegment
+
+322
+
+Geoinformatica (2008) 12:313–356
+
+(similar to the halfedge concept in CGAL) includes point and segment information
+and emphasizes one of its end points as the dominating point, i.e., point of interest.
+Hence, it is a hybrid between a (left or right) end point and the incident segment.
+That is, each segment corresponds to two halfsegments, a left halfsegment and a right
+halfsegment. In a plane sweep algorithm, a left halfsegment indicates that the sweep
+line status has to be updated with the segment information; a right halfsegment leads
+to a removal of the respective segment from the sweep line status. Let H(F) be the
+set of all halfsegments of F. For f ∈ H(F), let f .s denote its segment component
+and dp( f ) be a function yielding the dominating point of f . Let B(F) be the set
+of all boundary points of F. These are all those points of F from which exactly
+one segment emanates. A region object F is represented as a sequence of ordered
+attributed halfsegments. The attribute is a Boolean ﬂag ia for “Interior Above”
+indicating whether the interior of a region is above or, for vertical segments, left
+of the halfsegment. Let H(F) be the set of all attributed halfsegments of F. For
+f ∈ H(F), let f .s denote its segment component and f .ia its attribute component.
+Note that H(F), where F is a line or region object, only includes halfsegments that
+are either disjoint from, equal to, or meeting (in an end point) the halfsegments H(G)
+of another line or region object G due to our special splitting strategy during plane
+sweeps [36].
+
+The deﬁnition of topological feature vectors makes use of some robust geometric
+primitives that we assume as predeﬁned. The predicates “=” and “(cid:4)=” check the
+equality and inequality of two single points respectively. The predicates on and
+poiInRegion check whether a single point is located on a segment or inside a region
+object respectively. The predicate segInRegion tests whether a segment is located
+inside a region object. The predicates poiIntersect and segIntersect test whether two
+segments intersect in a point or a segment respectively. The operation poiIntersection
+returns the intersection point of two segments.
+
+3.2 Topological feature vectors
+
+Our research shows that on the one hand it is unnecessary to design an own
+exploration algorithm for each single topological predicate and that on the other
+hand it is unfavorable to aim at designing a universal exploration algorithm that
+covers all topological predicates of all combinations of spatial data types. This
+has three main reasons. First, each of the data types point, line, and region has
+very type-speciﬁc, well known properties that are different from each other (like
+different dimensionality). Second, for each type combination of spatial data types,
+the topological information collected is very speciﬁc but equal for all topological
+predicates of each type combination and different from all other type combinations.
+Third, the topological information we collect about each single spatial data type is
+different in different type combinations.
+
+Therefore, we only have to distinguish six cases due to the six possible type
+combinations between the three spatial data types if we assume that the ﬁrst operand
+has an equal or lower dimension than the second operand.1 This leads to six
+
+1If, in the determination query case, a predicate p(A, B) has to be processed, for which the
+dimension of object A is higher than the dimension of object B, we process the converse predicate
+pconv(B, A) where pconv has the transpose of the nine-intersection matrix (see Fig. 2a) of p.
+
+Geoinformatica (2008) 12:313–356
+
+323
+
+exploration algorithms which except for the point/point case require the plane sweep
+technique. Depending on the types of spatial objects involved, a Boolean vector vF
+consisting of a special set of topological feature ﬂags is assigned to each object F. Each
+topological feature ﬂag indicates the existence or non-existence of a characteristic
+topological feature, and we call the vector a topological feature vector. Its ﬂags are
+all initialized to false. Once certain topological information about an object has been
+discovered, the corresponding ﬂag of its topological feature vector is set to true. For
+example, if two line objects share a segment, the corresponding ﬂag vF [seg_shared]
+is set to true (see Deﬁnition 4(1) below). For all type combinations, we aim at
+minimizing the number of topological feature ﬂags of both spatial argument objects.
+In symmetric cases, only the ﬁrst object gets the ﬂag. The topological feature vectors
+are later used in the evaluation phase for predicate matching. Hence, the selection
+of topological feature ﬂags is highly motivated by the requirements of the evaluation
+phase (Section 4).
+
+3.3 Exploring topological information for the point/point case
+
+The ﬁrst and simplest case considers the exploration of topological information for
+two point objects F and G. Here, the topological facts of interest are whether (1) both
+objects have a point in common and (2) F (G) contains a point that is not part of G
+(F). Hence, both topological feature vectors vF and vG get the ﬂag poi_disjoint. But
+only vF in addition gets the ﬂag poi_shared since the sharing of a point is symmetric.
+We obtain (the symbol “:⇔” means “equivalent by deﬁnition”):
+
+Deﬁnition 1 Let F, G ∈ point2D, and let vF and vG be their topological feature
+vectors. Then
+
+1.
+2.
+3.
+
+vF [poi_shared]
+vF [poi_disjoint]
+vG[poi_disjoint]
+
+:⇔ ∃ f ∈ P(F) ∃ g ∈ P(G) : f = g
+:⇔ ∃ f ∈ P(F) ∀g ∈ P(G) : f (cid:4)= g
+:⇔ ∃ g ∈ P(G) ∀f ∈ P(F) : f (cid:4)= g
+
+3.4 Exploring topological information for the point/line case
+
+In case of a point object F and a line object G, at the lowest level of detail, we
+are interested in the possible relative positions between the individual points of F
+and the halfsegments of G. This requires a precise understanding of the deﬁnition
+of the boundary of a line object, as it has been given in [5], [35]. It follows from
+this deﬁnition that each boundary point of G is an endpoint of a (half)segment of
+G but not necessarily vice versa, as Fig. 4 indicates. The black segment endpoints
+belong to the boundary of G since exactly one segment emanates from each of them.
+Intuitively, they “bound” G. In contrast, the grey segment endpoints belong to the
+interior of G since several segments emanate from each of them. Intuitively, they are
+“connector points” between different segments of G.
+
+The following argumentation leads to the needed topological feature ﬂags for F
+and G. Seen from the perspective of F, we can distinguish three cases since the
+boundary of F is empty [35] and the interior of F can interact with the exterior,
+interior, or boundary of G. First, (the interior of) a point f of F can be disjoint from
+
+324
+
+Geoinformatica (2008) 12:313–356
+
+Fig. 4 Boundary points
+(in black) and connector
+points (in grey) of a line object
+
+G
+
+G (ﬂag poi_disjoint). Second, a point f can lie in the interior of a segment of G (ﬂag
+poi_on_interior). This includes an endpoint of such a segment, if the endpoint is a
+connector point of G. Third, a point f can be equal to a boundary point of G (ﬂag
+poi_on_bound).
+
+Seen from the perspective of G, we can distinguish four cases since the boundary
+and the interior of G can interact with the interior and exterior of F. First, G can
+contain a boundary point that is unequal to all points in F (ﬂag bound_poi_disjoint).
+Second, G can have a boundary point that is equal to a point in F. But the ﬂag
+poi_on_bound already takes care of this situation. Third, the interior of a segment of
+G (including connector points) can comprehend a point of F. This situation is already
+covered by the ﬂag poi_on_interior. Fourth, the interior of a segment of G can be part
+of the exterior of F. This is always true since a segment of G represents an inﬁnite
+point set that cannot be covered by the ﬁnite number of points in F. Hence, we need
+not handle this as a special situation. More formally, we deﬁne the semantics of the
+topological feature ﬂags as follows:
+
+Deﬁnition 2 Let F ∈ point, G ∈ line, and vF and vG be their topological feature
+vectors. Then
+
+1.
+2.
+3.
+4.
+
+vF [poi_disjoint]
+:⇔ ∃ f ∈ P(F) ∀ g ∈ H(G) : ¬on( f, g.s)
+vF [poi_on_interior]
+:⇔ ∃ f ∈ P(F) ∃ g ∈ H(G) ∀ b ∈ B(G) : on( f, g.s) ∧ f (cid:4)= b
+:⇔ ∃ f ∈ P(F) ∃ g ∈ B(G) : f = g
+vF [poi_on_bound]
+vG[bound_poi_disjoint] :⇔ ∃ g ∈ B(G) ∀f ∈ P(F) : f (cid:4)= g
+
+3.5 Exploring topological information for the point/region case
+
+In case of a point object F and a region object G, the situation is simpler than in the
+previous case. Seen from the perspective of F, we can again distinguish three cases
+between (the interior of) a point of F and the exterior, interior, or boundary of G.
+Either a point of F lies either inside G (ﬂag poi_inside), on the boundary of G (ﬂag
+poi_on_bound), or outside of region G (ﬂag poi_outside).
+
+Seen from the perspective of G, we can distinguish four cases between the
+boundary and the interior of G with the interior and exterior of F. The intersection
+of the boundary (interior) of G with the interior of F implies that a point of F is
+located on the boundary (inside) of G. This situation is already covered by the ﬂag
+poi_on_bound (poi_inside). The intersection of the boundary (interior) of G with the
+exterior of F is always true since F as a ﬁnite point set cannot cover G’s boundary
+segments (interior) representing an inﬁnite point set. More formally, we deﬁne the
+semantics of the topological feature ﬂags as follows (note that vG is not needed):
+
+Geoinformatica (2008) 12:313–356
+
+325
+
+Deﬁnition 3 Let F ∈ point, G ∈ region, and vF and vG be their topological feature
+vectors. Then
+
+1.
+2.
+3.
+
+vF [poi_inside]
+vF [poi_on_bound] :⇔ ∃ f ∈ P(F) ∃ g ∈ H(G) : on( f, g.s)
+vF [poi_outside]
+
+:⇔ ∃ f ∈ P(F) : poiInRegion( f, G)
+
+:⇔ ∃ f ∈ P(F)∀g ∈ H(G) : ¬poiInRegion( f, G) ∧ ¬on(f, g.s)
+
+3.6 Exploring topological information for the line/line case
+
+Next, we consider the case for two line objects F and G. Seen from the perspective
+of F, we can differentiate six cases between the interior and boundary of F and the
+interior, boundary, and exterior of G. First, the interiors of two segments of F and
+G can partially or completely coincide (ﬂag seg_shared). Second, if a segment of F
+does not partially or completely coincide with any segment of G, we register this
+in the ﬂag seg_unshared. Third, we set the ﬂag interior_poi_shared if two segments
+intersect in a single point that does not belong to the boundaries of F or G. Fourth,
+a boundary endpoint of a segment of F can be located in the interior of a segment
+(including connector points) of G (ﬂag bound_on_interior). Fifth, both objects F and
+G can share a boundary point (ﬂag bound_shared). Sixth, if a boundary endpoint of
+a segment of F lies outside of all segments of G, we set the ﬂag bound_disjoint.
+
+Seen from the perspective of G, we can identify the same cases. But due to the
+symmetry of three of the six topological cases, we do not need all ﬂags for G. For
+example, if a segment of F partially coincides with a segment of G, this also holds vice
+versa. Hence, it is sufﬁcient to introduce the ﬂags seg_unshared, bound_on_interior,
+and bound_disjoint for G. More formally, we deﬁne the semantics of the topological
+feature ﬂags as follows:
+
+Deﬁnition 4 Let F, G ∈ line, and let vF and vG be their topological feature vectors.
+Then
+
+1.
+2.
+3.
+
+4.
+
+5.
+6.
+7.
+8.
+
+9.
+
+vF [seg_shared]
+vF [seg_unshared]
+vF [interior_poi_shared] :⇔ ∃ f ∈ H(F) ∃ g ∈ H(G) ∀ p ∈ B(F)∪ B(G) :
+
+:⇔ ∃ f ∈ H(F) ∃ g ∈ H(G) : segIntersect( f.s, g.s)
+:⇔ ∃ f ∈ H(F) ∀ g ∈ H(G) : ¬segIntersect( f.s, g.s)
+
+poiIntersect( f.s, g.s) ∧ poiIntersection( f.s, g.s) (cid:4)= p
+
+vF [bound_on_interior] :⇔ ∃ f ∈ H(F) ∃ g ∈ H(G) ∃ p ∈ B(F) \ B(G) :
+
+vF [bound_shared]
+vF [bound_disjoint]
+vG[seg_unshared]
+vG[bound_on_interior] :⇔ ∃ f ∈ H(F) ∃ g ∈ H(G) ∃ p ∈ B(G) \ B(F) :
+
+poiIntersection( f.s, g.s) = p
+:⇔ ∃ p ∈ B(F) ∃ q ∈ B(G) : p = q
+:⇔ ∃ p ∈ B(F) ∀ g ∈ H(G) : ¬on( p, g.s)
+:⇔ ∃g ∈ H(G) ∀ f ∈ H(F) : ¬segIntersect( f.s, g.s)
+
+vG[bound_disjoint]
+
+:⇔ ∃ q ∈ B(G) ∀ f ∈ H(F) : ¬on(q, f.s)
+
+poiIntersection( f.s, g.s) = p
+
+3.7 Exploring topological information for the line/region case
+
+Next, we describe the case of a line object F and a region object G. Seen from the
+perspective of F, we can distinguish six cases between the interior and boundary of F
+and the interior, boundary, and exterior of G. First, the intersection of the interiors
+of F and G means that a segment of F lies in G (ﬂag seg_inside). Second, the interior
+
+326
+
+Geoinformatica (2008) 12:313–356
+
+of a segment of F intersects with a boundary segment of G if either both segments
+partially or fully coincide (ﬂag seg_shared), or if they properly intersect in a single
+point (ﬂag poi_shared). Third, the interior of a segment of F intersects with the
+exterior of G if the segment is disjoint from G (ﬂag seg_outside). Fourth, a boundary
+point of F intersects the interior of G if the boundary point lies inside of G (ﬂag
+bound_inside). Fifth, if it lies on the boundary of G, we set the ﬂag bound_shared.
+Sixth, if it lies outside of G, we set the ﬂag bound_disjoint.
+
+Seen from the perspective of G, we can differentiate the same six cases as before
+and obtain most of the topological ﬂags as before. First, if the interiors of G and
+F intersect, a segment of F must partially or totally lie in G (already covered by
+ﬂag seg_inside). Second, if the interior of G and the boundary of F intersect, the
+boundary point of a segment of F must be located in G (already covered by ﬂag
+bound_inside). Third, the case that the interior of G intersects the exterior of F is
+always true due to the different dimensionality of both objects; hence, we do not
+need a ﬂag. Fourth, if the boundary of G intersects the interior of F, a segment of F
+must partially or fully coincide with a boundary segment of G (already covered by
+ﬂag seg_shared). Fifth, if the boundary of G intersects the boundary of F, a boundary
+point of a segment of F must lie on a boundary segment of G (already covered by ﬂag
+bound_shared). Sixth, if the boundary of G intersects the exterior of F, a boundary
+segment of G must be disjoint from F (new ﬂag seg_unshared). More formally, we
+deﬁne the semantics of the topological feature ﬂags as follows:
+
+Deﬁnition 5 Let F ∈ line, G ∈ region, and vF and vG be their topological feature
+vectors. Then
+
+1.
+
+2.
+3.
+
+4.
+
+5.
+6.
+
+7.
+
+8.
+
+vF [seg_inside]
+
+:⇔ ∃ f ∈ H(F) ∀ g ∈ H(G) :
+
+vF [seg_shared]
+vF [seg_outside]
+
+vF [poi_shared]
+
+¬segIntersect( f.s, g.s) ∧ segInRegion( f.s, G)
+:⇔ ∃ f ∈ H(F) ∃ g ∈ H(G) : segIntersect( f.s, g.s)
+:⇔ ∃ f ∈ H(F) ∀ g ∈ H(G) :
+
+¬segIntersect( f.s, g.s) ∧ ¬segInRegion( f.s, G)
+:⇔ ∃ f ∈ H(F) ∃ g ∈ H(G) : poiIntersect( f.s, g.s) ∧
+
+poiIntersection( f.s, g.s) /∈ B(F)
+
+vF [bound_inside]
+vF [bound_shared]
+
+:⇔ ∃ f ∈ H(F) : poiInRegion(dp( f ), G) ∧ dp( f ) ∈ B(F)
+:⇔ ∃ f ∈ H(F) ∃ g ∈ H(G) : poiIntersect( f.s, g.s) ∧
+
+poiIntersection( f.s, g.s) ∈ B(F)
+vF [bound_disjoint] :⇔ ∃ f ∈ H(F) ∀ g ∈ H(G) : ¬poiInRegion(dp( f ), G) ∧
+
+vG[seg_unshared]
+
+:⇔ ∃ g ∈ H(G) ∀ f ∈ H(F) : ¬segIntersect( f.s, g.s)
+
+dp( f ) ∈ B(F) ∧ ¬on(dp( f ), g.s)
+
+3.8 Exploring topological information for the region/region case
+
+The case of two region objects is quite different from the preceding ﬁve cases since
+it has to take into account the areal extent of both objects. The indices of the vector
+ﬁelds, with one exception described below, are segment classes. The segment class of
+a segment s is a pair (m/n) of overlap numbers indicating the number of overlapping
+region objects below/above (right of/left of) s in a given scene. In our case, 0 ≤ m, n ≤
+2 holds. The ﬁelds of each topological feature vector again contain Boolean values
+that are initialized with false. The main goal is to determine the existing segment
+classes in each region object. Hence, the topological feature vector for each of the
+
+Geoinformatica (2008) 12:313–356
+
+327
+
+two region objects is a segment classiﬁcation vector. Each vector contains a ﬁeld for
+the segment classes (0/1), (1/0), (0/2), (2/0), (1/2), (2/1), and (1/1). The segment
+classes (0/1) and (1/0) indicate that a segment of one region object is disjoint from
+the other region object and that the interior of the ﬁrst region object is above or
+below the segment respectively The segment classes (0/2) and (2/0) mean that a
+segment of one region object shares a segment of the other region object and that
+their interiors are on the same side. The segment classes (1/2) and (2/1) indicate that
+a segment of one region object is located inside the other region object and that the
+interior of the ﬁrst region object is above or below the segment respectively. The
+segment class (1/1) implies that a segment of one region object shares a segment
+of the other region object and that the interiors are on different sides. The ﬂag
+bound_poi_shared indicates whether any two unequal boundary segments of both
+objects share a common point. Before the splitting, such a point may have been a
+segment endpoint or a proper segment intersection point for each object.
+
+The following deﬁnition makes a connection between representational concepts
+and point set topological concepts as it is later needed in the evaluation phase.
+For a segment s = ( p, q) ∈ seg, the function pts yields the inﬁnite point set of
+s as pts(s) = {r ∈ R2 | r = p + λ(q − p), λ ∈ R, 0 ≤ λ ≤ 1}. Further, for F ∈ region,
+f ∈H(F) pts( f.s), F◦ = { p ∈ R2 | poiInRegion( p, F)}, and F− = R2 −
+we deﬁne ∂ F =
+∂ F − F◦. We now deﬁne the semantics of the vector vF as follows:
+
+(cid:2)
+
+Deﬁnition 6 Let F, G ∈ region and vF be the segment classiﬁcation vector of F. Then
+
+vF [(0/1)]
+vF [(1/0)]
+vF [(1/2)]
+vF [(2/1)]
+vF [(0/2)]
+vF [(2/0)]
+vF [(1/1)]
+
+1.
+2.
+3.
+4.
+5.
+6.
+7.
+
+8.
+
+:⇔ ∃ f ∈ H(F) : f .ia ∧ pts( f.s) ⊂ G−
+:⇔ ∃ f ∈ H(F) : ¬f .ia ∧ pts( f.s) ⊂ G−
+:⇔ ∃ f ∈ H(F) : f .ia ∧ pts( f.s) ⊂ G◦
+:⇔ ∃ f ∈ H(F) : ¬f .ia ∧ pts( f.s) ⊂ G◦
+:⇔ ∃ f ∈ H(F) ∃ g ∈ H(G) : f.s = g.s ∧ f .ia ∧ g.ia
+:⇔ ∃ f ∈ H(F) ∃ g ∈ H(G) : f.s = g.s ∧ ¬f .ia ∧ ¬g.ia
+:⇔ ∃ f ∈ H(F) ∃ g ∈ H(G) : f.s = g.s ∧
+(( f .ia ∧ ¬g.ia) ∨ (¬f .ia ∧ g.ia))
+
+vF [bound_poi_shared] :⇔ ∃ f ∈ H(F) ∃ g ∈ H(G) : f.s (cid:4)= g.s ∧ dp( f ) = dp(g)
+
+The segment classiﬁcation vector vG of G includes the cases (1) to (4) with F
+and G swapped; we omit the ﬂags for the cases (5) to (8) due to their symmetry (or
+equivalence) to ﬂags of F.
+
+4 The evaluation phase for matching topological relationships
+
+In the previous section, we have determined the topological feature vectors vF and vG
+of two complex spatial objects F ∈ α and G ∈ β with α, β ∈ {point, line, region}. The
+vectors vF and vG contain speciﬁc topological feature ﬂags for each type combination.
+The ﬂags capture all topological situations between F and G and are different for
+different type combinations. The goal of the evaluation phase is to leverage the
+output of the exploration phase, i.e., vF and vG, either for verifying a given (proper
+or dimension-reﬁned) topological predicate or for determining such a predicate.
+Our general evaluation strategy is to accommodate the objects’ topological feature
+
+328
+
+Geoinformatica (2008) 12:313–356
+
+vectors with an existing topological predicate for both predicate veriﬁcation and
+predicate determination.
+
+Section 4.1 presents an ad hoc evaluation method called direct predicate char-
+acterization. Learning from its shortcomings, in Section 4.2, we propose a novel,
+systematic, provably correct, and general evaluation method called nine-intersection
+matrix characterization. The next two subsections elaborate on a particular step of
+the general method that is dependent on the type combination under consideration.
+Section 4.4 deals with the special region/region case while Section 4.3 handles the
+cases of all other type combinations. Section 4.5 applies and extends our approach to
+the evaluation of dimension-reﬁned topological predicates.
+
+4.1 Direct predicate characterization as a simple evaluation method
+
+The ﬁrst method provides a direct predicate characterization of all n topological
+predicates of each type combination (see Fig. 2b) for the different values of n) and is
+based on the topological feature ﬂags of vF and vG of the two spatial argument objects
+F and G. That is, for the line/line case, we have to determine which topological
+feature ﬂags of vF and vG must be turned on and which ﬂags must be turned off
+so that a given topological predicate (veriﬁcation query) or a predicate to be found
+(determination query) is fulﬁlled. For the region/region case, the central question is
+to which segment classes the segments of both objects must belong so that a given
+topological predicate or a predicate to be found is satisﬁed. The direct predicate
+characterization gives an answer for each individual predicate of each individual type
+combination. This means that we obtain 184 individual predicate characterizations
+without converse predicates and 248 individual predicate characterizations with
+converse predicates. In general, each characterization is a Boolean expression in
+conjunctive normal form and expressed in terms of the topological feature vectors
+vF and vG.
+
+We give two examples of direct predicate characterizations. As a ﬁrst example,
+we consider the topological predicate number 8 (meet) between two line objects F
+and G (Fig. 5a and [35]) and see how the ﬂags of the topological feature vectors
+(Deﬁnition 4) are used.
+
+p8(F, G) :⇔ ¬vF [seg_shared] ∧ ¬vF [interior_poi_shared] ∧ vF[seg_unshared]v ∧
+¬vF [bound_on_interior] ∧ vF [bound_shared] ∧ vF [bound_disjoint] ∧
+vG[seg_unshared] ∧ ¬vG[bound_on_interior] ∧ vG[bound_disjoint]
+
+a
+
+b
+
+Fig. 5 The nine-intersection matrix number 8 for the predicate meet between two line objects (a)
+and the nine-intersection matrix number 7 for the predicate inside between two region objects (b)
+
+Geoinformatica (2008) 12:313–356
+
+329
+
+If we take into account the semantics of the topological feature ﬂags, the
+right side of the equivalence means that both objects may only and must share
+boundary parts. More precisely and by considering the matrix in Fig. 5a,
+in-
+tersections between both interiors (¬vF [seg_shared], ¬vF [interior_poi_shared]) as
+well as between the boundary of one object and the interior of the other ob-
+ject (¬vF [bound_on_interior], ¬vG[bound_on_interior]) are not allowed; besides
+intersections between both boundaries (vF[bound_shared), each component of
+one object must interact with the exterior of the other object (vF[seg_unshared],
+vG[seg_unshared], vF [bound_disjoint], vG[bound_disjoint]).
+
+Next, we view the topological predicate number 7 (inside) between two region
+objects F and G (Fig. 5b and [35]) and see how the segment classes kept in the
+topological feature vectors (Deﬁnition 6) are used.
+
+p7(F, G) : ⇔ ¬vF [(0/1)] ∧ ¬vF [(1/0)] ∧ ¬vF[(0/2)] ∧ ¬vF [(2/0)] ∧ ¬vF [(1/1)] ∧
+¬vF [bound_poi_shared] ∧ (vF [(1/2)] ∨ vF[(2/1)]) ∧
+¬vG[(1/2)] ∧ ¬vG[(2/1)] ∧ (vG[(0/1)] ∨ vG[(1/0)])
+
+For the inside predicate, the segments of F must be located inside of G since the
+interior and boundary of F must be located in the interior of G; hence they must
+all have the segment classes (1/2) or (2/1). This “for all” quantiﬁcation is tested
+by checking whether vF[(1/2)] or vF [(2/1)] are true and whether all other vector
+ﬁelds are false. The fact that all other vector ﬁelds are false means that the interior
+and boundary of F do not interact with the boundary and exterior of G. That is,
+the segments of G must be situated outside of F, and thus they all must have the
+segment classes (0/1) or (1/0); other segment classes are forbidden for G. Further,
+we must ensure that no segment of F shares a common point with any segment of G
+(¬vF[bound_poi_shared]).
+
+The predicate characterizations can be read in both directions. If we are interested
+in predicate veriﬁcation, i.e., in evaluating a speciﬁc topological predicate, we look
+from left to right and check the respective right side of the predicate’s direct
+characterization. This corresponds to an explicit implementation of each individual
+predicate. If we are interested in predicate determination, i.e., in deriving the topo-
+logical relationship from a given spatial conﬁguration of two spatial objects, we have
+to look from right to left. That is, consecutively we evaluate the right sides of the
+predicate characterizations by applying them to the given topological feature vectors
+vF and vG. For the characterization that matches we look on its left side to obtain the
+name or number of the predicate.
+
+The direct predicate characterization demonstrates how we can leverage the
+concept of topological feature vectors. However, this particular evaluation method
+has three main drawbacks. First, the method depends on the number of topological
+predicates. That is, each of the 184 (248) topological predicates between complex
+spatial objects requires an own speciﬁcation. Second, in the worst case, all direct
+predicate characterizations with respect to a particular type combination have to be
+checked for predicate determination. Third, the direct predicate characterization is
+error-prone. It is difﬁcult to ensure that each predicate characterization is correct
+and unique and that all predicate characterizations together are mutually exclusive
+
+330
+
+Geoinformatica (2008) 12:313–356
+
+and cover all topological predicates. From this standpoint, this solution is an ad hoc
+approach.
+
+4.2 The nine-intersection matrix characterization method
+
+The drawbacks of the direct predicate characterization are the motivation for
+another, novel approach called nine-intersection matrix characterization (9IMC) that
+avoids these shortcomings. In particular, its correctness can be formally proved.
+Instead of characterizing each topological predicate directly, the central idea of our
+second approach is to uniquely characterize each element of the 3 × 3-matrix of
+the nine-intersection model (Fig. 2a) by means of the topological feature vectors
+vF and vG. As we know, each matrix element is a predicate called matrix predicate
+that checks one of the nine intersections between the boundary ∂ F, interior F◦, or
+exterior F− of a spatial object F with the boundary ∂G, interior G◦, or exterior G−
+of another spatial object G for inequality to the empty set. For each topological pred-
+icate, its speciﬁcation is then given as the logical conjunction of the characterizations
+of the nine matrix predicates. Since the topological feature vectors are different for
+each type combination, the characterization of each matrix predicate is different for
+each type combination too. The characterizations themselves are the themes of the
+next subsections.
+
+The general method for predicate veriﬁcation works as follows. Based on the
+topological predicate p to be veriﬁed as well as vF and vG as input, we evaluate
+in a loop the characterizations of all matrix predicates numbered from left to right
+and from top to bottom. The ninth matrix predicate F− ∩ G− (cid:4)= ∅ always yields
+true [35]; hence, we do not have to check it. After the computation of the value
+of the matrix predicate i (1 ≤ i ≤ 8), we compare it to the corresponding value of
+the matrix predicate p(i) of p. If the values are equal, we proceed with the next
+matrix predicate i + 1. Otherwise, we stop, and p yields false. If there is a coincidence
+between the computed values of all matrix predicates with the corresponding values
+of p’s matrix, p yields true. The beneﬁt of this approach is that it only requires eight
+predicate characterizations and that these characterizations are the same for each of
+the n topological predicates of the same type combination. In particular, an individual
+characterization of all n topological predicates is not needed. In Section 5.1, we show
+that this method can be even further improved.
+
+The general method for predicate determination works as follows. Based on vF
+and vG as input, we evaluate the 9IM characterizations of all eight matrix predicates
+and insert the Boolean values into an intersection matrix m initialized with true for
+each matrix predicate. Matrix m is then compared against the matrices pi (1 ≤ i ≤ n)
+of all n topological predicates. We know that one of them must match m. The merit
+of this approach is that only eight characterizations are needed to determine the
+intersection matrix of the topological predicate. But unfortunately we need n matrix
+comparisons to determine the pertaining topological predicate in the worst case. In
+Section 5.2, we introduce a method that eliminates this problem. But the method
+here is already a signiﬁcant improvement compared with the necessity to compute
+all n direct predicate characterizations.
+
+We apply the general method and the characterizations to both proper and
+dimension-reﬁned topological predicates. However, the dimension-reﬁned predi-
+cates require some additional characterizations.
+
+Geoinformatica (2008) 12:313–356
+
+331
+
+4.3 Type combination dependent nine-intersection matrix characterization
+
+The last, missing step refers to the characterizations of the eight matrix predicates of
+the nine-intersection matrix for all spatial data type combinations. A 9IMC means
+that each matrix predicate, which takes abstract, inﬁnite point sets F and G rep-
+resenting spatial objects as arguments, is uniquely characterized by the topological
+feature vectors vF and vG, which are discrete implementation concepts. For this
+purpose, for each discrete spatial object F ∈ α ∈ {point, line, region}, we determine
+the corresponding abstract point sets of its boundary, interior, and exterior. For
+the region data type, we have already done this for Deﬁnition 6. For F ∈ point, we
+deﬁne ∂ F = ∅, F◦ = P(F), and F− = R2 − P(F). For F ∈ line, we deﬁne ∂ F = { p ∈
+R2 | card({ f ∈ H(F) | p = dp( f )}) = 1}, F◦ =
+f ∈H(F) pts( f.s) − ∂ F, and F− = R2 −
+∂ F − F◦. As we will see, each characterization can be performed in constant time,
+and its correctness can be shown by a simple proof. In this subsection, we present
+the characterizations for all type combinations except for the more complicated case
+of two region objects; this case is dealt with in the next subsection. The central
+idea in the proofs of the lemmas below is to accomplish a correspondence between
+a matrix predicate based on the point sets ∂ F, F◦, F−, ∂G, G◦, and G− and an
+equivalent Boolean expression based on ﬁnite representations like P(F), H(F),
+B(F), P(G), H(G), and B(G).
+
+(cid:2)
+
+In case of two point objects, the 3 × 3-matrix is reduced to a 2 × 2-matrix since
+the boundary of a point object is deﬁned to be empty [35]. We obtain the following
+statement:
+
+Lemma 1 Let F, G ∈ point. Then the characterization of the matrix predicates of the
+(reduced) nine-intersection matrix is as follows:
+
+F◦ ∩ G◦ (cid:4)= ∅ ⇔ vF[ poi_shared]
+1.
+F◦ ∩ G− (cid:4)= ∅ ⇔ vF [ poi_disjoint]
+2.
+3. F− ∩ G◦ (cid:4)= ∅ ⇔ vG[ poi_disjoint]
+4. F− ∩ G− (cid:4)= ∅ ⇔ true
+
+Proof In (1), the intersection of the interiors of F and G is non-empty if, and
+only if, both objects share a point. That is, ∃ f ∈ P(F)∃ g ∈ P(G) : equal( f, g). This
+matches directly the deﬁnition of vF [ poi_shared] in Deﬁnition 1(1). In (2), a point
+of F can only be part of the exterior of G if it does not belong to G. That is, ∃ f ∈
+P(F)∀ g ∈ P(G) : ¬equal( f, g). This ﬁts directly to the deﬁnition of vF [ poi_disjoint]
+in Deﬁnition 1(2). Case (3) is symmetric to (2). Case (4) follows from Lemma 5.1.2
+(cid:14)(cid:15)
+in [35].
+
+In case of a point object and a line object, the 3 × 3-matrix is reduced to a 2 × 3-
+matrix since the boundary of a point object is deﬁned to be empty. We obtain the
+following statement:
+
+Lemma 2 Let F ∈ point and G ∈ line. Then the characterization of the matrix predi-
+cates of the (reduced) nine-intersection matrix is as follows:
+
+1. F◦ ∩ G◦ (cid:4)= ∅ ⇔ vF[ poi_on_interior]
+2. F◦ ∩ ∂G (cid:4)= ∅ ⇔ vF [ poi_on_b ound]
+
+332
+
+Geoinformatica (2008) 12:313–356
+
+3. F◦ ∩ G− (cid:4)= ∅ ⇔ vF [ poi_disjoint]
+4. F− ∩ G◦ (cid:4)= ∅ ⇔ true
+5. F− ∩ ∂G (cid:4)= ∅ ⇔ vG[b ound_ poi_disjoint]
+6. F− ∩ G− (cid:4)= ∅ ⇔ true
+
+Proof In (1), the intersection of the interiors of F and G is non-empty if, and only if,
+a point of F is located on G but is not a boundary point of G. That is, ∃ f ∈ P(F)∃ g ∈
+H(G)∀ b ∈ B(G) : on( f, g.s) ∧ f (cid:4)= b . This corresponds directly to the deﬁnition
+of vF[ poi_on_interior] in Deﬁnition 2(2). In (2), the intersection of the interior of
+F and the boundary of G is non-empty if, and only if, a point of F coincides with
+a boundary point of G. That is, ∃ f ∈ P(F)∃ g ∈ B(G) : f = g. But this matches the
+deﬁnition of vF [ poi_on_b ound] in Deﬁnition 2(3). Statement (3) is satisﬁed if, and
+only if, a point of F is outside of G. That is, ∃ f ∈ P(F)∀ g ∈ H(G) : ¬on( f, g.s). But
+this is just the deﬁnition of vF[ poi_disjoint] in Deﬁnition 2(1). Statement (4) always
+holds according to Lemma 6.1.2 in [35]. To be fulﬁlled, statement (5) requires that
+a boundary point of G lies outside of F. That is, ∃ g ∈ B(G)∀ f ∈ P(F) : f (cid:4)= g. This
+corresponds to the deﬁnition of vG[bound_poi_disjoint] in Deﬁnition 2(4). The last
+(cid:14)(cid:15)
+statement follows from Lemma 6.1.3 in [35].
+
+In case of a point object and a region object, we also obtain a reduction of the
+
+3 × 3-matrix to a 2 × 3-matrix. We obtain the following statement:
+
+Lemma 3 Let F ∈ point and G ∈ region. Then the characterization of the matrix
+predicates of the (reduced) nine-intersection matrix is as follows:
+
+1. F◦ ∩ G◦ (cid:4)= ∅ ⇔ vF[poi_inside]
+2. F◦ ∩ ∂G (cid:4)= ∅ ⇔ vF [poi_on_bound]
+3. F◦ ∩ G− (cid:4)= ∅ ⇔ vF [poi_outside]
+4. F− ∩ G◦ (cid:4)= ∅ ⇔ true
+5. F− ∩ ∂G (cid:4)= ∅ ⇔ true
+6. F− ∩ G− (cid:4)= ∅ ⇔ true
+
+Proof Statement (1) requires that a point of F is located inside G but not on the
+boundary of G. That is, ∃ f ∈ P(F) : poiInRegion( f, G) (where poiInRegion is the
+predicate which checks whether a single point lies inside a region object). This
+corresponds directly to the deﬁnition of vF [ poi_inside] in Deﬁnition 3(1). In (2), the
+intersection of F and the boundary of G is non-empty if, and only if, a point of F
+lies on one of the boundary segments of G. That is, ∃ f ∈ P(F)∃ (g, ia) ∈ H(G) :
+on( f, g.s). This matches the deﬁnition of vF[ poi_on_b ound] in Deﬁnition 3(2).
+Statement (3) is satisﬁed if, and only if, a point of F is outside of G. That is,
+∃ f ∈ P(F)∀ (g, ia) ∈ H(G) : ¬poiInRegion( f, G) ∧ ¬on( f, g.s). This corresponds
+to the deﬁnition of vF[poi_outside] in Deﬁnition 3(3). Statements (4) and (5) follow
+(cid:14)(cid:15)
+from Lemma 6.2.3 in [35]. The last statement follows from Lemma 6.2.1 in [35].
+
+Geoinformatica (2008) 12:313–356
+
+333
+
+In case of two line objects, we obtain the following statement:
+
+Lemma 4 Let F, G ∈ line. Then the characterization of the matrix predicates of the
+nine-intersection matrix is as follows:
+1. F◦ ∩ G◦ (cid:4)= ∅ ⇔ vF [seg_shared] ∨ vF [interior_ poi_shared]
+2. F◦ ∩ ∂G (cid:4)= ∅ ⇔ vG[b ound_on_interior]
+3. F◦ ∩ G− (cid:4)= ∅ ⇔ vF [seg_unshared]
+4.
+5.
+6.
+7. F− ∩ G◦ (cid:4)= ∅ ⇔ vG[seg_unshared]
+8. F− ∩ ∂G (cid:4)= ∅ ⇔ vG[b ound_disjoint]
+9. F− ∩ G− (cid:4)= ∅ ⇔ true
+
+∂F ∩ G◦ (cid:4)= ∅ ⇔ vF [b ound_on_interior]
+∂F ∩ ∂G (cid:4)= ∅ ⇔ vF [b ound_shared]
+∂F ∩ G− (cid:4)= ∅ ⇔ vF [b ound_disjoint]
+
+Proof In (2), the interiors of two line objects intersect if, and only if, any
+two segments partially or completely coincide or if two segments share a sin-
+gle point that does not belong to the boundaries of F and G. That is, ∃ f ∈
+H(F)∃ g ∈ H(G) : segIntersect( f.s, g.s) ∨ ∃ f ∈ H(F)∃ g ∈ H(G)∀p ∈ B(F) ∪ B(G) :
+poiIntersect( f.s, g.s) ∧ poiIntersection( f.s, g.s) (cid:4)= p. The ﬁrst expression corre-
+sponds to the deﬁnition of vF [seg_shared] in Deﬁnition 4(1). The second expression
+is the deﬁnition of vF[interior_ poi_shared] in Deﬁnition 4(2). Statement (2) requires
+that an intersection point p of F and G exists such that p is a boundary point of
+G but not a boundary point of F. That is, ∃ f ∈ H(F)∃ g ∈ H(G)∃ p ∈ B(G)\B(F) :
+poiIntersection( f.s, g.s) = p. This matches the deﬁnition of vG[b ound_on_interior]
+in Deﬁnition 4(8). Statement (3) is satisﬁed if, and only if, there is a segment of
+F that is outside of G. That is, ∃ f ∈ H(F)∀ g ∈ H(G) : ¬segIntersect( f.s, g.s). This
+corresponds to the deﬁnition of vF[seg_unshared] in Deﬁnition 4(3). Statement (4) is
+symmetric to statement (2) and based on Deﬁnition 4(4). In (5), the boundaries of F
+and G intersect if, and only if, they share a boundary point. That is, ∃ p ∈ B(F)∃ q ∈
+B(G) : p = q. This matches the deﬁnition of vF [bound_shared] in Deﬁnition 4(5).
+Statement (6) requires the existence of a boundary point of F that is not located on
+any segment of G. That is, ∃ p ∈ B(F)∀ g ∈ H(G) : ¬on( p, g.s). This corresponds to
+the deﬁnition of vF [bound_disjoint] in Deﬁnition 4(6). Statement (7) is symmetric to
+statement (3) and based on Deﬁnition 4(7). Statement (8) is symmetric to statement
+(6) and based on Deﬁnition 4(9). The last statement follows from Lemma 5.2.1
+(cid:14)(cid:15)
+in [35].
+
+In case of a line object and a region object, we obtain the following statement:
+
+Lemma 5 Let F ∈ line and G ∈ region. Then the characterization of the matrix
+predicates of the nine-intersection matrix is as follows:
+1. F◦ ∩ G◦ (cid:4)= ∅ ⇔ vF[seg_inside]
+2. F◦ ∩ ∂G (cid:4)= ∅ ⇔ vF [seg_shared] ∨ vF [ poi_shared]
+3. F◦ ∩ G− (cid:4)= ∅ ⇔ vF [seg_outside]
+4.
+5.
+6.
+
+∂F ∩ G◦ (cid:4)= ∅ ⇔ vF [b ound_inside]
+∂F ∩ ∂G (cid:4)= ∅ ⇔ vF [b ound_shared]
+∂F ∩ G− (cid:4)= ∅ ⇔ vF[b ound_disjoint]
+
+334
+
+Geoinformatica (2008) 12:313–356
+
+7. F− ∩ G◦ (cid:4)= ∅ ⇔ true
+8. F− ∩ ∂G (cid:4)= ∅ ⇔ vG[seg_unshared]
+9. F− ∩ G− (cid:4)= ∅ ⇔ true
+
+Proof In (1), the interiors of F and G intersect if, and only if, a segment of F is
+located in G but does not coincide with a boundary segment of G. That is, ∃ f ∈
+H(F)∀ g ∈ H(G) : ¬segIntersect( f.s, g.s) ∧ segInRegion( f.s, G). This corresponds
+to the deﬁnition of vF [seg_inside] in Deﬁnition 5(1). Statement (2) requires that
+either F and G share a segment, or they share an intersection point that is not a
+boundary point of F. That is, ∃ f ∈ H(F)∃ g ∈ H(G) : segIntersect( f.s, g.s) ∨ ∃ f ∈
+H(F)∃ g ∈ H(G) : poiIntersect( f.s, g.s) ∧ poiIntersection( f.s, g.s) /∈ B(F). The ﬁrst
+argument of the disjunction matches the deﬁnition of vF [seg_shared] in Deﬁni-
+tion 5(2). The second argument matches the deﬁnition of vF[ poi_shared] in Deﬁni-
+tion 5(4). Statement (3) is satisﬁed if, and only if, a segment of F is located outside of
+G. That is, ∃ f ∈ H(F)∀ g ∈ H(G) : ¬segIntersect( f.s, g.s) ∧ ¬segInRegion( f.s, G).
+This corresponds to the deﬁnition of vF[seg_outside] in Deﬁnition 5(3). Statement
+(4) holds if, and only if, a segment of F lies inside G and one of the end points
+of the segment is a boundary point. That is, ∃ f ∈ H(F) : poiInRegion(dp( f ), G) ∧
+dp( f ) ∈ B(F). This corresponds to the deﬁnition of vF [bound_inside] in Deﬁni-
+tion 5(5). In (5), we must ﬁnd a segment of F and a segment of G which in-
+tersect in a point that is a boundary point of F. That is, ∃ f ∈ H(F)∃ g ∈ H(G) :
+poiIntersect( f.s, g.s) ∧ poiIntersection( f.s, g.s) ∈ B(F). This matches the deﬁnition
+of vF [bound_shared] in Deﬁnition 5(6). Statement (6) requires the existence of an
+endpoint of a segment of F that is a boundary point and not located inside or on any
+segment of G. That is, ∃ f ∈ H(F)∀ g ∈ H(G) : ¬poiInRegion(dp( f ), G) ∧ dp( f ) ∈
+B(F) ∧ ¬on(dp( f ), g.s). This corresponds to the deﬁnition of vF [bound_disjoint]
+in Deﬁnition 5(7). Statement (7) always holds according to Lemma 6.3.2 in [35].
+Statement (8) is satisﬁed if, and only if, a segment of G does not coincide with any
+segment of F. That is, ∃ g ∈ H(G)∀ f ∈ H(F) : ¬segIntersect( f.s, g.s). This ﬁts to the
+deﬁnition of vF[seg_unshared] in Deﬁnition 5(8). The last statement follows from
+(cid:14)(cid:15)
+Lemma 6.3.1 in [35].
+
+4.4 Nine-intersection matrix characterization of the region/region case
+
+As shown in Section 3.8, exploring the region/region case is quite different from
+exploring the other type combinations and requires another kind of exploration
+algorithm. It has to take into account the areal extent of both objects and has resulted
+in the concepts of overlap number, segment classes, and segment classiﬁcation vector.
+In this subsection, we deal with the 9IMC based on two segment classiﬁcation vectors.
+The goal of the following lemmas is to prepare the unique characterization of all
+matrix predicates by means of segment classes. The ﬁrst lemma provides a translation
+of each segment class into a Boolean matrix predicate expression.
+
+Lemma 6 Let F, G ∈ region and vF and vG be their segment classiﬁcation vectors.
+Then we can infer the following implications and equivalences between segment classes
+and matrix predicates:
+
+1.
+2.
+
+vF [(0/1)] ∨ vF[(1/0)] ⇔ ∂ F ∩ G− (cid:4)= ∅
+vG[(0/1)] ∨ vG[(1/0)] ⇔ F− ∩ ∂G (cid:4)= ∅
+
+Geoinformatica (2008) 12:313–356
+
+335
+
+3.
+4.
+5.
+6.
+
+vF [(1/2)] ∨ vF[(2/1)] ⇔ ∂ F ∩ G◦ (cid:4)= ∅
+vG[(1/2)] ∨ vG[(2/1)] ⇔ F◦ ∩ ∂G (cid:4)= ∅
+vF [(0/2)] ∨ vF[(2/0)] ⇒ ∂ F ∩ ∂G (cid:4)= ∅ ∧ F◦ ∩ G◦ (cid:4)= ∅
+vF [(1/1)]
+
+⇒ ∂ F ∩ ∂G (cid:4)= ∅ ∧ F◦ ∩ G− (cid:4)= ∅ ∧ F− ∩ G◦ (cid:4)= ∅
+
+Proof According to Deﬁnition 6(1) and (2), the left side of (1) is equivalent to
+the expression ∃ f ∈ H(F) : pts( f.s) ⊂ G−. This is equivalent to ∂ F ∩ G− (cid:4)= ∅. The
+proof of (3) is similar and based on Deﬁnition 6(3) and (4); only the term G− has
+to be replaced by G◦. The proof of (2) can be obtained by swapping the roles of
+F and G in (1). Similarly, the proof of (4) requires a swapping of F and G in
+(3). According to Deﬁnition 6(5) and (6), the left side of (5) is equivalent to the
+expression ∃ f ∈ H(F)∃ g ∈ H(G) : f.s = g.s ∧ ((f .ia ∧ g.ia) ∨ (¬f .ia ∧ ¬g.ia)).
+From the ﬁrst element of the conjunction, we can (only) conclude that ∂ F ∩ ∂G (cid:4)= ∅.
+Equivalence does not hold since two boundaries can also intersect if they only share
+single intersection or meeting points but not (half)segments. The second element of
+the conjunction requires that the interiors of both region objects are located on the
+same side. Hence, F◦ ∩ G◦ (cid:4)= ∅ must hold. Also this is only an implication since an
+intersection of both interiors is possible without having any (0/2)- or (2/0)-segments.
+According to Deﬁnition 6(7), the left side of (6) is equivalent to the expression
+∃ f ∈ H(F)∃ g ∈ H(G) : f.s = g.s ∧ ((f .ia ∧ ¬g.ia) ∨ (¬f .ia ∧ g.ia)). The ﬁrst
+element of the conjunction implies that ∂ F ∩ ∂G (cid:4)= ∅. The second element of the
+conjunction requires that the interiors of both region objects are located on different
+sides. Since the deﬁnition of type region disallows (1/1)-segments for single objects,
+the interior of F must intersect the exterior of G, and vice versa. This is only an
+implication since an intersection of the interior of one region object with the exterior
+(cid:14)(cid:15)
+of another region object is possible without having (1/1)-segments.
+
+The second lemma provides a translation of some matrix predicates into segment
+
+classes.
+
+Lemma 7 Let F, G ∈ region and vF and vG be their segment classiﬁcation vectors.
+Then we can infer the following implications between matrix predicates and segment
+classes:
+1. F◦ ∩ G◦ (cid:4)= ∅ ⇒ vF[(0/2)] ∨ vF [(2/0)] ∨ vF[(1/2)] ∨ vF [(2/1)] ∨
+
+2. F◦ ∩ G− (cid:4)= ∅ ⇒ vF [(0/1)] ∨ vF [(1/0)] ∨ vF[(1/1)] ∨
+
+3. F− ∩ G◦ (cid:4)= ∅ ⇒ vF [(1/2)] ∨ vF [(2/1) ∨ vF [(1/1)] ∨
+
+vG[(1/2)] ∨ vG[(2/1)]
+
+vG[(1/2)] ∨ vG[(2/1)]
+
+vG[(0/1)] ∨ vG[(1/0)]
+
+Proof In (1), the intersection of the interiors of F and G implies that both objects
+share a common area. Consequently, this area must have overlap number 2 so that
+at least one of the two objects must have a (a/2)- or (2/a)-segment with a ∈ {0, 1}.
+In (2), the fact that F◦ intersects G− means that F contains an area which it does
+not share with G. That is, the overlap number of this area is 1, and F must have a
+(a/1)- or a (1/a)-segment with a ∈ {0, 1}. The fact that a part of the interior of F is
+located outside of G implies two possible topological situations for G: either both
+objects share a common segment and their interiors are on different sides, i.e., G
+
+336
+
+Geoinformatica (2008) 12:313–356
+
+has a (1/1)-segment (covered by vF [(1/1)]), or the interior of F is intersected by the
+boundary and the interior of G so that G has a (1/2)- or (2/1)-segment. We prove (3)
+(cid:14)(cid:15)
+by swapping F and G in (2).
+
+The third lemma states some implications between matrix predicates.
+
+Lemma 8 Let F, G ∈ region. Then we can infer the following implications between
+matrix predicates:
+
+vF [bound_poi_shared] ⇒ ∂ F ∩ ∂G (cid:4)= ∅
+1.
+∂ F ∩ G− (cid:4)= ∅
+2.
+3. F− ∩ ∂G (cid:4)= ∅
+∂ F ∩ G◦ (cid:4)= ∅
+4.
+5. F◦ ∩ ∂G (cid:4)= ∅
+
+⇒ F◦ ∩ G− (cid:4)= ∅ ∧ F− ∩ G− (cid:4)= ∅
+⇒ F− ∩ G◦ (cid:4)= ∅ ∧ F− ∩ G− (cid:4)= ∅
+⇒ F◦ ∩ G◦ (cid:4)= ∅ ∧ F− ∩ G◦ (cid:4)= ∅
+⇒ F◦ ∩ G◦ (cid:4)= ∅ ∧ F◦ ∩ G− (cid:4)= ∅
+
+Proof Statement (1) can be shown by considering the deﬁnition of bound_
+poi_shared. This ﬂag is true if any two halfsegments of F and G share a single meeting
+or intersection point. Hence, the intersection of both boundaries is non-empty. The
+proofs for (2) to (5) require point set topological concepts. Statements (2) and (3)
+follow from Lemma 5.3.6 in [35]. Statements (4) and (5) result from Lemma 5.3.5
+(cid:14)(cid:15)
+in [35].
+
+The following theorem collects the results we have already obtained so far and
+
+proves the lacking parts of the nine matrix predicate characterizations.
+
+Theorem 1 Let F, G ∈ region and vF and vG be their segment classiﬁcation vectors.
+Then the matrix predicates of the nine-intersection matrix are equivalent to the
+following segment class characterizations:
+1. F◦ ∩ G◦ (cid:4)= ∅ ⇔ vF [(0/2)] ∨ vF[(2/0)] ∨ vF [(1/2)] ∨ vF[(2/1)] ∨
+
+vG[(1/2)] ∨ vG[(2/1)]
+2. F◦ ∩ ∂G (cid:4)= ∅ ⇔ vG[(1/2)] ∨ vG[(2/1)]
+3. F◦ ∩ G− (cid:4)= ∅ ⇔ vF[(0/1)] ∨ vF[(1/0)] ∨ vF [(1/1)] ∨ vG[(1/2)] ∨ vG[(2/1)]
+4.
+5.
+6.
+7. F− ∩ G◦ (cid:4)= ∅ ⇔ vF[(1/2)] ∨ vF [(2/1)] ∨ vF [(1/1)] ∨ vG[(0/1)] ∨ vG[(1/0)]
+8. F− ∩ ∂G (cid:4)= ∅ ⇔ vG[(0/1)] ∨ vG[(1/0)]
+9. F− ∩ G− (cid:4)= ∅ ⇔ true
+
+∂ F ∩ G◦ (cid:4)= ∅ ⇔ vF[(1/2)] ∨ vF [(2/1)]
+∂ F ∩ ∂G (cid:4)= ∅ ⇔ vF[(0/2)] ∨ vF [(2/0)] ∨ vF[(1/1)] ∨ vF[bound_poi_shared]
+∂ F ∩ G− (cid:4)= ∅ ⇔ vF [(0/1)] ∨ vF[(1/0)]
+
+Proof For (1), the forward implication corresponds to Lemma 7(1). The backward
+implication can be derived from Lemma 6(5) for (0/2)- and (2/0)-segments of F
+(and G). For (1/2)- and (2/1)-segments, Lemma 6(3) and 6(4) imply ∂ F ∩ G◦ (cid:4)= ∅
+and F◦ ∩ ∂G (cid:4)= ∅, respectively. From these two implications, by using Lemma 8(4)
+and 8(5), we can derive in both cases F◦ ∩ G◦ (cid:4)= ∅. Statements (2) and (4) corre-
+spond to Lemma 6(4) and 6(3), respectively. For (3) [(7)], the forward implication
+corresponds to Lemma 7(2) [7(3)]. The backward implication for (3) [(7)] requires
+Lemma 6(1) [6(2)] and Lemma 8(2) [8(3)] for the (0/1)- and (1/0)-segments of F [G],
+Lemma 6(6) [6(6)] for the (1/1)-segments of F (and hence G), as well as Lemma 6(4)
+
+Geoinformatica (2008) 12:313–356
+
+337
+
+[6(3)] and Lemma 8(5) [8(4)] for the (1/2)- and (2/1)-segments of G [F]. For (5),
+the forward implication can be shown as follows: if the boundaries of F and G
+intersect, then either they share a common meeting or intersection point, i.e., the
+ﬂag vF[bound_poi_shared] is set, or there are two halfsegments of F and G whose
+segment components are equal. No other alternative is possible due to our splitting
+strategy for halfsegments during the plane sweep. As we know, equal segments of F
+and G must have the segment classes (0/2), (2/0), or (1/1). The backward implication
+requires Lemma 6(5) for (0/2)- and (2/0)-segments of F (and hence G), Lemma 6(6)
+for (1/1)-segments of F (and hence G), and Lemma 8(1) for single meeting and
+intersection points. Statement (6) [(8)] corresponds to Lemma 6(1) [6(2)]. Statement
+(9) turns out to be always true since our assumption in an implementation is that our
+universe of discourse U is always properly larger than the union of spatial objects
+contained in it. This means for F and G that always F ∪ G ⊂ U holds. We can
+conclude that U − (F ∪ G) (cid:4)= ∅. According to DeMorgan’s Laws, this is equivalent
+to (U − F) ∩ (U − G) (cid:4)= ∅. But this leads us to the statement that F− ∩ G− (cid:4)= ∅. (cid:14)(cid:15)
+
+Summarizing our results from the last two subsections, we see that Lemmas 1
+to 5, and Theorem 1 provide us with a unique characterization of each individual
+matrix predicate of the nine-intersection matrix for each type combination. This
+approach has several beneﬁts. First, it is a systematically developed and not an
+ad hoc approach. Second, it has a formal and sound foundation. Hence, we can be
+sure about the correctness of topological feature ﬂags and segment classes assigned
+to matrix predicates, and vice versa. Third, this evaluation method is independent
+of the number of topological predicates and only requires a constant number of
+evaluations for matrix predicate characterizations. Instead of nine, even only eight
+matrix predicates have to be checked since the predicate F− ∩ G− (cid:4)= ∅ yields true
+for all type combinations. Fourth, we have proved the correctness of our provided
+implementation.
+
+Based on this result, we accomplish the predicate veriﬁcation of a topological
+predicate p with respect to a particular spatial data type combination on the basis
+of p’s nine-intersection matrix (as an example, see the complete matrices of the 33
+topological predicates of the region/region case in Fig. 10 and the complete matrices
+for the remaining cases in [30]) and the topological feature vectors vF and vG as
+follows: Depending on the spatial data type combination, we evaluate the logical
+expression (given in terms of vF and vG) on the right side of the ﬁrst 9IMC according
+to Lemma 1, 2, 3, 4, 5, or Theorem 1, respectively. We then match the Boolean result
+with the Boolean value at the respective position in p’s intersection matrix. If both
+Boolean values are equal, we proceed with the next matrix predicate in the nine-
+intersection matrix; otherwise p is false, and the algorithm terminates. Predicate p
+yields true if the Boolean results of the evaluated logical expressions of all 9IMCs
+coincide with the corresponding Boolean values in p’s intersection matrix. This
+requires constant time.
+
+Predicate determination also depends on a particular combination of spatial data
+types and leverages nine-intersection matrices and topological feature vectors. In a
+ﬁrst step, depending on the spatial data type combination and by means of vF and
+vG, we evaluate the logical expressions on all right sides of the 9IMCs according
+to Lemma 1, 2, 3, 4, 5, or Theorem 1, respectively. This yields a Boolean nine-
+intersection matrix. In a second step, this Boolean matrix is checked consecutively
+for equality against all nine-intersection matrices of the topological predicates of
+
+338
+
+Geoinformatica (2008) 12:313–356
+
+the particular type combination. If nα,β with α, β ∈ {point, line, region} is the number
+of topological predicates between the types α and β, this requires nα,β tests in the
+worst case.
+
+4.5 Evaluation of dimension-reﬁned topological predicates
+
+The 9IMC described so far is applicable to the evaluation of proper topological
+predicates. In this subsection, we show that, with a few extensions, the 9IMC can
+also evaluate dimension-reﬁned topological predicates (Section 2.3) for which the
+dimension of an intersection of two spatial objects plays an essential role. That is, the
+exploration algorithms provide us with enough topological information to perform
+this task. In this sense, dimension-reﬁned topological predicates are a reﬁnement
+of proper topological predicates. For example, in a meeting situation, we could be
+interested in a query whether two line objects meet in a zero-dimensional object
+(i.e., a point object), or in a one-dimensional object (i.e., a line object), or in both.
+Dimension reﬁnement is only possible for the type combinations line/line, line/region,
+and region/region. We distinguish the different dimensions of the maximal connected
+components of a given point set in the two-dimensional space and deﬁne a “dimen-
+sion type” as follows [26]:
+
+dimType = {⊥, 0D, 1D, 2D, 01D, 02D, 12D, 012D}
+
+This type allows us to represent the dimension of a given point set as the “union”
+of the dimensions of its maximal connected components. If a point set consists only
+of single points, only of lines, or only of regions, the corresponding value of type
+dimType is 0D, 1D, or 2D respectively. If a point set contains maximal connected
+components of different dimensions, the corresponding value is 01D, 02D, 12D, and
+012D respectively. The ⊥ symbol is used to represent the undeﬁned dimension of an
+empty point set.
+
+In [26], we have shown that the dimension of the intersection of a zero-, one-,
+or two-dimensional spatial component with another zero-, one-, or two-dimensional
+spatial component can only have the value ⊥, 0D, 1D, 2D, or 01D. Further, only in
+case of two one-dimensional components, their intersection may lead to components
+of different dimensions. This refers exclusively to the intersection between the
+interiors of two line objects, between the interior of a line object and the boundary
+of a region object, or between the boundaries of two region objects. The possible
+dimension values for these three cases are ⊥, 0D, 1D, or 01D. They are evaluated or
+determined by our extended 9IMC method described now.
+
+Let F, G ∈ α ∈ {line, region}, p be a topological predicate between F and G, and
+pd be a dimension-reﬁned predicate that is a reﬁnement of p. We leverage the
+following relationship between p and pd:
+
+( pd(F, G) ⇒ p(F, G)) ⇔ (¬ p(F, G) ⇒ ¬ pd(F, G))
+
+For the predicate veriﬁcation of pd, we ﬁrst apply the 9IMC for the predicate
+veriﬁcation of p. From the right side of the equivalence, we conclude that, if p(F, G)
+yields false, pd(F, G) must yield false too. Otherwise, if p(F, G) yields true, we cannot
+make a statement about pd because the satisfaction of p is only a necessary but
+not sufﬁcient condition for the satisfaction of pd. In this case, we need additional
+dimension characterizations that are given in Table 1. For each type combination,
+
+Geoinformatica (2008) 12:313–356
+
+339
+
+Table 1 Dimension characterizations for dimension-reﬁned topological predicates
+
+Type combination
+
+Intersection
+
+Dimension Dimension characterization
+
+line × line
+
+line × region
+
+region × region
+
+F◦ ∩ G◦ = ∅ ⊥
+F◦ ∩ G◦ (cid:4)= ∅ 0D
+01D
+1D
+F◦ ∩ ∂G = ∅ ⊥
+F◦ ∩ ∂G (cid:4)= ∅ 0D
+01D
+1D
+
+∂ F ∩ ∂G = ∅ ⊥
+
+¬vF [seg_shared] ∧ ¬vF [interior_ poi_shared]
+¬vF [seg_shared] ∧ vF [interior_ poi_shared]
+vF [seg_shared] ∧ vF [interior_ poi_shared]
+vF [seg_shared] ∧ ¬vF [interior_ poi_shared]
+¬vF [seg_shared] ∧ ¬vF [ poi_shared]
+¬vF [seg_shared] ∧ vF [ poi_shared]
+vF [seg_shared] ∧ vF [ poi_shared]
+vF [seg_shared] ∧ ¬vF [ poi_shared]
+¬(vF [(0/2)] ∨ vF [(2/0)] ∨ vF [(1/1)] ∨
+
+vF [(b ound_ poi_shared)])
+
+∂ F ∩ ∂G (cid:4)= ∅ 0D
+
+¬(vF [(0/2)] ∨ vF [(2/0)] ∨ vF [(1/1)]) ∧
+
+01D
+
+1D
+
+vF [(b ound_ poi_shared)]
+
+(vF [(0/2)] ∨ vF [(2/0)] ∨ vF [(1/1)]) ∧
+vF [(b ound_ poi_shared)]
+(vF [(0/2)] ∨ vF [(2/0)] ∨ vF [(1/1)]) ∧
+¬vF [(b ound_ poi_shared)]
+
+the table shows the relevant intersection between the one-dimensional components
+of these types, the possible dimensions such an intersection can have, and for each
+dimension its characterization on the basis of the topological feature vectors of this
+type combination. Since the dimension characterizations are different for each type
+combination, they are unique. Therefore, we only have to look up the type combina-
+tion and the dimension of interest, evaluate the corresponding dimension characteri-
+zation, and obtain its Boolean value as the result for the dimension-reﬁned predicate.
+For the predicate determination of the matching dimension-reﬁned topological
+predicate pd between F and G, we ﬁrst apply the 9IMC for the predicate determi-
+nation of the matching topological predicate p between F and G. Afterwards, we
+consecutively evaluate the four dimension characterizations of the type combination
+under consideration from Table 1. If the resulting dimension is the ⊥ element,
+the dimension-reﬁned predicate pd coincides with p. Otherwise, we obtain either
+pd = 0D- p, pd = 01D- p, or pd = 1D- p.
+
+5 Optimized evaluation methods
+
+Based on the exploration phase and leveraging the nine-intersection matrix charac-
+terization, we have found a universal, correct, complete, and effective method for
+both predicate veriﬁcation and predicate determination of proper and dimension-
+reﬁned topological predicates. So far, we have focused on the general applicability
+and universality of our overall approach. In this section, we show that it is even
+possible to ﬁne-tune and thus improve our 9IMC approach with respect to efﬁ-
+ciency if we look at predicate veriﬁcation and predicate determination separately.
+Section 5.1 delineates a novel method called matrix thinning for speeding up pred-
+icate veriﬁcation. Section 5.2 describes a ﬁne-tuned method called minimum cost
+decision tree for accelerating predicate determination.
+
+340
+
+Geoinformatica (2008) 12:313–356
+
+5.1 Matrix thinning for predicate veriﬁcation
+
+The approach of matrix thinning (MT) described in this subsection is based on the
+observation that for predicate veriﬁcation only a subset of the nine matrix predicates
+has to be evaluated in order to determine the validity of a given topological relation-
+ship between two spatial objects F and G. For example, for the predicate 1 (disjoint)
+of the region/region case, the combination that F◦ ∩ G◦ = ∅ ∧ ∂ F ∩ ∂G = ∅ holds
+(indicated by two 0’s) is unique among the 33 predicates. Consequently, only these
+two matrix predicates have to be tested in order to decide about true or false of this
+topological predicate.
+
+The question arises how the nine-intersection matrices can be systematically
+“thinned out” and nevertheless remain unique among the nα,β topological predicates
+between two spatial data types α and β. We use a brute-force algorithm (Fig. 6) that
+is applicable to all type combinations and that determines the thinned out version
+of each intersection matrix associated with one of the nα,β topological predicates.
+Since this algorithm only has to be executed once for each type combination, runtime
+performance and space efﬁciency are not so important here.
+
+In a ﬁrst step (lines 8 to 10), we create a matrix pos of so-called position matrices
+corresponding to all possible nine-intersection matrices, i.e., to the binary versions of
+the decimal numbers 1 to 511 if we read the nine-intersection matrix (9IM) entries
+row by row. Each “1” in a position matrix indicates a position or entry that is later
+used for checking two intersection matrices against each other. A “0” in a position
+matrix means that the corresponding entries in two compared intersection matrices
+are not compared and hence ignored.
+
+Because our goal is to minimize the number of matrix predicates that have to be
+evaluated, in a second step, we sort the position matrices with respect to the number
+of ones in increasing order (lines 11 to 12). That is, the list of position matrices will
+ﬁrst contain all matrices with a single “1”, then the matrices with two ones, etc.,
+until we reach the matrix with nine ones. At the latest here, it is guaranteed that an
+intersection matrix is different to all the other nα,β − 1 intersection matrices. Hence,
+our algorithm terminates.
+
+Fig. 6 Algorithm for computing the thinned out versions of the nα,β intersection matrices associated
+with the topological predicates between two spatial data types α and β
+
+Geoinformatica (2008) 12:313–356
+
+341
+
+Fig. 7 Complete and thinned out matrices for the ﬁve topological predicates of the point/point case
+
+In a third step, we initialize the entries of all nα,β thinned out intersection matrices
+
+with the “don’t care” symbol “∗”.
+
+The fourth and ﬁnal step computes the thinned out matrices (lines 15 to 33).
+The idea is to ﬁnd for each intersection matrix (line 15) a minimal number of
+entries that together uniquely differ from the corresponding entries of all the
+other nα,β − 1 intersection matrices. Therefore, we start traversing the 511 position
+matrices (line 17). For all “1”-positions of a position matrix we ﬁnd out whether
+for the intersection matrix under consideration another intersection matrix exists
+that has the same matrix values at these positions (lines 20 to 21). As long as no
+equality has been found, the intersection matrix under consideration is compared to
+the next intersection matrix (lines 19 to 23). If an equality is found, the next position
+matrix is taken (line 30). Otherwise, we have found a minimal number of matrix
+predicates that are sufﬁcient and unique for evaluation (line 24). It remains to copy
+the corresponding values of the nine-intersection matrix into the thinned out matrix
+(lines 25 to 28).
+
+Note that for the same intersection matrix it may be possible to ﬁnd several
+thinned out matrices with the same number of matrix predicates to be checked
+such that each of them represents the intersection matrix uniquely among the
+nα,β intersection matrices. Our algorithm always computes the thinned out matrix
+with the “lowest numerical value”. The complete and thinned out matrices for
+the point/point case are shown in Fig. 7, for the point/line case in Fig. 8, for the
+point/region case in Fig. 9, and for the region/region case in Fig. 10. The complete
+and thinned out matrices for the line/line case and the line/region case can be found
+in [30]. Deﬁnition 7 deﬁnes the measures we use to summarize and interpret these
+results.
+
+Deﬁnition 7 Let IMMT be a thinned out 9IM, and cnt be a function that
+counts the number of relevant matrix predicates of IMMT. Let nα,β with α, β ∈
+{point, line, region} be the number of (thinned out) 9IMs of the topological predicates
+
+Fig. 8 Complete and thinned out matrices for the 14 topological predicates of the point/line case
+
+342
+
+Geoinformatica (2008) 12:313–356
+
+Fig. 9 Complete and thinned out matrices for the seven topological predicates of the point/
+region case
+
+between the types α and β, and nk
+α,β be the number of thinned out 9IMs for which k
+(with 1 ≤ k ≤ 9) matrix predicates have to be evaluated. Let the cost, i.e., the total
+number of matrix predicates to be evaluated for α and β, be Cα,β without matrix
+α,β with matrix thinning. We then denote with RACMT
+thinning and CMT
+α,β the reduced
+average cost in percent when using matrix thinning. We obtain:
+
+| 1 ≤ i ≤ nα,β , 1 ≤ k ≤ 9, cnt(IMMT
+
+cnt(IMMT) = |{(l, m) | 1 ≤ l, m ≤ 3, IMMT[l, m] ∈ {0, 1}}|
+1.
+(cid:3)
+(cid:5)(cid:3)
+(cid:4)
+(cid:3)
+(cid:3)
+) = k
+α,β =
+IMMT
+2. nk
+i
+(cid:6)
+9
+3. nα,β =
+k=1 nk
+α,β
+4. Cα,β = 8 · nα,β
+5. ACα,β = Cα,β /nα,β = 8
+(cid:6)
+9
+α,β =
+6. CMT
+7. ACMT
+8. RACMT
+
+k=1 k · nk
+α,β
+α,β /nα,β
+α,β = 100 · ACMT
+
+α,β /ACα,β = 100 · CMT
+
+α,β = CMT
+
+α,β /Cα,β
+
+i
+
+Fig. 10 Complete and thinned out matrices for the 33 topological predicates of the region/region
+case
+
+Geoinformatica (2008) 12:313–356
+
+343
+
+Table 2 Summary of complete and thinned out 9IMs for the topological predicates of all type
+combinations
+
+Type combination nα,β
+
+α,β with k =
+nk
+
+Cα,β ACα,β CMT
+
+α,β ACMT
+
+α,β RACMT
+α,β
+
+1 2 3 4
+
+5
+
+6
+
+7
+
+8 9
+
+point / point
+line / line
+region / region
+point / line
+point / region
+line / region
+
+5
+82
+33
+14
+7
+43
+
+0
+
+1 3 1
+0
+0 0 2 12
+0 6 6 10 11
+0
+0 0 6
+0 3 4
+0
+0 0 5 18 12
+
+0
+0 0 0
+4 50 12 2 0
+0 0 0
+0 0 0
+0 0 0
+1 0 0
+
+0
+0
+0
+7
+
+8
+0
+
+40
+656
+264
+112
+56
+344
+
+8
+8
+8
+8
+8
+8
+
+10
+474
+125
+50
+18
+196
+
+2.00
+5.78
+3.79
+3.57
+2.57
+4.56
+
+25.00
+72.26
+47.35
+44.64
+32.14
+56.98
+
+ACMT
+
+α,β denotes the average number of matrix predicates to be evaluated. Table 2
+shows a summary of the results and in the last two columns the considerable
+performance enhancement of matrix thinning. The reduction of matrix predicate
+computations ranges from 27% for the line/line case to 75% for the point/point case.
+
+5.2 The minimum cost decision tree for predicate determination
+
+In Section 4, we have seen that, in the worst case, nα,β matching tests are needed
+to determine the topological relationship between any two spatial objects. For each
+test, Boolean expressions have to be evaluated that are equivalent to the eight matrix
+predicates and based on topological feature vectors. We propose two methods to
+improve the performance. The ﬁrst method reduces the number of matrix predicates
+to be evaluated. This goal can be directly achieved by applying the method of matrix
+thinning described in Section 5.1. That is, the number nα,β of tests remains the
+same but for each test we can reduce the number of matrix predicates that have
+to be evaluated by taking the thinned out instead of the complete nine-intersection
+matrices.
+
+The second method, which will be our focus in this subsection, aims at reducing
+the number nα,β of tests. This method is based on the complete nine-intersection
+matrices but also manages to reduce the number of matrix predicates that have to be
+evaluated. We propose a global concept called minimum cost decision tree (MCDT)
+for this purpose. The term “global” means that we do not look at each intersection
+matrix individually but consider all nα,β intersection matrices together. The idea is to
+construct a full binary decision tree whose inner nodes represent all matrix predicates,
+whose edges represent the Boolean values true or false, and whose leaf nodes are the
+nα,β topological predicates. Note that, in a full binary tree, each node has exactly zero
+or two children. For searching, we employ a depth-ﬁrst search procedure that starts
+at the root of the tree and proceeds down to one of the leaves which represents the
+matching topological predicate. The performance gain through the use of a decision
+tree is signiﬁcant since the tree partitions the search space at each node and gradually
+excludes more and more topological predicates. In the best case, at each node of the
+decision tree, the search space, which comprises the remaining topological predicates
+to be assigned to the remaining leaves of the node’s subtree, is partitioned into two
+halves so that we obtain a perfectly balanced tree. This would guarantee a search time
+of O(log nα,β ). But in general, we cannot expect to obtain a bisection of topological
+
+344
+
+Geoinformatica (2008) 12:313–356
+
+predicates at each node since the number of topological predicates yielding true
+for the node’s matrix predicate will be different from the number of topological
+predicates yielding false for that matrix predicate. An upper bound is the number
+8, since at most eight matrix predicates have to be checked to identify a topological
+predicate uniquely; the ninth matrix predicate yields always true. Hence, our goal
+is to determine a nearly balanced, cost-optimal, full binary decision tree for each
+collection of nα,β intersection matrices.
+
+If we do not have speciﬁc knowledge about the probability distribution of topo-
+logical predicates in an application (area), we can only assume that they occur
+with equal distribution. But sometimes we have more detailed information. For
+example, in cadastral map applications, an adequate estimate is that 95% (or even
+more) of all topological relationships between regions are disjoint and the remaining
+5% are meet. Our algorithm for constructing MCDTs considers these frequency
+distributions. It is based on the following cost model:
+
+Deﬁnition 8 Let Mα,β be an MCDT for the spatial data types α, β ∈ {point,
+line, region}, wi be the weight of the topological predicate pi with 1 ≤ i ≤ nα,β and
+0 < wi < 1, and di with 1 ≤ di ≤ 8 be the depth of a node in Mα,β at which pi is
+identiﬁed. We deﬁne the total cost CMCDT
+
+of Mα,β as
+
+α,β
+
+CMCDT
+α,β
+
+=
+
+wi · di
+
+with
+
+wi = 1
+
+nα,β(cid:7)
+
+i=1
+
+nα,β(cid:7)
+
+i=1
+
+That is, our cost model is to sum up all the weighted path lengths from each
+leaf node representing a topological predicate to the root of the MCDT. If all
+topological predicates occur with equal probability, we set wi = 1
+nα,β . The issue now
+is how to ﬁnd and build an optimal MCDT with minimal total cost CMCDT
+on the
+basis of a given probability distribution (weighting) for the topological predicates.
+If all topological predicates occur with equal probability, this problem corresponds
+to ﬁnding an optimal MCDT that requires the minimal averaqe number of matrix
+predicate evaluations to arrive at an answer.
+
+α,β
+
+Figure 11 shows our recursive algorithm MCDT for computing a minimum cost
+decision tree for a set im of nα,β nine-intersection matrices that are annotated with
+
+Fig. 11 Minimum cost decision tree algorithm
+
+Geoinformatica (2008) 12:313–356
+
+345
+
+a weight representing the corresponding predicates’s probability of occurrence, as it
+is characteristic in a particular application (line 2). Later these matrices become the
+leaves of the decision tree. In addition, the algorithm takes as an input the list mp of
+eight matrix predicates (we remember that the exterior/exterior intersection yields
+always true) that serve as discriminators and are attached to the inner nodes (line 3).
+This list is necessary to ensure that a matrix predicate is not used more than once as
+a discriminator in a search path. During the recursion, the while-loop (lines 8 to 30)
+terminates if either the list mp of matrix predicates to be processed is empty or the
+list im of nine-intersection matrices contains only a single element. For each matrix
+predicate used as a discriminator, the operation new_node creates a new tree node
+node (line 9). The matrix predicate discriminator as well as the list im annotate the
+tree node node (line 10). If im has only one element (line 11), we know that node is
+a leaf node representing the topological predicate pertaining to the single element in
+im. The cost for this leaf node is 0 since its current depth is 0 (line 12). Otherwise, if
+im consists of more than one element, we partition it into two lists iml and imr (line
+17). The partitioning is based on the values of each nine-intersection matrix in im
+with respect to the matrix predicate serving as the discriminator. If such a value is 0
+(false), the corresponding nine-intersection matrix is added to the list iml; otherwise,
+it is added to the list imr. A special case now is that im has not been partitioned so
+that either iml or imr is empty (condition in lines 18 to 19 yields false). In this case, the
+discriminator does not contribute to a decision and is skipped; the next discriminator
+is selected (line 28). If both lists iml and imr are nonempty (lines 18 to 19), we remove
+the discriminator from a new copy new_mp of the list mp (line 20) and recursively
+ﬁnd the minimum cost decision trees for the nine-intersection matrices in iml (line
+21) and in imr (line 22). Eventually, all recursions will reach all leaf nodes and begin
+returning while recursively calculating the cost of each subtree found. The cost of a
+leaf node is 0. The cost of an inner node node can be expressed in terms of the cost of
+its two nonempty subtrees node.lchild and node.rchild processing the lists iml and imr
+respectively. The depth of each leaf node with respect to node is exactly one larger
+than the depth of the same leaf node with respect to either node.lchild or node.rchild.
+Therefore, besides the costs of these two subtrees, for each leaf node of the subtree
+with root node, we have to add the leaf node’s cost (weight) one time (lines 23
+to 24). These weights are stored in node.im. The cost of node is then compared
+with the best cost determined so far, and the minimum will be the new best option
+(lines 25 to 26). Eventually, when all the matrix predicates have been considered,
+we obtain the best choice and return the corresponding minimum cost decision
+tree (line 31).
+
+Table 3 shows the results of this algorithm by giving a textual pre-order (depth-
+ﬁrst search) encoding of all MCDTs for all type combinations on the basis of equal
+probability of occurrence of all topological predicates. The encodings allow an easy
+construction of the MCDTs. Since MCDTs are full binary trees, each node has
+exactly zero or two child nodes. We leverage this feature by representing an MCDT
+as the result of a pre-order tree traversal. The pre-order sequence of nodes is unique
+in this case for constructing the decision tree since inner nodes with only one child
+node cannot occur. Each inner node in the pre-order sequence is described as a term
+XY where X, Y ∈ {◦, ∂,− }. Such a term represents a matrix predicate AX ∩ BY (cid:4)= ∅
+serving as a discriminator. For example, the term XY =◦ ∂ denotes the matrix
+predicate A◦ ∩ ∂ B (cid:4)= ∅ (preﬁx notation for boundary). Each leaf node represents
+
+346
+
+Geoinformatica (2008) 12:313–356
+
+0
+1
+
+9
+
+◦
+◦
+
+◦
+−
+
+∂
+−
+
+∂
+−
+
+∂
+−
+
+9
+2
+
+9
+6
+
+0
+8
+
+2
+1
+
+1
+2
+
+∂
+−
+
+−
+◦
+
+−
+◦
+
+6
+1
+
+∂
+−
+
+6
+
+5
+4
+
+0
+1
+
+−
+◦
+
+8
+1
+
+∂
+−
+
+◦
+−
+
+9
+7
+
+∂
+−
+
+◦
+−
+
+−
+◦
+
+∂
+◦
+
+1
+2
+
+∂
+∂
+
+9
+3
+
+5
+
+9
+
+4
+4
+
+∂
+∂
+
+7
+1
+
+−
+◦
+
+−
+◦
+
+∂
+−
+
+1
+1
+
+−
+◦
+
+9
+2
+
+∂
+−
+
+1
+1
+
+0
+2
+
+−
+◦
+
+8
+3
+
+∂
+−
+
+∂
+−
+
+∂
+−
+
+2
+4
+
+∂
+−
+
+8
+2
+
+8
+6
+
+−
+◦
+
+◦
+−
+
+◦
+∂
+
+8
+2
+
+8
+
+0
+1
+
+−
+◦
+
+∂
+◦
+
+∂
+−
+
+3
+4
+
+◦
+◦
+
+−
+◦
+
+1
+4
+
+−
+◦
+
+7
+2
+
+7
+6
+
+8
+7
+
+4
+
+8
+1
+
+∂
+−
+
+7
+
+∂
+−
+
+9
+1
+
+7
+3
+
+−
+◦
+
+◦
+−
+
+8
+3
+
+∂
+∂
+
+∂
+−
+
+∂
+∂
+
+∂
+−
+
+∂
+−
+
+7
+7
+
+3
+
+7
+1
+
+7
+2
+
+∂
+−
+
+2
+
+8
+1
+
+6
+3
+
+∂
+∂
+
+2
+
+7
+3
+
+◦
+◦
+
+0
+4
+
+◦
+∂
+
+6
+2
+
+6
+6
+
+∂
+−
+
+∂
+−
+
+∂
+−
+
+−
+◦
+
+−
+◦
+
+∂
+◦
+
+−
+◦
+
+−
+◦
+
+1
+3
+
+1
+
+∂
+−
+
+4
+5
+
+9
+3
+
+◦
+◦
+
+5
+2
+
+◦
+−
+
+6
+7
+
+1
+
+4
+1
+
+∂
+∂
+
+∂
+◦
+
+7
+
+9
+
+∂
+∂
+
+5
+3
+
+0
+3
+
+∂
+−
+
+6
+3
+
+3
+5
+
+∂
+−
+
+2
+6
+
+∂
+−
+
+5
+6
+
+5
+7
+
+∂
+∂
+
+∂
+∂
+
+6
+2
+
+6
+
+6
+
+8
+
+5
+1
+
+4
+3
+
+9
+2
+
+◦
+◦
+
+◦
+−
+
+∂
+−
+
+∂
+∂
+
+1
+6
+
+−
+◦
+
+4
+6
+
+∂
+−
+
+◦
+◦
+
+6
+1
+
+5
+2
+
+5
+
+−
+◦
+
+∂
+−
+
+4
+1
+
+∂
+−
+
+∂
+−
+
+5
+3
+
+−
+◦
+
+2
+5
+
+−
+◦
+
+∂
+−
+
+∂
+∂
+
+∂
+−
+
+−
+◦
+
+0
+1
+
+5
+1
+
+∂
+−
+
+∂
+−
+
+5
+
+1
+
+∂
+∂
+
+3
+3
+
+∂
+∂
+
+5
+
+4
+3
+
+−
+◦
+
+◦
+−
+
+6
+1
+
+0
+6
+
+4
+2
+
+3
+6
+
+∂
+∂
+
+2
+
+∂
+−
+
+4
+2
+
+4
+
+4
+
+∂
+◦
+
+−
+◦
+
+2
+3
+
+−
+◦
+
+4
+
+∂
+−
+
+8
+4
+
+8
+
+5
+1
+
+9
+5
+
+3
+2
+
+◦
+−
+
+4
+7
+
+◦
+◦
+
+−
+◦
+
+◦
+−
+
+3
+
+−
+◦
+
+6
+
+∂
+◦
+
+∂
+−
+
+5
+2
+
+◦
+−
+
+3
+3
+
+7
+4
+
+7
+
+∂
+−
+
+∂
+−
+
+∂
+−
+
+−
+◦
+
+3
+7
+
+6
+
+9
+
+0
+2
+
+∂
+−
+
+4
+1
+
+∂
+◦
+
+5
+
+3
+1
+
+−
+◦
+
+4
+2
+
+1
+
+◦
+−
+
+∂
+−
+
+∂
+−
+
+4
+1
+
+−
+◦
+
+2
+2
+
+∂
+∂
+
+∂
+−
+
+5
+
+8
+
+9
+1
+
+−
+◦
+
+3
+1
+
+3
+
+∂
+−
+
+2
+1
+
+∂
+∂
+
+−
+◦
+
+◦
+◦
+
+−
+◦
+
+6
+4
+
+◦
+◦
+
+3
+1
+
+8
+5
+
+1
+2
+
+◦
+∂
+
+2
+7
+
+◦
+−
+
+∂
+−
+
+◦
+−
+
+3
+3
+
+2
+
+∂
+−
+
+2
+
+−
+◦
+
+−
+◦
+
+8
+2
+
+3
+2
+
+3
+4
+
+3
+
+−
+◦
+
+◦
+−
+
+1
+5
+
+∂
+−
+
+7
+5
+
+∂
+−
+
+2
+3
+
+◦
+−
+
+−
+◦
+
+7
+
+∂
+∂
+
+2
+3
+
+1
+
+2
+1
+
+−
+◦
+
+−
+◦
+
+7
+
+7
+2
+
+2
+2
+
+2
+4
+
+2
+
+∂
+∂
+
+4
+
+0
+5
+
+−
+◦
+
+∂
+−
+
+−
+◦
+
+1
+3
+
+1
+7
+
+2
+8
+
+−
+◦
+
+∂
+∂
+
+3
+2
+
+∂
+−
+
+∂
+−
+
+1
+1
+
+1
+
+∂
+∂
+
+−
+◦
+
+6
+2
+
+−
+◦
+
+−
+◦
+
+◦
+−
+
+◦
+∂
+
+3
+
+∂
+−
+
+2
+1
+
+6
+5
+
+0
+2
+
+∂
+−
+
+0
+7
+
+1
+8
+
+◦
+∂
+
+−
+◦
+
+2
+2
+
+1
+3
+
+∂
+◦
+
+∂
+−
+
+∂
+◦
+
+◦
+◦
+
+4
+
+∂
+−
+
+∂
+∂
+
+1
+4
+
+−
+◦
+
+∂
+◦
+
+∂
+−
+
+9
+4
+
+1
+1
+
+5
+5
+
+9
+1
+
+0
+3
+
+∂
+−
+
+∂
+−
+
+∂
+◦
+
+3
+1
+
+∂
+−
+
+0
+3
+
+◦
+◦
+
+−
+◦
+
+◦
+◦
+
+◦
+∂
+
+3
+
+∂
+∂
+
+7
+1
+
+0
+4
+
+t
+n
+i
+o
+p
+/
+
+t
+n
+i
+o
+p
+
+e
+n
+i
+l
+
+/
+
+e
+n
+i
+l
+
+n
+o
+i
+g
+e
+r
+
+/
+n
+o
+i
+g
+e
+r
+
+n
+o
+i
+g
+e
+r
+
+/
+
+t
+n
+i
+o
+p
+
+n
+o
+i
+g
+e
+r
+
+/
+
+e
+n
+i
+l
+
+e
+n
+i
+l
+
+/
+
+t
+n
+i
+o
+p
+
+s
+e
+t
+a
+c
+i
+d
+e
+r
+p
+l
+a
+c
+i
+g
+o
+l
+o
+p
+o
+t
+
+l
+l
+a
+f
+o
+e
+c
+n
+e
+r
+r
+u
+c
+c
+o
+f
+o
+y
+t
+i
+l
+i
+b
+a
+b
+o
+r
+p
+l
+a
+u
+q
+e
+f
+o
+s
+i
+s
+a
+b
+e
+h
+t
+n
+o
+s
+n
+o
+i
+t
+a
+n
+i
+b
+m
+o
+c
+
+e
+p
+y
+t
+
+l
+l
+a
+
+r
+o
+f
+
+s
+n
+o
+i
+t
+a
+t
+n
+e
+s
+e
+r
+p
+e
+r
+
+r
+e
+d
+r
+o
+-
+e
+r
+p
+T
+D
+C
+M
+
+3
+
+e
+l
+b
+a
+T
+
+n
+o
+i
+t
+a
+t
+n
+e
+s
+e
+r
+p
+e
+r
+
+r
+e
+d
+r
+o
+e
+r
+p
+T
+D
+C
+M
+
+n
+o
+i
+t
+a
+n
+i
+b
+m
+o
+c
+
+e
+p
+y
+T
+
+Geoinformatica (2008) 12:313–356
+
+347
+
+the nine-intersection matrix number of a topological predicate. The matrix numbers
+are speciﬁed in the Figs. 7, 8, 9 and 10 as well as in [30], [35].
+
+Figures 12 shows a visualization of the MCDTs of three spatial data type combina-
+tions on the assumption that all topological predicates occur with equal probability.
+The MCDTs for the other type combinations have been omitted due to their very
+large size. Each inner node is annotated with a label XY where X ∈ {A◦, ∂ A, A−}
+and Y ∈ {B◦, ∂ B, B−}. A label represents a matrix predicate X ∩ Y (cid:4)= ∅ serving as
+a discriminator. For example, the label XY = A◦∂ B denotes the matrix predicate
+A◦ ∩ ∂ B (cid:4)= ∅. If the evaluation of a matrix predicate yields false, we move to the
+left child; otherwise, we move to the right child. Each leaf node represents the nine-
+intersection matrix number of a topological predicate.
+
+The following deﬁnition speciﬁes measures that we use to summarize and interpret
+these results. We are especially interested in the average number of matrix predicates
+to be evaluated.
+
+α,β
+
+Deﬁnition 9 Let CMCDT
+denote the total cost of an MCDT Mα,β according to
+Deﬁnition 8. Let nα,β with α, β ∈ {point2D, line2D, region2D} be the number of 9IMs
+of the topological predicates between the types α and β, IMi with 1 ≤ i ≤ nα,β be a
+9IM, and dk
+α,β be the number of topological predicates associated with leaf nodes
+in Mα,β of depth k (with 1 ≤ k ≤ 9). Further, let Cα,β be the cost without using an
+MCDT, ACα,β be the average cost without using an MCDT, ACMCDT
+be the average
+
+α,β
+
+a
+
+b
+
+c
+
+Fig. 12 Minimum cost decision trees for the 5 topological predicates of the point/point case (a), the 7
+topological predicates of the point/region case (b), and the 14 topological predicates of the point/line
+case (c) under the assumption that all topological predicates occur with equal probability
+
+348
+
+Geoinformatica (2008) 12:313–356
+
+cost when using an MCDT, and RACMCDT
+when using an MCDT. The measures are deﬁned as:
+
+α,β
+
+be the reduced average cost in percent
+
+α,β = |{IMi | 1 ≤ i ≤ nα,β , 1 ≤ k ≤ 9, depth(IMi, Mα,β ) = k}|
+
+1. dk
+(cid:6)
+9
+2. nα,β =
+k=1 dk
+α,β
+3. Cα,β = 8 · nα,β
+4. ACα,β = 4 · (nα,β + 1)
+5. ACMCDT
+6. RACMCDT
+
+= CMCDT
+α,β
+
+α,β
+
+α,β
+
+/nα,β
+
+= 100 · ACMCDT
+
+α,β
+
+/ACα,β
+
+To determine the average cost ACα,β without using an MCDT in (4), we observe
+that the best case is to check 8 matrix predicates, the second best case is to check 16
+matrix predicates, etc., and the worst case is to check all 8 · nα,β matrix predicates.
+The average number of matrix predicates that has to be checked without using an
+MCDT is therefore 8 · (1 + 2 + . . . + nα,β )/nα,β = 4 · (nα,β + 1). ACMCDT
+in (5) yields
+the average number of matrix predicates to be evaluated. Table 4 shows a summary
+of the results and in the last two columns the considerable performance enhancement
+of minimum cost decision trees. The reduction of matrix predicate computations
+ranges from 90% for the point/point case to 98% for the line/line case.
+
+α,β
+
+The MCDT approach is similar to a technique introduced in [9] for topological
+predicates between simple regions. However, their method of determining a binary
+decision tree rests on the thinned out nine-intersection matrices and results in a near
+optimal algorithm and solution. The reason why optimality is not achieved is that
+a topological predicate can have multiple, equipollent thinned out matrices, i.e.,
+thinned out matrices are not unique. Therefore, using a speciﬁc set of thinned out
+matrices as the basis for partitioning the search space can only lead to an optimal de-
+cision tree for this set of thinned out matrices and may not be optimal in the general
+case. Our algorithm rests on the complete nine-intersection matrices. It produces an
+optimal decision tree (several optimal trees with the same total cost may exist) for
+the speciﬁed set of nine-intersection matrices and the given probability distribution.
+One can verify this by applying our algorithm to the eight nine-intersection matrices
+for two simple regions and the same probability distribution as speciﬁed in [9]. Our
+algorithm produces an optimal tree with the total cost of 2.13 while the so-called
+
+Table 4 Summary of the MCDTs for all type combinations on the basis of equal probability of
+occurrence of all topological predicates
+
+Type combination nα,β dk
+
+α,β with k =
+
+Cα,β ACα,β CMCDT
+
+α,β
+
+ACMCDT
+α,β
+
+RACMCDT
+α,β
+
+1 2 3 4
+
+5
+
+6
+
+7
+
+8 9
+
+point / point
+line / line
+region / region
+point / line
+point / region
+line / region
+
+0
+
+0
+5 0 3 2
+0
+82 0 0 0
+8
+3 22
+33 0 0 0
+0
+0
+14 0 0 2 12
+0
+7 0 1 6
+0
+0
+3 15 19
+43 0 0 0
+
+0 0 0
+0
+0 48 30 4 0
+0 0 0
+0 0 0
+0 0 0
+6 0 0
+
+40
+656
+264
+112
+56
+344
+
+24
+332
+136
+60
+32
+176
+
+12
+530
+170
+54
+20
+243
+
+2.40
+6.46
+5.15
+3.86
+2.86
+5.65
+
+10.00
+1.95
+3.79
+6.43
+8.94
+3.21
+
+Geoinformatica (2008) 12:313–356
+
+349
+
+“reﬁned cost method” in [9], which uses thinned out matrices, produces a tree with
+the total cost of 2.16.
+
+We can observe the following relationship between MCDTs and thinned out
+
+matrices:
+
+Lemma 9 For each combination of spatial data types α and β, the total cost of its
+minimum cost decision tree (given in Table 4) is greater than or equal to the total cost
+of all its thinned out matrices (given in Table 2), i.e.,
+
+CMCDT
+α,β
+
+≥ CMT
+α,β
+
+Proof The proof is given by contradiction. Assume that for a spatial data type
+combination the total cost of its MCDT is less than the total cost of all its thinned
+out matrices. Consequently, there must be at least one path from the root to a leaf in
+the MCDT that contains a smaller number of matrix predicates than the number of
+matrix predicates in the thinned out matrix for the topological predicate associated
+with that leaf. This implies that we can identify this topological predicate with a
+smaller number of matrix predicate decisions than the number of matrix predicates
+in its thinned out matrix. But this contradicts the deﬁnition of a thinned out matrix.
+(cid:14)(cid:15)
+
+6 Implementation, testing, approach assessment, and performance study
+
+Section 6.1 describes our implementation approach and environment for the con-
+cepts presented in this article. Section 6.2 delineates various tests based on this
+implementation in order to verify the correctness of the concepts. We perform
+an overall assessment of our approach from two perspectives. From a qualitative
+perspective, in Section 6.3, we brieﬂy summarize the beneﬁts of our design decision
+and compare our approach with an alternative ad hoc approach. From a quantitative
+perspective, in Section 6.4, we conduct a performance study and analyze the results.
+
+6.1 Implementation
+
+To verify the feasibility, practicality, correctness, and efﬁciency of the concepts pre-
+sented, we have implemented and tested our approach. In order to have full control
+about the implementation and the testing of our concepts, we have implemented
+them in our own algebra package SPAL2D (Spatial Algebra 2D) for handling two-
+dimensional spatial data. The implementation makes use of the complex spatial
+data types point, line, and region, as they have been described in Sections 2.1.
+Note that all predicate implementation and evaluation concepts presented in this
+article could also be integrated into commercial and public domain software systems
+like ESRI’s Spatial Database Engine (ArcSDE), the Informix Geodetic DataBlade,
+Oracle Spatial, DB2’s Spatial Extender, and the JTS Topology Suite (see Section 2.1)
+since the only precondition is the existence of complex spatial data types. The
+concepts could also be used for implementing the spatial data type speciﬁcations of
+the Open Geospatial Consortium.
+
+SPAL2D provides the three universal interface methods TopPredExploration,
+TopPredVeriﬁcation, and TopPredDetermination for providing the functionality of
+the exploration phase and the evaluation phase. The method TopPredExploration
+
+350
+
+Geoinformatica (2008) 12:313–356
+
+explores the topological data of interest for two interacting spatial objects. This
+interface is overloaded to accept two spatial objects of any type combination as
+input. Depending on the input object types, it executes one of the six plane sweep
+based exploration algorithms from Section 3 and [36]. The output consists of two
+topological feature vectors which hold the relevant topological information for both
+argument objects.
+
+The methods TopPredVeriﬁcation and TopPredDetermination handle predicate
+veriﬁcation and predicate determination queries respectively. Both interfaces are
+overloaded and take two topological feature vectors as input. Both methods leverage
+the general evaluation method of nine-intersection matrix characterization from
+Section 4. The interface method TopPredVeriﬁcation takes a predicate identiﬁcation
+number as an additional input parameter. It corresponds to the matrix number
+(speciﬁed in [35] and used in Figs. 7–10 as well as in [30]) of the topological pred-
+icate to be evaluated. The method implements the optimized evaluation technique
+of matrix thinning from Section 5. The output is the Boolean value true if the
+topological relationship between the two spatial objects corresponds to the speciﬁed
+predicate; otherwise, the value is false. The interface method TopPredDetermination
+implements the optimized evaluation technique of minimum cost decision trees from
+Section 5 and outputs the matrix number of the topological predicate corresponding
+to the topological relationship between the two spatial objects.
+
+6.2 Testing
+
+For testing the results of the exploration phase, our collection of test cases consists
+of 184 different scenes corresponding to the total number of topological predicates
+between spatial objects. A special test case generation technique has been leveraged
+to check the functionality of the exploration algorithms and the correctness of the
+resulting values of the topological feature vectors. The vector values have to be
+independent of the location of the two spatial objects involved. In order to check
+this, this technique is able to generate arbitrarily many different orientations of a
+topologically identical scene of two spatial objects with respect to the same sweep
+line and coordinate system. The idea is to rotate such a scene iteratively by a random
+angle around a central reference point. Special test cases like vertical segments are
+considered too. For the 184 explicitly constructed base cases, we have generated at
+least 20,000 test cases for the topological predicates of each of the six type combina-
+tions by our random scene rotation technique. In total, more than 120,000 test cases
+have been successfully generated, tested, and checked for predicate veriﬁcation and
+predicate determination and indicate the correctness of our concepts and the ability
+of our algorithms to correctly discover the needed topological information from any
+given scene.
+
+For testing the results of the evaluation phase, we take the topological feature
+vectors as input for the nine-intersection matrix characterization method and the
+optimization methods of matrix thinning and minimum cost decision trees. The
+correctness of all methods has been checked by a technique known as gray-box
+testing, which combines the advantages of two other techniques called black-box
+testing and white-box testing. The black-box testing technique arranges for well
+deﬁned input and output objects. In our case, the input consists of two correct
+
+Geoinformatica (2008) 12:313–356
+
+351
+
+topological feature vectors as well as a matrix number of the topological predicate
+to be veriﬁed in case of predicate veriﬁcation. This enables us to test the functional
+behavior of the three method implementations. The output is guaranteed to be either
+a Boolean value (predicate veriﬁcation) or a valid matrix number of a topological
+relationship predeﬁned for the type combination under consideration (predicate
+determination). The white-box testing technique considers every single execution
+path and guarantees that each statement is executed at least once. This ensures that
+all cases that are speciﬁed and handled by the algorithms are properly tested.
+
+All cases have been successfully tested and indicate the correctness of our con-
+cepts and the ability of our algorithms to correctly verify or determine a topological
+predicate.
+
+6.3 Qualitative assessment
+
+Although it is usually accepted that some kind of plane-sweep algorithm is sufﬁcient
+for implementing topological predicates, this article has demonstrated that the
+decision on an appropriate and sophisticated implementation strategy is of crucial
+importance. The possible ad hoc approach of implementing a separate algorithm for
+each of the topological predicates results in a large number of algorithms possibly
+up to the total number of topological predicates of a type combination. Even though
+this approach is relatively straightforward, it suffers from many problems including
+large system implementation, non-guaranteed correctness of the algorithms, error-
+proneness, redundancy, testing and evaluation difﬁculties, and performance degra-
+dation. An essential problem of the ad hoc approach is the difﬁculty in handling
+predicate determination queries. No particular algorithm is suitable for this task, thus
+requiring a linear iteration through the large number of algorithms for all topological
+predicates.
+
+Unlike the ad hoc approach, our approach does not suffer from these problems.
+In our implementation, only a single, generic, and parameterized plane-sweep
+algorithm is employed for all exploration algorithms. Only a single exploration
+algorithm is implemented for all topological predicates of each type combination.
+This implementation strategy allows us to take advantage of signiﬁcantly smaller
+system implementation, widespread code reusability and sharing, manageable system
+testing, and efﬁcient handling of both predicate determination and veriﬁcation
+queries. This centralized approach is possible because, instead of considering each
+topological predicate individually, we look deeper into their common deﬁnition
+blocks which are the nine matrix predicates of the nine-intersection matrix. This
+leads us to a systematic method. By creating a bidirectional link between the
+matrix predicates and topological feature vectors, we are able to give a unique
+characterization for each matrix predicate. This unique characterization frees us from
+providing algorithms for each topological predicate in case of predicate veriﬁcation
+and from evaluating all topological predicates in case of predicate determination.
+Furthermore, the correctness of the method is formally proven. Last but not least,
+based on the concept of topological feature vectors, predicate matching techniques
+such as matrix thinning and minimum cost decision trees can be used to increase the
+efﬁciency of answering predicate veriﬁcation and predicate determination queries
+respectively.
+
+352
+
+Geoinformatica (2008) 12:313–356
+
+6.4 Performance study and analysis
+
+Three main reasons impede a comparison of our concepts with available commercial
+and public domain implementations of topological relationships. First, in Section 2.4
+we have seen that all available implementations of topological relationships mainly
+focus on the eight predicates disjoint, meet, overlap, equal, inside, contains, covers,
+and coveredBy that have been generalized to and uniﬁed for all combinations of
+complex spatial data types. Hence, a comparison to our much more ﬁne-grained
+collection of 184 (248) topological predicates (Section 2.2) is not possible. Second,
+studying the corresponding documentation, we have not found a formal deﬁnition of
+the semantics of these eight generic predicates for all type combinations. Third, an
+implementation of our collection of topological predicates and predicate execution
+techniques is not trivial in the context of commercial implementations since their al-
+gorithms and program code are not publicly available and their system environments
+are very special. For example, the algorithms for the eight topological predicates
+have not been published.
+
+Instead, we have performed a performance study that underpins the strengths of
+our approach by quantitatively comparing the performance of our non-optimized
+alternative (only 9IMC) with our optimized evaluation techniques (9IMC plus matrix
+
+a
+
+b
+
+Fig. 13 Predicate veriﬁcation without and with matrix thinning
+
+c
+
+Geoinformatica (2008) 12:313–356
+
+353
+
+thinning, 9IMC plus minimum cost decision tree). Our study shows that our approach
+does not only provide qualitative (in terms of correctness) but also quantitative ben-
+eﬁts by applying optimization methods for the evaluation of topological predicates.
+For each type combination, we measure and calculate the average execution time
+for verifying and determining each predicate both without and with optimization.
+Of course, we cannot expect a time gain of one or more orders of magnitude since
+a plane sweep is involved in all exploration algorithms, which prevents a better
+performance [30].
+
+For predicate veriﬁcation (PV), Fig. 13b and c illustrate the average execution
+time for each predicate of each type combination without and with matrix thinning
+(MT). The overall average for each type combination is shown in Fig. 13a. The
+performance improvements from using matrix thinning are quite noticeable and
+range from 13% execution time reduction for the line/line case up to 55% for the
+point/point case.
+
+Similarly, for predicate determination (PD), Fig. 14b and c show the average
+execution time for each predicate of each type combination without and with the
+use of minimum cost decision trees. The overall average for each type combination
+is shown in Fig. 14a. The results indicate signiﬁcant performance improvements from
+using minimum cost decision trees. The improvements range from 75% execution
+time reduction for the point/region case up to 91% for the line/line case.
+
+a
+
+b
+
+Fig. 14 Predicate determination without and with MCDT
+
+c
+
+354
+
+Geoinformatica (2008) 12:313–356
+
+Although the execution time reductions are remarkable for both predicate ver-
+iﬁcation and especially predicate determination and clearly reﬂect the trend, the
+empirical results shown in Figs. 13 and 14 are not as optimistic as the computational
+results given in Tables 2 and 4. The reason that we cannot reach these lower bounds
+in practice consists in programming and runtime overheads such as extra conditional
+checks, construction of thinned out matrices and minimum cost decision trees, and
+their traversals. However, even with these overheads, it is evident that our approach
+provides considerable performance optimizations.
+
+7 Conclusions
+
+While, from a conceptual perspective, topological predicates between spatial objects
+have been investigated to a large extent, the design of efﬁcient implementation
+methods for them has been widely neglected. But an efﬁcient implementation is
+of essential importance for the processing of queries that contain spatial joins and
+spatial selections. Especially, the introduction of complex spatial data types and the
+resulting increase of topological predicates between all their combinations require
+correct and efﬁcient implementation concepts.
+
+We propose a two-phase approach that consists of an exploration phase and an
+evaluation phase and that can be applied to both predicate veriﬁcation and predicate
+determination. The goal of the exploration phase is to traverse a given scene of two
+objects in space, collect any topological information of importance, and store it in
+topological feature vectors. The goal of the evaluation phase is to interpret the gained
+topological information and match it against the topological predicates by leveraging
+a general evaluation method called nine-intersection matrix characterization. This
+method generates a formally proven connection between theoretical concepts (nine-
+intersection matrix, matrix predicate) and implementation concepts (topological fea-
+ture vector, segment class). It is independent of the number of topological predicates
+of a particular type combination. Two sophisticated optimization techniques, called
+matrix thinning and minimum cost decision tree, are introduced which help us speed
+up predicate determination and predicate veriﬁcation respectively. We have also
+provided an experimental performance study which documents the efﬁciency of our
+approach. We have implemented our concepts as part of our SPAL2D software
+library which is a spatial type system currently under development and determined
+for an integration into extensible databases.
+
+References
+
+1. M. de Berg, M. van Krefeld, M. Overmars, and O. Schwarzkopf. Computational Geometry:
+
+Algorithms and Applications. 2nd edition, Springer-Verlag, 2000.
+
+2. A. Brodsky and X.S. Wang. On Approximation-based Query Evaluation, Expensive Predicates
+and Constraint Objects. Int. Workshop on Constraints, Databases, and Logic Programming, 1995.
+3. J. Claussen, A. Kemper, G. Moerkotte, K. Peithner, and M. Steinbrunn. “Optimization and
+evaluation of disjunctive queries,” IEEE Transactions on Knowledge and Data Engineering, Vol.
+12(2):238–260, 2000.
+
+4. E. Clementini and P. Di Felice. “A comparison of methods for representing topological relation-
+
+ships,” Information Sciences Applications, Vol. 3(3):149–178, 1995.
+
+Geoinformatica (2008) 12:313–356
+
+355
+
+5. E. Clementini and P. Di Felice. “A model for representing topological relationships between
+complex geometric features in spatial databases,” Information Systems, Vol. 90(1–4):121–136,
+1996.
+
+6. E. Clementini and P. Di Felice. “Topological invariants for lines,” IEEE Transactions on Knowl-
+
+7. E. Clementini, P. Di Felice, and G. Califano. “Composite regions in topological queries,” Infor-
+
+edge and Data Engineering, Vol. 10(1), 1998.
+
+mation Systems, Vol. 20(7):579–594, 1995.
+
+8. E. Clementini, P. Di Felice, and P. van Oosterom. “A small set of formal topological relationships
+suitable for end-user interaction,” in 3rd Int. Symp. on Advances in Spatial Databases, LNCS 692,
+pp. 277–295, 1993.
+
+9. E. Clementini, J. Sharma, and M.J. Egenhofer. “Modeling topological spatial relations: strategies
+
+for query processing,” Computers and Graphics, Vol. 18(6):815–822, 1994.
+
+10. Z. Cui, A.G. Cohn, and D.A. Randell. “Qualitative and topological relationships,” in 3rd Int.
+
+Symp. on Advances in Spatial Databases, LNCS 692, pp. 296–315, 1993.
+
+11. M.J. Egenhofer. “Spatial SQL: A query and presentation language,” IEEE Transactions on
+
+Knowledge and Data Engineering, Vol. 6(1):86–94, 1994.
+
+12. M.J. Egenhofer and J. Herring. “A mathematical framework for the deﬁnition of topological
+
+relationships,” in 4th Int. Symp. on Spatial Data Handling, pp. 803–813, 1990.
+
+13. M.J. Egenhofer and J. Herring. Categorizing binary topological relations between regions, lines,
+and points in geographic databases. Technical Report 90-12, National Center for Geographic
+Information and Analysis, University of California, Santa Barbara, 1990.
+
+14. M.J. Egenhofer and D. Mark. “Modeling conceptual neighborhoods of topological line-region
+
+relations,” Int. Journal of Geographical Information Systems, Vol. 9(5):555–565, 1995.
+
+15. M.J. Egenhofer. “Deriving the composition of binary topological relations,” Journal of Visual
+
+Languages and Computing, Vol. 2(2):133–149, 1994.
+
+16. M.J. Egenhofer, E. Clementini, and P. Di Felice. “Topological relations between regions with
+
+holes,” Int. Journal of Geographical Information Systems, Vol. 8(2):128–142, 1994.
+
+17. ESRI Spatial Database Engine (SDE). Environmental Systems Research Institute, Inc., 1995.
+18. S. Gaal. Point Set Topology. Academic Press, 1964.
+19. R.H. Güting. “Geo-relational algebra: A model and query language for geometric database
+
+systems,” in Int. Conf. on Extending Database Technology, pp. 506–527, 1988.
+
+20. R.H. Güting and M. Schneider. “Realm-based spatial data types: The ROSE algebra,” VLDB
+
+Journal, Vol. 4:100–143, 1995.
+
+of Data, pp. 325–335.
+
+21. J.M. Hellerstein. “Practical predicate placement,” in ACM SIGMOD Int. Conf. on Management
+
+22. J.M. Hellerstein and M. Stonebraker. “Predicate migration: Optimizing queries with expensive
+
+predicates,” in ACM SIGMOD Int. Conf. on Management of Data, pp. 267–276, 1993.
+
+23. IBM. Informix geodetic datablade module: User’s guide, 2002.
+24. IBM. DB2 spatial extender and geodetic data management feature—user’s guide and reference,
+
+25. International Standard Organization. ISO 19107: Geographic information—Spatial schema,
+
+2006.
+
+2003.
+
+26. M. McKenney, A. Pauly, R. Praing, and M. Schneider. Dimension-Reﬁned Topological Predi-
+
+cates. 13th ACM Symp. on Geographic Information Systems, pp. 240–249, 2005.
+
+27. Open Geospatial Consortium Incorporation. OpenGIS implementation speciﬁcation for geo-
+
+graphic information – simple feature access – Part 1: Common architecture, 2006.
+28. Oracle Corporation. Oracle Spatial User’s Guide and Reference 10g Release 2, 2005.
+29. J.A. Orenstein and F.A. Manola. “PROBE Spatial Data Modeling and Query Processing in an
+Image Database Application,” IEEE Transactions on Software Engineering, Vol. 14:611–629,
+1988.
+
+30. R. Praing and M. Schneider. Efﬁcient implementation techniques for topological predicates on
+complex spatial objects: The evaluation phase. Technical Report, University of Florida, Depart-
+ment of Computer & Information Science & Engineering, 2006.
+
+31. M.A. Rodriguez, M.J. Egenhofer, and A.D.Blaser. “Query pre-processing of topological con-
+straints: Comparing a composition-based with neighborhood-based approach,” in Int. Symp. on
+Spatial and Temporal Databases, LNCS 2750, pp. 362–379. Springer-Verlag, 2003.
+
+32. M. Schneider. “Spatial data types for database systems-ﬁnite resolution geometry for geographic
+
+information systems,” volume LNCS 1288. Springer-Verlag, Berlin Heidelberg, 1997.
+
+33. M. Schneider. “Implementing topological predicates for complex regions,” in Int. Symp. on
+
+Spatial Data Handling, pp. 313–328, 2002.
+
+356
+
+Geoinformatica (2008) 12:313–356
+
+34. M. Schneider. “Computing the topological relationship of complex regions,” in 15th Int. Conf.
+
+on Database and Expert Systems Applications, pp. 844–853, 2004.
+
+35. M. Schneider and T. Behr. “Topological relationships between complex spatial objects,” ACM
+
+Transactions on Database Systems, Vol. 31(1):39–81, 2006.
+
+36. M. Schneider and R. Praing. Efﬁcient implementation techniques for topological predicates
+on complex spatial objects: The exploration phase. Technical Report, University of Florida,
+Department of Computer & Information Science & Engineering, 2006.
+
+37. Vivid Solutions. JTS Topology Suite: Technical Speciﬁcations, 2003.
+38. M.F. Worboys and P. Bofakos. “A canonical model for a class of areal spatial objects,” in 3rd Int.
+
+Symp. on Advances in Spatial Databases (LNCS 692), pp. 36–52. Springer-Verlag, 1993.
+
+Reasey Praing is a Ph.D. student and a research assistant in the Computer and Information Science
+and Engineering department at the University of Florida. He has a Master of Science degree from
+the University of Southern California. His research interests are spatial, spatio-temporal, and moving
+objects databases. He has published about 10 articles and conference papers on spatial and spatio-
+temporal database systems.
+
+Markus Schneider
+is an Assistant Professor of Computer Science at the University of Florida
+and holds a doctoral degree from the University of Hagen, Germany. His research interests are
+databases in general, advanced databases for new, emerging applications, spatial databases, fuzzy
+spatial databases, and spatio-temporal and moving objects databases. He is coauthor of a textbook
+on moving objects databases, author of a monograph in the area of spatial databases, author of a
+German textbook on implementation concepts for database systems, and has published about 70
+articles, conference papers, and book chapters on database systems. He is on the editorial board of
+GeoInformatica.
+
+

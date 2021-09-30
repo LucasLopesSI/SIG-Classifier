@@ -1,0 +1,3034 @@
+International Journal of Geographical Information
+Science
+
+ISSN: 1365-8816 (Print) 1362-3087 (Online) Journal homepage: http://www.tandfonline.com/loi/tgis20
+
+Spatial indexing of large volume swath data sets
+
+BRADFORD G. NICKERSON & FENG GAO
+
+To cite this article: BRADFORD G. NICKERSON & FENG GAO (1998) Spatial indexing of large
+volume swath data sets, International Journal of Geographical Information Science, 12:6, 537-559,
+DOI: 10.1080/136588198241662
+
+To link to this article:  http://dx.doi.org/10.1080/136588198241662
+
+Published online: 06 Aug 2010.
+
+Submit your article to this journal 
+
+Article views: 58
+
+View related articles 
+
+Citing articles: 1 View citing articles 
+
+Full Terms & Conditions of access and use can be found at
+http://www.tandfonline.com/action/journalInformation?journalCode=tgis20
+
+Download by: [Columbia University Libraries]
+
+Date: 10 August 2017, At: 01:38
+
+int. j. geographical information science, 1998, vol. 12, no. 6, 537± 559
+
+Research Article
+
+Spatial indexing of large volume swath data sets
+
+BRADFORD G. NICKERSON
+University of New Brunswick, Faculty of Computer Science, PO Box 4400,
+Fredericton, NB, Canada E3B 5A3
+email: bgn@unb.ca
+
+and FENG GAO
+Berger & Co., 5 Greenway Plaza, Suite 1700, Houston, Texas 77046, USA
+email: fgao@writeme.com
+
+(Received February, 1994; accepted December, 1997 )
+
+Abstract. This paper introduces a new hierarchical data structure that supports
+e(cid:129) cient insertion, deletion and two-dimensional range query operations on swath
+data. Three di(cid:128) erent spatial indexing methods were designed, implemented and
+compared on a large swath data set. Two of the methods are based on the Morton
+code sequence, and the third uses an R-tree for the index. A relational database
+management system ( RDBMS) was used to build one of the Morton code sequence
+indexing methods. Experiments with the large scale data set show that R-tree
+indexing is superior to Morton sequence indexing by providing two to nine times
+faster two dimensional range search speed, occupying slightly less disk space, and
+supporting the range deletion operation. Time and space requirements for spatial
+indexing with the RDBMS were shown experimentally to be signi® cantly worse
+than for the direct C code implementation of the Morton code sequence indexing.
+
+1. Introduction
+
+Large volume spatial data in the form of swaths arises from instruments such as
+multi-beam swath bathymetry systems, satellite multi-spectral scanners and aircraft-
+born scanners (e.g., Clarke et al. 1996, HYDRO International 1997 a, 1997 b, Pratson
+and Haxby 1997 ). Such data have the property of being acquired in long lines
+following the path of the measuring platform, with pro®
+les of data being measured
+across the path as the platform moves. These swaths of data often overlap in space
+as the same areas are re-observed. The editing or cleaning of the data and subsequent
+development of products derived from it usually require fast retrieval of all pertinent
+data within a speci® ed query window. A spatial index on the data makes this fast
+retrieval possible. For swath data, a pro®
+le is considered as the elemental object
+referenced in the spatial index.
+
+Traditional linear indexing methods are not well suited to spatial objects such
+as lines and polygons (e.g., Preparata and Shamos 1985; Samet 1990 a; Abel and
+Mark 1990 ). Numerous spatial data structures have been introduced for indexing
+multi-dimensional objects. One approach is to map a two-dimensional image into a
+one-dimensional line, known as the space-®
+lling curve (e.g., Witten and Wyvill 1983).
+The Morton sequence (Samet 1990 a, 1990b, Peuquet 1984) is one way to obtain
+this two-to-one-dimensional conversion. Abel and Smith ( 1983) describe a method
+
+1365± 8816/98 $12´00 Ñ
+
+1998 Taylor & Francis Ltd.
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 538
+
+B. Nickerson
+
+of generating linear keys corresponding to the smallest quadrant covering a rectangle.
+Another approach is to build spatial indices in tree structures. The k-d-B-tree of
+Robinson ( 1981 ) uses a B-tree like structure to hold point data. A height balanced
+search tree, called the R-tree (Guttman 1984 ), can be used to index d-dimensional
+rectangles. The R-tree has properties very similar to the B-tree (e.g., Comer 1979,
+Sengupta and Korobkin 1994, Kruse et al. 1997) used widely for indexing one-
+dimensional data. Many variants of the R-tree for indexing multidimensional objects
+have been proposed, including the R + tree (Sellis et al, 1987 ), the cell tree (GuÈ nther
+1989), and the R*-tree ( Beckmann et al. 1990). A good overview of these and other
+spatial data indexing techniques, along with an extension of the cell tree is given in
+GuÈ nther and Gaede ( 1997).
+
+This paper focusses on two indexing mechanisms for swath-type data. Morton
+sequences are used in a direct (implemented in C) data structure as well as in a
+relational database management system (with indexing on the Morton sequences) to
+compare the performance of the two. The second indexing method chosen was the
+R-tree as it is fairly straightforward to implement (for both insertion and deletion)
+and is representative of the tree-based spatial indexing methods. In addition, the
+R-tree is reported as having relatively good performance compared to later variants
+of the R-tree (e.g. Smith and Gao 1990, Greene 1989).
+
+Spatial indices support basic operations on a set S of spatial data, i.e.,
+
+INSERT(u,S)
+DELETE(u,S )
+MEMBER(u,S)
+R SEARCH (QW ,S¾ ,S) Find and return the subset S¾ of spatial objects within (or
+
+Add a spatial object u to the set of indexed spatial objects S.
+Remove u from S.
+Is spatial object u×S?
+
+intersecting) a query window QW .
+
+R DELETE(QW ,S) Delete all spatial objects within a query window.
+R SEARCH (standing for range search) is a very common operation, and the other
+operations can be considered as support for this query. R DELETE(QW,S) is useful
+for editing operations where the data is ordered in one or more dimensions, and it
+is desired to remove or shift an ordered subset of them in one operation.
+
+1.1. Morton sequence
+
+A Morton sequence is a sorted list of Morton codes. A Morton code is a
+representation of a spatial point. It is calculated by interleaving the binary representa-
+tion of the coordinates of a point (e.g., Samet, 1990 a). If we compute the Morton
+codes for all points in a 2D space, and sort the Morton codes in an increasing order,
+then the 2D space is transformed into a linear sequence, which ®
+lls the space
+recursively in a
+pattern. This is very convenient, as we can now apply one-
+dimensional indexing methods to the Morton sequence.
+
+Figure 1 shows an example of 63 data points and their corresponding Morton
+sequence. Each point is labelled by its base 10 Morton code. Neighbouring points
+in the two-dimensional space are kept as close as possible in the Morton sequence.
+A Morton code acts as a key for the sequence, and these keys can be used directly
+in a relational database. Note that only point coordinates are expressed by Morton
+codes. This use of corner points to represent the spatial extent of objects leads to
+the problem of `over-search’ when performing a range search. This is discussed
+further in section 3.2.
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 Spatial indexing
+
+539
+
+Figure 1.
+
+Example data points ( 43 in total ) and their corresponding Morton sequence.
+
+1.2. R-tree
+
+The basic idea of R-tree indexing is to use a minimal bounding rectangle (MBR)
+to enclose an object. According to their locations in the space, the MBRs are divided
+into groups which are covered by successively larger MBRs to form a hierarchical
+data structure. In a range search, by checking each MBR at the lower level of the
+tree, only data near the search range are examined and irrelevant regions can be
+eliminated at lower levels of the tree (Guttman 1984). In ® gure 2, for example, we
+can avoid visiting the second and third branch of the tree by determining that QW 1
+is not within the rectangles R13 and R14. Only one node at level 1 is visited to ® nd
+out that R3 and R4 intersect with QW 1.
+
+The R-tree indexing structure has several advantages. Firstly, minimal bounding
+rectangles give us a rough idea about the spatial extent of objects. An MBR has its
+edges parallel to the coordinate space axes and, for two-dimensional objects, the
+MBR is de® ned by four numbers. MBRs are easy to describe and compare with
+query windows. Secondly, leaf nodes store the MBRs of actual spatial objects; all
+information about the spatial extent is stored in one place. Thirdly, a range search
+can be performed quickly because of the R-tree’s hierarchical organization, particu-
+larly if the data is packed.
+
+The over-search problem still exists in R-tree structures due to coverage and
+overlap problems ( Roussopoulos and Leif ker 1985). QW 2 in ® gure 2 illustrates this
+over-search problem. The search algorithm visits two branches of the tree under R12
+and R13, and ® nds out there is no MBR within the search range.
+
+In most cases of spatial indexing, coverage and overlap problems cannot be
+completely avoided. To minimize the problem we can choose the nearest neighbours
+of spatial data and pack them into a node, resulting in the so-called `packed’ R-tree
+les of swath data are naturally packed due
+( Roussopoulos and Leif ker 1985). Pro®
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 540
+
+B. Nickerson
+
+Figure 2. An R-tree with query windows.
+
+to the way in which they are observed (i.e., in a continuous stream with pro®
+le i ).
+being immediately adjacent to pro®
+
+le i+1
+
+2. Hierarchical data structures
+
+The data structures discussed here grew from a need for fast retrieval of swath
+data for editing in the Hydrographic Data Cleaning System ( HDCS) ( Ware et al.
+1992) developed by the Ocean Mapping Group at the University of New Brunswick.
+The data for each pro®
+le consists of soundings or depths at discrete points along
+the pro®
+le (see ® gure 3 ). Notice that individual data points (soundings in this case)
+do not necessarily line up exactly on the line segment joining the two data points
+furthest to the left and right of the line followed by the measuring platform (in this
+case, a ship, a boat or a submersible).
+
+In the HDCS, observed data are organized hierarchically ( Ware et al. 1992 ). All
+the data are stored under the a root directory ( here called HDCS), which consists
+of directories named after each project. In each project, several vessels may be used.
+Each vessel directory contains day directories. Each day directory consists of line
+directories storing the data surveyed in a day. The PosnDepth ®
+le under the line
+les which in turn contain sets of sounding s or depth measure-
+directory includes pro®
+ments (see ® gure 4 ). Besides the primary observed data of positions and depth, there
+is a host of other information observed from a wide variety of other sensors that is
+stored to assist with processing and editing of the observed data. This includes
+information from the navigation system, gyro, vessel dynamics, tide gauges and
+salinity/temperature/depth pro®
+les. Data speci® c to projects (e.g., project name,
+general location), vessels (e.g., vessel type, instrument calibrations), and days (e.g.,
+weather observations, predicted tides) are all stored at the appropriate level in the
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 Spatial indexing
+
+541
+
+Figure 3. A line, its pro®
+
+les and its soundings.
+
+Figure 4. The HDCS hierarchical data structure.
+
+hierarchy. This organization is typical of swath data observations, and can easily be
+adapted to other types of swath data besides multi-beam soundings.
+
+Each pro®
+
+le consists of a constant number of data points whose locations are
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 542
+
+B. Nickerson
+
+described by latitude and longitude. The depth at each location is stored along with
+the time of observation for all data points within the pro®
+le’s MBR is
+obtained by ® nding the minimum latitude and longitude, and maximum latitude
+and longitude of the locations of all data points in the pro®
+le. The MBR for a line
+le
+is determined by calculating the smallest rectangle that encompasses all the pro®
+MBRs for that line. The MBRs for a day, vessel, project and the root directory are
+similarly obtained by calculating the smallest rectangle encompassing all the MBRs
+of their immediate child directories. For example, at the project level, an index ®
+le
+is built in a project directory for all the vessel directories. Each record contains the
+name of the vessel directory and the MBR of all data in that vessel’s directory.
+
+le. A pro®
+
+The hierarchical nature of the data directory tree structure provides a natural
+le is
+base for building hierarchical spatial indexing structures. A spatial
+les, and also at the lower levels of the tree; i.e.,
+established at the line level for pro®
+in the day, vessel, project and root directories. This is depicted in ® gure 5. For the
+purposes of this research, both Morton sequence indexing and R-tree indexing are
+stored in this fashion within the hierarchy.
+
+index ®
+
+Range search of the index structure is performed by ® rst specifying a query
+window (QW ) using four numbers in two ( latitude, longitude) pairs (e.g., the lower
+left and upper right corners). Given a query window, a range search can be performed
+on the complete tree in three steps as follows:
+( 1) Search the directory spatial index ®
+
+les to determine the lines whose MBRs
+
+fall into or overlap with the QW .
+le spatial index ®
+
+( 2) Search the pro®
+
+le at each line directory to obtain the
+
+pro®
+
+les whose MBRs are within or overlap with the QW .
+
+( 3) Use the actual data of each found pro®
+
+le to determine which pro®
+
+les intersect
+
+the QW .
+
+These three steps are illustrated in ® gure 6.
+
+Figure 5. Organization of the hierarchical spatial index structure for swath data.
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 Spatial indexing
+
+543
+
+Figure 6. The three steps for range searching.
+
+The range search function takes two input arguments; ( 1) the query window
+de® ned as above, and ( 2) the name of a project in which to search. The search results
+are returned in a single structure called the SpatialSubsetStruct organized hierarchic-
+les under the given project. Only
+ally according to the vessels, days, lines, and pro®
+the directory level information and pro®
+le numbers which are within or overlap the
+query window are kept in this structure. There are di(cid:128) erences in how the range
+search is carried out for each of the three di(cid:128) erent spatial indices.
+
+Spatial index ®
+
+3. The M orton sequence index
+les are built in the line directories (as indicated by the
+les for pro®
+DepthSpatialIndex item in ® gure 4). For each pro®
+le’s MBR, four Morton codes are
+calculated; one for each of the lower-left corner, upper-left, lower-right and upper-
+right corners. The Morton codes for all pro®
+les in a line are sorted into a linear
+le. The Morton code acts as a key for the spatial
+sequence and stored into an index ®
+index ®
+le number is stored with the Morton code.
+This pro®
+le number, in turn, becomes the key for retrieving actual data from the
+PosnDepth ®
+
+le, and the corresponding pro®
+
+le.
+
+3.1. Morton codes f rom latitude and longitude
+
+To calculate the Morton code for a data point, the point latitude and longitude
+are converted to two 32 bit unsigned integers. These are then bit interleaved to
+obtain a 64 bit Morton code (represented in C as typedef unsigned long
+MortonCode (2);). The ® rst bit of MortonCode( 0) is set to the ® rst ( least signi® c-
+ant) bit of latitude, the second bit of MortonCode( 0) is set to the ® rst bit of longitude,
+etc., until all the bits of MortonCode( 0) are set to the lower bits of the latitude and
+longitude. The ® rst bit of MortonCode( 1) is set to the 17th bit of the latitude, the
+second bit of MortonCode( 1) is set to the 17th bit of the longitude, and so on. As
+an example, a line with two pro®
+le which
+le generates four Morton codes correspond-
+looks like that given in table 1. Each pro®
+ing to the four corners of its MBR.
+
+les might have a Morton sequence index ®
+
+The decision to use a 32 bit unsigned integer (which gives a 64 bit Morton code)
+for each coordinate limits the resolution of the indexing method. The longitude range
+of [0, 2p) is mapped to an integer range of [0, 232). This means that each each
+integer unit on the equator represents approximately 9´3 mm. Similarly, the latitude
+range of [ Õ p/2, +p/2] means that each integer unit represents approximately
+4´7 mm. This is adequate for most geographical spatial indexing needs.
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 544
+
+B. Nickerson
+
+Table 1. Example of a Morton sequence index ®
+
+le. The second column shows the base 10
+representation of the unsigned 64 bit Morton code for one corner point of the MBR
+le. These codes are listed in sorted order. The third column shows the
+of one pro®
+sequential number of this pro®
+le in the line, which acts as a direct index into the
+le.
+actual data ®
+
+Rec. #
+
+Morton code
+
+Pro®
+
+le
+
+1
+2
+3
+4
+5
+6
+7
+8
+
+1001106346 4265910753
+1001106347 2940317924
+2432762112 1422273483
+2432762113
+96680654
+2971918482 2713232884
+2971918482 2839162324
+2971918482 3774457253
+2971918482 3900386693
+
+1
+2
+1
+1
+2
+2
+1
+2
+
+3.2. Range search for the Morton sequence index
+
+After the Morton sequence index ®
+
+le has been built, a range search for pro®
+
+les
+inside a QW can be performed in the following way. Firstly, the Morton codes of
+the window’s lower-left and upper-right corners (MC LL and MCUR , respectively) can
+be calculated. Secondly, a binary search is used to ® nd the location of MC LL (or, if
+there is no point with this Morton code, the location of the next Morton code
+greater than MC LL) in the Morton sequence. Morton codes larger than MC LL are
+visited linearly (and reported ) until the end of the sequence or until a Morton code
+larger than MCUR is reached, whichever comes ® rst. The report mechanism uses a
+le is encoun-
+counter array (initialized to zero) to count the number of times a pro®
+tered. As each pro®
+le, those
+pro®
+
+les with counts greater than zero are reported as being in range.
+
+le has four entries in the Morton sequence index ®
+
+This algorithm su(cid:128) ers from the `over-search’ problem illustrated in ® gure 7. In
+this example, the Morton codes for the query window are MC LL=9 and MCUR=
+50. Ignoring all points with a MC < MC LL and MC > MCUR still leaves the points
+10, 14, 15, 16, 17, 18, 19, 21, 22, 23, 27, 28, 30, 31, 32, 35, 36, 37, 40, 41, 42, 43, 46,
+47 to be searched. Only ® ve of these points, i.e., 14, 15, 35, 36 and 37, are actually
+inside the query window.
+
+Yang’s algorithm ( 1992) stops the linear search when the Morton sequence leaves
+the query window, calculates the next point where the sequence enters the QW , and
+resumes the linear search from the entering point. In ® gure 7, after the sequence
+leaves the query window at Morton code 16, we can calculate that the entering point
+is 24. Starting the linear search again at 24 allows us to skip points 17, 18, 19, 21,
+22, and 23. We used Yang’s approach to solve the oversearch problem.
+
+The Morton sequence range search has a further problem if the QW is small
+les. The example in ® gure 8 illustrates this. The
+with respect to the size of the pro®
+thick line in ® gure 8 (a) represents the pro®
+le, which has a Morton sequence of ( 1,
+3, 21, 23). The QW has MC LL=5 and MCUR=19. This means that when the range
+search is performed as described above, none of the Morton codes for the pro®
+le
+le is not detected as intersecting the QW .
+are encountered, which means that the pro®
+In ® gure 8 (b), the pro®
+le Morton sequence of ( 3, 11, 23, 31) does intersect with the
+QW MC LL=7 and MCUR=27, but Yang’s over-search removal algorithm eliminates
+all of the Morton sequence points from being reported. This problem can be solved
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 Spatial indexing
+
+545
+
+Figure 7. Morton sequence and a query window (from Yang 1992).
+
+by ensuring that the QW is never less than the size of a single pro®
+the Morton sequence range search method somewhat data dependent.
+
+le, which makes
+
+4. Relational database M orton sequence index
+
+The one-dimensional nature of the Morton sequence allows the use of relational
+database tables to store the spatial index, with Morton codes as the primary key.
+Commercial database management systems provide the facilities to de® ne, insert,
+update and retrieve data with the added value of reducing redundancy, controlling
+concurrent use, supporting data independence, and enforcing data integrity. With its
+¯ exibility in data structures and system designs (e.g., Date 1981, ElMasri and Navathe
+1994) and its rapid improvement in performance, relational database management
+systems ( RDBMSs) are one of the main methods for large scale data storage.
+Researchers are also exploring the use of RDBMSs to deal with geographical informa-
+tion (e.g., Waugh and Healey 1987, Sinha and Waugh 1988, Abel 1989 ).
+
+4.1. Relational table structure
+
+All the spatial index information is kept in relational tables using the INGRES
+commercial RDBMS. All the tables are maintained in a single database. To accurately
+compare the RDBMS timings with those of the direct Morton sequence indexing,
+hierarchical index mechanisms are preserved in RDBMS spatial indexing. For each
+line, there is a table containing all the pro®
+le Morton codes of the line, and for each
+directory, a table accommodating all the MBRs of the immediate sub-directory. For
+example, a project has a table for all the vessel directories under this project.
+
+The tables for the directories have the same schema, and so do the tables for the
+pro®
+le Morton sequences of di(cid:128) erent lines. The reason for organizing the indices in
+di(cid:128) erent tables is that if a directory is found to be totally outside the query window,
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 546
+
+B. Nickerson
+
+Figure 8.
+
+Illustration of undetected query window intersections using the Morton sequence
+le is ( 1, 3, 21, 23), and
+le Morton
+
+range search. For case (a), the Morton sequence for the pro®
+the query window has MC LL=5 and MCUR=19. For case (b), the pro®
+sequence is (3, 11, 23, 31) and the query window has MC LL=7 and MCUR=27.
+
+then the tables containing indices for the directories and pro®
+can be ignored.
+
+les under this directory
+
+The database schema for pro®
+
+les is listed in table 2 with the key in italic font.
+Tables for directory indexing were also used, but these are not shown here for the
+sake of brevity (complete details are given by (Gao 1993)). The RDBMS did not
+
+Table 2. RDBMS table for pro®
+
+les.
+
+Item
+
+Morton code for this pro®
+rectangle corner point
+
+le minimal bounding
+
+Sequential number of this pro®
+
+le in the line
+
+Type
+
+Float
+
+Integer
+
+Size
+
+128 bits
+
+32 bits
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 Spatial indexing
+
+547
+
+have an unsigned integer type, so the 64-bit unsigned Morton code was represented
+as two double precision ® elds. This takes an extra eight bytes for a Morton code as
+each double requires 64 bits. The algorithms to encode and decode a Morton code
+are not a(cid:128) ected since a Morton code in memory is still stored in a two element
+array as described in section 3. A Morton code is converted into two double values
+before being written to the RDBMS table; the two double values of a Morton code
+are converted into two unsigned integers after being read into memory. Another
+option would be to convert an unsigned integer into a character string and store
+the string in the table. This would, however, slow down the retrieval by the extra
+CPU time spent on conversion, and require more space.
+
+An index ®
+
+le (e.g., using a B-tree) for the line and directory tables was not used.
+It was anticipated that this would lead to slower performance for the RDBMS.
+Further discussion on this is given below in section 6.
+
+4.2. Range search for the relational database Morton sequence index
+
+Range searches are performed in a similar manner to that used for direct Morton
+sequence indexing. The same search algorithms are used, and the search results are
+hierarchically organized as discussed at the beginning of section 3. The only di(cid:128) erence
+between range searching in direct Morton sequence indexing and RDBMS Morton
+sequence indexing is how the data are retrieved from the index ®
+
+les.
+
+Since query conditions vary with the change of the Morton code values, SELECT
+statements must be formed and executed during run-time. Dynamic SQL was used
+to handle this situation ( INGRES 1990 ). The basic idea of dynamic SQL is using
+PREPARE FROM and DESCRIBE INTO statements to obtain the type and size
+information of an SQL statement. A structure called SQLDA (SQL Descriptor Area)
+is used to house the information and to pass it into the program. After each FETCH
+statement retrieves data from the table into a cursor, items of interest can be correctly
+interpreted using the type and size information for the elements of the table.
+
+5. The R-tree index
+
+The R-tree index ®
+
+les are also organized hierarchically according to the hierarch-
+ical nature of the observed data. MBRs are established for project, vessel, day and
+line directories, as well as pro®
+le is
+le contains the complete R-tree structure.
+les on the line. This ®
+built for all the pro®
+The leaf nodes of the tree contain the pro®
+les;
+le numbers and the MBRs of the pro®
+the non-leaf nodes contain the pointers to their children and the MBRs of the
+children.
+
+les. Under each line directory, an R-tree index ®
+
+Under each project, vessel and day directory, an R-tree index structure is estab-
+lished for all its child directories. For example, there are R-tree index ®
+les under a
+day directory for all the lines measured during the day. The non-leaf nodes contain
+the pointers to their children and the MBRs of the children, and the leaf nodes have
+les. The
+the names of the child directories in which there are other R-tree index ®
+R-trees in the directories together with the R-trees for each line form a complete
+hierarchical R-tree index of all the swath data in the system. This structure is stored
+completely on disk to make it persistent, and can e(cid:129) ciently accommodate deletion
+as explained further in section 5.2.
+
+The R-tree is established by inserting the MBRs of pro®
+
+order in which they were observed. This means that R-trees for pro®
+packed, since pro®
+
+les are measured in time sequence on a line. If two pro®
+
+les into the tree in the
+les are well
+les are
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 548
+
+B. Nickerson
+
+close in sequential number on a line, they are normally close in space. Inserting the
+pro®
+les in each leaf node are very close to each other.
+Thus the coverage and overlap problem mentioned earlier is minimized.
+
+les in this sequence, the pro®
+
+Each ®
+
+le data. The ®
+
+le header and ®
+
+le. Each record in the ®
+
+le is divided into two parts: ®
+
+le header is
+le data stores
+used to store the summary information for the ®
+the information for one node in the R-tree. Each record contains m MBRs and m
+pointers. The maximum number of MBR entries in a node is M where the property
+qM/2r holds as for all R-trees (and B-trees) of order M. The pointers in the leaf
+m>
+nodes are the addresses of the data tuples, and those in the non-leaf nodes are
+pointers to the other nodes. An indicator is used to discriminate the type of record
+le data. It has the value of either l (for leaf ), n (for non-leaf ) or d (for a
+in the ®
+deleted record). The root in the tree structure may not be the ® rst record in the ®
+le
+le. A linked list
+structure, and the ®
+of the deleted records allows for e(cid:129) cient reuse of records in the index ®
+les which
+have been deleted when new records are inserted. Table 3 shows the structure of one
+record of the pro®
+
+le for the R-tree index.
+les are built using a combination of top-down and bottom-up approaches.
+The program to build the R-tree index starts from a project directory, visits each
+vessel directory under the project, then each day under the vessels, and ® nally all
+lines under each day. An index ®
+les on this line, and an
+les is also established. This MBR is the bounding rectangle for
+MBR for all the pro®
+the data of this line. After all the line MBRs are found, index ®
+les can be created
+for those lines. MBRs are then propagated up to the project directory.
+
+le header records the root’s byte o(cid:128) set in the ®
+
+le is created for all the pro®
+
+le spatial index ®
+
+Index ®
+
+Guttman’s algorithms are adopted after some modi® cation. The modi® ed algo-
+le operations, as well
+rithms take into account the di(cid:128) erence in the data structures, ®
+as the deleted record collection. An R-tree is built up by inserting new rectangles
+
+Table 3. Structure of one record of the R-tree pro®
+
+is for a leaf node ( l ), the byte o(cid:128) set becomes the pro®
+as for the Morton sequence indexing.
+
+le spatial index ®
+
+le. When the indicator
+le sequential number in the line,
+
+Item
+
+Type
+
+Size
+
+Indicator (l, n or d) of the data record
+Byte o(cid:128) set of this record’s parent record
+Number m of MBRs in this record
+Minimum latitude for MBR 1
+Minimum longitude for MBR 1
+Maximum latitude for MBR 1
+Maximum longitude for MBR 1
+Byte o(cid:128) set for MBR 1
+Minimum latitude for MBR 2
+Minimum longitude for MBR 2
+Maximum latitude for MBR 2
+Maximum longitude for MBR 2
+Byte o(cid:128) set for MBR 2
+...
+Minimum latitude for MBR m
+Minimum longitude for MBR m
+Maximum latitude for MBR m
+Maximum longitude for MBR m
+Byte o(cid:128) set for MBR m
+
+Char
+int
+int
+int
+int
+int
+int
+int
+int
+int
+int
+int
+int
+
+int
+int
+int
+int
+int
+
+8 bits
+32 bits
+32 bits
+32 bits
+32 bits
+32 bits
+32 bits
+32 bits
+32 bits
+32 bits
+32 bits
+32 bits
+32 bits
+
+32 bits
+32 bits
+32 bits
+32 bits
+32 bits
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 Spatial indexing
+
+549
+
+into its leaf nodes. The correct leaf node for insertion is determined by traversing
+the tree from the root to one of its leaves while at each node choosing the sub-tree
+whose MBR would have to be enlarged the least to enclose the new rectangle.
+
+If there are M minimal bounding rectangles in the leaf node in which the new
+MBR is about to be added, it has to be split. The splitting propagates up until a
+non-leaf node with less than M rectangles is reached. Two rectangles with the greatest
+normalized separations along all the dimensions among the M+1 rectangles are
+found and used as the ® rst MBRs in the two split nodes. The rest of the MBRs are
+added arbitrarily into one of the two nodes which would be enlarged the least by
+the addition.
+
+5.1. Range search for the R-tree index
+
+Given a project name and a query window, a range search starts from a project
+directory, and searches the R-tree index ®
+les in the hierarchically structured director-
+ies. The MBRs at each node are compared with the given range when traversing
+through the index tree starting from its root. If the QW encloses an MBR, all the
+MBRs of the sub-tree are within the query range, so that a further test can be
+skipped. For partial overlap, or when the QW is completely inside the MBR, then
+the search program moves to the lower directory for further search. As mentioned
+at the end of section 2, one complete SpatialSubsetStruct is returned as a result of
+the range search.
+
+5.2. R-tree range deletion
+
+Pro®
+
+les are inserted into the R-tree in the order they were observed (as discussed
+in sections 1.2 and 5 above), which results in a packed R-tree structure. Figure 9
+shows an example with 15 pro®
+les of a line and the resulting portion of the R-tree
+les from the spatial index will probably be in contiguous
+index for it. Deletion of pro®
+sets (e.g., delete pro®
+les 150 through 300 due to a navigation error, and reinsert them
+in a di(cid:128) erent location). The normal R-tree deletion (Guttman 1984 ) can be improved
+le
+in this case, by avoiding propagation of parent node adjustments for each pro®
+independently. Range deletion means to delete a range of pro®
+les, and takes into
+account that the pro®
+
+les are packed into the R-tree.
+
+In Guttman’s algorithm, for each deletion we have to search from the root to
+le of the
+the leaf. This can be avoided. We begin the deletion from the starting pro®
+deletion range. After the pro®
+le is deleted from the leaf node, we do not immediately
+modify the parent MBRs. Instead, we check the other items of the leaf node. If
+pro®
+le
+le numbers of the items are within the deletion range, we store the pro®
+numbers into a list and delete the whole leaf node. As a result of the deletion, the
+parent MBR that covers the items in the leaf node must be deleted. Thus, we move
+the deletion one level up into a non-leaf node. By looking at the other children of
+this parent node, we can delete as many pro®
+les as possible at one time. If all the
+les under this non-leaf node are deleted, the deletion is moved up to it’s parent
+pro®
+node, and the pro®
+
+les under this node are checked.
+
+The deletion is performed recursively from a leaf node towards the root. Whenever
+a node is deleted, its MBR at a lower level of the tree will be deleted. Deletion stops
+le that is not within the deletion range. The R-tree is modi® ed
+when we ® nd a pro®
+starting from the node where this pro®
+le is located. Higher MBRs also need to be
+checked, and the tree height is reduced if necessary.
+For example, suppose we wish to delete pro®
+
+les 4± 14 from the R-tree in ® gure 9.
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 550
+
+B. Nickerson
+
+Figure 9. Part of a line with pro®
+
+les and the resulting R-tree spatial index.
+
+le 4, ® nds leaf-node 1 containing an entry R4 for the
+The deletion starts with pro®
+le, and deletes R4. All other entries in leaf-node 1 are checked for deletion, but
+pro®
+le
+no more removal occurs in the node. Then, the R-tree is condensed. The next pro®
+le 5 which has an entry R5 in leaf -node 2. After R5 is deleted,
+to be deleted is pro®
+other entries in the node are checked. Entries R6 and R7 for pro®
+les 6 and 7,
+respectively, are within the deletion range, and they are deleted from leaf -node 2.
+Now, leaf -node 2 is empty, and it is added into the deleted record linked list in the
+R-tree. Node leaf-node 2 is then deleted from its parent node-A, and pro®
+les 8± 14
+are deleted from leaf -node 3 and leaf-node 4. Finally, the R-tree is condensed starting
+from leaf -node 4.
+
+6. Ex perimental results
+
+Experiments for the direct Morton sequence, RDBMS Morton sequence and
+R-tree indexing methods were conducted using bathymetric data surveyed by the
+vessel Matthew for the Canadian Hydrographic Service in 1991. The area surveyed
+was in Conception Bay o(cid:128) the northeast coast of Newfoundland, Canada. The range
+covered by the survey is
+
+minLat=0´829973 ( 47ß 33¾ 14² N) minLong=Õ 0´926763 ( 53ß 05¾ 59² W)
+
+maxLat=0´831002 ( 47ß 36¾ 46² N) maxLong=Õ 0´925504 ( 53ß 01¾ 39² W)
+
+Spanning four days, the survey includes 46 lines. The total number of pro®
+les
+collected is 54 192, each of which contains 32 sounding points. The total amount of
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 Spatial indexing
+
+551
+
+data collected and organized hierarchically (as discussed in section 2 ) is approxi-
+mately 130 megabytes.
+
+The programs for building and searching the indices were developed in C on a
+Sun Sparc 670MP Sun workstation running Sun OS 4.1.3, with 128 MB main
+memory and 18 GB of hard disk. The time for building and searching spatial indices
+using the three approaches was measured. R-trees were constructed using four
+di(cid:128) erent branch factors from M=4 to M=7. Range searches on the Morton sequence
+and R-tree indices were performed using thirteen query windows of di(cid:128) erent sizes.
+les
+The windows, listed in table 4, were chosen based on the percentage of pro®
+returned in the search results.
+
+To make the timings statistically meaningful, an index ®
+
+le was built ten times,
+and each query window was also searched ten times. The averages for building and
+searching were calculated, along with their standard deviation. To minimize the e(cid:128) ect
+of other processes running on the machine, the experiment was designed in such a
+way that the building and searching of Morton sequence and R-tree indices were
+interleaved as described in ® gure 10. In addition, the experiments were carried out
+
+Table 4. Experimental query windows (in radians) and their coverage.
+
+QW
+
+Min. Lat.
+
+Min. Long.
+
+Max. Lat.
+
+Max. Long.
+
+Coverage (%)
+
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+
+0´83060
+0´83064
+0´83064
+0´83060
+0´83040
+0´83040
+0´82970
+0´82970
+0´82970
+0´83020
+0´83020
+0´82990
+0´82990
+
+Õ 0´9260
+Õ 0´9260
+Õ 0´9260
+Õ 0´9260
+Õ 0´9264
+Õ 0´9266
+Õ 0´9266
+Õ 0´9264
+Õ 0´9264
+Õ 0´9267
+Õ 0´9267
+Õ 0´9266
+Õ 0´9268
+
+0´83060
+0´83065
+0´83070
+0´83070
+0´83060
+0´83060
+0´83070
+0´83060
+0´83090
+0´83060
+0´83070
+0´83090
+0´83110
+
+Õ 0´9260
+Õ 0´9259
+Õ 0´9259
+Õ 0´9259
+Õ 0´9260
+Õ 0´9259
+Õ 0´9260
+Õ 0´9259
+Õ 0´9259
+Õ 0´9256
+Õ 0´9255
+Õ 0´9257
+Õ 0´9255
+
+0
+5
+11
+15
+21
+29
+40
+50
+60
+70
+80
+90
+100
+
+Figure 10. Algorithm for Morton sequence and R-tree index build and search experiments.
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 552
+
+B. Nickerson
+
+between 9500 a.m. and 7500 p.m. on a Saturday since this day has less active users
+than other days of the week.
+
+6.1. Build and search times for Morton sequence and R-tree indices
+
+The timing results for building and searching the Morton sequence and R-tree
+(for M=4 and M=7 ) indexing ®
+les are listed in tables 5 (a) and 5 (b). A graphical
+summary of the average search time is shown in ® gure 11. From table 5 one can see
+that the time to build R-tree indices varies with the branching factor M, with the
+fastest build time for M=7 (average build time of 8´86 seconds), and the slowest for
+M=4 (average build time of 11´16 seconds). Build times for the Morton sequence
+index averaged 3´83 seconds, which is approximately 2´3 to 2´9 times faster than for
+the R-tree build time.
+
+The search times vary depending on the position and size of the query window.
+The Morton sequence is more sensitive to QW position due to the over-search
+problem. For the R-tree indices, query windows QW 1 Ð QW 4 require about 0´01
+seconds and QW 5 Ð QW 13 require an average of 0´08 seconds. The change of
+branching factor M between 4 and 7 does not signi® cantly a(cid:128) ect the search time,
+although M=7 has a slight advantage on the larger query windows. The Morton
+sequence search times are between 2 and 9 times slower than searching with R-tree
+(M=7) indices, with the average being 4´86 times slower over all 13 query windows.
+
+6.2. T imes for deleting pro®
+
+les f rom R-tree spatial indices
+
+Seven pro®
+
+le ranges (see table 6) were used to test Guttman’s deletion algorithm
+les was used for this
+les it
+le and the
+
+and the range deletion algorithm. One line of 1076 pro®
+experiment. A deletion range is chosen according to the percentage of pro®
+covers on the line, and is de® ned by two numbers giving the starting pro®
+ending pro®
+
+le for the deletion.
+
+Deletion timing was also taken ten times for each range using the two algorithms
+on the R-tree indices with the branch factor M equal to 4. Table 7 lists the timing
+results obtained with the algorithm shown in ® gure 12. The ratio of time required
+by Guttman’s original deletion algorithm to time required for the range deletion
+algorithm is between 8´5 ( Range 7) and 29´7 ( Range 4), with an average ratio of
+16´6. This is summarized in ® gure 13.
+
+6.3. T imes for building and searching RDBMS Morton sequence spatial indices
+
+RDBMS Morton sequence indices were built as described in section 4 above.
+The same query windows used for the Morton sequence and R-tree search tests (i.e.,
+those in table 4) were used for the RDBMS search tests. The time required for
+building and searching using the RDBMS tables was very long, so the timing was
+taken only once. Building the relational tables for the database required 121´3 CPU
+seconds ( 31´7 times more than for building the Morton code indices directly). The
+timing results for searching the 13 query windows are listed in table 8. The ratios of
+time required for the RDBMS searches to the time required for the direct Morton
+sequence searches range between 79 and 3,237, with an average ratio of 1,535. The
+longest search time was for query window 13 (which encompasses all of the data),
+and this took approximately 31 minutes of CPU time.
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 Spatial indexing
+
+553
+
+.
+s
+e
+c
+i
+
+d
+n
+
+i
+
+)
+
+T
+R
+
+(
+
+e
+e
+r
+t
+-
+
+R
+
+d
+n
+a
+
+)
+
+S
+M
+
+(
+
+e
+c
+n
+e
+u
+q
+e
+s
+
+n
+o
+t
+r
+o
+M
+g
+n
+
+i
+
+d
+
+l
+i
+
+u
+b
+
+r
+o
+
+f
+
+)
+s
+d
+n
+o
+c
+e
+s
+
+n
+
+i
+
+,
+s
+l
+a
+i
+r
+t
+
+0
+1
+m
+o
+r
+f
+(
+
+n
+o
+
+i
+t
+a
+i
+v
+e
+d
+
+d
+r
+a
+d
+n
+a
+t
+s
+
+d
+n
+a
+
+e
+m
+
+i
+t
+
+e
+g
+a
+r
+e
+v
+A
+
+.
+)
+a
+(
+5
+
+e
+l
+
+b
+a
+T
+
+)
+7
+
+=
+M
+
+(
+
+T
+R
+
+)
+6
+
+=
+M
+
+(
+
+T
+R
+
+)
+5
+
+=
+M
+
+(
+
+T
+R
+
+)
+4
+
+=
+M
+
+(
+
+T
+R
+
+6
+8
+´
+8
+
+4
+2
+´
+1
+
+0
+6
+´
+9
+
+7
+3
+´
+1
+
+5
+2
+´
+9
+
+4
+0
+´
+1
+
+3
+0
+´
+1
+
+6
+1
+´
+1
+1
+
+n
+o
+
+i
+t
+a
+i
+v
+e
+d
+
+d
+r
+a
+d
+n
+a
+t
+S
+
+e
+g
+a
+r
+e
+v
+A
+
+S
+M
+
+3
+8
+´
+3
+
+7
+6
+´
+0
+
+3
+1
+W
+Q
+
+2
+1
+W
+Q
+
+1
+1
+W
+Q
+
+0
+1
+W
+Q
+
+9
+W
+Q
+
+8
+W
+Q
+
+7
+W
+Q
+
+6
+W
+Q
+
+5
+W
+Q
+
+4
+W
+Q
+
+3
+
+W
+Q
+
+2
+
+W
+Q
+
+1
+
+W
+Q
+
+.
+s
+e
+c
+i
+
+d
+n
+
+i
+
+)
+
+T
+R
+
+(
+
+e
+e
+r
+t
+-
+
+R
+
+d
+n
+a
+
+)
+
+S
+M
+
+(
+
+e
+c
+n
+e
+u
+q
+e
+s
+
+n
+o
+t
+r
+o
+M
+g
+n
+
+i
+
+h
+c
+r
+a
+e
+s
+
+r
+o
+
+f
+
+)
+s
+d
+n
+o
+c
+e
+s
+
+n
+
+i
+
+,
+s
+l
+a
+i
+r
+t
+
+0
+1
+m
+o
+r
+f
+(
+
+n
+o
+
+i
+t
+a
+i
+v
+e
+d
+
+d
+r
+a
+d
+n
+a
+t
+s
+
+d
+n
+a
+
+e
+m
+
+i
+t
+
+e
+g
+a
+r
+e
+v
+A
+
+.
+)
+b
+(
+5
+
+e
+l
+
+b
+a
+T
+
+3
+6
+´
+0
+
+4
+1
+´
+0
+
+2
+1
+´
+0
+
+4
+0
+´
+0
+
+7
+0
+´
+0
+
+3
+0
+´
+0
+
+3
+5
+´
+0
+
+4
+1
+´
+0
+
+2
+1
+´
+0
+
+8
+0
+´
+0
+
+7
+0
+´
+0
+
+2
+0
+´
+0
+
+2
+4
+´
+0
+
+9
+0
+´
+0
+
+0
+1
+´
+0
+
+3
+0
+´
+0
+
+8
+0
+´
+0
+
+2
+0
+´
+0
+
+5
+4
+´
+0
+
+9
+0
+´
+0
+
+1
+1
+´
+0
+
+3
+0
+´
+0
+
+7
+0
+´
+0
+
+3
+0
+´
+0
+
+5
+5
+´
+0
+
+2
+1
+´
+0
+
+9
+0
+´
+0
+
+2
+0
+´
+0
+
+8
+0
+´
+0
+
+2
+0
+´
+0
+
+1
+4
+´
+0
+
+3
+1
+´
+0
+
+9
+0
+´
+0
+
+2
+0
+´
+0
+
+7
+0
+´
+0
+
+2
+0
+´
+0
+
+2
+4
+´
+0
+
+6
+1
+´
+0
+
+1
+1
+´
+0
+
+2
+0
+´
+0
+
+8
+0
+´
+0
+
+2
+0
+´
+0
+
+5
+2
+´
+0
+
+6
+0
+´
+0
+
+9
+0
+´
+0
+
+2
+0
+´
+0
+
+7
+0
+´
+0
+
+3
+0
+´
+0
+
+1
+2
+´
+0
+
+5
+0
+´
+0
+
+8
+0
+´
+0
+
+1
+0
+´
+0
+
+7
+0
+´
+0
+
+2
+0
+´
+0
+
+3
+0
+´
+0
+
+5
+0
+´
+0
+
+1
+0
+´
+0
+
+1
+0
+´
+0
+
+1
+0
+´
+0
+
+1
+0
+´
+0
+
+3
+0
+´
+0
+
+2
+0
+´
+0
+
+0
+0
+´
+0
+
+1
+0
+´
+0
+
+0
+0
+´
+0
+
+1
+0
+´
+0
+
+2
+0
+´
+0
+
+1
+0
+´
+0
+
+0
+0
+´
+0
+
+1
+0
+´
+0
+
+1
+0
+´
+0
+
+1
+0
+´
+0
+
+5
+0
+´
+0
+
+1
+0
+´
+0
+
+3
+0
+´
+0
+
+1
+0
+´
+0
+
+2
+0
+´
+0
+
+0
+0
+´
+0
+
+.
+
+g
+v
+A
+
+.
+
+D
+S
+
+.
+
+.
+
+g
+v
+A
+
+.
+
+D
+S
+
+.
+
+)
+4
+
+)
+4
+
+)
+7
+
+)
+7
+
+=
+M
+
+=
+M
+
+=
+M
+
+=
+M
+
+(
+
+(
+
+(
+
+(
+
+e
+e
+r
+t
+-
+
+R
+
+e
+e
+r
+t
+-
+
+R
+
+e
+e
+r
+t
+-
+
+R
+
+e
+e
+r
+t
+-
+
+R
+
+.
+
+g
+v
+A
+
+.
+
+D
+S
+
+.
+
+S
+M
+
+S
+M
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 554
+
+B. Nickerson
+
+Figure 11. Graphical summary of average search time for Morton sequence and R-tree
+indices.
+
+Table 6. Pro®
+
+le ranges to delete for the pro®
+
+le deletion experiment.
+
+Range
+
+Start No.
+
+End No.
+
+Coverage (%)
+
+1
+2
+3
+4
+5
+6
+7
+
+0
+500
+400
+300
+200
+100
+1
+
+0
+608
+616
+732
+848
+964
+1076
+
+0
+10
+20
+40
+60
+80
+100
+
+6.4. Space requirements
+The sizes of index ®
+
+les for directories or pro®
+
+les being indexed. The more directories or pro®
+
+le numbers, the size of a directory spatial index ®
+
+directories or pro®
+the larger the index ®
+the pro®
+size of a pro®
+the directory spatial index ®
+vessel, Matthew, and takes 224 bytes, while the pro®
+1991314 and line 16544537 contains 1076 pro®
+di(cid:128) erence, only the sizes of pro®
+
+les change with the number of
+les that there are,
+le sizes become. Since the directory numbers are far less than
+le is far smaller than the
+le. For example, under Morton sequence indexing,
+le for vessels under project ConceptionBay has only one
+le under day
+les and uses 51 708 bytes. Due to this
+
+les are considered here.
+
+le spatial index ®
+
+le spatial index ®
+
+le spatial index ®
+
+While the size of Morton sequence and R-tree spatial index ®
+
+les can be displayed
+by the UNIX command ls, the size of RDBMS Morton sequence spatial index tables
+can be calculated knowing the sizes of speci® c rows in the relational tables. Table 9
+gives the number of kilobytes ( KB) for an index ®
+le or a table of 11 di(cid:128) erent lines
+containing di(cid:128) ering numbers of pro®
+les in the spatial index. The disk space usage
+for the Morton sequence and R-tree indices is approximately the same (i.e., an
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 Spatial indexing
+
+555
+
+.
+)
+4
+
+=
+M
+
+(
+
+s
+e
+c
+i
+
+d
+n
+
+i
+
+e
+e
+r
+t
+-
+
+R
+m
+o
+r
+f
+
+s
+e
+l
+
+o
+r
+p
+
+g
+n
+
+i
+t
+e
+l
+e
+d
+
+r
+o
+
+f
+
+)
+s
+d
+n
+o
+c
+e
+s
+
+n
+
+i
+
+,
+s
+l
+a
+i
+r
+t
+
+0
+1
+
+r
+o
+
+f
+(
+
+s
+n
+o
+
+i
+t
+a
+i
+v
+e
+d
+
+d
+r
+a
+d
+n
+a
+t
+s
+
+d
+n
+a
+
+s
+e
+m
+
+i
+t
+
+e
+g
+a
+r
+e
+v
+A
+
+.
+
+7
+
+e
+l
+
+b
+a
+T
+
+7
+
+e
+g
+n
+a
+R
+
+3
+0
+´
+2
+
+6
+4
+´
+0
+
+4
+2
+´
+0
+
+4
+0
+´
+0
+
+6
+
+e
+g
+n
+a
+R
+
+8
+9
+´
+1
+
+5
+4
+´
+0
+
+9
+1
+´
+0
+
+5
+0
+´
+0
+
+5
+
+e
+g
+n
+a
+R
+
+0
+2
+´
+1
+
+2
+2
+´
+0
+
+8
+0
+´
+0
+
+2
+0
+´
+0
+
+4
+
+e
+g
+n
+a
+R
+
+9
+8
+´
+0
+
+9
+1
+´
+0
+
+3
+0
+´
+0
+
+2
+0
+´
+0
+
+3
+
+e
+g
+n
+a
+R
+
+4
+4
+´
+0
+
+0
+3
+´
+0
+
+2
+0
+´
+0
+
+1
+0
+´
+0
+
+2
+
+e
+g
+n
+a
+R
+
+4
+1
+´
+0
+
+7
+0
+´
+0
+
+1
+0
+´
+0
+
+1
+0
+´
+0
+
+1
+
+e
+g
+n
+a
+R
+
+0
+0
+´
+0
+
+0
+0
+´
+0
+
+0
+0
+´
+0
+
+1
+0
+´
+0
+
+e
+g
+a
+r
+e
+g
+v
+a
+m
+h
+t
+i
+r
+o
+g
+l
+a
+
+n
+o
+
+i
+t
+e
+l
+e
+d
+
+e
+g
+n
+a
+R
+
+.
+
+.
+
+D
+S
+m
+h
+t
+i
+r
+o
+g
+l
+a
+
+n
+o
+
+i
+t
+e
+l
+e
+d
+
+e
+g
+n
+a
+R
+
+e
+g
+a
+r
+e
+v
+a
+m
+h
+t
+i
+r
+o
+g
+l
+a
+
+.
+
+.
+
+D
+S
+m
+h
+t
+i
+r
+o
+g
+l
+a
+
+s
+
+s
+
+’
+
+’
+
+n
+a
+m
+
+t
+t
+u
+G
+
+n
+a
+m
+
+t
+t
+u
+G
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 ®
+556
+
+B. Nickerson
+
+Figure 12. Algorithm for the range deletion experiment.
+
+Figure 13. Average time (in CPU seconds) used for the range deletion experiment.
+
+Table 8. Time (in seconds) for searching RDBMS Morton sequence indices.
+
+Query Window
+
+Time
+
+QW1
+QW2
+QW3
+QW4
+QW5
+QW6
+QW7
+QW8
+QW9
+QW10
+QW11
+QW12
+QW13
+
+3´95
+8´95
+22´07
+16´32
+99´28
+197´63
+595´50
+880´72
+1183´05
+1127´55
+1046´65
+1715´65
+1853´72
+
+average of about 0´04 KB per pro®
+approximately 4´5 times more space (i.e., an average of 0´187 KB per pro®
+
+le), while the RDBMS relational tables require
+
+le).
+
+Adding up all the space requirements for the spatial indices shows that they
+require 2´5MB, 2´2MB and 10´3MB for the Morton sequence, average (out of 4 ) size
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 Spatial indexing
+
+557
+
+Table 9. Number of kilobytes required by the three di(cid:128) erent spatial indexing approaches.
+
+No. of Pro®
+
+les
+
+R-tree
+M=4
+
+R-tree
+M=5
+
+R-tree
+M=6
+
+Morton
+Sequence
+
+RDBMS
+
+515
+743
+867
+907
+1002
+1097
+1195
+1262
+1370
+1452
+1710
+
+24
+33
+38
+39
+43
+47
+52
+58
+59
+63
+74
+
+20
+28
+32
+33
+37
+40
+44
+47
+50
+53
+63
+
+22
+33
+38
+38
+42
+47
+50
+54
+58
+62
+73
+
+R-tree
+M=7
+
+20
+29
+33
+35
+37
+42
+44
+47
+51
+54
+63
+0´037
+
+25
+35
+41
+43
+48
+52
+57
+60
+65
+69
+81
+0´048
+
+96
+138
+161
+132
+187
+204
+222
+235
+255
+270
+318
+
+Average
+
+KB/Pro®
+
+le
+
+0´043
+
+0´037
+
+0´042
+
+0´187
+
+R-tree, and RDBMS indices, respectively. This represents approximately 1´9, 1´7 and
+7´9% of the original swath data size of 130 megabytes.
+
+7. Summary and conclusions
+
+Three hierarchical spatial indexing data structures for swath data have been
+described. All of these structures are persistent, and they match well the nature of
+swath type data observations. Both the Morton sequence method and the R-tree
+method are roughly comparable in speed of building and searching the indices. The
+time to build Morton sequence indices was an average of 2´6 times less than building
+R-tree indices, but the search time for Morton sequence indices was, on average, 4´9
+times more than searching R-tree indices. Search times for the Morton sequence
+indices are more dependent on the query window size and location than are R-tree
+indices. The space requirements for both the Morton sequence and R-tree indices
+are approximately the same at about 1´8% of the original data size.
+
+A range deletion operation is available for the R-tree spatial index which is not
+available for the Morton sequence index (as it was implemented here). By taking
+advantage of the contiguous nature of the observed swath data, the range deletion
+algorithm showed a speed improvement of an average of 16´6 times over the original
+R-tree deletion algorithm. This could be important for data editing operations where
+les need to be moved due to measuring platform navigation corrections.
+blocks of pro®
+Compared to the Morton sequence indices, the RDBMS indices (whose primary
+keys are Morton codes) were shown (for the experiments carried out here) to be
+extremely ine(cid:129) cient. The RDBMS indices required an average of 31´7 times more
+CPU time to build, took an average of 1,535 times more CPU time for searching,
+and also required approximately 4´5 times more space. It is anticipated that building
+an index for the RDBMS pro®
+le tables would substantially improve the search
+performance, while increasing the space requirement slightly.
+
+Overall, spatial indexing by R-trees appears to be better than with Morton
+sequences. This is partly due to the R-tree’s support for deletion, which has been
+enhanced here with the range deletion function, partly due to its better search speed,
+and partly due to its relative independence from the data and query window (size
+and location).
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 558
+
+B. Nickerson
+
+Both Morton sequences and R-trees are extensible to more than two dimensions.
+A four-dimensional spatial index (using depth and time as the two other axes) could
+be built using the methods described here. R-trees seem more natural as they directly
+index MBRs of spatial objects. A Morton sequence index is indirect through the
+storage of the Morton codes of the corner point coordinates of the spatial object’s
+MBR.
+
+Acknowledgment
+
+This research was supported in part by a strategic grant from the Natural Sciences
+
+and Engineering Research Council of Canada.
+
+References
+Abel, D. J., 1989, SIRO-DBMS: a database tool-kit for geographical information systems.
+
+International Journal of Geographical Information Systems, 3, 103± 116.
+
+Abel, D. J., and Mark, D. M., 1990, A comparative analysis of some two-dimensional
+orderings. International Journal of Geographical Information Systems, 4, 21± 31.
+Abel, D. J., and Smith, J. L., 1983, A data structure and algorithm based on a linear key for
+a rectangle retrieval problem. Computer V ision, Graphics, and Image Processing, 24,
+1± 13.
+
+Beckman, N., Kriegel, H.-P., Schneider, R., and Seeger, B., 1990, The R*-tree: an e(cid:129) cient
+and robust method for points and rectangles. In Proceedings of the ACM SIGMOD
+Conference on Management of Data (New York: ACM Press), pp. 322± 331.
+
+Clarke, J. E. H., Mayer, L. A., and Wells, D. E., 1996, Shallow-water imaging multibeam
+sonars: a new tool for investigating sea¯ oor processes in the coastal zone and on the
+continental shelf. Marine Geophysical Researches, 18, 607± 629.
+
+Comer, B., 1979, The ubiquitous B-tree. Computing Surveys, 11, 121± 137.
+Date, C. J., 1981, (3rd ed), An Introduction to Database Systems (Reading, MA: Addison-
+
+Wesley).
+
+CA: Benjamin/Cummings).
+
+Elmasri, R., and Navathe, S. B., 1994, Fundamentals of Database Systems (Redwood City,
+
+Gao, F., 1993, Spatial Indexing of Large Volume Bathymetric Data Sets. Technical report
+TR93± 081, Faculty of Computer Science, University of New Brunswick, Fredericton,
+N.B., Canada.
+
+Greene, D., 1989, An implementation and performance analysis of spatial data access methods.
+In Proceedings of the IEEE Data Engineering Conference ( Los Angeles: IEEE Press),
+pp. 606± 615.
+
+Gu¨ nther, O., 1989, The design of the cell tree: an object-oriented index structure for geometric
+databases. In Proceedings of the 5th IEEE International Conference on Data Engineering
+( Los Angeles: IEEE Press), pp. 598± 605.
+
+Gu¨ nther, O., and Gaede, V., 1997, Oversize shelves: a storage management technique for
+large spatial data objects. International Journal of Geographical Information Systems,
+11, 5± 32.
+
+Guttman, A., 1984, R-trees: a dynamic index structure for spatial searching. SIGMOD Record,
+
+HYDRO International, 1997a, Product survey: multibeam and wide swathe echo sounders.
+
+14, 47± 57.
+
+HY DRO International, 1, 38± 41.
+
+HYDRO International, 1997 b, Product survey: deep water multibeam and wide swathe echo
+
+sounders. HY DRO International, 1, 54± 57.
+
+INGRES, 1990, INGRES/Embedded SQL Companion Guide for C. INGRES Manual, Release
+
+6.3, Unix, January, Chapter 4.
+
+Kruse, R., Tondo, C. L., and Leung, B., 1997 (2nd ed.), Data Structures and Program Design
+
+in C ( Upper Saddle River, NJ: Prentice Hall ).
+
+Peuquet, D. J., 1984, A conceptual
+
+framework and comparison of spatial data models.
+
+Cartographi ca, 21, 66± 113.
+
+Pratson, L. F.,
+
+and Haxby, W. F.,
+http://www.sciam.com/0697issue/0697pratson.html
+
+1997, Panoramas of
+
+the
+
+sea¯ oor, URL
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 Spatial indexing
+
+559
+
+Preparata, F. P., and Shamos, M. I., 1985, Computation al Geometry : An Introduction ( New
+
+York: Springer-Verlag ).
+
+Robinson, J. T., 1981, The k-d-B-tree: a search structure for large multidimensional dynamic
+indexes. In Proceedings of the ACM SIGMOD Conference on Management of Data
+( New York: ACM Press), pp. 10± 18.
+
+Roussopoulos, N., and Leifker, D., 1985, Direct spatial search on pictorial databases using
+packed R-trees. In Proceedings of the SIGMOD Conference (New York: ACM Press),
+pp. 17± 31.
+
+Samet, H., 1990 a, T he Design and Analysis of Spatial Data Structures ( Reading, MA:
+
+Addison-Wesley).
+
+Samet, H., 1990 b, Applications of Spatial Data Structures (Reading, MA: Addison-Wesley).
+Sellis, T., Roussopoulos, N., and Faloutsos, C., 1987, The R + -tree: a dynamic index for
+multi-dimensional objects. In Proceedings of the 13th International Conference on V ery
+L arge Data Bases (Palo Alto, CA: Morgan Kaufmann), pp. 507± 518.
+
+Sengupta, S., and Korobkin, C. P., 1994, C+ + Object-Oriented Data Structures (New York
+
+: Springer-Verlag).
+
+Sinha, A. K., and Waugh, T. C., 1988, Aspects of the implementation of the GEOVIEW
+
+design. International Journal of Geographical Information Systems, 1, 91± 99.
+
+Smith, T. R., and Gao, P., 1990, Experimental performance evaluations on spatial access
+methods. In Proceedings of the 4th International Symposium on Spatial Data Handling
+( Zurich, Switzerland: International University of Zurich), pp. 991± 1002.
+
+Ware, C., Slipp, L., Wong, K. W., Nickerson, B. G., Wells, D., Lee, Y. C., Dodd, D.,
+and Costello, G., 1992, A system for cleaning high volume bathymetry. International
+Hydrographic Review, 69, 77± 94.
+
+Waugh, T. C., and Healey, R. G., 1987, The GEOVIEW design: a relational data base
+approach to geographical data handling. International Journal of Geographical
+Information Systems, 1, 101± 118.
+
+Witten, I. H., and Wyvill, B., 1983, On the generation and use of space-®
+
+lling curves.
+
+Sof tware, Practice and Experience, 13, 519± 525.
+
+Yang, W. P., 1992, A new range search algorithm for large point databases. Master’s thesis,
+Department. of Surveying Engineering, University of New Brunswick, Fredericton,
+N.B., Canada.
+
+Downloaded by [Columbia University Libraries] at 01:38 10 August 2017 

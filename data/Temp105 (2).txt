@@ -1,0 +1,3908 @@
+Geoinformatica
+DOI 10.1007/s10707-014-0223-5
+
+MobiFeed: A location-aware news feed framework
+for moving users
+
+Wenjian Xu · Chi-Yin Chow · Man Lung Yiu · Qing Li ·
+Chung Keung Poon
+
+Received: 7 March 2014 / Revised: 21 August 2014 / Accepted: 3 December 2014
+© Springer Science+Business Media New York 2014
+
+Abstract A location-aware news feed system enables mobile users to share geo-tagged
+user-generated messages, e.g., a user can receive nearby messages that are the most relevant
+to her. In this paper, we present MobiFeed that is a framework designed for scheduling
+news feeds for mobile users. MobiFeed consists of three key functions, location prediction,
+relevance measure, and news feed scheduler. The location prediction function is designed
+to estimate a mobile user’s locations based on a path prediction algorithm. The relevance
+measure function is implemented by combining the vector space model with non-spatial and
+spatial factors to determine the relevance of a message to a user. The news feed scheduler
+works with the other two functions to generate news feeds for a mobile user at her current
+and predicted locations with the best overall quality. We propose a heuristic algorithm as
+well as an optimal algorithm for the location-aware news feed scheduler. The performance
+of MobiFeed is evaluated through extensive experiments using a real road map and a real
+social network data set. The scalability of MobiFeed is also investigated using a synthetic
+data set. Experimental results show that MobiFeed obtains a relevance score two times
+higher than the state-of-the-art approach, and it can scale up to a large number of geo-tagged
+messages.
+
+W. Xu · C.-Y. Chow ((cid:2)) · Q. Li
+Department of Computer Science, City University of Hong Kong, Kowloon Tong, Hong Kong
+e-mail: chiychow@cityu.edu.hk
+
+W. Xu
+e-mail: wenjianxu2-c@my.cityu.edu.hk
+
+Q. Li
+e-mail: itqli@cityu.edu.hk
+
+M. L. Yiu
+Department of Computing, Hong Kong Polytechnic University, Hung Hom, Hong Kong
+e-mail: csmlyiu@comp.polyu.edu.hk
+
+C. K. Poon
+School of Computing and Information Sciences, Caritas Institute of Higher Education,
+Kowloon Tong, Hong Kong
+e-mail: ckpoon@cihe.edu.hk
+
+Keywords Location-aware news feed · Location-aware social networks · User mobility ·
+Online scheduling · Optimization
+
+Geoinformatica
+
+1 Introduction
+
+Social network systems, e.g., Facebook and Twitter, have become one of the major Web-
+based applications. They provide platforms for users to share user-generated multimedia
+messages and interact with their friends. With the advance in wireless communication and
+GPS-enabled mobile devices, social network systems have recently become location-aware,
+e.g., Facebook [23] and FourSquare [25]. Such applications provide new platforms for
+mobile users to share their locations and geo-tagged user-generated messages with their
+friends at anytime, anywhere.
+
+A news feed is a common functionality of existing location-aware social network
+systems. It enables mobile users to post geo-tagged messages and receive nearby user-
+generated messages, e.g., “Alice can receive 4 messages that are the most relevant to her
+among the messages within 1 km from her location every 10 seconds”. Figure 1 depicts an
+application scenario. A mobile user, Alice, can generate a message and tag a point (e.g.,
+m1), a spatial extent (e.g., m14 is associated with a circular spatial area), or a venue (e.g.,
+m6 and m7 are spatially associated with restaurant R1) as its geo-location. Alice can also
+issue a location-aware news feed query to retrieve the k most relevant messages within her
+specified range distance D from her location.
+
+The state-of-the-art research prototype of a location-aware news feed system is
+GeoFeed [9]. GeoFeed focuses on optimizing static queries over a set of registered locations
+(e.g., home and office) by deciding whether to pre-compute the k most recent messages
+within a user-specified distance of a registered location for an offline user. However, mov-
+ing users have to keep issuing on-demand pull-based queries to GeoFeed to retrieve new
+news feeds. In general, GeoFeed has three drawbacks:
+
+(1)
+
+The moving user has to decide when she should update her location and send a new
+query to the server.
+
+(2) GeoFeed does not consider user preferences (i.e., the relevance of a message to a user)
+
+(3)
+
+during the process of generating news feeds.
+Even if GeoFeed takes user preferences into account by selecting k most relevant
+messages as a news feed for each query region, the overall quality of news feeds is not
+optimized. This is because the news feeds are only computed based on a user’s location
+
+Fig. 1 Location-aware news feed scheduling
+
+Geoinformatica
+
+at the query time (i.e., it does not consider the user’s future locations). For example,
+in Fig. 1, there are 14 messages (i.e., m1 to m14) with their geo-location intersecting
+Alice’s query regions at time t0, t1, and/or t2. Assume mi is more relevant to Alice
+than mj if i < j . GeoFeed returns (m1, m2, m3, m4) at t0, (m5, m8, m9, m10) at t1,
+and (m11, m12, m13, m14) at t2. However, if we consider all three query regions at the
+same time, a better solution returns (m1, m2, m6, m7) at t0, (m3, m4, m5, m8) at t1, and
+(m9, m10, m11, m12) at t2 because m6 and m7 are more relevant to Alice than m13 and
+m14.
+
+In this paper, we present MobiFeed that is a location-aware news feed framework designed
+for social network systems to schedule news feeds for mobile users. MobiFeed consists
+of three key functions: location prediction, relevance measure, and news feed scheduler.
+As shown in Fig. 1, given a user u’s location u.location at current time t0, u’s required
+minimum message display time td , u’s specified range distance D, u’s requested number of
+messages per news feed, and a look-ahead step n, the location prediction function estimates
+n future locations for u at times t1 = t0 + td , t2 = t0 + 2 × td , . . . , and tn = t0 + n × td , the
+relevance measure function calculates the relevance score of each candidate message with
+a geo-location intersecting any u’s query region (i.e., a circular area centered at u.location
+or a predicted location with a radius D), and the news feed scheduler generates news feeds
+from the candidate messages for u’s query regions at t0, t1, . . ., and tn with the highest
+overall relevance score. The computed n + 1 news feeds are sent to u. u’s mobile device
+immediately displays the first news feed, i.e., the one with respect to the query region at t0,
+and then displays each of the remaining news feeds one by one for every td . In contrast to
+GeoFeed, MobiFeed is equipped with a location-aware news feed scheduler, which works
+with the location prediction and relevance measure functions to provide high-quality news
+feeds for moving users.
+
+Designing a scalable and effective news feed scheduler has several key challenges.
+
+(1) A message has a lifetime with respect to a user’s movement. A message can be a can-
+didate message for several consecutive or non-consecutive news feeds. The minimum
+display time periods of these news feeds constitute the message’s lifetime (as shown
+in the timeline chart in Fig. 3). The scheduler should select at most k candidate mes-
+sages for a news feed within their lifetime intervals such that the overall quality of a
+user’s news feeds is maximized.
+
+(2) The relevance of a message to a user is highly dynamic. Since we consider the distance
+between a message and a user as one of the factors in the relevance measure, the
+relevance of a message could vary for a user at different locations.
+
+(3) A user prefers to have the most relevant message at the top of a result list. The rele-
+vance of a message displayed on a screen should be weighted by its position. For
+example, the highest weight is given to the message displayed at the top on the screen.
+The online scheduler should be efficient such that it could scale up to a large number
+of messages.
+
+(4)
+
+The contributions of this paper are summarized as follows:
+• We design the location prediction function based on the path prediction algorithm [30],
+and combine the vector space model [42] with spatial and non-spatial factors (e.g.,
+message contents and categories) to define the relevance measure function.
+
+• We incorporate location prediction to the process of location-aware news feed gene-
+ration, thus formulating a novel n-look-ahead news feed scheduling framework to
+improve the overall quality of multiple news feeds for moving users.
+
+Geoinformatica
+
+• We propose a heuristic n-look-ahead news feed scheduler for the sake of efficiency.
+Moreover, we present an optimal scheduler by finding the maximum weight match-
+ing in a weighted bipartite graph; we also provide correctness proof and complexity
+analysis for our optimal scheduler.
+
+• We evaluate the performance of MobiFeed through extensive experiments based on a
+real location-aware social network data set and a real road map. We also study the scala-
+bility of MobiFeed using a synthetic data set. Experiment results show that MobiFeed
+usually obtains a relevance score two times higher than GeoFeed, and it can scale up to
+a large number of geo-tagged messages.
+
+The rest of this paper is organized as follows. Section 2 highlights related work. The
+MobiFeed framework is illustrated in Section 3. The location prediction and relevance mea-
+sure functions are described in Section 4. Sections 5 and 6 present our heuristic and optimal
+news feed schedulers, respectively. We show the complexity of two schedulers in Section 7.
+Section 8 analyzes experimental results. Finally, Section 9 concludes this paper.
+
+2 Related work
+
+News feed systems Most existing news feed systems only provide publish/subscribe ser-
+vices that simply forward a message to subscribed users or friends, e.g., [13, 14, 51, 65].
+However, such systems are not applicable to location-aware news feeds because they ignore
+the spatial relevance of messages, and they simply push all new messages to their sub-
+scribers without taking the subscriber’s capacity or preferences into account, and they only
+consider stationary users.
+
+Location-aware social networks Table 1 compares the features of MobiFeed with existing
+commercial products and research prototypes. There are two major categories for exist-
+ing commercial products. Facebook [23], Renren [49], and Sina Weibo [52] belong to the
+first category, where a message is tagged with its issuer’s location, but users may receive
+the same geo-tagged news feeds regardless of their location. Loopt [40], Google Buzz
+
+Table 1 The key features of MobiFeed
+
+Location-Aware
+
+Social Network
+
+Location
+
+Tags
+
+Range
+
+Queries
+
+Spatial
+
+Messages
+
+News Feed
+
+Scheduling
+
+Location
+
+Prediction
+
+& Relevance
+
+Measure
+
+Facebook [23]
+
+Renren [49]
+
+Sina Weibo [52]
+
+Loopt [40]
+
+Google Buzz [27]
+
+Foursquare [25]
+
+Twinkle [54]
+
+GeoFeed [9]
+
+MobiFeed
+
+√
+
+√
+
+√
+
+√
+
+√
+
+√
+
+√
+
+√
+
+√
+
+√
+
+√
+
+√
+
+√
+
+√
+
+√
+
+√
+
+√
+
+√
+
+√
+
+Geoinformatica
+
+Mobile [27], Foursquare [25], and Twinkle [54] belong to the second category, where each
+message has location tags and a user can issue a range query to view messages within a cer-
+tain distance from her location. GeoFeed [9] is the state-of-the-art research prototype that
+further enables a message to be associated with a spatial extent to control where users can
+receive it. However, GeoFeed supports mobile users in a very limited extent because it only
+optimizes the system performance for users with a set of registered locations (e.g., home
+and office). We can distinguish MobiFeed from these systems as it employs location predic-
+tion and relevance measure functions as well as heuristic and optimal news feed schedulers
+to schedule location-aware news feeds for moving users.
+
+Related research work in location-aware social network systems have focused on three
+major directions. (a) Message sharing. Some systems enable mobile users to broadcast or
+receive public geo-tagged messages, but they do not consider any non-spatial aspects (e.g.,
+user preferences) or schedule messages for mobile users based on their movements [2, 8,
+11]. (b) Privacy-preserving location sharing. Users can share their locations with friends
+without revealing any location information to the social network system or other unautho-
+rized users [26, 35, 50]. (c) Location-aware recommendation. In existing location-aware
+recommender systems, mobile users receive suggestions for new places/activities [8, 37,
+38, 58, 60, 62, 63], friends [5, 64] or articles [9, 53] based on user preferences, spatial-
+temporal proximity, and social influence, etc. Although their recommendation techniques
+can be used to suggest news feeds for users, the overall quality of news feeds is not
+optimized if we just apply these techniques to our problem. This is because the news
+feeds are only computed based on a user’s location at the query time (i.e., it does not
+consider the user’s future locations). To this end, we incorporate the location prediction
+function to the process of location-aware news feed recommendation, thus formulating
+a novel n-look-ahead framework to improve the overall quality of generated news feeds
+for moving users. Experiment results in Section 8 show that our framework generates
+news feeds with higher quality than a state-of-the-art location-aware recommender system
+(i.e., [9]).
+
+Spatial-textual query processing As the geo-tagged messages in our framework are
+spatially and textually relevant to the querying users (see Section 4.2), we consider
+spatial-textual (or spatial keyword) query processing [12, 19, 21, 61] as our related work.
+Spatial-textual queries utilize some efficient index structures (e.g., IR-tree and its vari-
+ants [19, 39, 56]) to retrieve a ranked list of objects according to their joint spatial and
+textual relevance to the query. However, their objective is to efficiently compute exact
+top-k results for individual query points; in contrast, our news feed scheduling framework
+aims at maximizing the overall quality of multiple news feeds for moving users. Simi-
+larly, the safe-zone methods proposed for continuous spatial-textual queries [57] are also
+not applicable to our scenario because of their limitation to top-k semantics. Furthermore,
+we argue that the index structures of above-mentioned spatial-textual query processing
+techniques cannot be applied to our n-look-ahead schedulers. The reason is that, given
+a news feed query, our schedulers require n + 1 complete sets of candidate messages
+along with their relevance scores, rendering the pruning effect of those indexing techniques
+useless.
+
+Online scheduling algorithms Our problem of scheduling location-based news feeds for
+moving users can be formulated as an online scheduling problem as follows [20]. Each
+position of a news feed result list is modeled as a processor, and each message corresponds
+to a job weighted according to its relevance to the user and has arrival time and deadline
+
+Geoinformatica
+
+determined by its location information and the moving user’s trajectory. Further, as shown
+in our running example (Fig. 3), it is possible that a job is unavailable for a certain period
+and a job has different weights to the same user at different locations. Since all messages
+are to be displayed for the same user-specified minimum display time, the corresponding
+jobs have the same processing time. By proper scaling, the jobs have unit processing times
+and integral arrival times and deadlines. When a job is processed, we gain a profit that is
+equal to the product of the weight of the job and the weight of the assigned processor. Our
+objective is to maximize the total gain of the processed jobs. Note that our problem has an
+on-line flavor because we do not know of a job (message) until it arrives. Once we receive
+a job, we can predict its deadline and unavailable periods by predicting the moving user’s
+trajectory. There are other similar but different problems studied in literature. For example,
+Chin et al. [16] presented an on-line algorithm for the special case when all the processors
+are identical and there is no job unavailable period. Chen et al. [15] gave approximation
+algorithms for maximizing the number of completed jobs with multiple feasible intervals
+but they considered unweighted jobs on a single processor. To our best knowledge, none of
+the existing work studied the problem we formulated here. We aim at developing efficient
+heuristic and optimal news feed scheduling algorithms. Moreover, we evaluate its effec-
+tiveness by extensive experiments using a real road map and a large-scale social network
+data set.
+
+(cid:2)
+|V |4
+(cid:4)√
+
+Bipartite matching Our problem of scheduling location-based news feeds for moving users
+is related to bipartite matching problems [33, 36, 41]. We first review offline bipartite mat-
+ching algorithms. Then we discuss their online counterparts. Finally, we explain the reason
+why we apply offline algorithms to solve our news feed scheduling problem.
+
+Given a bipartite graph G(V , E, W ), where V is a vertex set, E is an edge set, and
+W is the maximum weight of the edges in E, a maximum weight matching is defined
+as a matching where the sum of the values of the edges in the matching has a maxi-
+mal value [55]. Finding such a matching offline is also known as the assignment problem.
+The remarkable Hungarian algorithm [36] solves the offline bipartite matching problem,
+which uses a modified shortest path search in the augmenting path algorithm [55]. Its
+(cid:3)
+time complexity is O
+. Kao et al. [31, 32] present a decomposition theorem and
+
+(cid:2)
+
+(cid:3)
+
+|V | · |E| · W · log|V |
+
+use it to design an O
+-time algorithm for computing a
+maximum weight matching. In practice, the Hungarian algorithm can be improved to
+[55], which outperforms the algorithms in [31, 32] when |V | is much smaller
+O
+than |E| and W ; thus, we use the improved Hungarian algorithm for our bipartite matching
+problem.
+
+|V |3
+
+Next, we discuss the online bipartite matching algorithm, which was first studied by Karp
+et al. [33]. Given a bipartite graph G(U, V , E) in this problem, one side U is known to us
+in advance and the vertices of the other V arrive online, one vertex at a time. Whenever a
+vertex v ∈ V arrives, its adjacent edges connecting to U are revealed. The online algorithm
+has to decide which of these edges should be included in the matching. A match once made
+cannot be revoked. The objective is to maximize the size of the matching obtained after
+all vertices in V arrive. In [43], Mehta provides a classification of main generalizations of
+online bipartite matching problems and their applications:
+
+(cid:4)
+
+(cid:5)(cid:5)
+
+|V |2
+|E|
+
+• Online vertex-weighted bipartite matching: In this problem, each vertex u ∈ U has
+a non-negative weight wu, and the goal is to maximize the sum of weight of vertices
+in U which are matched. This problem was introduced by Aggarwal et al. [4], and its
+
+Geoinformatica
+
+typical application is online budgeted allocations [44] in the case when an agent makes
+the same bid for any desired item.
+
+• Online edge-weighted bipartite matching: In this problem, each vertex u ∈ U has
+a capacity cu, which is an upper bound on how many vertices v ∈ V can be matched
+to u. Each edge (u, v) ∈ E has a weight wuv. The goal is to maximize the total
+weight of edges matched. Its application includes assigning ad impressions to adver-
+tisers online [24] and matching applicants to possible positions in a company (i.e.,
+secretary matching problem) [34].
+
+• AdWords: This problem formulated by Mehta et al. [45] is closely related to google’s
+online advertising product AdWords [3]. Each vertex u ∈ U has a budget Bu, and each
+edge (u, v) ∈ E has bids biduv. By matching an arriving vertex v to a neighbour u,
+u consumes biduv amount of its budget. After u uses up its entire budget, it becomes
+unavailable. The objective is to maximize the total budget consumed.
+
+Although we design an online location-based news feed scheduler for MobiFeed, its
+bipartite matching uses an offline algorithm (see Section 6.1). This is because online bipar-
+tite matching algorithm assumes that vertices come in an unpredicted way, but in our
+bipartite matching problem, all vertices (a querying user’s reported location and n predicted
+locations) are already known before the bipartite matching algorithm starts. In MobiFeed,
+we employ the state-of-the-art implementation of the Hungarian algorithm (i.e., [55]) to
+solve our news feed scheduling problem.
+
+3 System overview
+
+Figure 2 depicts an overview of the MobiFeed framework. MobiFeed stores geo-tagged
+user-generated messages in a database. It is equipped with a news feed scheduler which
+interacts with the location prediction and relevance measure functions to select a collection
+of messages from the database as a news feed for a moving user at a particular location.
+
+Geo-tagged messages A geo-tagged user-generated message is defined as a tuple (Mes-
+sageID, SenderID, Content, Timestamp, Category, Spatial), where MessageID is its identi-
+fier, SenderID is its sender’s identifier, Content is its content, Timestamp is its submission
+time, and Spatial specifies its spatial extent. As depicted in Fig. 1, the spatial extent of a
+message can be a point location (e.g., m1), a user-specified spatial region (e.g., m14), or the
+spatial region of a venue (e.g., the spatial extent of m2 is the shopping mall S1). For the
+Category attribute, we group messages into categories based on their geo-tagged locations
+or keywords. For example, in FourSquare [25], each message is categorized by its associated
+venue, e.g., restaurant and museum.
+
+Mobile User
+
+1.xxx
+2.xxx
+3.xxx
+4.xxx
+
+Location
+Prediction
+
+Relevance
+Measure
+
+User
+Profile
+
+Query
+
+News Feed
+
+Location-Aware News
+Feed Scheduler
+
+Geo-tagged
+Messages
+
+Server
+
+Fig. 2 MobiFeed framework
+
+Geoinformatica
+
+System users and news feed queries In MobiFeed, a mobile user u is able to (a) post a new
+message with a spatial extent, and (b) receive at most u.k messages within u’s specified
+range distance u.D (i.e., the query region of a news feed) at a particular time as a news
+feed through a GPS-enabled mobile device. Specifically, u issues news feed queries by
+specifying the news feed size (u.k), the range distance (u.D), and the minimum message
+display time (u.td ). Then, MobiFeed computes news feeds for u by selecting messages based
+on their relevance to u and u’s movement. Each selected message must be displayed on u’s
+mobile device without any interruption for at least u’s specified minimum display time u.td .
+Assume the look-ahead step is n (system parameter), u reports its location to the server at
+every time period (n + 1) × u.td . After receiving u’s location update, n + 1 news feeds
+are computed for u. u’s mobile device immediately displays the first news feed, and then
+displays each of the remaining news feeds one by one for every u.td . It is important to notice
+that location-based services usually support the user-specified range distance u.D because
+users would be more interested in nearby messages or events and u.D can be used to prune
+the entire message set into a much smaller candidate message set for query processing (i.e.,
+significantly improve the query processing performance).
+
+Quality measure Given a user ui and a message mj , the relevance measure function returns
+a relevance score relevanceScore(ui, mj ). This function considers ui’s preferences with
+regard to categories and keywords maintained in the user profile (Fig. 2), as well as the geo-
+graphical proximity between ui and mj to define their relevance (details will be illustrated
+in Section 4.2). In information retrieval, query-relevance ranking algorithms usually display
+a document that is more relevant to a user’s query at a higher position in a result list [7]. To
+this end, MobiFeed supports different weights for different positions in a news feed result
+list, i.e., a higher weight is given to a message displayed at a higher position because it
+would be easier to draw a user’s attention. In this paper, we use a simple weighting scheme.
+Given a result list with k positions, the weight of the first position is k, the weight of the
+second position is k − 1, and so on. In general, the weight of a message mj at the j -th posi-
+tion (1 ≤ j ≤ k) is displayW eight(j, k) = k − (j − 1). Thus, the relevance score of a
+news feed fi with k messages m1, m2, . . . , mk displayed at the j -th position in a result list
+for a user ui is calculated as:
+
+relevanceScore (fi) =
+
+relevanceScore
+
+ui, mj
+
+× displayWeight (j, k)
+
+(1)
+
+(cid:2)
+
+(cid:3)
+
+k(cid:6)
+
+j =1
+
+Problem definition Our scheduling problem can be formulated as follows (Fig. 3): Given
+a user u’s location-aware news feed query at the current time t0 and a look-ahead step n,
+MobiFeed predicts u’s locations at each of the next n minimum display times (i.e., t0 + 1 ×
+u.td , t0 + 2 × u.td , . . . , t0 + n × u.td ), and schedules at most k messages (which have not
+been sent to u before) for the news feed at each location (i.e., one reported and n predicted
+locations), such that the total relevance score of the generated news feeds is maximized. In
+this paper, we design a heuristic news feed scheduler for efficiency and an optimal one for
+the best quality.
+
+4 Location prediction and message relevance measure
+
+In this section, we present the details of the location prediction and relevance measure
+functions in MobiFeed.
+
+Geoinformatica
+
+Fig. 3 Location-aware news feed scheduling
+
+4.1 Location prediction
+
+The location prediction function can employ any existing location prediction algorithm if it
+can predict a user’s location at a specified future time in a road network. We here describe
+how to incorporate the path prediction algorithm [30] into MobiFeed. Given a user u’s cur-
+rent location, u’s historical trajectories, the road map, and a future time t, the path prediction
+algorithm estimates u’s location at t. Figure 4 depicts a graph model G = (V , E) of a road
+network, where E is a set of road segments and V is a set of intersections of road segments
+that are represented by circles and lines, respectively. The algorithm performs two steps to
+predict u’s direction and speed.
+
+(cid:3)
+
+(cid:7)
+
+Step 1. Direction prediction. When a user u is moving on an edge ei, this step predicts
+which adjacent edge ej of ei u will go based on u’s historical trajectory set Tu.
+This step predicts a user’s direction through one of the following three cases [30]:
+(1) Given two edges ei and ej incident to a vertex v, the transition probability
+of u turning from ei to ej is defined as P (ei, v, ej ) = τ (Tu,ei →ej )
+τ (Tu,ei →ek) , where
+(cid:2)
+is the number of trajectories in Tu that turn from ei to ej and
+Tu, ei → ej
+τ
+ek is an adjacent edge of ei incident to v. For each adjacent edge ej of ei inci-
+(cid:3)
+and predicts that u will turn to ej with
+dent to v, this step calculates P
+the largest probability. For example, Fig. 4 shows a user u’s four historical tra-
+jectories T1 to T4 and u is moving towards v2 on e7. Since P (e7, v2, e4) = 2/3,
+P (e7, v2, e5) = 0, and P (e7, v2, e6) = 1/3, we predict that u will move to e4.
+(2) However, if τ
+is empty, the notion of reverse mobility statistics
+P (ei, v, ej ) = τ (Tu,ej →ei )
+(cid:7)
+(cid:2)
+(cid:3)
+ek
+Tu, ej → ei
+are empty, we select the adjacent edge of ei incident to v with the
+τ
+smallest deviation angle from u’s current travel direction, which is derived from
+u’s initial location at the query time and current location.
+
+(cid:2)
+Tu, ei → ej
+τ (Tu,ek→ei ) is used. (3) In case that both τ
+
+(cid:2)
+Tu, ei → ej
+
+(cid:2)
+ei, v, ej
+
+and
+
+ek
+
+(cid:3)
+
+(cid:3)
+
+Fig. 4 Four historical
+trajectories of a user
+
+Geoinformatica
+
+Step 2. Speed prediction. This step estimates u’s travel speed S(e) on an edge e by the
+average historical travel speeds of e from u’s Tu [30]. If e does not exist in Tu, we
+use a heuristic method that computes S(e) = A(e) × α, where A(e) is the speed
+limit of e and α is a system parameter.
+
+Let’s consider a general case where u is moving on an edge ei, and then u will enter an edge
+ej at t (cid:6) from a vertex vs and stay at ej at t. Let (xs, ys) denote the location of vs and (xe, ye)
+denote the location of the other vertex of ej . The predicted location of u at t is calculated as
+(cid:4)
+(cid:2)
+t − t (cid:6)
+− λ1 (where
+
+(cid:5)
+, where λ1 =
+
+and λ2 = L
+
+(cid:2)
+ej
+
+× S
+
+ej
+
+(cid:3)
+
+(cid:2)
+
+(cid:3)
+
+(cid:3)
+
+λ1×xe+λ2×xs
+λ1+λ2
+(cid:3)
+(cid:2)
+ej
+
+, λ1×ye+λ2×ys
+λ1+λ2
+is the length of ej ).
+
+L
+
+4.2 Message relevance measure
+
+MobiFeed only requires the relevance measure function to return a score to indicate the
+relevance of a message mj to a user ui, i.e., relevanceScore(ui, mj ). We describe how to
+combine three relevance measure methods to implement the relevance measure function.
+
+Message categories The user usually has a preference for certain message categories. For
+instance, movie fans may prefer to receive movie showtimes from nearby cinemas, while
+shopaholics would be interested in discount information from nearby shopping malls [47].
+To this end, we use the category information to measure the relevance of a message to
+a user. Specifically, for each user ui in the user profile (see Fig. 2), we maintain a list
+of categories CateList i sorted by the number of ui’s submitted messages belonging to
+each category. For example, if ui has issued three messages (i.e., m1 and m2 belong to
+the “restaurant” category, and m3 belongs to the “stadium” category), then CateList i =
+[ restaurant(2), stadium(1) ], where the integer value in the parentheses counts the
+number of messages associated with each category.
+
+Message contents The user may be more interested in messages that are similar to her
+submitted ones (e.g., a user’s common keywords reflect her interests [48]). For example, a
+user issued a message “I like spicy food” would be happy to receive messages about Thai
+restaurants. Therefore, we use the vector space model [42] to measure the relevance of a
+message to a particular user in terms of content similarity. Specifically, let T denote the
+term set of the message set M (see Fig. 2), and each message mj is represented by a vector
+of weights of all the terms in T , i.e., mj .V = (cid:7)wj 1, wj 2, . . . , wj |T |(cid:8). In general, a term
+Tk ∈ T should be weighted higher for mj if Tk occurs more frequently in mj and occurs
+more rarely in other messages in M. The weight can be computed by the T F × I DF
+scheme: wj k = tfj k · log
+, where tfj k is the term frequency of Tk in mj and dfk is
+the document frequency of Tk in M. To incorporate the vector space model into MobiFeed,
+we maintain a preference vector in the user profile (see Fig. 2) for each user based on her
+submitted messages. Given a querying user ui with a preference vector ui.V and a message
+mj , we use the cosine similarity to compute contentScore(ui, mj ) =
+
+|M|
+dfk
+
+(cid:7)|T |
+
+(cid:8)
+
+,
+
+k=1 wik·wj k
+(cid:8)(cid:7)|T |
+·
+
+(cid:7)|T |
+
+k=1 w2
+ik
+
+k=1 w2
+j k
+
+where wik ∈ ui.V and wj k ∈ mj .V .
+
+Distance We argue that the geographical proximities between users and messages have a
+significant influence on the relevance measure. In our scenario, the relevance of a message
+mj to a user ui can be measured by their distance, i.e., Dist(ui, mj ). If mj is associated
+
+Geoinformatica
+
+with a spatial extent or a venue, Dist(ui, mj ) returns the minimum distance between ui and
+the spatial extent or the venue of mj . To accommodate the difference in the value ranges
+of Dist (ui, mj ) and other relevance measures, we normalize Dist (ui, mj ) to a range from
+zero to one (i.e., N Dist(ui, mj ) = 1 − Dist(ui ,mj )
+), where u.D is the query range distance
+of a news feed.
+
+u.D
+
+Relevance measure function We employ two-level and linear combinations to integrate the
+aforementioned three methods into the relevance measure function. At the first level, we
+select top-δ categories ui.C in CateList i for a querying user ui, where δ is a system
+parameter to specify the number of top categories. All messages within ui’s range distance
+ui.D and belong to categories in ui.C are considered as the set of candidate messages
+CM, i.e.,
+
+CM = {m|m ∈ M, Dist(ui, m) ≤ ui.D, m.Category ∈ ui.C}
+
+(2)
+
+(cid:2)
+
+(cid:3)
+
+(cid:2)
+
+(cid:3)
+
+At the second level, for each candidate message mj ∈ CM, we measure its relevance to ui
+using a linear combination of contentScore(ui, mj ) and N Dist(ui, mj ) [17]:
+
+ui, mj
+
+× β (3)
+relevanceScore
+where 0 ≤ β ≤ 1 and β is a parameter that indicates the importance of the distance factor
+with respect to the message content score.
+
+= contentScore(ui, mj ) × (1 − β) + N Dist
+
+ui, mj
+
+(cid:3)
+
+(cid:2)
+u, mj
+
+In our example (Fig. 3) where δ = 4, n = 2 and β = 0.5, all candidate messages (i.e.,
+m1 to m11) belong to the top-4 categories (i.e., restaurant, stadium, shopping, and museum).
+For the user u and each candidate message mj , the values of contentScore
+and
+N Dist
+are listed in Tables I and II, respectively. At the second level, we calculate
+(cid:2)
+the relevance score relevanceScore
+for the query regions at times t0, t1, and t2.
+For instance, m4 is the candidate message at t1 and t2, i.e., relevanceScore (u, m4) =
+0.2×0.5+0.6×0.5 = 0.4 at t1 and relevanceScore(u, m4) = 0.2×0.5+0.1×0.5 = 0.15
+at t2.
+
+u, mj
+
+u, mj
+
+(cid:2)
+
+(cid:3)
+
+(cid:3)
+
+As depicted in Fig. 2, the proposed location-aware news feed scheduler only relies on the
+relevance measure function to return the relevance of a message to a user as an input. The
+relevance measure function can be customized based on different application scenario. For
+instance, the cosine similarity measure can be replaced with other similarity measure mod-
+els (e.g., a probabilistic model). Furthermore, the relevance measure function can consider
+additional factors. For example, in Section 8.3, we will consider a temporal factor as an
+additional aspect in Eq. 3. The key idea behind the temporal factor is that the interestingness
+and importance of a message fade out as time goes on.
+
+5 A heuristic news feed scheduler
+
+In this section, we present an n-look-ahead location-aware news feed scheduling algorithm
+for MobiFeed, where n is a system parameter to control the number of locations predicted
+for a mobile user. In general, if an underlying path prediction algorithm provides more
+accurate locations, we should specify a larger n. Thus, the value of n should be adjusted for
+different users and areas in a road network, for example, P
+should be larger than
+a certain threshold.
+
+ei, v, ej
+
+(cid:2)
+
+(cid:3)
+
+Data structure In MobiFeed, a spatial grid structure is used to index all geo-tagged mes-
+sages, i.e., each grid cell stores messages with spatial extent intersecting its cell area. Given
+
+Geoinformatica
+
+a user u’s news feed query, a range query is issued to the grid index to retrieve the mes-
+sages, which are not generated by u, associated with spatial extent intersecting the query
+region.
+
+Algorithm After a mobile user u issues a location-aware news feed query to MobiFeed, the
+location prediction function returns n predicted locations for u. A set of candidate mes-
+sages is found for each of n + 1 locations. The relevance measure function filters out those
+candidate messages that do not belong to any u’s top-δ categories, and then determines the
+relevance of each remaining candidate message to u. The scheduler finally computes a news
+feed for each location such that the overall relevance score is maximized. The heuristic
+n-look-ahead scheduling algorithm has three main steps.
+
+Step 1. Candidate message step. Given u’s query at time t0, the location prediction func-
+tion predicts n locations for u at times t1, t2, . . ., tn, where ti = t0 + u.td × i and
+u.td is u’s user-specified message minimum display time. For each of n + 1 loca-
+tions, a range query with a circular region centered at the location with a radius
+of u.D is issued to retrieve the messages intersecting the query region as a set of
+candidate messages CM i (0 ≤ i ≤ n). If there is an overlapping area between two
+consecutive query regions, we can employ a materialized view Vu for u to reduce
+the query processing time. The region of a materialized view of a range query is
+a minimum bounding rectangle of all the grid cells intersecting the range query
+region, as depicted in Fig. 5a.
+
+Given a range query qi at time ti, where 0 ≤ i ≤ n, this step first finds a set of
+
+candidate messages for qi (i.e., CM i) as follows:
+• When i = 0, we find the region of Vu for qi’s query region (Fig. 5a). The
+messages intersecting the region of Vu are materialized in Vu and then Vu is
+used to compute CM i for qi.
+
+• When i > 0, a materialized view Vu has been computed for qi−1 at time
+ti−1, where 0 < i ≤ n. We first compute the region of a new materialized
+
+The region of Vu
+
+u's location
+at ti
+
+'
+The region of Vu
+
+qi
+
+A
+
+u.D
+
+u
+
+qi-1
+
+B
+
+A grid cell
+
+Range query
+region
+
+The region of Vu
+
+u's location
+at ti-1
+
+Fig. 5 Materialized view
+
+Geoinformatica
+
+view V (cid:6)
+u for qi. If the query regions of qi−1 and qi overlap (Fig. 5b), V (cid:6)
+u can
+be efficiently computed by (i) removing a message m from Vu, if m’s spatial
+extent is completely within the non-overlapping area of qi−1’s Vu (i.e., region
+B), and (ii) adding a message m to Vu, if m’s spatial extent intersects the non-
+overlapping area of V (cid:6)
+u is then
+used to compute CM i.
+
+u’s region (i.e., region A) but not Vu’s region. V (cid:6)
+
+The experiment results show that using materialized views can significantly
+improve the query processing time, as depicted in Fig. 10b in Section 8.
+
+After retrieving CM i, the relevance measure function filters out all messages
+that do not belong to any u’s top δ categories. For each remaining candidate
+message m, a relevance score for u, i.e., relevanceScore(u, m), is calculated to
+indicate the relevance of m to u. Finally, the messages in each CM i are sorted
+by their relevance score in non-increasing order. To break ties, precedence will be
+given to a message with a more recent post time. The pseudo code of this step is
+shown in Lines 4 to 17 in Algorithm 1.
+
+Geoinformatica
+
+Example Figure 3 depicts an example of location-aware news feed scheduling, where a user
+u sends a query with her location to the server at the current time t0. The location prediction
+function predicts u’s location at each of the next two (i.e., n = 2) minimum display times
+td , i.e., t1 = t0 + td and t2 = t0 + 2 × td . There are totally 11 candidate messages for the
+three news feeds at the times t0, t1, and t2. m4 and m5 are tagged with a spatial region and a
+point location, respectively. {m1, m2, m3}, {m6, m7, m8, m9}, and {m10, m11} are associated
+with venues A, B, and C (represented by rectangles), respectively. The lifetime of each
+message with its relevance score for u at t0, t1, and t2 is shown on a timeline chart. Note
+that the lifetime of m5 is broken from t1 to t2. The identifier of a message indicates its
+posting time, i.e., a message with a larger identifier means a newer one. Three range queries
+are issued to find the candidate messages for each news feed or query region. Since all
+candidate messages (i.e., m1 to m11) belong to the top-4 categories (i.e., restaurant, stadium,
+shopping, and museum), no messages are filtered out. A relevance score is computed for
+each candidate message by Eq. 3, as shown beside each message in the timeline chart. For
+each query region, its candidate messages are sorted by their relevance score, as shown in
+the first row in Table 2 (i.e., CM 0, CM 1, and CM 2).
+
+Step 2. Online scheduling step. As depicted in the running example (Fig. 3), a geo-
+tagged message may be included in multiple sets of candidate messages. For
+example, m1 is included in all three sets of candidate messages (i.e., CM 0, CM 1
+and CM 2), so m1 can be scheduled to one of the news feeds at t0, t1 and t2, or
+none of them. This step aims at scheduling at most k × (n + 1) candidate mes-
+sages to the n + 1 news feeds such that the overall relevance score of these news
+feeds is maximized. Here we first describe a heuristic algorithm for this step, and
+an optimal algorithm will be illustrated later in Section 6. For each query region
+qi, we calculate a score for its first candidate message (i.e., the message with the
+× displayW eight (j, k)
+highest relevance score) mj by relevanceScore
+(see Eq. 1), where u is the querying user and j is the highest available position
+in qi’s news feed result list. The message with the largest such score, denoted as
+BestMsg, is assigned to the result list of corresponding query region. Then, the
+scheduler removes BestMsg from all the candidate message sets. Candidate mes-
+sages are iteratively selected to appropriate query regions until the news feed in
+each query region has k messages or all candidate message sets become empty.
+Whenever k messages have been assigned to the result list of a query region,
+its corresponding candidate message set is discarded. The computed n + 1 news
+feeds are sent to u. The pseudo code of this step is shown in Lines 19 to 2 in
+Algorithm 1.
+
+(cid:2)
+u, mj
+
+(cid:3)
+
+Example Table 2 illustrates the heuristic news feed scheduler for our running example,
+where n = 2 and k = 2. In the first iteration, m2 is BestMsg and it should be assigned to the
+result list of q1 to obtain the highest score relevanceScore(u, m2)×displayW eight (j, k).
+Since all three candidate message sets contain m2, m2 is removed from them. In the second
+iteration, m1 is the next BestMsg and it is assigned to RL0. This is because assigning m1 to
+RL0 has a higher score (0.58 × 2) than RL1 (0.68 × 1). In the third iteration, m5 is BestMsg,
+and it is assigned to the result list of q2. In the fourth iteration, m10 is BestMsg, and it can
+only be assigned to q0. At this moment, RL0 contains k messages, so CM 0 is discarded.
+In the next two iterations, m9 and m3 are selected and assigned to q2 and q1, respectively.
+Now all news feed result lists are full, so the online scheduling step is finished and they are
+sent to the user. In this example, the overall relevance score of the 2-look-ahead news feeds
+
+Table 2 Example of the heuristic scheduling algorithm (n = 2)
+
+Iteration
+
+BestMsg
+
+Candidate Message Sets
+
+Geoinformatica
+
+Initial
+
+–
+
+Result Lists
+(k = 2)
+
+RL0 = {∅}
+RL1 = {∅}
+RL2 = {∅}
+
+CM0 = {(m2, 0.58), (m1, 0.58), (m10, 0.55), (m5, 0.53)
+(m11, 0.5), (m3, 0.33)}
+CM1 = {(m2, 0.68), (m1, 0.68), (m3, 0.43), (m4, 0.4)}
+CM2 = {(m5, 0.53), (m9, 0.5), (m8, 0.5), (m7, 0.4),
+(m2, 0.35), (m1, 0.35), (m6, 0.3), (m4, 0.15), (m3, 0.1)}
+CM0 = {(m1, 0.58), (m10, 0.55), (m5, 0.53), (m11, 0.5),
+(m3, 0.33)}
+CM1 = {(m1, 0.68), (m3, 0.43), (m4, 0.4)}
+CM2 = {(m5, 0.53), (m9, 0.5), (m8, 0.5), (m7, 0.4),
+(m1, 0.35), (m6, 0.3), (m4, 0.15), (m3, 0.1)}
+CM0 = {(m10, 0.55), (m5, 0.53), (m11, 0.5), (m3, 0.33)}
+CM1 = {(m3, 0.43), (m4, 0.4)}
+CM2 = {(m5, 0.53), (m9, 0.5), (m8, 0.5), (m7, 0.4),
+(m6, 0.3), (m4, 0.15), (m3, 0.1)}
+CM0 = {(m10, 0.55), (m11, 0.5), (m3, 0.33)}
+CM1 = {(m3, 0.43), (m4, 0.4)}
+CM2 = {(m9, 0.5), (m8, 0.5), (m7, 0.4), (m6, 0.3),
+(m4, 0.15), (m3, 0.1)}
+CM1 = {(m3, 0.43), (m4, 0.4)}
+CM2 = {(m9, 0.5), (m8, 0.5), (m7, 0.4), (m6, 0.3),
+(m4, 0.15), (m3, 0.1)}
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+(m2, 0.68)
+
+RL0 = {∅}
+RL1 = {(m2, 0.68)}
+RL2 = {∅}
+
+(m1, 0.58)
+
+(m5, 0.53)
+
+(m10, 0.55)
+
+(m3, 0.43)
+
+RL0 = {(m1, 0.58)}
+RL1 = {(m2, 0.68)}
+RL2 = {∅}
+
+RL0 = {(m1, 0.58)}
+RL1 = {(m2, 0.68)}
+RL2 = {(m5, 0.53)}
+
+RL0 = {(m1, 0.58),
+(m10, 0.55)}
+RL1 = {(m2, 0.68)}
+RL2 = {(m5, 0.53)}
+RL0 = {(m1, 0.58),
+(m10, 0.55)}
+RL1 = {(m2, 0.68)}
+RL2 = {(m5, 0.53),
+(m9, 0.5)}
+RL0 = {(m1, 0.58),
+(m10, 0.55)}
+RL1 = {(m2, 0.68),
+(m3, 0.43)}
+RL2 = {(m5, 0.53),
+(m9, 0.5)}
+
+(m9, 0.5)
+
+CM1 = {(m3, 0.43), (m4, 0.4)}
+
+is: 0.58 × 2 + 0.55 × 1 + 0.68 × 2 + 0.43 × 1 + 0.53 × 2 + 0.5 × 1 = 5.06. Without any
+look-ahead step (i.e., n = 0), the news feeds at t0, t1, and t2 are {(m2, 0.58), (m1, 0.58)},
+{(m3, 0.43), (m4, 0.4)}, and {(m5, 0.55), (m9, 0.5)}, respectively, so the overall relevance
+score of three zero-look-ahead news feeds is: 0.58 × 2 + 0.58 × 1 + 0.43 × 2 + 0.4 × 1 +
+0.53 × 2 + 0.5 × 1 = 4.56. We can see that the improvement of 2-look-ahead scheme using
+the heuristic algorithm is about 11 %.
+
+Step 3.
+
+Geoinformatica
+
+•
+
+Incremental processing step. After sending the news feeds to u, MobiFeed tem-
+porarily stores the n + 1 result lists until u’s next location update. Two situations
+will trigger this step to maintain the news feeds:
+• Message Update. The first situation is detected on the server side for new mes-
+sages. When MobiFeed finds a new candidate message m that will improve
+the overall relevance score for a u’s future query region q, it sends m to u to
+replace the last message in q’s result list (Line 31 in Algorithm 1).
+Inaccurate Location Prediction. The second situation is detected on the client
+side for an inaccurate predicted location. A user’s location detected by GPS
+always incurs some error due to the problems of measurement imprecision
+and sampling imprecision [18]. A tolerance threshold θ is thus defined for the
+difference between a user’s actual location and its corresponding predicted
+location for a query region. If the location deviation is larger than θ , a pre-
+diction error occurs, and u reports its actual location to the server to retrieve
+a new set of news feeds. For example, given n = 2 (i.e., 2-look-ahead), for a
+trajectory with a user’s locations at times t0, t1 = t0 + td , t2 = t0 + 2 × td , . . . ,
+where td is the minimum display time, a first call of 2-look-ahead scheduling
+at t0 generates news feeds for t0, t1, and t2. If no prediction error occurs from
+t0 to t2, a second call of scheduling will take place at t3. In contrast, if pre-
+diction error occurs at t1, our algorithm will perform re-scheduling at t1 and
+generate news feeds for t1, t2, and t3. To reduce communication overhead, we
+determine (i) a set of new messages that are in a newly computed set of news
+feeds, but not in a previous set of news feeds, and (ii) positive or negative
+updates indicate that a certain message should be added to or removed from
+the previous result lists, respectively [46]. MobiFeed only sends the set of new
+messages, positive and negative updates to the user. In practice, θ can be set to
+the accuracy of the underlying positioning technique and device. For example,
+if Assisted-GPS is used, θ is set to 50 meters [22] (Line 32 in Algorithm 1).
+
+6 An optimal news feed scheduler
+
+The online scheduling step of the heuristic news feed scheduler (Step 2 in Algorithm 1) aims
+at scheduling at most k×(n+1) candidate messages to n+1 news feeds in order to maximize
+the total relevance score of all these news feeds. In this section, we optimize the online
+scheduling step as finding the maximum weight matching [55] in a weighted bipartite graph.
+
+6.1 Maximum weight matching for MobiFeed
+
+Given all sets of candidate messages CM i (0 ≤ i ≤ n) as the input of the online scheduling
+step, we form a weighted bipartite graph G = (X ∪ Y, E) [55] as follows:
+• X is a partition of vertices that represent all the positions of n + 1 news feeds. Thus,
+there are k × (n + 1) vertices in X, where k is the news feed size. For vertex xa ∈ X
+where a = k × i + j , it stands for the j -th position (1 ≤ j ≤ k) in the news feed
+result list at ti (0 ≤ i ≤ n). Figure 6 depicts the bipartite graph for our running example
+(Fig. 3), where X contains 6 positions (i.e., two positions for each of three news feeds).
+Y is the other partition of vertices that represent all distinct messages in CM i (0 ≤ i ≤
+n). In our example, Y contains 11 messages (i.e., m1 to m11).
+
+•
+
+Geoinformatica
+
+Fig. 6 The bipartite graph of our running example
+
+• E is a set of edges in G, for j -th position (1 ≤ j ≤ k) in the news feed at ti (0 ≤ i ≤ n),
+i.e., the vertex xa ∈ X, it links to all the messages in CM i. For an edge (xa, yb), its
+weight w(xa, yb) equals relevanceScore(u, mb) × displayW eight(j, k) (see Eq. 1).
+In our example, for the first position in the news feed at t0 (i.e., x1), it connects to
+the vertices in y1, y2, y3, y5, y10, and y11. And the weight of edge (x1, y1) equals
+0.58 × 2 = 1.16.
+
+As described in Section 5, a solution of the online scheduling step is defined as follows:
+
+Definition 1 (Solution of the Online Scheduling Step) Given n + 1 sets of candidate mes-
+sages, a solution of the online scheduling step contains n + 1 news feeds for u’s query
+regions at t0, t1, . . . , and tn, with each news feed containing at most k messages. After a
+solution is found, there is no available position to which an unselected candidate message
+can be assigned.
+
+Figure 7a shows an example of input for the online scheduling step, where n = 1,
+k = 1. Each bold edge (ti, mj ) in Figs. 7b, c, and d means that we assign mj to the only
+position in the news feed at ti. By Definition 1, Figs. 7b and c depict two solutions for
+this example. However, just scheduling m1 to the news feed at t1 (Fig. 7d) is not a solu-
+tion, since unselected message m2 can be assigned to an available position in the news
+feed at t0.
+
+In the modeled bipartite graph, we have matchings and maximal matchings (Definition 2
+and 3). By Definition 1, each maximal matching is a solution of the online scheduling step.
+In the example of Fig. 7, the bold edges in Fig. 7b and c are maximal matchings, so they are
+solutions of the online scheduling step. By contrast, the matching in Fig. 7d is not maximal.
+
+Definition 2 (Matching) A set of edges in a bipartite graph G is called a matching if no
+two edges share a common end vertex.
+
+Definition 3 (Maximal Matching) A maximal matching in a bipartite graph G is a matching
+that cannot be enlarged by adding an edge.
+
+Geoinformatica
+
+0.1
+
+0.1
+
+0.1
+
+0.1
+
+t0
+(x1)
+
+0.9
+
+m1
+(y1)
+
+t0
+(x1)
+
+0.9
+
+m1
+(y1)
+
+t1
+(x2)
+
+t0
+(x1)
+
+m2
+(y2)
+
+t1
+(x2)
+
+0.9
+
+m1
+(y1)
+
+t0
+(x1)
+
+0.9
+
+m2
+(y2)
+
+m1
+(y1)
+
+0.1
+
+0.1
+
+0.1
+
+0.1
+
+t1
+(x2)
+
+m2
+(y2)
+
+t1
+(x2)
+
+m2
+(y2)
+
+Fig. 7 Example of solutions of the online scheduling step (k = 1, n = 1)
+
+We turn to derive the optimal solution of our online scheduling step. First of all, we
+define the weight of a matching M as the sum of the weights of all edges in M, i.e., w(M) =
+(cid:7)
+
+e∈M w(e). We then introduce the concept of maximum weight matching:
+
+Definition 4 (Maximum Weight Matching) The maximum weight matching in a bipartite
+graph G is a matching with maximum weight among all maximal matchings in G.
+
+By Definition 4 and the modeling of bipartite graph G, the maximum weight matching
+in G corresponds to the assignment of n + 1 news feeds with the highest total relevance
+score, and thus is exactly the optimal solution of the online scheduling step. Based on this
+problem formulation, we describe the optimal scheduling algorithm in the next section.
+
+6.2 Optimal online scheduling algorithm
+
+In this section, we propose an optimal algorithm for our n-look-ahead news feed scheduler.
+This algorithm is based on the Hungarian Algorithm [36], which finds the maximum weight
+matching in a bipartite graph G with two equal-size partitions. However, in our news feed
+scheduling problem, two partitions in G usually do not have the same number of vertices
+(see Section 6.1). Thus, we modify the Hungarian Algorithm such that it could be applied
+to our problem. Finally, we prove the correctness of our optimal algorithm.
+
+Algorithm As shown in Algorithm 2, the Steps 1 and 3 of the optimal online scheduling
+algorithm are almost the same as in Algorithm 1, except that we do not require candidate
+
+Geoinformatica
+
+messages CM i (0 ≤ i ≤ n) to be sorted (Line 16 in Algorithm 1). We focus on the online
+scheduling step (Step 2), which can be further divided into three steps.
+Step 2a. Preprocessing. With n + 1 sets of candidate messages generated by Step 1,
+we construct the weighted bipartite graph G = (X ∪ Y, E) as described in
+Section 6.1. Since the Hungarian Algorithm works on graphs with integer-weight
+edges [6], we scale up the weights of edges in G to integers. Furthermore, the
+Hungarian Algorithm requires that G should be a complete bipartite graph (i.e.,
+every vertex of one partition is connected to every vertex of the other parti-
+tion) [6], so we insert the missing edges with zero weights. This does not affect
+the weight of a matching we can obtain.
+
+Step 2b. Maximum weight matching. This step aims at finding the maximum weight
+matching in G. To achieve this, we assign a label l(v) (i.e., an integer value)
+for each vertex v ∈ X ∪ Y , which is initialized as follows [6]: l(xa) =
+max{w(xa, yb)|yb ∈ Y } for xa ∈ X; l(yb) = 0 for yb ∈ Y . The labels will be
+changed by the algorithm and they must satisfy l(xa) + l(yb) ≥ w(xa, yb) for
+each xa ∈ X, yb ∈ Y . Then, we construct the equality subgraph Gl with respect
+to the labels l. More specifically, Gl contains all vertices in G, as well as edges
+(xa, yb) in G which satisfy l(xa) + l(yb) = w(xa, yb). By Definition 2, we can
+generate an initial matching M in Gl by checking the neighbors of every vertex
+in X. The size of M is increased by one in each iteration (Lines 12 to 23 in Algo-
+rithm 2) until |M| = min(|X|, |Y |). When the loop terminates, the matching M
+in Gl is the maximum weight matching in G. Note that the termination condition
+of the loop (i.e., Line 11) is different from that in the Hungarian Algorithm (i.e.,
+|M| = |X| = |Y |).
+
+To increase the size of matching M, the idea is to add new edges in Gl by
+adjusting the vertex labels l, and then find an augmenting path P [6] in Gl, which
+is a path with (a) edges alternating between M and M (called an alternating
+path [6]), and (b) unmatched start and end vertices. Specifically, in each iteration,
+we pick an unmatched vertex xs in X, and initialize a set S with {xs} and an
+empty set T . We find an augmenting path by exploring alternating paths starting
+from xs. Basically, S and T are used to record vertices that have been explored
+in X and Y , respectively. We then determine the neighbors of S (denoted as
+Nl(S)), i.e., the vertices in Y that can be reached (in terms of Gl) from any
+vertex in S. When Nl(S) = T , all alternating paths from xs to vertices in Y have
+been explored but no augmenting path is found, then we need to add new edges
+into the equality subgraph Gl. This is achieved by updating the vertex labels l,
+as shown in Lines 14 and 16 in Algorithm 2. This update operation guarantees
+that new edges incident to vertices in S are added into Gl [6], which leads to
+Nl(S) (cid:12)= T , so we can find a vertex yt ∈ Nl(S) \ T . If yt is matched, say to
+vertex x(cid:6) in X, then x(cid:6) and yt are inserted into S and T , respectively, and the
+algorithm turns back to check the equality between Nl(S) and T again (Line 19).
+Otherwise, there exists an augmenting path P in Gl from xs to yt . Thus, M can
+be augmented by computing the symmetric difference of M and P , i.e., M (cid:13) P
+(Line 21). This step terminates when |M| = min(|X|, |Y |).
+
+Step 2c. Assignment. For each edge (xa, yb) ∈ M, if its weight is larger than zero, the
+corresponding message mb is assigned to the position represented by xa (see
+Section 6.1). After checking every edge in M, the n + 1 news feeds constitute an
+optimal solution for our online scheduling step.
+
+Geoinformatica
+
+Example We use our running example in Fig. 6 to illustrate the three steps of the optimal
+online scheduling step.
+
+Step 2a: Figure 8 depicts the weighted bipartite graph G that is represented by a weight
+matrix with 6 rows and 11 columns. In the matrix, the value in entry (a, b) is the
+weight w(xa, yb) that is scaled by 100 to keep two decimal points for relevance
+scores.
+
+Step 2b: As shown in Fig. 9a, we get the equality subgraph Gl with respect to the ini-
+tial vertex labels l (in square brackets). By checking the neighbors of x1, x2,
+. . . , and x6, we obtain an initial matching M = {(x1, y1), (x2, y2), (x5, y5)}
+in Gl (bold edges in Fig. 9a) (i.e., no messages can be assigned to x3, x4, or
+x6). In the first iteration, x3 is selected as an unmatched vertex, and S is ini-
+tialized as {x3}. Then, y1 is the vertex picked in Nl(S) \ T . We add y1 and its
+matched vertex x1 into T and S, respectively. Since Nl(S) is still not equal to
+T , y2 is inserted into T . After its matched vertex x2 is added into S, Nl(S) is
+equal to T . We calculate dl = 3 according to Line 15 in Algorithm 2, and then
+decrease the labels in S (i.e., x1, x2, and x3) by dl = 3 and increase the labels
+in T (i.e., y1 and y2) by dl = 3 (Fig. 9b). Now a new edge (x2, y10) is added
+into the equality subgraph, since l(x2) + l(y10) = w(x2, y10) after updating the
+vertex labels. When the unmatched vertex y10 is explored as a neighbor of x2,
+an augmenting path P from x3 to y10 can be obtained as x3 → y2 → x2 →
+y10 (highlighted in Fig. 9b). After augmenting M by M (cid:13) P , we obtain an
+
+Geoinformatica
+
+expanded matching M = {(x1, y1), (x2, y10), (x3, y2), (x5, y5)} (Fig. 9c). This
+step repeats such iterations until |M| = min(|X|, |Y |) = 6. The final matching is
+M = {(x1, y10), (x2, y11), (x3, y2), (x4, y1), (x5, y5), (x6, y8)}, represented by
+bold edges in Fig. 6.
+
+Step 2c: After the assignment step, the corresponding news feeds at t0, t1, and t2 are
+{(m10, 0.55), (m11, 0.5)}, {(m2, 0.68), (m1, 0.68)}, and {(m5, 0.53), (m8, 0.5)},
+respectively. The total relevance score of the 2-look-ahead news feeds generated
+by the optimal scheduler is: 0.55 × 2 + 0.5 × 1 + 0.68 × 2 + 0.68 × 1 + 0.53 × 2 +
+0.5 × 1 = 5.2. Compared with the total relevance score of the zero-look-ahead
+algorithm (i.e., 4.56, as calculated in Section 5), the improvement of the optimal
+2-look-ahead algorithm is about 14%.
+
+Correctness We prove the correctness of our optimal online scheduling algorithm by
+Theorem 1.
+
+Theorem 1 The matching generated by Step 2b of Algorithm 2 is the maximum weight
+matching in G.
+
+Proof Case: 1 |X| < |Y |. We first prove that after the main loop (Lines 11 to 23 in
+Algorithm 2) terminates, the labels for unmatched vertices in Y are all zero. Firstly, before
+entering the loop, the initial labels for vertices in Y are zero. Secondly, in the loop, accord-
+ing to the update rule of vertex labels (Lines 14 and 15 in Algorithm 2), the label for any
+vertex in Y is only updated if it belongs to set T , and all vertices in T are matched vertices
+(Line 19). Consequently, the labels for unmatched vertices in Y remain unchanged as zero
+when the loop terminates.
+
+We prove that the matching M in Gl generated by Step 2b is the maximum weight match-
+ing in G. Since Gl is a subgraph of G, M is a matching in G. Also, due to the fact that
+(1) |M| = |X|, i.e., each vertex in X and each matched vertex in Y are covered only once by
+M, (2) the labels for unmatched vertices in Y are 0 (as discussed above), and (3) Gl is the
+equality subgraph derived from l, we have: (a) w(M) =
+v∈X∪Y l(v). On
+the other hand, assume that M (cid:6) is any matching in G. For any edge (xa, yb) ∈ M (cid:6), we have:
+l(xa) + l(yb) ≥ w(xa, yb) (i.e., the property of vertex labels l), and hence, (b) w(M (cid:6)) ≤
+(cid:7)
+v∈X∪Y l(v). Combining inequalities (a) and (b), w(M) ≥ w(M (cid:6)). Therefore, M is the
+
+e∈M w(e) =
+
+(cid:7)
+
+(cid:7)
+
+maximum weight matching in G.
+
+Case: 2 |X| > |Y |. This case is symmetric to Case 1.
+Case: 3 |X| = |Y |. The original Hungarian algorithm works exactly on this case [6].
+
+Fig. 8 Weight matrix of the bipartite graph
+
+Fig. 9 Example of maximum
+weight matching
+
+[116]
+x1
+
+[58]
+x2
+
+[136]
+x3
+S
+
+[68]
+x4
+
+[106]
+x5
+
+[53]
+x6
+
+Geoinformatica
+
+y1
+[0]
+
+y2
+[0]
+
+y3
+[0]
+
+y4
+[0]
+
+y5
+[0]
+
+y7
+[0]
+
+y8
+[0]
+
+y9
+[0]
+
+y10
+[0]
+
+y11
+[0]
+
+y6
+[0]
+(a)
+
+Updated
+[55]
+x2
+S
+
+[133]
+x3
+S
+
+[113]
+x1
+S
+
+Update the labels and
+equality subgraph
+
+[68]
+x4
+
+[106]
+x5
+
+[53]
+x6
+
+T T
+y1
+[3]
+
+y2
+[3]
+
+y3
+[0]
+
+y4
+[0]
+
+y5
+[0]
+
+Updated
+
+y6
+[0]
+(b)
+
+y7
+[0]
+
+y8
+[0]
+
+y9
+[0]
+
+y10
+[0]
+
+y11
+[0]
+
+Augment the
+matching
+
+[113]
+x1
+
+[55]
+x2
+
+[133]
+x3
+
+[68]
+x4
+
+[106]
+x5
+
+[53]
+x6
+
+y1
+[3]
+
+y2
+[3]
+
+y3
+[0]
+
+y4
+[0]
+
+y5
+[0]
+
+y7
+[0]
+
+y8
+[0]
+
+y9
+[0]
+
+y10
+[0]
+
+y11
+[0]
+
+y6
+[0]
+(c)
+
+The “optimality” of our scheduling algorithm is defined as follows: given a user’s location
+at the query time and n predicted locations, our algorithm generates a news feed for each of
+these n + 1 locations, such that the total relevance score of these news feed is maximized.
+
+6.3 Discussion
+
+7 Complexity analysis
+
+In this section, we analyze the time complexity of the heuristic news feed scheduler (Algo-
+rithm 1) and the optimal news feed scheduler (Algorithm 2). As defined in Section 6, let X
+denote all available positions in n + 1 news feeds, i.e., |X| = k × (n + 1), and let Y represent
+the set of distinct messages in all CM i (0 ≤ i ≤ n). Since the complexity of the Step 3 of
+the heuristic and optimal schedulers is the same, we focus on their first two steps.
+
+Heuristic news feed scheduler In Algorithm 1, Step 1 takes O((n + 1)|Y | log |Y |) to sort
+candidate messages. Step 2 takes constant time to schedule each BestMsg. Since the goal is
+to schedule at most k(n + 1) messages, the complexity of Step 2 is O(k(n + 1)). As a result,
+the complexity of the heuristic scheduler is O(n(|Y |log |Y | + k)).
+
+Optimal news feed scheduler In Algorithm 2, Step 1 only takes O((n+1)|Y |) = O(|X||Y |)
+(because |X| = k × (n + 1)) to retrieve all candidate messages. Step 2a takes O(|X||Y |)
+time to construct G. We can distinguish two cases in Step 2b:
+
+Case: 1 |X| ≤ |Y |. There are at most |X| iterations in Step 2b. In each iteration, at
+most |X| vertices can be moved from ¯S to S. For each of such operations, we may update
+the vertex labels l. Just using formulas in Lines 14 and 16 directly will lead to a cost of
+
+Geoinformatica
+
+O(|X||Y |). For the sake of efficiency, we use a slack array [55] initialized in O(|Y |) time
+(S only contains one element initially):
+
+slack[yb] = min
+xa ∈S
+
+(l(xa) + l(yb) − w(xa, yb)), yb ∈ Y
+
+When one vertex is moved from ¯S to S, it takes O(|Y |) time to update the slack array.
+The calculation of dl takes O(|Y |) time, since dl = minyb∈Y \T slack[yb], and additional
+O(|Y |) time is needed to update the labels l. Thus, the label update operation needs O(|Y |)
+(cid:2)
+|X|2|Y |
+time, and the complexity of Step 2b is O
+(cid:3)
+
+Case: 2 |X| > |Y |. Similarly, in this case, the complexity of Step 2b is O
+Step 2c takes O(min(|X|, |Y |)) to assign every edge in M. As a result,
+plexity of the optimal scheduler is O
+respectively.
+
+(cid:2)
+|X|2|Y |
+
+|X||Y |2
+.
+the com-
+for Case 1 or 2,
+
+|X||Y |2
+
+or O
+
+(cid:3)
+.
+
+(cid:2)
+
+(cid:3)
+
+(cid:2)
+
+(cid:3)
+
+8 Experiment results
+
+In this section, we evaluate the performance of MobiFeed through experiments using a real
+location-aware social networking data set collected from FourSquare (Sections 8.2, 8.3,
+and 8.4). Also, we study the scalability of MobiFeed using a synthetic data set (Sec-
+tion 8.5). We first describe our experiment settings, and then analyze experiment
+results.
+
+8.1 Experiment setting
+
+Road map and data sets We extracted the road map of NYC from the USA Census
+TIGER/Line Shapefiles [1] and randomly generated 5,000 30-minute trajectories using
+the A* algorithm [29]. In the first three sets of experiments (Sections 8.2, 8.3, and 8.4),
+we use a real location-aware social network data set in New York City (NYC), USA,
+which was crawled from FourSquare [25] from December 10 to 25, 2012. The data set
+contains 417,897 geo-tagged user-generated messages (belong to 420 categories in total)
+and 101,232 users. We also use a synthetic data set to evaluate the scalability of Mob-
+iFeed in Section 8.5. The space cost of different news feed schedulers is evaluated in
+Table 3.
+
+Parameters and performance measure Unless mentioned otherwise, all users move at a
+constant speed of 40km/h, the minimum message display time (td ) is 20 seconds, the
+look-ahead step (n) is 5, the number of messages per news feed (k) is 5, the number
+
+Table 3 Space cost of different schedulers
+
+Memory Usage
+
+GeoFeed
+
+zero-LA
+
+n-LA-H
+
+n-LA-O
+
+n-LA-H
+
+n-LA-O
+
+(w/o view)
+
+(w/o view)
+
+Road Map
+
+Grid Index
+
+Bipartite Matching
+
+Materialized View
+
+Others
+
+506K
+
+49M
+
+N/A
+
+N/A
+
+6K
+
+506K
+
+49M
+
+N/A
+
+N/A
+
+8K
+
+506K
+
+49M
+
+N/A
+
+84K
+
+9K
+
+506K
+
+49M
+
+124K
+
+84K
+
+12K
+
+506K
+
+49M
+
+N/A
+
+N/A
+
+9K
+
+506K
+
+49M
+
+124K
+
+N/A
+
+12K
+
+Geoinformatica
+
+of top categories (δ) is 3, and the query range distance (D) is 600 meters. In Sec-
+tion 8.2, we first consider no location prediction error and evaluate the performance
+of MobiFeed with respect to various parameters. After that, we discuss the relevance
+measure function considering temporal factor in Section 8.3. Then, in Section 8.4 we
+study the effect of prediction errors of the location prediction function described in
+Section 4.1.
+
+We measure the quality and efficiency of MobiFeed in terms of the average relevance
+score and running time per news feed, respectively. For comparison, a GeoFeed user issues
+a query at every td to retrieve the k most recent messages. Also, we implement the zero-look-
+ahead scheduler (termed zero-LA) as another baseline, and evaluate the performance of the
+heuristic n-look-ahead scheduler (termed n-LA-H) and the optimal n-look-ahead scheduler
+(termed n-LA-O).
+
+All the experiments were implemented in C++ and run on an Ubuntu 13.10 machine
+with a 3.4GHz Intel Core i7-4770 processor and 16GB RAM. In the experiments, the road
+network and largest dataset occupies 1 MB and 50 MB, respectively. Thus, all data can fit
+in the main memory.
+
+8.2 Performance study with various parameters
+
+In this section, we investigate the performance of MobiFeed by varying parameters includ-
+ing (a) the look-ahead step, (b) the minimum display time, (c) the new feed size, (d)
+the query range distance, (e) the number of top categories, and (f) the user movement
+speed.
+
+Effect of the Number of Look-ahead Steps Figure 10 and Table 4 depict the performance
+of MobiFeed with respect to 1 to 10 look-ahead steps (n). The performance of zero-
+LA and GeoFeed is not affected by the value of n. When n is larger, both n-LA-H and
+n-LA-O have a higher chance to assign a message to a better news feed within its life-
+time; and hence, the quality of news feeds generated by n-LA-H and n-LA-O improves
+(Fig. 10a). Besides, n-LA-O obtains a relevance score about 5 % higher than n-LA-H and
+about 15 % higher than zero-LA on average. Figure 10a also shows that GeoFeed per-
+forms worst among all approaches. The reason is that, GeoFeed simply uses submission
+time as the ranking measure, while our schedulers use a more advanced ranking function
+(described in Section 4.2).
+
+Interestingly, compared with zero-LA and GeoFeed, although n-LA-H and n-LA-O have
+extra overhead in assigning messages to a news feed within their lifetime, this overhead is
+almost offset by the benefit of sharing the computation of scheduling n + 1 news feeds for a
+user’s location (Fig. 10b). Figure 10b also depicts that materialized views help to reduce the
+query processing time for n-LA-H and n-LA-O. The main reason is that the overlapping area
+between consecutive query regions is large, and most of the messages stored in the views can
+be reused for the evaluation of range queries. Since in other experiments, the improvement
+of efficiency for using views is similar, we will not depict the results for schedulers without
+views in other experiments. Table 4 shows that when n increases, n-LA-H and n-LA-O are
+able to pre-compute more news feeds for a mobile user’s location update; thus, the number
+of location updates reduces.
+
+In Table 3 we show the space costs of different schedulers by breaking down their mem-
+ory usage. The grid index for all messages consumes the majority of the whole space cost.
+The materialized view for our schedulers does not consume much memory. The reason is
+
+Geoinformatica
+
+e
+r
+o
+c
+S
+ 
+e
+c
+n
+a
+v
+e
+l
+e
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+ 4
+
+ 3
+
+ 2
+
+ 1
+
+ 0
+
+Fig. 10 Look-ahead steps
+
+)
+s
+m
+
+i
+
+(
+ 
+e
+m
+T
+ 
+g
+n
+i
+n
+n
+u
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+0.4
+
+0.3
+
+0.2
+
+0.1
+
+0.0
+
+GeoFeed
+zero-LA
+n-LA-H
+n-LA-O
+
+GeoFeed
+zero-LA
+n-LA-H
+n-LA-O
+n-LA-H (w/o view)
+n-LA-O (w/o view)
+
+1
+
+2
+
+3
+
+5
+
+4
+7
+Look-ahead Steps
+
+6
+
+8
+
+9
+
+10
+
+1
+
+2
+
+3
+
+5
+
+4
+7
+Look-ahead Steps
+
+6
+
+8
+
+9
+
+10
+
+that, the view keeps being updated with the candidate messages in the most recent query
+region, and the quantity of these messages would not be very large.
+
+Effect of Minimum Display Time In this experiment, we evaluate the effect of the minimum
+message display time (i.e., td ), varying from 5 to 30 seconds, on MobiFeed. Figure 11a
+depicts that the quality of news feeds improves when td gets larger. n-LA-H and n-LA-O also
+perform better than zero-LA and GeoFeed as td gets larger. The main reason is that, as td
+gets larger, the distance between the centers of two consecutive query regions increases;
+thus, the overlapping area between two consecutive query regions reduces (given fixed range
+distance). As a result, there are more distinct candidate messages for n + 1 query regions,
+and the schedulers have a higher chance to generate news feeds with better quality. However,
+td should not be too long because mobile users would miss many nearby relevant messages.
+As depicted in Fig. 11b, the running time of MobiFeed increases when td gets larger, since
+all the schedulers have to process more distinct candidate messages.
+
+Effect of News Feed Sizes Figure 12 depicts the performance of MobiFeed with respect to
+various user-required number of messages per news feed (i.e., k). It is expected that the aver-
+age relevance score of a news feed increases when a mobile user requires more messages
+per news feed (i.e., a larger value of k) (Fig. 12a). n-LA-O performs best since it optimizes
+the scheduling of news feeds over n + 1 query regions. Furthermore, the improvement of
+n-LA-H and n-LA-O over zero-LA increases when k gets larger (Fig. 12a). The reason is
+that when zero-LA selects more messages for a current news feed, it has a higher chance to
+reduce the quality of subsequent news feeds; however, some selected messages could be put
+in a higher position in a subsequent news feed by n-LA-H and n-LA-O. For n-LA-O, a larger
+k needs more time to compute the maximum weight matching, so its running time increases
+(Fig. 12b).
+
+Effect of Query Range Distances This section studies the effect of user-specified query
+range distances (i.e., D) on the performance of MobiFeed by varying D from 200 to 1,000
+
+Table 4 The number of location updates
+
+Look-ahead steps
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+n-LA-H/n-LA-O
+
+zero-LA/ GeoFeed
+
+90
+
+180
+
+60
+
+180
+
+45
+
+180
+
+36
+
+180
+
+30
+
+180
+
+26
+
+180
+
+23
+
+180
+
+20
+
+180
+
+18
+
+180
+
+10
+
+17
+
+180
+
+Geoinformatica
+
+ 5
+
+ 4
+
+ 3
+
+ 2
+
+ 1
+
+e
+r
+o
+c
+S
+ 
+e
+c
+n
+a
+v
+e
+l
+e
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+ 0
+
+5
+
+0.3
+
+0.2
+
+0.1
+
+)
+s
+m
+
+i
+
+(
+ 
+e
+m
+T
+ 
+g
+n
+i
+n
+n
+u
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+30
+
+0.0
+
+5
+
+GeoFeed
+zero-LA
+n-LA-H
+n-LA-O
+25
+10
+Minimum Display Time (s)
+
+15
+
+20
+
+GeoFeed
+zero-LA
+n-LA-H
+n-LA-O
+25
+10
+Minimum Display Time (s)
+
+20
+
+15
+
+30
+
+Fig. 11 Minimum display time
+
+meters. The increase of D leads to more candidate messages for a query region. The news
+feed quality of MobiFeed improves when the number of candidate messages gets larger
+(Fig. 13a), since there is a higher chance to find more relevant messages for a user. However,
+Fig. 13b shows that the running time of all the schedulers gets worse when D increases. The
+main reason is that the system needs to process more candidate messages to generate news
+feeds.
+
+Effect of the Number of Top Categories Figure 14 depicts the results of varying the number
+of top categories (i.e., δ) from 1 to 5. When δ increases, more candidate messages belong to
+the top-δ categories for a news feed, so all the schedulers have a higher chance to find news
+feeds with better quality (Fig. 14a). However, the increase of δ results in higher running
+times (Fig. 14b) because all the schedulers have to process more candidate messages for
+each query region.
+
+Effect of User Movement Speeds This experiment varies user’s movement speeds from 20
+to 100 km/h. A higher speed reduces the overlapping area of two consecutive query regions,
+so the query regions have more distinct candidate messages. As a result, there is a higher
+chance for our schedulers to generate news feeds with better quality (Fig. 15a). Correspon-
+dingly, since all schedulers have to process more distinct candidate messages, their running
+times increase as the user’s speed gets higher.
+
+)
+s
+
+m
+
+ 
+
+i
+
+(
+ 
+e
+m
+T
+g
+n
+i
+n
+n
+u
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+0.3
+
+0.2
+
+0.1
+
+0.0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10
+
+No. of Messages per News Feed
+
+No. of Messages per News Feed
+
+GeoFeed
+zero-LA
+n-LA-H
+n-LA-O
+
+GeoFeed
+zero-LA
+n-LA-H
+n-LA-O
+
+e
+r
+o
+c
+S
+ 
+e
+c
+n
+a
+v
+e
+l
+e
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+ 12
+
+ 10
+
+ 8
+
+ 6
+
+ 4
+
+ 2
+
+ 0
+
+Fig. 12 News feed sizes
+
+Geoinformatica
+
+GeoFeed
+zero-LA
+n-LA-H
+n-LA-O
+
+ 6
+
+ 4
+
+ 2
+
+e
+r
+o
+c
+S
+ 
+e
+c
+n
+a
+v
+e
+l
+e
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+ 0
+200
+
+Fig. 13 Query range distances
+
+400
+
+600
+Range Distance (m)
+
+800
+
+400
+
+600
+Range Distance (m)
+
+800
+
+1000
+
+1000
+
+0.0
+
+200
+
+GeoFeed
+zero-LA
+n-LA-H
+n-LA-O
+
+8.3 Study on relevance measure function with temporal factor
+
+In Section 4.2, we have defined the relevance measure function by considering the mes-
+sage’s content, associated categories, and distance to the querying user (see Eq. 3). We here
+consider a temporal factor as an addition criterion for relevance measure. Intuitively, the
+interestingness of a message’s content would fade as time goes, so we re-define Eq. 3 as
+follows:
+
+relevanceScore(ui, mj , Tcur ) = contentScore(ui, mj ) × f ading(Tcur , Tmj ) × (1 − β)
++N Dist(ui, mj ) × β
+(4)
+
+where f ading
+it is defined as follows:
+
+(cid:2)
+Tcur , Tmj
+
+(cid:3)
+
+indicates how fast the interestingness of mj fades; specifically,
+
+f ading
+
+(cid:2)
+Tcur , Tmj
+
+(cid:3)
+
+= 1 −
+
+Tcur − Tmj
+Tcur − Tmin
+
+(5)
+
+where Tcur , Tmj and Tmin are the current timestamp, mj ’s submission timestamp and the
+smallest submission timestamp for all candidate messages within current query region,
+respectively.
+
+We conduct an experiment to show the performance of MobiFeed with the updated rele-
+vance measure function. The experimental results (Fig. 16) exhibit similar trends compared
+to those with original relevance measure function (i.e., Fig. 10 in Section 8.2).
+
+GeoFeed
+zero-LA
+n-LA-H
+n-LA-O
+
+ 6
+
+ 4
+
+ 2
+
+e
+r
+o
+c
+S
+ 
+e
+c
+n
+a
+v
+e
+l
+e
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+ 0
+
+1
+
+Fig. 14 The number of top categories
+
+2
+4
+3
+No. of Top Categories
+
+2
+4
+3
+No. of Top Categories
+
+5
+
+5
+
+0.0
+
+1
+
+GeoFeed
+zero-LA
+n-LA-H
+n-LA-O
+
+0.3
+
+0.2
+
+0.1
+
+)
+s
+m
+
+i
+
+(
+ 
+e
+m
+T
+ 
+g
+n
+i
+n
+n
+u
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+0.3
+
+0.2
+
+0.1
+
+)
+s
+m
+
+i
+
+(
+ 
+e
+m
+T
+ 
+g
+n
+i
+n
+n
+u
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+Geoinformatica
+
+GeoFeed
+zero-LA
+n-LA-H
+n-LA-O
+
+ 8
+
+ 6
+
+ 4
+
+ 2
+
+e
+r
+o
+c
+S
+ 
+e
+c
+n
+a
+v
+e
+l
+e
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+ 0
+
+20
+
+40
+
+60
+User Movement Speed (km/h)
+
+80
+
+100
+
+40
+
+60
+User Movement Speed (km/h)
+
+80
+
+100
+
+GeoFeed
+zero-LA
+n-LA-H
+n-LA-O
+
+Fig. 15 User movement speeds
+
+8.4 Study on location prediction errors
+
+Training set and test set This section evaluates the effect of prediction errors of the location
+prediction function (Section 4.1). We randomly generate 10,000 trajectories on the road
+map with speeds randomly selected from 20km/h to users’ maximum movement speed (40
+km/h by default). 5,000 trajectories are randomly selected as a training set for the location
+prediction function, and α = 1 (see Section 4.1). We use the remaining 5,000 trajectories
+as a test set to evaluate the effect of the prediction algorithm.
+
+Prediction error measure In the experiments, a prediction error occurs if the difference
+between a user’s actual location and predicted location is larger than the tolerance threshold
+θ that is set to 50 meters. When a prediction error takes place, the scheduler needs to re-
+schedule news feeds based on a user’s location update. We measure the prediction error of
+an experiment as the ratio of the number of prediction errors to the number of location pre-
+dictions. In the experiments, we make a performance comparison between the n-look-ahead
+schedulers with prediction errors and those without errors. Although zero-LA and GeoFeed
+do not require location prediction, we plot the performance of zero-LA for reference.
+
+Varying look-ahead steps Figure 17 and Table 5 depict the experiment results of the
+increase of the look-ahead steps (n) from 1 to 10. Figure 17b shows that, a larger n increases
+the running times of our schedulers with errors in location prediction function. This is
+because as n gets larger, MobiFeed needs to predict longer path, and there is a higher chance
+
+GeoFeed
+zero-LA
+n-LA-H
+n-LA-O
+
+e
+r
+o
+c
+S
+ 
+e
+c
+n
+a
+v
+e
+l
+e
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+4.0
+
+3.0
+
+2.0
+
+1.0
+
+0.0
+
+ 1
+
+ 2
+
+ 3
+
+ 5
+
+ 4
+ 7
+Look-ahead Steps
+
+ 6
+
+ 8
+
+ 9  10
+
+ 1
+
+ 2
+
+ 3
+
+ 9  10
+
+GeoFeed
+zero-LA
+n-LA-H
+n-LA-O
+ 7
+ 4
+ 8
+Look-ahead Steps
+
+ 6
+
+ 5
+
+Fig. 16 Performance of MobiFeed with updated relevance measure function
+
+0.3
+
+0.2
+
+0.1
+
+)
+s
+
+m
+
+i
+
+(
+ 
+e
+m
+T
+ 
+g
+n
+i
+n
+n
+u
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+0.0
+
+20
+
+)
+s
+
+m
+
+i
+
+(
+ 
+e
+m
+T
+ 
+g
+n
+i
+n
+n
+u
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+0.5
+
+0.4
+
+0.3
+
+0.2
+
+0.1
+
+0.0
+
+Geoinformatica
+
+e
+r
+o
+c
+S
+ 
+e
+c
+n
+a
+v
+e
+l
+e
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+4.5
+
+4.0
+
+3.5
+
+3.0
+
+2.5
+
+zero-LA
+n-LA-H
+n-LA-O
+n-LA-H (with prediction errors)
+n-LA-O (with prediction errors)
+
+)
+s
+m
+
+i
+
+(
+ 
+e
+m
+T
+ 
+g
+n
+i
+n
+n
+u
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+1.5
+
+1.0
+
+0.5
+
+0.0
+
+zero-LA
+n-LA-H
+n-LA-O
+n-LA-H (with prediction errors)
+n-LA-O (with prediction errors)
+
+1
+
+2
+
+3
+
+5
+
+4
+7
+Look-ahead Steps
+
+6
+
+8
+
+9
+
+10
+
+1
+
+2
+
+3
+
+5
+
+4
+7
+Look-ahead Steps
+
+6
+
+8
+
+9
+
+10
+
+Fig. 17 Look-ahead steps (with prediction errors)
+
+for a prediction error to occur (Table 5). When a prediction error takes place, the scheduler
+needs to re-schedule news feeds based on a user’s location update, thus incurring additional
+computational overhead.
+
+Interestingly, as shown in Fig. 17a, the schedulers with prediction errors generate better
+news feeds than those without prediction errors. The main reason is that, schedulers with
+errors incur additional news feed re-scheduling over those without errors, which leads to
+better assignment of news feeds in a global sense. Here we give an example for explanation.
+Given a trajectory with a user’s locations at times t0, t1 = t0 + td , t2 = t0 + 2 × td , . . . , where
+td is the minimum display time, a first call of 2-look-ahead scheduling at t0 generates news
+feeds for t0, t1, and t2. If no prediction error occurs from t0 to t2, a second call of scheduling
+will take place at t3. In contrast, if MobiFeed detects prediction error at t1, it will perform
+re-scheduling at t1 and generate news feeds for t1, t2, and t3; in this case, some messages
+originally assigned to news feed at t2 may be re-assigned to news feed at t3, which results
+in higher overall quality of news feeds from t0 to t3.
+
+Varying other parameters Since varying parameters, including k, D and δ, does not affect
+the prediction error, we only show the results of user’s maximum movement speed (Smax)
+and the minimum display time (td ). Figure 18 and Table 6 depict the performance of Mob-
+iFeed with respect to various user’s maximum movement speeds Smax from 20 to 100 km/h.
+The minimum movement speed is 20 km/h. It is expected that the prediction error increases,
+as Smax gets higher (Table 6). The increase of the prediction error leads to a higher chance
+for the scheduler to re-schedule news feeds, so the running time increases (Fig. 18b). Simi-
+lar to Fig. 17a, re-scheduling incurred by prediction error increases the quality of news feeds
+(Fig. 18a).
+
+Figure 19 and Table 7 depict the results of varying the minimum display time (td ). When
+td increases, n-LA-H and n-LA-O need to predict a longer path that leads to a higher predic-
+tion error (Table 7). Similar to the previous two experiments, the increase of the prediction
+error results in higher running time (Fig. 19b).
+
+Table 5 Prediction error (look-ahead steps)
+
+Look-ahead steps
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10
+
+Prediction error (%)
+
+1.7
+
+15.5
+
+18.5
+
+19.7
+
+20.4
+
+20.8
+
+21.0
+
+21.3
+
+21.4
+
+21.5
+
+Geoinformatica
+
+zero-LA
+n-LA-H
+n-LA-O
+n-LA-H (with prediction errors)
+n-LA-O (with prediction errors)
+
+2.0
+
+1.5
+
+1.0
+
+0.5
+
+)
+s
+m
+
+i
+
+(
+ 
+e
+m
+T
+ 
+g
+n
+i
+n
+n
+u
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+zero-LA
+n-LA-H
+n-LA-O
+n-LA-H (with prediction errors)
+n-LA-O (with prediction errors)
+
+40
+80
+60
+Maximum Speed (km/h)
+
+100
+
+0.0
+
+20
+
+40
+80
+60
+Maximum Speed (km/h)
+
+100
+
+ 5
+
+ 4
+
+ 3
+
+e
+r
+o
+c
+S
+ 
+e
+c
+n
+a
+v
+e
+l
+e
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+ 2
+
+20
+
+Fig. 18 Maximum user movement speeds (with prediction errors)
+
+8.5 Scalability study with synthetic data set
+
+In this experiment, we evaluate the scalability of MobiFeed using a synthetic data set.
+Specifically, we use the same NYC road map as previous experiments. We also consider
+location prediction errors by dividing trajectories into training set and test set. Instead of
+using real geo-tagged messages crawled from FourSquare, we generate points in the road
+map and regard them as geo-tagged messages. We control the features of this synthetic data
+set as follows:
+• Message density. We divide the road map of NYC into 1 mile × 1 mile cells, and
+generate a designated number (denoted as ρ) of messages in each cell. The default value
+of ρ is 600. Note that in the real social network data set, there are about 250 messages
+per square mile.
+
+• Message distribution. When generating messages in each cell, we control the distribu-
+tion of messages. Specifically, for a distribution type ‘Gau[σ %]’, we regard a cell as a
+Gaussian bell, set the standard deviation of the Gaussian to be σ % of the cell domain
+length1 [10], and generate messages in that bell following such distribution. We name
+σ as the percentile standard deviation. Smaller σ means that the geo-tagged messages
+are clustered around the center of the cell to a larger extent. Note that when σ is set to
+100 (the default value), the messages follow a uniform distribution.
+Score distribution. Instead of using the ranking function (i.e., scoring function)
+described in Section 4.2, we generate the scores of synthetic messages following a Zip-
+fian distribution [28]. Such distribution is determined by the skew parameter θ ranging
+from 0.0 to 1.0, where a smaller value of θ results in higher skew of message scores
+(i.e., more low-scored messages). Note that when θ is set to 1.0 (the default value), the
+scores follow a uniform distribution.
+
+•
+
+In the following experiments, we test the performance of MobiFeed by varying these three
+features of the synthetic data set. Other parameters of MobiFeed take their default values as
+described in Section 8.1.
+
+Effect of message density Figure 20 depicts the experiment results by varying the number
+of messages per square mile (i.e., ρ). The news feed quality of MobiFeed improves as the
+
+1Here the cell domain length is set as the largest distance between the cell’s center and its boundary.
+
+Geoinformatica
+
+Table 6 Prediction error (user maximum speeds)
+
+Maximum speed (km/h)
+
+Prediction error (%)
+
+20
+
+3.0
+
+40
+
+20.4
+
+60
+
+38.6
+
+80
+
+50.9
+
+100
+
+59.5
+
+geo-tagged messages become denser (Fig. 20a), since there are more candidate messages
+for a query region, and the schedulers have a higher chance to find more relevant messages
+for a user. However, Fig. 20b shows that the running time of all schedulers gets worse as
+there are more messages per square mile, since the system needs to process more candidate
+messages to generate news feeds. As a remark, even when ρ increases to 1000, the running
+time of MobiFeed is still acceptable (about 1ms).
+
+Effect of message distribution This experiment illustrates the effect of message distribution
+on the performance of the MobiFeed. Figure 21a shows that, if the geo-tagged messages
+are uniformly distributed, the performance gap between n-LA-O and n-LA-H is not that evi-
+dent. When the messages follow the Gaussian distribution with percentile standard deviation
+(i.e., σ ) equal to 20, n-LA-O shows greatest advantage over n-LA-H in terms of the quality
+of generated news feeds. Fortunately, in real location-aware social networking systems, the
+geo-tagged messages do exhibit a geographical clustering phenomenon [59], rendering our
+n-LA-O superior to the heuristic approach. However, if σ further gets smaller, their perfor-
+mance gap decreases. The reason is that, as messages further cluster around the center of
+cells, there is a higher chance that the number of candidate messages in a query region
+is less than k, rendering the performance of n-LA-O and n-LA-H almost the same. Figure
+21b shows that the running time of all schedulers is insensitive to the distribution of
+messages.
+
+Effect of score distribution This experiment varies the skewness of message score distri-
+butions. Figure 22a shows that the quality of news feeds improves as the score becomes
+less skewed. The reason is that, as mentioned in the synthetic data generation, lower skew-
+ness indicates larger population of high-scored messages, and there is a higher chance for
+schedulers to generate news feeds with better quality. As depicted in Fig. 22b, the score
+distribution only slightly affects the efficiency of our schedulers.
+
+ 5
+
+ 4
+
+ 3
+
+ 2
+
+e
+r
+o
+c
+S
+ 
+e
+c
+n
+a
+v
+e
+l
+e
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+ 1
+
+5
+
+zero-LA
+n-LA-H
+n-LA-O
+n-LA-H (with prediction errors)
+n-LA-O (with prediction errors)
+
+1.5
+
+1.0
+
+0.5
+
+)
+s
+m
+
+i
+
+(
+ 
+e
+m
+T
+ 
+g
+n
+i
+n
+n
+u
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+zero-LA
+n-LA-H
+n-LA-O
+n-LA-H (with prediction errors)
+n-LA-O (with prediction errors)
+10
+25
+Minimum Display Time (s)
+
+20
+
+15
+
+30
+
+0.0
+
+5
+
+10
+25
+Minimum Display Time (s)
+
+20
+
+15
+
+30
+
+Fig. 19 Minimum display times (with prediction errors)
+
+Table 7 Prediction error (minimum display times)
+
+Minimum display time (s)
+
+Prediction error (%)
+
+5
+
+9.5
+
+10
+
+20.4
+
+15
+
+30.2
+
+20
+
+37.8
+
+25
+
+43.9
+
+30
+
+49.1
+
+Geoinformatica
+
+400
+
+600
+No. of Messages per Square Mile
+
+800
+
+1000
+
+400
+
+600
+No. of Messages per Square Mile
+
+800
+
+1000
+
+zero-LA
+n-LA-H
+n-LA-O
+
+ 10
+
+ 8
+
+ 6
+
+ 4
+
+ 2
+
+e
+r
+o
+c
+S
+ 
+e
+c
+n
+a
+v
+e
+l
+e
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+ 0
+200
+
+Fig. 20 Message density
+
+ 8
+
+ 6
+
+ 4
+
+ 2
+
+e
+r
+o
+c
+S
+ 
+e
+c
+n
+a
+v
+e
+l
+e
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+Fig. 21 Message distribution
+
+ 8
+
+ 6
+
+ 4
+
+ 2
+
+e
+r
+o
+c
+S
+ 
+e
+c
+n
+a
+v
+e
+l
+e
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+ 0
+
+0.0
+
+Fig. 22 Score distribution
+
+zero-LA
+n-LA-H
+n-LA-O
+
+1.5
+
+1.0
+
+0.5
+
+)
+s
+m
+
+ 
+
+i
+
+(
+ 
+e
+m
+T
+g
+n
+i
+n
+n
+u
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+0.0
+
+200
+
+zero-LA
+n-LA-H
+n-LA-O
+
+zero-LA
+n-LA-H
+n-LA-O
+
+1.0
+
+0.8
+
+0.6
+
+0.4
+
+0.2
+
+)
+s
+m
+
+i
+
+(
+ 
+e
+m
+T
+ 
+g
+n
+i
+n
+n
+u
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+)
+s
+m
+
+i
+
+(
+ 
+e
+m
+T
+ 
+g
+n
+i
+n
+n
+u
+R
+ 
+e
+g
+a
+r
+e
+v
+A
+
+1.0
+
+0.8
+
+0.6
+
+0.4
+
+0.2
+
+0.0
+
+zero-LA
+n-LA-H
+n-LA-O
+
+0.4
+
+0.2
+0.8
+Skew of Zipfian Distribution
+
+0.6
+
+1.0
+
+0.0
+
+0.4
+
+0.2
+0.8
+Skew of Zipfian Distribution
+
+0.6
+
+1.0
+
+zero-LA
+n-LA-H
+n-LA-O
+
+ 0
+Gau[2.5%] Gau[5%] Gau[10%] Gau[20%] Gau[50%] Uniform
+
+Distribution Type
+
+0.0
+Gau[2.5%] Gau[5%] Gau[10%] Gau[20%] Gau[50%] Uniform
+Distribution Type
+
+Geoinformatica
+
+9 Conclusion
+
+In this paper, we presented MobiFeed that is a framework designed for scheduling location-
+aware news feeds for mobile users. MobiFeed has three key functions: location prediction,
+relevance measure, and news feed scheduler. We proposed the n-look-ahead heuristic and
+optimal news feed schedulers that work with the other two functions to generate news feeds
+for a user at her current and n future predicted locations. We evaluated the performance
+of MobiFeed through extensive experiments using a real road map, a real location-aware
+social network data set and a synthetic data set. The experiment results show that MobiFeed
+provides efficient and high-quality news feeds for mobile users.
+
+Acknowledgments Wenjian Xu and Chi-Yin Chow were supported by Guangdong Natural Science Foun-
+dation of China under Grant S2013010012363 and a research grant (CityU Project No. 9680117). Man Lung
+Yiu was supported by grant GRF 5302/12E from Hong Kong RGC.
+
+References
+
+html
+
+processing. In: VLDB
+
+University Press
+
+SIGSPATIAL GIS
+
+ACM SIGMOD
+
+VLDB
+
+In: VLDB
+
+1. Census TIGER/Line Shapefiles (2010) http://www.census.gov/geo/www/tiger/tgrshp2010/tgrshp2010.
+
+2. Aalto L, G¨othlin N, Korhonen J, Ojala T (2004) Bluetooth and WAP push based location-aware mobile
+
+advertising system. In: ACM MobiSys
+3. AdWords G. http://adwords.google.com/
+4. Aggarwal G, Goel G, Karande C, Mehta A (2011) Online vertex-weighted bipartite matching and single-
+
+bid budgeted allocations. In: SIAM SODA
+
+5. Armenatzoglou N, Papadopoulos S, Papadias D (2013) A general framework for geo-social query
+
+6. Asratian AS, Denley TMJ, H¨aggkvist R (2008) Bipartite graphs and their applications. Cambridge
+
+7. Baeza-Yates RA, Ribeiro-Neto BA (1999) Modern information retrieval. ACM Press/Addison-Wesley
+8. Bao J, Mokbel MF (2013) GeoRank: An efficient location-aware news feed ranking system. In: ACM
+
+9. Bao J, Mokbel MF, Chow C-Y (2012) GeoFeed: A location-aware news feed system. In: IEEE ICDE
+10. Bruno N, Chaudhuri S, Gravano L (2001) Stholes: a multidimensional workload-aware histogram. In:
+
+11. Cai Y, Xu T (2008) Design, analysis, and implementation of a large-scale real-time location-based
+
+information sharing system. In: ACM MobiSys
+
+12. Cao X, Cong G, Jensen CS (2010) Retrieving top-k prestige-based relevant spatial web objects. In:
+
+13. Chandramouli B, Yang J (2008) End-to-end support for joins in large-scale publish/subscribe systems.
+
+14. Chandramouli B, Yang J, Agarwal PK, Yu A, Zheng Y (2008) ProSem: scalable wide-area pub-
+
+15. Chen J-J, Wu J, Shih C-S, Kuo T-W (2005) Approximation algorithms for scheduling multiple feasible
+
+lish/subscribe. In: ACM SIGMOD
+
+interval jobs. In: IEEE RTCSA
+
+16. Chin FYL, Chrobak M, Fung SPY, Jawor W, Sgall J, Tich´y T (2006) Online competitive algorithms for
+
+maximizing weighted throughput of unit jobs. J Discret Algoritm 4(2):255–276
+
+17. Chow C-Y, Bao J, Mokbel MF (2010) Towards location-based social networking services. In: ACM
+
+18. Chow C-Y, Mokbel MF, Nap J, Nath S (2009) Evaluation of range nearest-neighbor queries with quality
+
+19. Cong G, Jensen CS, Wu D (2009) Efficient Retrieval of the Top-k Most Relevant Spatial Web Objects.
+
+20. Davis RI, Burns A (2011) A survey of hard real-time scheduling for multiprocessor systems. ACM
+
+SIGSPATIAL LBSN
+
+guarantee. In: SSTD
+
+In: VLDB
+
+Comput Surv 43(4)
+
+21. De Felipe I, Hristidis V, Rishe N (2008) Keyword search on spatial databases. In: IEEE ICDE
+
+Geoinformatica
+
+22. Djuknic GM, Richton RE (2001) Geolocation and assisted GPS. IEEE Comput 34(2):123–125
+23. Facebook., http://www.facebook.com/about/location
+24. Feldman J, Korula N, Mirrokni V, Muthukrishnan S, P´al M (2009) Online ad assignment with free
+
+disposal. In: Internet and network economics
+
+25. Foursquare., http://www.foursquare.com
+26. Freni D, Vicente CR, Mascetti S, Bettini C, Jensen CS (2010) Preserving location and absence privacy
+
+in geo-social networks. In: ACM CIKM
+
+27. Google Buzz Mobile, http://www.google.com/mobile/buzz
+28. Grimmett G (1986) Probability: an introduction. Oxford University Press
+29. Hart PE, Nilsson NJ, Raphael B (1968) A formal basis for the heuristic determination of minimum cost
+
+30. Jeung H, Yiu ML, Zhou X, Jensen CS (2010) Path prediction and predictive range querying in road
+
+paths. IEEE TSSC 4(2):100–107
+
+network databases. VLDB J 19(4):585–602
+
+31. Kao M-Y, Lam T-W, Sung W-K, Ting H-F (1999) A decomposition theorem for maximumweight
+
+bipartite matchings with applications to evolutionary trees. In: Algorithms-ESA
+
+32. Kao M-Y, Lam T-W, Sung W-K, Ting H-F (2001) A decomposition theorem for maximum weight
+
+bipartite matchings. SIAM J Comput 31(1):18–26
+
+33. Karp RM, Vazirani UV, Vazirani VV (1990) An optimal algorithm for on-line bipartite matching. In:
+
+34. Kesselheim T, Radke K, T¨onnis A, V¨ocking B (2013) An optimal online algorithm for weighted bipartite
+
+matching and extensions to combinatorial auctions. In: Algorithms–ESA 2013
+
+35. Khoshgozaran A, Shahabi C (2009) Private buddy search: enabling private spatial queries in social
+
+ACM STOC
+
+networks. In: IEEE SIN
+
+36. Kuhn HW (1955) The hungarian method for the assignment problem. Nav Res Logist Q 2:83–97
+37. Leung KW-T, Lee DL, Lee W-C (2011) CLR: a collaborative location recommendation framework
+
+38. Levandoski JJ, Sarwat M, Eldawy A, Mokbel MF (2012) LARS: a location-aware recommender system.
+
+based on co-clustering. In: ACM SIGIR
+
+In: IEEE ICDE
+
+39. Li Z, Lee KC, Zheng B, Lee W-C, Lee DL, Wang X (2011) IR-Tree: An efficient index for geographic
+
+document search. IEEE Trans Knowl Data Eng 23:585–599
+
+40. Loopt, http://www.loopt.com
+41. Mahdian M, Yan Q (2011) Online bipartite matching with random arrivals: an approach based on
+
+strongly factor-revealing LPs. In: ACM STOC
+
+42. Manning CD, Raghavan P, Sch¨utze H (2008) Introduction to information retrieval. Cambridge University
+
+Press
+
+FOCS
+
+54(5)
+
+RecSys
+
+43. Mehta A (2012) Online matching and ad allocation. Theor Comput Sci 8(4):265–368
+44. Mehta A, Saberi A, Vazirani U, Vazirani V (2005) Adwords and generalized on-line matching. In: IEEE
+
+45. Mehta A, Saberi A, Vazirani U, Vazirani V (2007) Adwords and generalized online matching. J ACM
+
+46. Mokbel MF, Xiong X, Aref WG (2004) SINA: scalable incremental processing of continuous queries in
+
+spatio-temporal databases. In: ACM SIGMOD
+
+47. Noulas A, Scellato S, Mascolo C, Pontil M (2011) Exploiting semantic annotations for clustering geo-
+graphic areas and users in location-based social networks. In: International AAAI conference on weblogs
+and social media
+
+48. Phelan O, McCarthy K, Smyth B (2009) Using twitter to recommend real-time topical news. In: ACM
+
+49. Renren, http://www.renren.com
+50. Siksnys L, Thomsen J, Saltenis S, Yiu ML (2010) Private and flexible proximity detection in mobile
+
+51. Silberstein A, Terrace J, Cooper BF, Ramakrishnan R (2010) Feeding frenzy: selectively materializing
+
+socialnetworks. In: IEEE MDM
+
+user’s event feed. In: ACM SIGMOD
+
+52. Sina Weibo, http://www.weibo.com
+53. Son J-W, Kim A, Park S-B (2013) A location-based news article recommendation with explicit localized
+
+semantic analysis. In: ACM SIGIR
+54. Twinkle, http://tapulous.com/twinkle
+55. West DB (2001) Introduction to graph theory, 2nd edn. Prentice Hall
+56. Wu D, Cong G, Jensen CS (2012) A framework for efficient spatial web object retrieval. VLDB J
+
+21:797–822
+
+Geoinformatica
+
+57. Wu D, Yiu ML, Jensen CS (2013) Moving spatial keyword queries: formulation, methods, and analysis.
+
+58. Ye M, Yin P, Lee W-C (2010) Location recommendation for location-based social networks. In: ACM
+
+ACM Trans Database Syst 38:7:1–7:47
+
+SIGSPATIAL GIS
+
+interest recommendation. In: ACM SIGIR
+
+59. Ye M, Yin P, Lee W-C, Lee D-L (2011) Exploiting geographical influence for collaborative point-of-
+
+60. Yin H, Sun Y, Cui B, Hu Z, Chen L (2013) Lcars: a location-content-aware recommender system. In:
+
+Proceedings of the ACM Conference on Knowledge Discovery and Data Mining
+
+61. Zhang D, Chee YM, Mondal A, Tung A, Kitsuregawa M (2009) Keyword search in spatial databases:
+
+Towards searching by document. In: IEEE ICDE
+
+62. Zheng VW, Zheng Y, Xie X, Yang Q (2010) Collaborative location and activity recommendations with
+
+63. Zheng Y, Xie X, Ma W-Y (2010) GeoLife: A collaborative social networking service among user,
+
+64. Zheng Y, Zhang L, Ma Z, Xie X, Ma W-Y (2011) Recommending friends and locations based on
+
+GPS history data . In: WWW
+
+location and trajectory, vol 33, pp 32–39
+
+individual location history, vol 5, p 5
+
+65. Zhou Y, Salehi A, Aberer K (2009) Scalable delivery of stream query results. In: VLDB
+
+Wenjian Xu received the bachelor’s degree in software engineering from Northwestern Polytechnical
+University, Xi’an, China, in 2010. He is pursuing his M.Phil. degree at the City University of Hong Kong.
+His research interests span query processing, query optimization and big data analytics.
+
+Geoinformatica
+
+Chi-Yin Chow is currently an assistant processor in the Department of Computer Science at the City
+University of Hong Kong. He received the Ph.D. degree from the University of Minnesota-Twin Cities in
+2010. His research interests are in databases, wireless sensor networks, mobile computing, location-based
+services, and data privacy. He was an intern at the IBM Thomas J. Watson Research Center during the summer
+of 2008. He is a member of ACM and IEEE.
+
+Man Lung Yiu received the bachelor’s degree in computer engineering and the PhD degree in computer
+science from the University of Hong Kong in 2002 and 2006, respectively. Prior to his current post, he worked
+at Aalborg University for three years starting in the Fall of 2006. He is now an assistant professor in the
+Department of Computing, Hong Kong Polytechnic University. His research focuses on the management of
+complex data, in particular query processing topics on spatiotemporal data and multidimensional data.
+
+Geoinformatica
+
+Qing Li is a professor at the City University of Hong Kong. His research interests include object modeling,
+multimedia databases, social media, and recommender systems. He is the chairperson of the Hong Kong Web
+Society, and is a steering committee member of DASFAA, ICWL, and WISE Society. He is a fellow of the
+IET, a senior member of the IEEE, a member of the ACM SIGMOD and the IEEE Technical Committee on
+Data Engineering.
+
+Chung Keung Poon obtained his B.Sc. and M.Phil. degree from the University of Hong Kong and his Ph.D.
+degree from the University of Toronto. Then he worked at City University of Hong Kong as an associate
+professor. His research interests are in algorithms and data structures, scheduling and planning, database
+theory, parallel computation, and computational complexity.
+
+

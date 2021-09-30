@@ -1,0 +1,3944 @@
+Geoinformatica
+DOI 10.1007/s10707-013-0180-4
+
+A probabilistic data model and algebra
+for location-based data warehouses
+and their implementation
+
+Igor Timko · Curtis Dyreson · Torben Bach Pedersen
+
+Received: 15 October 2012 / Revised: 18 March 2013 / Accepted: 15 April 2013
+© Springer Science+Business Media New York 2013
+
+Abstract This paper proposes a novel, probabilistic data model and algebra that
+improves the modeling and querying of uncertain data in spatial OLAP (SOLAP)
+to support location-based services. Data warehouses that support location-based ser-
+vices need to combine complex hierarchies, such as road networks or transportation
+infrastructures, with static and dynamic content, e.g., speed limits and vehicle posi-
+tions, respectively. Both the hierarchies and the content are often uncertain in real-
+world applications. Our model supports the use of probability distributions within
+both facts and dimensions. We give an algebra that correctly aggregates uncertain
+data over uncertain hierarchies. This paper also describes an implementation of the
+model and algebra, gives a complexity analysis of the algebra, and reports on an
+empirical, experimental evaluation of the implementation. The work is motivated
+with a real-world case study, based on our collaboration with a leading Danish vendor
+of location-based services.
+
+Keywords Location-based services · SOLAP · Probabilistic data · Algebra
+
+I. Timko · T. B. Pedersen
+Department of Computer Science, Aalborg University,
+Selma Lagerløfs Vej 300, 9220 Aalborg Øst, Denmark
+
+I. Timko
+e-mail: timko@inf.unibz.it
+
+T. B. Pedersen
+e-mail: tbp@cs.aau.dk
+
+C. E. Dyreson (B)
+Department of Computer Science, Utah State University,
+Old Main 414, Logan, UT 84322–4205, USA
+e-mail: Curtis.Dyreson@usu.edu
+
+Geoinformatica
+
+1 Introduction
+
+Corporate and personal use of location-based services (LBSs) is increasing. LBSs are
+information services tailored to the location of a mobile device. An LBS can monitor
+traffic congestion to help a driver avoid delays on a daily commute or direct a tourist
+to a nearby restaurant that serves their favorite dish. From among the many kinds
+of LBSs, those associated with transportation can generate massive amounts of data
+since they monitor hundreds of thousands of moving cars and changing driving condi-
+tions over thousands of miles of roads. With such a large volume of data, most queries
+will be aggregation queries rather than queries about a particular car. A typical query
+is “How many cars will be in the eastbound lane of Main Street 5 min from now?”.
+
+Aggregation queries in a transportation infrastructure are supported best by
+spatial OLAP (SOLAP) and data warehouse technology [1–4]. A location-based data
+warehouse (LBDW) uses a multidimensional data model that supports geometric,
+non-geometric, and mixed spatial dimensions. Multidimensional models provide
+support interactive, investigative aggregate queries on complex data (e.g., roll-up
+and drill-down queries) [5], but LBSs have additional complexities that are not sup-
+ported, such as aggregation of uncertain data [6]. For example, the current location of
+a car is sometimes uncertain (e.g., known only to a wireless phone cell). Furthermore,
+in a transportation infrastructure, cars are moving dynamically, so the predicted
+future location of a car is uncertain. Location uncertainty can be modeled by using a
+probability range rather than a single probability value (e.g., see [7]). For example,
+5 min from now, a given car will probably be on Main Street, with a probability
+between 0.4 and 0.7.1
+
+In this paper we propose a novel, probabilistic data model and algebra that
+improves the modeling and querying of uncertain data in LBDWs. This paper makes
+four contributions:
+
+1. Provides a data model in which a dimension value may partially, i.e., with
+a given probability, contain another dimension value, and in which facts can
+also be probabilistically characterized by dimension values. The model supports
+probability intervals for fact characterizations, which improves on modeling the
+probability as a single value.
+
+2. Gives an algebra for querying the model.
+3. Gives different kinds of (probabilistic) groupings for aggregation. For example,
+the conservative grouping operator filters probabilistically characterized facts,
+leaving only deterministically characterized ones.
+
+4. Describes an implementation of the data model and algebra. Analytical and
+
+experimental evaluation of the implementation are also presented.
+
+1A note on terminology: This paper uses the term “(un)certainty” about an inherent property of the
+data. The term “probability(-ies)” is used about a mathematical construct which is used to model the
+(un)certainty of the given data. Finally, the term “conf idence” is used about the level of trust that
+the user attributes to a query result.
+
+Geoinformatica
+
+The paper thus extends current data warehousing technology to better support
+SOLAP and LBDWs. The concepts presented in the paper are illustrated using a
+real-world case study from the LBS domain. The work is based on an on-going
+collaboration with a leading Danish LBS vendor, Euman A/S [8].
+
+The management of uncertainty and imprecision in information systems has been
+extensively researched [9]. Common techniques include modeling uncertainty with
+null values (c.f. [10]), disjunctive sets (c.f. [11]), fuzzy sets (c.f. [12]), and probability
+distributions (c.f. [13]). Elsewhere we summarize and describe the advantages and
+disadvantages of each approach for OLAP [14]. In this paper we focus on modeling
+location uncertainty using probability distributions since the distributions occur in
+our target application (an LBDW).
+
+Previous work more directly related to this paper has fallen into several categories:
+spatio-temporal databases, probabilistic databases, spatio-temporal data warehouses
+and SOLAP. The work on probabilistic data management in general [13, 15–19]
+handles basic uncertainty in the data, but does not support dimensional data with hi-
+erarchies and LBS specifics such as transportation infrastructures and attached con-
+tent. Research in spatio-temporal data management considers “operational” queries
+on certain [20–22] or uncertain [23–26] spatio-temporal data in 2D spaces or trans-
+portation infrastructures, but does not consider aggregation queries. There has been
+research in the aggregation of spatial or spatio-temporal data, but not transportation
+infrastructures, per se [27–30].
+
+The modeling of moving objects is an active area of research (c.f., [31]). Trans-
+portation infrastructures have also been modeled [1, 32], as have moving objects in
+the context of a transportation infrastructure [33]. The Euman data model (described
+in detail in [34]) handles multiple representations of the transportation infrastruc-
+ture; it is a segment-based model that is a generalization of the popular linear
+referencing technique [32]. However, none of research described above captures data
+in a multidimensional framework, and thus would not provide optimal support for
+LBSs. Nor does previous research address the inherent uncertainties in LBSs data.
+
+Previous work on modeling multidimensional data (for example, [5]) does not
+handle the complexities of supporting LBSs. The data model and algebra from [35]
+supports LBS to a certain extent by allowing partial containment dimension hierar-
+chies. Timko and Pedersen [36] improves on [35] by additionally handling transporta-
+tion infrastructures and complex content. However, neither [35] nor [36] handles
+uncertainty in the data. The probabilistic multidimensional data model from [37]
+does handle uncertain data. Compared to [37], our data model considers some
+additional aspects of uncertainty, which are important in the context of LDBW:
+
+– With our data model, in a dimension hierarchy, a dimension value may partially
+
+(e.g., with a given probability), contain another dimension value.
+
+– Our data model considers two levels of fact uncertainty. In addition to recording
+uncertainty about facts by assigning probabilities to fact characterizations, our
+data model also allows recording uncertainty about probabilities of fact charac-
+terizations.
+
+– Our aggregation functions (e.g., COUNT and SUM) depend on the uncertainty
+
+about probabilities of fact characterizations.
+
+Geoinformatica
+
+– Our fact grouping operators filter unwanted facts (e.g., facts that have low
+probability) from the data cube while grouping, without first having to apply
+the select operator.
+
+In ROLAP terms, the data model from [37] assigns a single probability to an entire
+tuple in a fact table. Instead, the data model we present in this paper takes a more
+general and more flexible approach to handling uncertainty (a probability can be
+assigned to each attribute of a tuple in the fact table). Finally, the data model
+from [37] is implemented in ROLAP. We implement our model in MOLAP, which
+is generally more efficient than ROLAP (see [38]).
+
+The area of spatio-temporal data warehousing has attracted increasing attention
+in recent years. A recent paper [39] provides an overview and a definition of
+spatio-temporal data warehousing, but does not consider uncertainty management
+in this setting. A number of papers [39–51] provide (conceptual or logical) mod-
+eling constructs for spatial/spatio-temporal DWs/OLAP databases. The approach
+presented in this paper improves over all these papers by being the first to handle the
+uncertainty in the spatio-temporal multidimensional data. Additionally, it improves
+over most of them by providing a formal query algebra (some offer only conceptual
+modeling without querying functionality) and/or an efficient implementation and ex-
+periments demonstrating the effectiveness of the approach (only some of the papers
+provide an implementation).
+
+A recent paper [52] presented a general framework for supporting multiple so-
+called infrastructures overlaying a single physical space. While the concept of in-
+frastructures share some similarity with our concept of spatial dimensions, our work
+differs by supporting analytical queries much better through the use of hierarchies,
+and by offering built-in support for the uncertainty in the data, as well as analytical
+query functionality.
+
+This journal paper is an extended version of a previous conference paper [53].
+Most importantly, this paper extends [53] with an implementation of the data model
+and algebra (Section 6) and with an experimental evaluation of the implementation
+(Section 7). The remainder of the paper is structured as follows. Section 2 presents a
+case study and describes content and queries. Section 3 briefly introduces the model
+that this paper extends and modifies, namely the [OLAPLBS] model [35]. Section 4
+deals with probabilistic fact characterizations. Section 5 describes the formal query
+algebra. Section 6 discusses implementation of the data model and the aggregate for-
+mation operator from the algebra, including analytical evaluation of the implemen-
+tation. Section 7 provides experimental evaluation of the implementation. Section 8
+concludes the paper and points to future work.
+
+2 Case study
+
+We now discuss the requirements for supporting an LBS, using a real-world case
+study. A UML diagram for the case study can be seen in Fig. 1.
+
+We start with discussing location-based content. LBSs utilize both point and
+interval content (see [34]). Point content concerns entities that are located at a
+specific geographic location, have no relevant spatial extent, and are attached to
+specific points in the transportation infrastructure (e.g., traffic accidents, museums,
+gas stations, and (users’ and other’s) vehicle positions). Interval content concerns data
+
+Geoinformatica
+
+Fig. 1 Case study
+
+that is considered to relate to a road section and is thus attached to intervals of given
+roads. Examples include speed limits and road surfaces.
+
+Content can be further classified as dynamic (frequently evolving) or static (rarely
+evolving). Static content (e.g., gas stations or speed limits) remains attached to a point
+or an interval of a road for a relatively long period of time. In this paper, we focus
+on very dynamic (hyper-dynamic) content, e.g., vehicle positions and their predicted
+trajectories (which evolve continuously). Positions of static content are usually cer-
+tain, while positions of dynamic content are usually uncertain (e.g., a vehicle position
+is approximated by a wireless phone cell). Furthermore, any position prediction
+algorithm will have some degree of uncertainty [23].
+
+In Fig. 1, hyper-dynamic content is modeled by the “User Position” class and its
+associations. Content is also modeled by the “USER” cluster, where the “User”
+class represents users and (implicitly) their vehicles. The “User” class participates
+in three full containment relationships capturing user age, preference, and sex. A full
+containment relationship is denoted by an empty circle-headed arrow, and specifies a
+relationship where all the objects on the “contained” side participate fully in the rela-
+tionship, e.g., all “User” objects have exactly one associated age, preference, and sex.
+The users’ (vehicle) positions in the infrastructure is modeled by the “LOCATION”
+cluster. The positions are captured at certain times, represented by the “TIME”
+cluster. In an OLAP multidimensional model, the “User Position” class would be
+a fact characterized by “USER,” “LOCATION,” and “TIME” dimensions.
+
+Geoinformatica
+
+The “LOCATION” cluster from the UML diagram in Fig. 1 has a geometric
+spatial dimension with three spatial representations: “LN_REPR,” “GEO_REPR,”
+and “POST_REPR,” which are link-node, geographic, and kilometer post repre-
+sentations, respectively. The three representations are a refinement of real-world
+representations used by the LBS company Euman A/S [8], obtained by representing
+lanes instead of roads. Often, lanes of the same road have different characteristics
+(e.g., different traffic density), so lanes must be captured separately [33]. We refer
+to segments that capture individual lanes, as lane segments. Lane segments may
+be further subdivided into smaller segments to obtain more precise positioning.
+“LN_REPR” has only one level, “Link,” that contains segments where the char-
+acteristics such as the speed limit remain constant. “POST_REPR” has three levels:
+(1) the “Lane” class, which captures particular lanes (e.g., a lane on an exit from a
+highway); (2) the “Scope” class, which captures segments between two kilometer
+posts, i.e, subdivisions of the road lanes above; (3) the “Interval” class, which
+captures one-meter intervals (of the post scope segments above). “GEO_REPR”
+also has three levels. Here, a segment is a two-dimensional polyline representing
+(part of) a lane. Thus, a segment level is a geographical map. A sequence of segments
+from the “Poly_3” class (finest scale map), is approximated by (contained in) a
+segment from the “Poly_2” class (medium scale map), and similarly for “Poly_2”
+and “Poly_1” (coarsest scale map), see [34] for details. The levels define a hierarchy
+of full containment (aggregation) relationships between segments.
+
+Finally, relationships between the representations must be captured, to allow
+content attached to one representation to be accessible from another. Due to
+differences in how and from what data the representations are built, these mappings
+are partial containment relationships. A partial containment relationship specifies a
+relationship where objects are only partially contained. Further aspects such as road
+segments, traffic directions, lane change prohibitions, and traffic exchange directions,
+are discussed in [36].
+
+An LBDW can have other dimensions, such as “TIME” (organized in a familiar
+hierarchy of “YEAR,” “MONTH,” “DAY,”, etc.) and “USER” (to capture infor-
+mation about user characteristics).
+
+Analytical queries in LBS involve aggregations along multiple hierarchical di-
+mensions (e.g., user content attachments will be aggregated along the “USER,”
+“LOCATION,” and “TIME” dimensions). As mentioned above, content positions
+may be given with some uncertainty, and we thus need to evaluate aggregate
+queries over uncertain information. Consider the four sample queries below, each
+concerning point content at a current or future time and involving some kind.
+
+1. At least how many users aged less than 21 are possibly in the eastbound lane of
+
+Main Street right now?
+
+2. What is the average, expected age of male users that will possibly be in the second
+eastbound lane of the I-90 highway between Moses Lake and Spokane 5 min
+from now?
+
+3. At most how many drivers are expected to pass through Stadium Way’s lane
+towards the campus between 10AM and 11AM (or on December 8, 2012, or
+during December 2012)?
+
+4. What is the maximum age of drivers in kilometer 46 of the eastbound lane
+of (Danish) freeway E45 right now? Note that this query involves partial
+
+Geoinformatica
+
+containment since some segments in “GEO_REPR” only partially contain one-
+meter interval segments in “POST_REPR”.
+
+All these queries aggregate probabilistic data with varying degrees of uncertainty at
+either the current or a future time. Example 5.3 in Section 5.1 gives the expressions
+of the queries in terms of our probabilistic algebra.
+
+3 The [OLAPLBS] model
+
+We now briefly describe the data model introduced in [36], which is the foundation
+for the probabilistic extension proposed in this paper. The model has constructs for
+defining both the schema (types) and the data instances. The schema of a cube is
+defined by a fact schema, S, that consists of a fact type, F (cube name) and a set, D,
+of the dimension types, Ti, for each dimension.
+
+A dimension type consists of a set, CT, of the category types, C j (dimension level
+types), a relation, (cid:2)T, on CT specifying the hierarchical organization of the category
+types, and the special category types, (cid:2)T and ⊥T, that denote the top and bottom
+category in the partial order, respectively. For example, a category type, C, may
+be used to model a level of lane segments. The relation, (cid:2)T, is a partial order that
+specifies the partial (including full as special case) containment relationships among
+category types. The intuition is to specify whether members of a “child” category
+type have to be contained in a member of a “parent” category fully (e.g., segment
+levels from the same representation) or partially (e.g, segment levels from different
+representations). Next, a subdimension type of a dimension type is a set of its category
+types. Subdimension types of the same dimension type do not intersect except at (cid:2)T
+category type. For example, a subdimension type is used to model a transportation
+infrastructure representation. The category types from the same (different) subdi-
+mension type(s) are related by full (partial) containment relationships.
+
+Example 3.1 Figure 2 depicts dimension types Tu and Tt. Figure 3 depicts a dimen-
+sion type Tr. The type Tr has three subdimension types, Tl, Tg, and Tp, which are
+used to capture “LN_REPR,” “GEO_REPR,” and “POST_REPR,” respectively. In
+Fig. 3, the “boundary” of each subdimension type is a parallelogram and the types
+are labeled by (I), (II), and (III), respectively. Full (partial) containment category
+type relationships are given by empty (filled) circle-headed arrows.
+
+From these direct relationships we can deduce the transitive relationships between
+the category types. For example, in Fig. 3, from two direct full containment relation-
+ships, “Poly_3” (cid:2)T “Poly_2” and “Poly_2” (cid:2)T “Poly_1”, we deduce a transitive
+full containment relationship, “Poly_3” (cid:2)T “Poly_1”; and from a direct partial
+containment relationship, “Poly_3” (cid:2)T “Interval”, and a direct full relationship,
+“Interval” (cid:2)T “Scope”, we deduce a transitive partial relationship, “Poly_3” (cid:2)T
+“Scope”.
+
+In the model instances, a dimension, D, consists of a set of categories. The Type
+function gives the corresponding type for dimensions and categories. A category, C j,
+is a set of dimension values, vi. The partial order, (cid:2), on the union of all values, (cid:2)D,
+specifies the full or partial containment relationships of the values. For example,
+
+Fig. 2 Dimension types (I) Tu
+and (II) Tt
+
+Geoinformatica
+
+two values that model segments from the same (different) representation(s) are
+usually related by a full (partial) containment relationship. A special value, (cid:2), in
+each dimension fully contains every other value in the dimension.
+
+Fig. 3 Dimension type Tr with
+the subdimension types (I) Tl,
+(II) Tg, and (III) Tp
+
+Geoinformatica
+
+Each relationship, v1 (cid:2) v2, has an attached degree of containment, d ∈ [0; 1],
+written v1 (cid:2)d v2. In terms of degrees of containment, a full containment relationship
+between two dimension values, v1 and v2, means the relationship with the degree
+of 1 (i.e, v1 (cid:2)1 v2). At the same time, a partial containment relationship between
+two dimension values, v1 and v2, means the relationship with the degree of d (i.e,
+v1 (cid:2)d v2), where d < 1.
+
+In a given dimension, the degrees of containment have a unique interpretation,
+but different interpretations are possible. The safe degree of containment is is based
+on what can be safely assumed (guaranteed) to hold, while the expected degree of
+containment is based on the probabilistic expectation. Further details can be found
+elsewhere [35]) and in the Electronic Appendix A for this paper.
+
+4 Probabilistic fact characterizations
+
+In this section, we introduce a new kind of fact characterization. The case study
+in Section 2 described content attachments which record that a user is in a specific
+location at a given time. The fact characterizations described in Section 3 allow us to
+model the location of static content, which is usually certain. We also need to be able
+to model the location of dynamic content, which is usually uncertain. For example, a
+user location may be given by a wireless phone cell, which only approximately locates
+the user. Furthermore, a practical prediction algorithm would predict future user lo-
+cations with some degree of uncertainty [23]. In addition to this location uncertainty,
+we may also have user and time uncertainty. For example, we may be certain about
+a location, but uncertain about what user is at that position or how long the user is at
+a particular location. In order to capture these possibilities, we generalize the notion
+of fact characterization by defining a probabilistic fact characterization.
+
+Our approach is based on probability theory [54]. We consider a probabilistic
+event of the form “a fact f covers (is inside) a dimension value v with probability
+p,” of course, p ∈ [0; 1].
+
+Definition 4.1 (Probabilistic fact-dimension relationship) For a fact, f ∈ F, and a
+dimension value, v ∈ (cid:2)D, we define:
+
+1. a probabilistic covering fact-dimension relationship
+( f, v, pmin, pmax) ∈ Rc,p
+which is read as “ f covers v with probability of at least pmin and of at most pmax”,
+and
+
+2. a probabilistic inside fact-dimension relationship
+
+( f, v, pmin, pmax) ∈ Ri,p
+which is read as “ f is inside v with a probability of at least pmin and of at most
+pmax”.
+
+The full set of fact-dimension relationships is R p = Rc, p ∪ Ri, p.
+
+Definition 4.1 has two levels of uncertainty in a fact-dimension relationship. The
+first level captures uncertainty about content attachments by allowing the same fact,
+
+Geoinformatica
+
+f , to be related to more than one dimension value. The second level expresses
+uncertainty about probabilities of content attachments by specifying a lower and upper
+bound on the probability. The second level provides flexibility; a user’s intuitive
+understanding of uncertainty can be mapped to an interval rather than a single
+number (e.g., “very low probability” means a range of uncertainty and is more
+accurately represented by [0.1; 0.3] than by 0.2).
+
+Given a probabilistic inside fact-dimension relationship, ( f, v, pmin, pmax), pmax is
+the upper bound on the “true” probability of the relationship and pmin is a lower
+bound. For a fact, f , a category, C, and any two dimension values, v1, v2 ∈ C such
+that v1 (cid:6)= v2 we assume that the events “ f is inside v1” and “ f is inside v2” are
+disjoint. All fact-dimension relationships of a fact, f , describe this fact’s probability
+distribution. For this reason, in an MO, the minimum probability obeys the following
+f , among the set of inside fact-
+restriction: for any category, C, and any fact,
+dimension relationships for C and f ,
+f, v, pv
+
+| v ∈ C
+
+, pv
+
+(cid:3)(cid:4)
+
+(cid:6)
+
+(cid:5)
+
+,
+
+min
+
+max
+
+we require that
+
+(cid:7)
+
+v∈C
+
+pv
+min
+
+≤ 1.
+
+(1)
+
+There is no analogous restriction on the maximum probability.
+
+An exact probability for a fact-dimension relationship can also be expressed. For
+example, the event “f covers v with probability p” is expressed as ( f, v, p, p) ∈ Rc, p.
+The deterministic fact-dimension relationships are a special case of the probabilistic
+fact-dimension relationships. Specifically, ( f, v) ∈ Rc is expressed as ( f, v, 1, 1) ∈
+Rc, p and ( f, v) ∈ Ri is expressed as ( f, v, 1, 1) ∈ Ri, p.
+
+[ pmin; pmax] v and (2) an “inside” characterization, written f (cid:3)i
+
+Based on these fact-dimension relationships we can define two new kinds
+of probabilistic fact characterizations: (1) a “covering” characterization, written
+f (cid:3)c
+[ pmin; pmax] v. The de-
+terministic characterizations are a special case of the probabilistic characterizations,
+i.e., (1) f (cid:3)c v is expressed as f (cid:3)c
+[1;1] v, which is also read as “ f covers v for
+sure,” (2) f (cid:3)i v is expressed as f (cid:3)i
+[1;1] v, which is also read as “ f is inside v for
+sure,” and (3) f (cid:3)i
+[0;1] v, which is also read as “ f is inside
+m
+v with unknown probability.” In addition, f (cid:3)c
+[0;1] v is also read as “ f covers v with
+unknown probability.”
+
+v is expressed as f (cid:3)i
+
+The set of fact-dimension relationships is stored in the data warehouse and
+the probabilistic fact characterizations are inferred when needed. The rules for
+probabilistic fact inference are given in the Electronic Appendix A for this paper.
+
+5 The algebra
+
+In this section, we extend the algebra from [5]—which we proved to be at least
+as powerful as the relational algebra with aggregation functions [55]—to query
+probabilistic fact characterizations. Intuitively, after the extension, our algebra will
+be at least as powerful as a probabilistic relational algebra (e.g., from [13]). We focus
+on aggregation and grouping in this section, the complete algebra is given in the
+Electronic Appendix A for this paper.
+
+Geoinformatica
+
+5.1 Aggregate formation
+
+The aggregate formation operator applies an aggregate function to an n-dimensional
+MO,
+
+where
+
+is a set of dimensions, and
+
+M = {S, F, DM, RM}
+
+DM = {Di, i = 1, . . . , n},
+
+RM = {Ri, i = 1, . . . , n}
+
+is a set of fact-dimension relations. We assume a traditional set of aggregation
+functions: MINi, MAXi, SUMi, AVGi, and COUNT where i dentes the ith fact-
+dimension relation. The grouping operator, Group : D1 × . . . × Dn (cid:4) 2F, where Di
+is dimension i, is often applied with the aggregate operator. Groups are formed of
+facts characterized by the same dimension values, i.e.,
+
+Group(v1, . . . , vn) = { f ∈ F | f (cid:3) v1 ∧ . . . ∧ f (cid:3) vn}
+
+Below we restate a generic definition of the aggregate formation operator [35].
+The operator is also suitable for uncertain data. In the definition, we denote
+(v1, . . . , vn) and Group(v1, . . . , vn) by V and G, respectively. Also, we assume that
+V ∈ C1 × . . . × Cn, where Ci denotes the ith category.
+
+Definition 5.1 (Aggregate formation operator) Given a new (result) dimension
+Dn+1 of a new (result) type Tn+1, an aggregation function h : 2F (cid:4) Dn+1, and a set
+of grouping categories {Ci ∈ Di, i = 1, . . . n}, the aggregate formation operator, α, is
+defined as follows:
+
+α[Dn+1, h, C1, . . . , Cn](M) =
+
+(cid:4)(cid:4)
+
+(cid:5)
+
+F(cid:9), D(cid:9)
+
+, F(cid:9), D(cid:9)
+
+M(cid:9) , R(cid:9)
+M(cid:9)
+
+(cid:5)
+
+, ⊥(cid:9)
+Ti
+
+)
+Cij} ∪ {Ci}
+= Ci and (cid:2)(cid:9)
+Ti
+
+where
+– F(cid:9) = 2F
+– D(cid:9) = {T(cid:9)
+, i = 1, . . . , n} ∪ {Tn+1}
+i
+= (C(cid:9)
+, (cid:2)(cid:9)
+, (cid:2)(cid:9)
+T(cid:9)
+–
+Ti
+Ti
+i
+i
+– C(cid:9)
+= {Cij ∈ Ti | Ci (cid:2)Ti
+i
+– (cid:2)(cid:9)
+with ⊥(cid:9)
+=(cid:2)Ti|C(cid:9)
+Ti
+Ti
+F(cid:9) = {G (cid:6)= ∅}
+–
+– D(cid:9)
+= {D(cid:9)
+, i = 1, . . . , n} ∪ {Dn+1}
+i
+M
+, (cid:2)(cid:9)
+= (C(cid:9)
+– D(cid:9)
+)
+D(cid:9)
+D(cid:9)
+i
+i
+i
+= {C(cid:9)
+– C(cid:9)
+∈ Di | C(cid:9)
+D(cid:9)
+ij
+ij
+i
+– (cid:2)(cid:9)
+= (cid:2)Di|
+D(cid:9)
+i
+M(cid:9) = {R(cid:9)
+– R(cid:9)
+, i = 1, . . . , n} ∪ {R(cid:9)
+n+1
+= {( f (cid:9), vi) | ∃ (cid:12)V( f (cid:9) = G}, R(cid:9)
+– R(cid:9)
+i
+
+∈ C(cid:9)
+i
+
+n+1
+
+(cid:9)
+D
+i
+
+}
+
+}
+
+i
+
+i
+
+= (cid:2)Ti
+
+(cid:8)
+
+=
+
+(cid:12)V
+
+{(G (cid:6)= ∅, h(G)}
+
+Thus, for every combination of dimension values, V = (v1, . . . , vn), in the given
+grouping categories, the aggregation function, h, is applied to the set of facts
+
+Geoinformatica
+
+characterized by V (i.e., to the group G = Group(V)) and the result is placed in the
+new dimension Dn+1.
+
+The new set of facts, F(cid:9), are of type F(cid:9), which denotes sets of the argument fact
+type, and the resulting dimensions types from D(cid:9) are obtained by restricting argument
+dimension types to the category types that are greater than or equal to the types of
+the grouping categories. The new dimension type Tn+1 for the result is added to the
+set of dimension types.
+
+The new set of facts F(cid:9) consists of sets of the original facts, where original facts
+in a set share a combination of characterizing dimension values. The argument
+dimensions are restricted to the remaining category types, and the result dimension,
+Dn+1, is added. The fact-dimension relations for the argument dimensions now link
+sets of facts directly to their corresponding combination of dimension values, and
+the fact-dimension relation, R(cid:9)
+n+1, for the result dimension links sets of facts to the
+function results for these sets.
+
+5.2 Grouping
+
+In Section 4, we introduced probabilistic fact characterizations, which allows us to
+group facts with an arbitrary degree of conf idence (i.e., with arbitrary requirements to
+the probabilities of the characterizations of the facts). Next, we define different kinds
+of grouping, considering inside fact characterizations only. The cases of covering
+characterizations are analogous.
+
+Definition 5.2 (Grouping operators) We define the following grouping operators.
+
+1. Degree-of-conf idence grouping operator, Groupd:
+
+Groupd
+(cid:11)
+
+(cid:9)
+
+(cid:4)
+v1, . . . , vn,
+n(cid:12)
+
+(cid:10)
+
+(cid:9)
+
+(cid:10)(cid:5)
+
+p1
+min
+
+(cid:9) , p1
+
+max(cid:9)
+
+, . . . ,
+
+pn
+min
+
+(cid:9) , pn
+
+max(cid:9)
+
+=
+
+f ∈ F |
+
+f (cid:3)i
+
+[ pk
+
+min
+
+; pk
+
+max]
+
+vk ∧
+
+pk
+min
+
+; pk
+
+max
+
+pk
+min
+
+(cid:9) ; pk
+
+max(cid:9)
+
+(cid:9)
+
+(cid:10)
+
+(cid:9)
+
+⊆
+
+k=1
+
+(cid:13)
+
+(cid:10)
+
+2. Conservative grouping operator, Groupc:
+(v1, . . . , vn) = Groupd
+
+Groupc
+
+3. Liberal grouping operator, Groupl:
+
+(v1, . . . vn, [1; 1], . . . , [1; 1])
+
+Groupl
+
+(v1, . . . , vn) = Groupd
+
+(v1, . . . vn, [0; 1], . . . , [0; 1])
+
+In the degree-of-conf idence grouping, a group is formed from the facts that belong
+
+to the group with a probability given by the parameters of Groupd operator.
+
+We define the following special cases of the operator. First, in the conservative
+grouping, a group is formed from the facts that def initely belong to the group. Since
+only precise data will be used in calculations and the remaining data discarded, this
+kind of grouping is useful for computing a “lower bound” for a query result, in the
+sense that the query result contains as little data as possible.
+
+Second, in liberal grouping, a group is formed from the facts that possibly belong
+to the group. Liberal grouping can be used for computing an “upper bound” for a
+query result, in the sense that the query result contains as much data as possible,
+because all the data, both certain and uncertain, are taken into consideration. This
+
+Geoinformatica
+
+means that our definition of conservative and liberal grouping corresponds to the
+general understanding of the terms introduced in [5].
+
+Example 5.1 (Grouping) Suppose we have facts f1 and f2 characterized as follows
+
+f1 (cid:3)i
+
+[1;1] m, f1 (cid:3)i
+
+f2 (cid:3)i
+
+[1;1] m, f2 (cid:3)i
+
+[0.72;0.81] a1, and f1 (cid:3)i
+[1;1] a2, and f2 (cid:3)i
+
+[1;1] t
+
+[1;1] t
+
+Then, suppose we wish to aggregate the certain data to the level of CSex, CL_L,
+and CSecond, and discard everything else (e.g., in order to decrease the chance of
+overcounting). Then, we will use the conservative grouping operator and obtain the
+following groups:
+
+1. Groupc
+2. Groupc
+
+(m, a1, t) = ∅.
+(m, a2, t) = { f2} and
+
+Next, if we wish to aggregate all data (e.g., in order to decrease the chance of
+undercounting), then we will use the liberal grouping operator and obtain the group
+
+Groupl
+
+(m, a1, t) = Groupl
+
+(m, a2, t) = { f1, f2}
+
+Finally, if we wish to aggregate the data given with a reliable degree of conf idence
+(e.g., in order to balance the chances of undercounting and overcounting), then we
+(v, [0.5; 1])). In this
+will use a degree-of-conf idence grouping operator (e.g., Groupd
+case, we obtain the following groups:
+
+1. Groupd
+2. Groupd
+
+(m, a1, t, [1; 1], [0.5; 1], [1; 1]) = { f1, f2} and
+(m, a2, t, [1; 1], [0.5; 1], [1; 1]) = ∅.
+
+5.3 Aggregation functions
+
+In the following, we discuss aggregation functions. Our aggregation functions are
+based on possible worlds semantics [56], extended to handle uncertainty of fact char-
+acterizations’ probabilities. Under this semantics, a probabilistic database generates
+a set of its deterministic instantiations, called possible worlds. In our model, possible
+worlds are generated by alternative characterizations of the same fact. Then, the
+result of an aggregation function’s application to the probabilistic database is a
+weighted sum of that function’s applications to each possible world. A weight of
+a possible world is its probability. Traditionally, these weights are certain (a single
+value). However, in our case, the weights are uncertain (a range of values), because
+probabilities of fact characterizations are uncertain. We reduce our case to possible
+worlds semantics by fixing probabilities of fact characterizations. Specifically, we use
+only minimum probabilities, or only maximum probabilities, or average probabilities.
+This way we obtain three sets of possible worlds. Consequently, we define our
+aggregation functions in terms of any of these three sets.
+
+In this discussion, we assume a group
+
+(cid:11)
+
+(cid:13)
+
+G =
+
+f j ∈ F |
+
+f j (cid:3)i(cid:14)
+
+(cid:15) vk
+
+.
+
+pk, j
+
+min
+
+; pk, j
+
+max
+
+n(cid:12)
+
+k=1
+
+Geoinformatica
+
+We start with the COUNT function, which counts minimum expected, maximum
+expected, average expected, def inite, and possible number of facts that belong to the
+group G.
+
+Definition 5.3 (COUNT function) Below we define different kinds of counts.
+
+1. The minimum expected count is
+
+where N is the number of facts in the group G.
+
+2. The maximum expected count is
+
+COUNTmin(G) =
+
+(cid:16)
+p1,j
+
+min
+
+N(cid:7)
+
+j=1
+
+(cid:17)
+
+· . . . · pn,j
+
+min
+
+COUNTmax(G) =
+
+(cid:4)
+p1,j
+max
+
+N(cid:7)
+
+j=1
+
+· . . . · pn,j
+max
+
+(cid:5)
+.
+
+3. The average expected count is
+
+COUNTavg(G) =
+
+(cid:18)
+
+N(cid:7)
+
+j=1
+
+p1,j
+
+min
+
++ p1,j
+2
+
+max
+
+· . . . · pn,j
+
+min
+
+(cid:19)
+
+.
+
++ pn,j
+2
+
+max
+
+4.
+
+If G is formed according to the conservative grouping, then the def inite count is
+
+5.
+
+If G is formed according to the liberal grouping, then the possible count is
+
+COUNTdef(G) = N.
+
+COUNTpos(G) = N.
+
+Note that the expected count assigns a degree of group membership to each fact,
+so with an expected count any grouping including the special cases of a liberal or
+conservative grouping may be considered as a weighted grouping.
+
+Example 5.2 (COUNT function) Continuing Example 2, we consider the following
+three groups:
+1. Gc = Groupc
+2. Gl = Groupl
+3. Gd = Groupd
+
+(m, a1, t),
+(m, a1, t), and
+(m, a1, t, [1; 1], [0.5; 1], [1; 1]).
+
+Then, we compute the minimum counts as follows:
+
+1. COUNTmin(Gc) = 1 · 1 · 1 = 1,
+2. COUNTmin(Gl) = 1 · 0.72 · 1 + 1 · 1 · 1 = 1.72, and
+3. COUNTmin(Gd) = 0.72 + 1 = 1.72.
+
+Also, we compute the maximum counts as follows:
+
+1. COUNTmax(Gc) = 1,
+2. COUNTmax(Gl) = 0.88 + 1 = 1.88, and
+3. COUNTmax(Gd) = 0.88 + 1 = 1.88.
+
+Finally, we compute the def inite and possible counts as follows:
+
+Geoinformatica
+
+1. COUNTdef(Gc) = 1,
+2. COUNTpos(Gl) = 2.
+
+As may be seen from Example 5.2, different COU NT functions, in combi-
+nation with different kinds of grouping, produce different values. For example,
+the difference between COUNTmin(Gc), and COUNTmax(Gl) is 88 %. The former
+(latter) value is useful when the user wishes to avoid over-counting (under-counting)
+to as great a degree as possible. In case the user wishes to obtain less extreme values,
+she may use an “intermediate” combination of a COU NT aggregation function
+and grouping, such as COUNTmin(Gl), COUNTavg(Gc), etc., that produce values
+between the minimum possible value, COUNTmin(Gc), and the maximum possible
+value, COUNTpos(Gl).
+
+The other aggregation functions are similar to COUNT and are described in the
+
+Electronic Appendix A.
+
+Example 5.3 (Queries) In this example, we express queries from Section 2 with the
+operators of our probabilistic algebra. We first reformulate the queries so that it
+is easier for a reader to see the correspondence between different elements of the
+queries and of the operators. The reformulated queries and their corresponding
+expressions are given below.
+
+1. As the minimum expectation, how many users of “age less than 21,” a, are
+possibly in “the eastbound lane of Main Street,” vms, at the current time, t?2
+
+COUNTmin(GROUPl(a, vms, t))
+
+2. As the average expectation, what is an average age of the “male users,” m, that
+will possibly be in “the second eastbound lane of I-90 highway between Moses
+Lake and Spokane,” v90, at the time “5 min from now,” t?
+
+AVGavg(GROUPl(m, v90, t))
+
+3. As the maximum expectation, “how many users whose locations will be known
+with a high degree of conf idence, will pass through Stadium Way’s lane towards
+the campus,” v, “between 10AM and 11AM,” t?
+
+COUNTmax(GROUPd((cid:2), v, t, [1; 1], [0.75; 1], [1; 1]))
+
+4. Supposing some segments in the “GEO_REPR” representation only partially
+contain one-meter interval segments in the “POST_REPR” representation,
+“what is the maximum age of the users that are def initely between kilometer
+posts 45 and 46 of the eastbound lane of (Danish road) E45,” v, “at the current
+time,” t?
+
+MAX def(GROUPc((cid:2), v, t))
+
+2Since the User and Time dimensions are certain, using GROUPd(a, vms, t, [1; 1], [0; 1], [1; 1]) in-
+stead of GROUPl will yield the same result.
+
+Geoinformatica
+
+6 Implementation
+
+In this section, we discuss the implementation of the techniques introduced in
+the previous sections. Specifically, Section 6.1 presents implementation of the data
+model from Sections 3 and 4, including probabilistic fact-dimension relationships.
+Section 6.2 describes implementation of the aggregate formation operator from
+Definition 5.1, including efficient inference of probabilistic fact characterizations.
+
+6.1 Data model implementation
+
+We chose to develop a MOLAP implementation for our data model, because
+MOLAP implementations are generally more efficient than ROLAP implementa-
+tions [38]. We implemented our data model on top of Berkeley DB [57].
+
+We use persistent hashtables. In particular, we reuse the code for persistent
+hashtables from the Incomplete Data Cube project [58]. In that project, a persistent
+hashtable is a wrapper over a Berkeley DB database.
+
+A multidimensional object is implemented by a collection of persistent hashtables.
+Specifically, each dimension is implemented by two hashtables: (1) a hierarchy
+hashtable that records child-parent (in that order) relationships in the hierarchy of
+dimension values and (2) a category hashtable that records categories of dimension
+values. Each fact-dimension relation is implemented by two hashtables, minimum
+probability and maximum probability fact-dimension hashtable, used to record the
+minimum and maximum bounds on facts’ probabilities, respectively. Example 6.1
+gives the details.
+
+Example 6.1 (Data model implementation) Consider (a part of) a dimension of
+type Tr from Fig. 3. First, we record the child-parent relationships of the dimension
+hierarchy in the hierarchy hashtable depicted in Table 1a. The hashtable’s key and
+value are in column “Child” and “Parents,” respectively. Thus, for each dimension
+value, the hierarchy hashtable (in constant time, assuming a good hash function)
+provides the set of its parents together with the degrees of containment. This is
+needed for an efficient, bottom-up aggregation algorithm that starts from values
+to which facts are attached and infers fact characterizations by “moving” up the
+dimension hierarchy.
+
+Second, we record the categories of dimension values in the category hashtable
+depicted in Table 1b. The hashtable’s key and value are in column “DValue” and
+
+Table 1 Dimension from
+Fig. 3: (a) hierarchy hashtable
+and (b) category hashtable
+
+(a)
+
+Child
+
+e1
+e2
+p1
+p2
+p
+
+Parents
+{(e, 1)}
+{(e, 1)}
+{(e1, 0.7), (e2, 0.3), ( p, 1)}
+{( p, 1)}
+{(a1, 0.8), (a2, 0.2)}
+
+(b)
+
+e
+e1
+e2
+p1
+p2
+p
+a1
+a2
+
+DValue
+
+Category
+
+“Scope”
+“Interval”
+“Interval”
+“Poly_3”
+“Poly_3”
+“Poly_2”
+“Link”
+“Link”
+
+Geoinformatica
+
+“Category,” respectively. Thus, for each dimension value, the category hashtable
+(quickly, in constant time) provides its category. This is important for quickly
+checking whether the aggregation algorithm must stop, because it has reached the
+category (level) to which the data should be aggregated.
+
+Suppose that we have the following fact-dimension relationships: ( f1, p1, 0, 0.1),
+( f1, p2, 0.9, 1), and ( f2, p, 1, 1), which are recorded in the fact-dimension hashtables
+depicted in Table 2. For each hashtable, its key and value are in column “Fact” and
+“DValues”, respectively. Thus, for each fact, the fact-dimension hashtable (quickly,
+in constant time) provides the set of dimensions values to which it is related, together
+with a probability bound. This is needed by the bottom-up aggregation algorithm
+for efficiently finding dimension values to which facts are related. Furthermore,
+recording minimum and maximum probabilities of facts in different hashtables
+speeds up query processing. Specifically, it allows us to avoid reading the minimum
+(maximum) probabilities if a query asks for facts characterized with at least 0 (at
+most 1).
+
+In the hashtables from Tables 1 and 2, we represent dimension values, categories,
+and facts by strings. This user-friendly representation is used to present data and
+query results to users. The real, implemented hashtables use a more compact
+representation, where integer IDs are used instead, and converted to strings as
+needed.
+
+6.2 Aggregation implementation
+
+The algorithms discussed in this section make an assumption that an MO, M =
+{S, F, DM, RM}, where DM = {Di, i = 1, . . . , n} and RM = {Ri, i = 1, . . . , n}, is im-
+plemented by the following collection of persistent hashtables:
+
+–
+–
+–
+
+–
+
+, i = 1, . . . , n},
+
+a set of hierarchy hashtables, Dht
+M
+a set of category hashtables, Catht
+M
+a set of minimum probability fact-dimension hashtables, Rht
+1, . . . , n}, and
+a set of maximum probability fact-dimension hashtables, Rht
+1, . . . , n}
+
+= {Dht
+i
+= {Catht
+i
+
+, i = 1, . . . , n},
+
+M,min
+
+= {Rht
+
+i,min
+
+, i =
+
+M,max
+
+= {Rht
+
+i,max
+
+, i =
+
+We implement the aggregate formation operator from Definition 5.1, α, by
+Algorithm 1. The algorithm takes the following input parameters. First, the rep-
+resentation of M (i.e., the sets of hashtables, Rht
+M).
+Second, the set of category IDs, cat, that indicate the aggregation categories (i.e.,
+the levels to which the data should be aggregated), one per dimension. Thus, the
+set cat corresponds to the list of categories, C1, C2, . . . , Cn, from Definition 5.1. The
+algorithm outputs the hashtables that implement the result MO.
+
+M, and Catht
+
+M,max, Dht
+
+M,min, Rht
+
+Table 2 Fact-dimension relationships from Example 6.1: (a) minimum probability and (b) maximum
+probability fact-dimension hashtable
+
+(a)
+
+Fact
+
+f1
+f2
+
+DValues
+{( p1, 0), ( p2, 0.9)}
+{( p, 1)}
+
+(b)
+
+Fact
+
+f1
+f2
+
+DValues
+{( p1, 0.1), ( p2, 1)}
+{( p, 1)}
+
+Geoinformatica
+
+The algorithm works as follows. At the beginning (line 1), for each possible
+group of facts, G, the computeCounts function computes a count, COU NTmin(G)
+(defined in Definition 5.3). The complete set of the computed counts is denoted
+by COU NT S. We discuss the details of the function computeCounts below, in
+“Computing Aggregate Values”. Then, in lines 2–7, the result MO is constructed.
+Specifically, first, in line 2, the function modi f yDimsAndCats rolls up the dimensions
+of the original MO to the level of aggregation categories. For each dimension,
+i . For each tuple, (child, parents), we find
+Di, we scan the hierarchy hashtable, Dht
+the category of child in constant time, by looking up the corresponding tuple,
+(child, category), in the category hashtable, Catht
+i . If child belongs to a category below
+the aggregation category, cati, we delete both (child, parents) and (child, category)
+from the hierarchy hashtable and the category hashtable, respectively. Second, the
+createResultDim function constructs the hierarchy hashtable of the result dimension,
+Dht(cid:9)
+n+1. We scan the set of counts, COU NT S. Each distinct count, c, generates one
+tuple, (c, (cid:2)), in the hashtable. Third, the function createResultDimCats constructs
+the category hashtable for the result dimension, Catht(cid:9)
+n+1, accordingly. Fourth, the
+function modi f yFacts creates fact-dimension hashtables of the result MO. This is
+basically done by recording fact characterizations at the level of the aggregation cat-
+egories, inferred in the process of computing aggregate values. Finally, the function
+relateNew Facts constructs a fact-dimension hashtable for the result dimension.
+
+In the algorithms discussed in this section, the keyword “read” in the name of
+a function indicates that the function reads data from the hashtables (e.g., function
+readChars in line 8, Algorithm 2).
+
+6.2.1 Computing aggregate values
+
+The computeCounts function in line 1 of Algorithm 1 computes aggregate values
+A naive implementation of this computation would iterate through the set of all
+
+Geoinformatica
+
+possible fact groups. For each group, the naive algorithm would search for the facts
+that belong to this group. The problem with this naive algorithm is that it must
+consider a group even if it is empty. This leads to very slow performance as shown by
+experiments presented in Section 7.
+
+A more efficient algorithm should find a way to consider only the non-empty
+groups. This may be done by iterating through the set of facts instead of fact groups.
+Using this idea, Algorithm 2 implements one variant of the general aggregate forma-
+tion operator, α. The algorithm uses the liberal fact groups, Groupl(v1, v2, . . . , vn),
+and the minimum expected count aggregation function (i.e., h = COU NTmin). So
+only the minimum probability fact-dimension hashtables are necessary, hence the
+algorithm does not use the maximum probability fact-dimension hashtables. The
+extensions of Algorithm 2 for other kinds of grouping and aggregation functions are
+discussed in the Electronic Appendix A.
+
+Algorithm 2 takes the following input parameters:
+
+– The representation of M (i.e., the sets of hashtables, Rht
+– The set of category IDs, cat, that indicate the aggregation categories (i.e.,
+levels to which the data is aggregated), one per dimension. Thus, the set, cat,
+corresponds to the list of n categories, C1, C2, . . . , Cn, from Definition 5.1.
+
+M, and Catht
+
+M,min, Dht
+
+M).
+
+Geoinformatica
+
+For each possible group of facts, Groupl(v1, v2, . . . , vn), the algorithm outputs a
+count, COU NTmin(v1, v2, . . . , vn). We use a slightly different notation, compared to
+Section 5: given a list of dimension values, (v1, v2, . . . , vn) ∈ D1 × D2 × · · · × Dn, its
+count is denoted by COU NT(v1, v2, . . . , vn) (and not by COU NT(G), where G is a
+group of facts corresponding to (v1, v2, . . . , vn)).
+
+Algorithm 2 works as follows. Some initialization is done in lines 1–5. First, in
+line 1, we read the set of fact IDs, F, from the database. This is done by reading
+the keys from one of the fact-dimension hashtables, Rht
+1,min. Second, the loop from
+, i = 1, . . . , n, one per dimension.
+lines 2–5 initializes n in-memory hashtables, pathsc
+i
+We explain how these hashtables are used in the following. While performing
+aggregation, the algorithm infers the non-immediate relationships between lower-
+level dimension values and dimension values from the aggregation categories. Each
+such relationship may be needed by the algorithm more than once. Therefore, once
+inferred, the relationship is kept in memory, which significantly speeds up query
+processing (as is proved by our experiments, see Section 7). Thus, the algorithm
+employs dynamic programming [59].
+
+The main work of Algorithm 2 is done in the “foreach” loop in lines 6–15. The
+loop iterates over the set of fact IDs, F. For each fact,
+f , we first compute its
+fact characterizations (lines 7–8) and then use the characterizations to compute its
+contributions to the set of counts (lines 9–15).
+
+We now discuss the part of Algorithm 2 that computes fact characterizations (i.e.,
+function readChars). The function is presented in Algorithm 3. The function takes
+the following input parameters. First, the ID of the fact, f , whose characteriza-
+tions are computed. Second, the relevant part of the representation of M, for the
+ith dimension (i.e., the ith fact-dimension hashtable, Rht
+M, the ith dimension
+i
+hashtable, Dht
+M). Third, the ith
+i
+dimension’s aggregation category, cati. Finally, the hashtable with the dynamically
+computed inferred relationships at the level of the aggregation category, pathscati
+.
+The output of the function is the set of fact characterizations stored into a list of
+(dimension value ID, probability) pairs, f _charsi.
+
+M, and the ith category hashtable, Catht
+i
+
+∈ Catht
+
+∈ Dht
+
+∈ Rht
+
+i
+
+For inferring probabilities of fact characterizations and degrees of containment,
+the readChars function uses the characterization sum rule from Definition A.3 and
+the rule of transitivity of partial containment from Definition A.2. Basically, both
+these rules say the following. A fact, f , may be related to several dimension values
+or a dimension value, v, may have several parents. Consequently, given a dimension
+value, v(cid:9), there may be several paths between f (v) and v(cid:9). The probability of a fact
+characterization, f (cid:3) v(cid:9) (a degree of containment of v (cid:2) v(cid:9)), is obtained by adding
+probabilities (degrees) inferred through all these paths. For this reason, for each
+fact characterization (inferred relationship), the function maintains and updates a
+running total probability (degree of containment).
+
+The readChars function works as follows. Basically, we traverse the hierarchy of
+dimension values in the breadth-first manner, bottom-up, starting from the values
+to which the fact, f , is related and finishing at the values from the aggregation
+category, cati. Some initialization is done in lines 1–2. Specifically, in line 1, we
+initialize a queue, anc_queue, that is used for the bread-first search. The queue holds
+dimension values on the way from the fact, f , to the aggregation category, together
+with probabilities with which the values characterize the fact. Thus, an entry of the
+queue is a pair (l, p), where v is a dimension value and p is a probability. Next, in
+
+Geoinformatica
+
+line 2, we read the relationships of the fact, f , from the database (i.e., from the fact-
+) and store them into a list of (dimension ID, probability)
+dimension hashtable, Rht
+i
+pairs, f _relationships.
+
+The “foreach” loop in lines 3–30 iterates over the read fact-dimension relation-
+ships. For each dimension value, v, to which the fact is related, we decide how
+to compute relationships with its ancestors from the aggregation category. There
+are three alternatives: (1) no relationships with the ancestors are used, (2) the
+dynamically computed relationships are used, and (3) the relationships must be
+computed on-the-fly. Specifically, in line 4, we read the category of v, c, from the
+
+Geoinformatica
+
+database. If c is the aggregation category, we have case (1) handled in lines 6–7.
+Otherwise, we have case (2) or (3) handled in lines 9–30.
+
+i
+
+For case (1), in lines 6–7, we update the running total probability of f ’s characteri-
+zation by v. The function get Prob returns the running total, p f , which is equal to the
+sum of the probabilities inferred from the already taken paths. If v has never been
+reached before, the returned p f is equal to 0. In line 7, we update the running total
+by adding the degree, p, inferred through the current path. Then, we go to the next
+iteration of the loop in order to process the next relationship of f . For case (2) or
+(3), in line 9, we retrieve the list of (ancestor, probability) pairs from pathscati
+, v_anc.
+If this list contains the ancestors (i.e., if v_anc (cid:6)= ∅), we have case (2). In this case,
+in lines 11–13, we put each of them into the result list by updating the running total
+probability of the characterization.
+
+If the list, v_anc, does not contain the ancestors (i.e., if v_anc = ∅), we have case
+(3). In this case, in line 15–30, we search for the ancestors in the dimension hierarchy.
+In lines 15–17, we do some preparation. Specifically, we read the parents of v from
+the database and put them into the queue, anc_queue, that is used for the breadth-
+first search. The “repeat-until” loop in lines 18–30 performs the bread-first search.
+Specifically, in line 19, we retrieve the next dimension value, v(cid:9), and its probability,
+p(cid:9), from anc_queue. Next, in line 20, we read the category ID of v from the category
+i . If v(cid:9) is from the aggregation category (i.e., if c = cati), then we need
+hashtable, Catht
+to add v(cid:9) to the hashtable of the dynamically computed inferred relationships (lines
+22–23) and to the resulting set of fact characterizations (lines 24–25). We retrieve the
+running total, p(cid:9)(cid:9), which is equal to the sum of the degrees inferred from the already
+. If v(cid:9) has never been reached before, the
+taken paths, from the hashtable, pathscati
+running total, p(cid:9)(cid:9), is equal to 0. In line 23, we update the running total by adding the
+degree, p(cid:9), inferred through the current path. A similar reasoning is applied when
+we update the running total, p f , of f ’s characterization by v(cid:9) (lines 24–25). We add
+the probability, p(cid:9) · p, inferred through the current path. After updating the running
+totals, we process the next dimension value from the anc_queue by going to the next
+iteration of the “repeat-until” loop.
+
+If v(cid:9) is not from the aggregation category yet (i.e., if c (cid:6)= cati), at some point, we
+will have to continue the breadth-first search from the parents of v(cid:9) (lines 27–29). For
+this, in line 27, we read the parents of v(cid:9) from the dimension hashtable, Dht
+i . Then, in
+lines 28–29, we iterate over the set of parents and their degrees of containment. For
+each parent and its degree, (v(cid:9)(cid:9), p(cid:9)(cid:9)), we compute the probability that v is contained
+in v(cid:9)(cid:9), which is equal to p(cid:9) · p(cid:9)(cid:9). We put the parent and the computed probability into
+anc_queue. Then, we go the next iteration of the “repeat-until” loop.
+
+i
+
+6.2.2 Computational complexity
+
+We now discuss the complexity of Algorithm 2. We consider the average time
+complexity. This means that we can make seven assumptions about dimension values
+and facts. The first set of assumptions is required by our data model.
+
+1. Dimension values from a parent category are not larger than dimension values
+
+from a child category.
+This assumption is used in OLAP in general.
+
+2. Dimension values from the same category do not overlap.
+
+Geoinformatica
+
+The second set of assumptions is, in fact, a set of design advices.
+
+3. For each category, the set of dimension values is partitioned.
+
+4.
+
+A partition represents an area in the modeled reality. For example, a partition
+may be a one kilometer street section.
+If two categories are related, then (almost) each dimension value from a child
+partition has parents from the same parent partition.
+For example, if dimension values from the child and parent categories represent
+100 and 150 meter street segments, then (almost) every child dimension value
+will have parents from the same one kilometer street section.
+
+5. The size, k, of each partition is small (e.g., 5 or less dimension values)
+
+In order to keep the degrees of containment from becoming impractically low,
+we recommend that each dimension value have a small number of parents (e.g.,
+5 or less).
+
+6. Each fact is related to a small number, m, of dimension values (e.g., 5 or less)
+
+The same argument as for assumption 6: this assumption keeps each fact’s
+probability distribution from becoming impractically precise.
+
+From assumption 5, it follows that at each category, each dimension value has
+ancestors only from the same partition. Therefore, from assumption 5 and 6, it
+follows that at each category, each dimension value has a small number, k, of ancestors
+(e.g., 5 or less). Furthermore, from the last conclusion and assumption 7, it follows
+that that at each category, each fact is characterized by a small number, mk, of
+dimension values (e.g., mk = 25 or less).
+
+Consider an MO that contains M facts, each fact is related to m dimension values,
+per dimension, each dimension contains K dimension values, and the size of each
+partition is k. In terms of our MO representation, each (minimum probability) fact-
+dimension hashtable contains M tuples and each hierarchy hashtable contains K
+tuples. The MO contains n dimensions (i.e., we have n (minimum probability) fact-
+dimension hashtables, n hierarchy hashtables, and n category hashtables).
+
+Algorithm 2 then takes O(Mr f ) + O(nKrc) + O(Mmn) time. Specifically, in line
+1, the function readKeys runs in O(Mr f ) time, where O(r f ) is the time needed
+1,min. The “foreach” loop from lines 2–5 takes O(nKrc)
+to read one key from Rht
+time, where O(rc) is the time needed to read one value from Catht
+i . The “fore-
+ach” loop from lines 6–15 takes O(M) ∗ [O(nmk) + O((mk)n)] = O(M(mk)n) time.
+Specifically, the “foreach” loop from lines 7–8 takes O(nmk) time, because the
+function readChars takes O(mk) time (explained in the Electronic Appendix A).
+The “repeat-until” loop in lines 9–15 takes O((mk)n) time, because each fact is
+characterized by mk dimension values, per level. We emphasize that O((mk)n) does
+not mean high complexity, because m and k are small numbers (e.g., 5 or less) if
+cubes are designed according to our design advices, while the number of dimensions,
+n is also typically not so high (e.g., 10 or less).
+
+We make two conclusions from the complexity analysis above. First, since the
+number of non-empty fact groups is not large, O((mk)n), the “repeat-until” loop from
+lines 9–15 of Algorithm 2 may be performed completely in main memory, for faster
+performance. Second, using the function readChars instead of readCharsNoSave
+(presented in the Electronic Appendix A) will also speed up the algorithm consider-
+ably. Our experiments from Section 7 prove this hypothesis.
+
+Geoinformatica
+
+7 Experiments
+
+This section presents the experimental evaluation of our aggregation algorithm.
+Section 7.1 describes the multidimensional objects used for experiments. Section 7.2
+describes the results of experiments of running two slightly different versions of the
+aggregation algorithm on these multidimensional objects.
+
+The implementation is done in Java 1.6 and Berkeley DB 4.2.52. We experimented
+on a machine with 1.7 GHz Intel Pentium M CPU and 1240 MB RAM, with Linux
+operating system.
+
+7.1 Data for experiments
+
+For experiments, we use 10 three-dimensional multidimensional objects (MOs). The
+schema and dimension hierarchies are the same for each MO. However, facts and
+fact-dimensional relationships are different for each MO.
+
+7.1.1 Dimensions
+
+In the following, we explain how dimensions are obtained. Specifically, the dimen-
+sions are ID, TIME, and LOCATION that have 2, 4, and 6 levels (categories),
+respectively. Figure 4 depicts the ID and TIME dimensions. Figure 5 depicts the
+LOCATION dimension. For convenience, in each dimension, we assign a level
+number to each category. Category 0 is the highest. It contains only one dimension
+value, (cid:2) (all). The higher the level number, the lower the category. For example,
+the lowest category of the Location dimension, Divided10, has ID 5. Figures 4 and 5
+indicate the level numbers by the numbers next to the categories.
+
+In the ID dimension, a dimension value from the Id category is a car ID. The
+TIME dimension is a standard one. The LOCATION dimension is a hierarchical
+representation of the city of Oldenburg, Germany. Each category represent the road
+
+Fig. 4 The MOs used for
+experiments: the ID (I) and
+TIME (II) dimensions
+
+Geoinformatica
+
+Fig. 5 The MOs used for
+experiments: the LOCATION
+dimension
+
+network of Oldenburg, at a particular scale. A dimension value represents an edge
+from the road network. Specifically, a dimension value from the Original category is
+an edge from the Oldenburg road network provided with the Brinkhoff’s generator
+of moving objects [60]. A dimension value from the Merged category is obtained by
+merging a sequence of edges between a road intersection, into one edge. A dimension
+value from the Divided30, Divided25, and Divided10 category is obtained by dividing
+an edge from the Original category into edges of the maximum length of 30, 25, and
+10 meters, respectively.
+
+In the ID dimension, the Id category contains 30,000 dimension values. In the
+TIME dimension, the Second category contains 1.000 values, which is enough for
+recording data about near-future predictions. In the LOCATION dimension, the
+Merged, Original, Divided30, Divided25, and Divided10 category contain 3.875,
+7.035, 25.082, 29.381, and 68.242 dimension values, respectively.
+
+In order to prove the concept of expected degrees of containment we designed the
+LOCATION dimension so that it contains both full and partial relationships between
+its dimension values, denoted by empty and f illed circle-headed arrows, respectively.
+For example, all dimension values from the Original category are fully contained
+in dimension values from the Merged category. However, some dimension values
+from the Divided25 category are partially contained in dimension values from the
+Divided30 category.
+
+7.1.2 Facts
+
+Fact-dimensional relations are obtained from probabilistic car positions. In a real-
+world scenario, these positions are future car positions predicted using current
+or past car positions obtained from GPS receivers. We choose to predict these
+
+Geoinformatica
+
+future positions from synthetic current car positions, because synthetic data sets
+provide better control over experiment parameters than real-world data sets [60].
+We produce these synthetic current car positions by Brinkhoff’s generator of moving
+objects [60].
+
+Future car positions are predicted as follows. The input to the algorithm is the
+future time point, tpred. At the beginning, a car,
+j, is positioned randomly on an
+edge, v, from the Divided10 network. This is assumed to be the car’s position at
+the current time, tcur. Then, assuming a constant speed, we find all f inal edges (i.e.,
+the edges where the car can end up after (tpred − tcur) time steps). All the final edges,
+< v1, v2, . . . , vn > receive equal probability, p = 1
+n . However, the car can end up at
+the same edge, v(cid:9), taking several different paths (i.e., there can be duplicates in the
+list < v1, v2, . . . , vn >). In this case, the probability of that edge, v(cid:9), will be the sum of
+probabilities obtained through each path (e.g., if v(cid:9) is encountered 3 times in the list
+< v1, v2, . . . , vn >, the probability for v(cid:9) is set to p = 3
+n ). In the end, for each car, j,
+we have a list of final edges, < v1, v2, . . . , vm >, and a list of probabilities of ending
+up at the edges, < p1, p2, . . . , pm >. Duplicate edges have been removed from the
+list (i.e., m ≤ n).
+
+j, we do the following. First, we create a fact,
+
+From these predicted positions, fact-dimensional relationships are obtained. For
+each car,
+f j. Second, for the ID
+dimension, we relate f j deterministically to a value, j, from the Id category. This
+value represents the car’s ID. Third, for the TIME dimension, we relate f j de-
+terministically to a value, tpred, from the Second category. This value represents
+the prediction time point. Finally, for the LOCATION dimension, given the list
+of edges, < v1, v2, . . . , vm >, and the list of probabilities, < p1, p2, . . . , pm >, for
+each i = 1, 2, . . . , m, we relate f j probabilistically, with the minimum and maximum
+probability, pi and 1, to a value, vi, from the Divided10 category.
+
+We perform the above procedure (i.e., car position prediction followed by fact-
+dimensional relationship generation for 10 different sets of cars, thus generating 10
+MOs. The number of time steps, (tpred − tcur), is equal to 7, with 3 s per step (i.e., we
+predict 21 s into the future). The car sets contain from 3.000 to 30.000 cars, in a step
+of 3.000. The corresponding sets of relationships between facts and the LOCATION
+dimension contain from 431.386 to 2.972.864 relationships.
+
+7.2 Experimental results
+
+In general, we compare elapsed time of the algorithms for computing aggregate
+values with and without keeping inferred relationships between dimension values
+in memory (the latter technique is described in an algorithm in the Electronic Ap-
+pendix A). In other words, we compare Algorithm 2 that (in line 8) calls the function
+readChars with the modification of Algorithm 2 that calls a function that does not
+cache the inferred relationships in memory, which is called readCharsNoSave. In
+these experiments, we assume that the complete resulting set of counts can fit in
+memory. For very large MOs, this assumption may not work. Then, some kind of
+partitioning may be used. However, this is outside of the scope of this paper.
+
+In the beginning, Fig. 6 proves that the naive algorithm for computing aggre-
+gate values is not usable. As discussed in “Computing Aggregate Values” from
+Section 6.2, the naive algorithm would iterate through the set of all possible fact
+groups. For each group, the naive algorithm would search for the facts that belong
+
+Geoinformatica
+
+Fig. 6 Elapsed time of
+Algorithm 2 versus the naive
+algorithm
+
+Naive aggr.
+Aggr. with readCharsNoSave
+Aggr. with readChars
+
+500
+
+400
+
+)
+s
+(
+ 
+e
+m
+T
+
+i
+
+300
+
+200
+
+100
+
+ 0
+
+ 0
+
+ 1
+
+ 2
+
+ 3
+
+ 4
+
+ 5
+
+ 6
+
+ 7
+
+Fact-dimensional relationships (thousands)
+
+to this group. For this experiment, we create a set of very small MOs. Specifically,
+these MOs have the schema of the 10 MOs described in Section 7.1. The dimension
+instances are also the same. However, the number of fact-dimensional relationships
+with the LOCATION dimension ranges from ca. 800 to ca. 6.000 only. On this set
+of MOs, we run a query for the level 1 in all three dimensions. Even though this
+query has a relatively small number of possible fact groups, we can see that the naive
+algorithm takes extremely much time to process this query, around 400 s. This is
+because the naive algorithm must consider every possible fact group, even if a group
+is empty. In contrast, Algorithm 2, with readChars or with readCharsNoSave, takes
+less than 1 s, because it only considers the non-empty groups. For lower aggregation
+categories, the naive algorithm would run even slower, because the number of
+possible fact groups would increase significantly. Thus, we have established that the
+naive algorithm is not usable and we do not consider it further in this section.
+
+Figures 7a–e compare the time of Algorithm 2 with readCharsNoSave and
+readChars. We run the same set of queries for 5 different MOs. Each figure presents
+results for one MO. The title of each figure indicates the size of the corresponding
+MO, in terms of the number of fact-dimension relationships in the LOCATION
+dimension. The used aggregation categories are marked on the X axis. For example,
+“Q(1, 3, 5)” denotes a query for the first-, third-, and fith-level of the ID, Time, and
+Location dimension, respectively (i.e., the Id, Second, and Divided10 categories).
+The Y axis denotes time taken by the queries, in seconds. The used aggregations
+are also shown in Fig. 7f using the Star-Net notation of Han and Kamber. We
+can see that for a given MO performance of the algorithm with readChars does
+not depend on how high the aggregation categories are. At the same time, the
+algorithm with readCharsNoSave depends on this a lot. Moreover, performance of
+every query improves significantly if readCharsNoSave is replaced with readChars.
+This is because readCharsNoSave must search each dimension hierarchy up to its
+aggregation category, for each fact-dimensional relationship. We can see that this
+search is very expensive. The higher the aggregation categories, the more expensive
+this search becomes. For example, consider the MO in Fig. 7e. For the query with the
+relatively low aggregation categories, Q(1, 3, 5), the algorithm with readChars runs
+
+Aggr. with readCharsNoSave
+Aggr. with readChars
+
+Aggr. with readCharsNoSave
+Aggr. with readChars
+
+Geoinformatica
+
+Q(1,3,5) Q(1,3,1) Q(1,1,1) Q(1,0,0) Q(0,0,0)
+
+Q(1,3,5) Q(1,3,1) Q(1,1,1) Q(1,0,0) Q(0,0,0)
+
+Levels of aggregation categories
+(a) 431.386
+
+Aggr. with readCharsNoSave
+Aggr. with readChars
+
+Levels of aggregation categories
+(b) 1.265.512
+
+Aggr. with readCharsNoSave
+Aggr. with readChars
+
+)
+s
+(
+ 
+e
+m
+T
+
+i
+
+)
+s
+(
+ 
+e
+m
+T
+
+i
+
+ 450
+
+ 425
+
+ 400
+
+ 375
+
+ 350
+
+ 325
+
+ 300
+
+ 275
+
+ 250
+
+ 225
+
+ 200
+
+ 175
+
+ 150
+
+ 125
+
+ 100
+
+ 75
+
+ 50
+
+ 25
+
+ 0
+
+ 450
+
+ 425
+
+ 400
+
+ 375
+
+ 350
+
+ 325
+
+ 300
+
+ 275
+
+ 250
+
+ 225
+
+ 200
+
+ 175
+
+ 150
+
+ 125
+
+ 100
+
+ 75
+
+ 50
+
+ 25
+
+ 0
+
+)
+s
+(
+ 
+e
+m
+T
+
+i
+
+)
+s
+(
+ 
+e
+m
+T
+
+i
+
+ 450
+
+ 425
+
+ 400
+
+ 375
+
+ 350
+
+ 325
+
+ 300
+
+ 275
+
+ 250
+
+ 225
+
+ 200
+
+ 175
+
+ 150
+
+ 125
+
+ 100
+
+ 75
+
+ 50
+
+ 25
+
+ 0
+
+ 450
+
+ 425
+
+ 400
+
+ 375
+
+ 350
+
+ 325
+
+ 300
+
+ 275
+
+ 250
+
+ 225
+
+ 200
+
+ 175
+
+ 150
+
+ 125
+
+ 100
+
+ 75
+
+ 50
+
+ 25
+
+ 0
+
+Q(1,3,5) Q(1,3,1) Q(1,1,1) Q(1,0,0) Q(0,0,0)
+
+Q(1,3,5) Q(1,3,1) Q(1,1,1) Q(1,0,0) Q(0,0,0)
+
+Levels of aggregation categories
+(c) 2.007.597
+
+Levels of aggregation categories
+(d) 2.525.700
+
+Aggr. with readCharsNoSave
+Aggr. with readChars
+
+)
+s
+(
+ 
+e
+m
+T
+
+i
+
+ 450
+
+ 425
+
+ 400
+
+ 375
+
+ 350
+
+ 325
+
+ 300
+
+ 275
+
+ 250
+
+ 225
+
+ 200
+
+ 175
+
+ 150
+
+ 125
+
+ 100
+
+ 75
+
+ 50
+
+ 25
+
+ 0
+
+Q(1,3,5) Q(1,3,1) Q(1,1,1) Q(1,0,0) Q(0,0,0)
+
+Levels of aggregation categories
+(e) 2.872.988
+
+Fig. 7 Elapsed time of Algorithm 2 with readCharsNoSave and readChars, the same set of queries
+on 5 different MOs
+
+Geoinformatica
+
+Aggr. with readChars
+Aggr. with readCharsNoSave
+
+Aggr. with readChars
+Aggr. with readCharsNoSave
+
+ 450
+
+ 400
+
+ 350
+
+ 300
+
+ 250
+
+ 200
+
+ 150
+
+ 100
+
+ 50
+
+ 450
+
+ 400
+
+ 350
+
+ 300
+
+ 250
+
+ 200
+
+ 150
+
+ 100
+
+ 50
+
+)
+s
+(
+ 
+
+e
+m
+T
+
+i
+
+)
+s
+(
+ 
+e
+m
+T
+
+i
+
+ 450
+
+ 400
+
+ 350
+
+ 300
+
+ 250
+
+ 200
+
+ 150
+
+ 100
+
+ 50
+
+ 450
+
+ 400
+
+ 350
+
+ 300
+
+ 250
+
+ 200
+
+ 150
+
+ 100
+
+ 50
+
+)
+s
+(
+ 
+
+e
+m
+T
+
+i
+
+)
+s
+(
+ 
+e
+m
+T
+
+i
+
+ 0
+
+ 0
+
+ 500
+
+ 1000
+
+ 1500
+
+ 2000
+
+ 2500
+
+ 3000
+
+ 500
+
+ 1000
+
+ 1500
+
+ 2000
+
+ 2500
+
+ 3000
+
+Fact-dimensional relationships (thousands)
+(a) Q(1,3,5)
+
+Fact-dimensional relationships (thousands)
+(b) Q(1,3,1)
+
+ 0
+
+ 0
+
+Aggr. with readChars
+Aggr. with readCharsNoSave
+
+Aggr. with readChars
+Aggr. with readCharsNoSave
+
+ 0
+
+ 0
+
+ 500
+
+ 1000
+
+ 1500
+
+ 2000
+
+ 2500
+
+ 3000
+
+ 500
+
+ 1000
+
+ 1500
+
+ 2000
+
+ 2500
+
+ 3000
+
+Fact-dimensional relationships (thousands)
+(c) Q(1,1,1)
+
+Fact-dimensional relationships (thousands)
+(d) Q(1,0,0)
+
+ 0
+
+ 0
+
+Aggr. with readChars
+Aggr. with readCharsNoSave
+
+)
+s
+(
+ 
+e
+m
+T
+
+i
+
+ 450
+
+ 400
+
+ 350
+
+ 300
+
+ 250
+
+ 200
+
+ 150
+
+ 100
+
+ 50
+
+ 0
+
+ 0
+
+ 500
+
+ 1000
+
+ 1500
+
+ 2000
+
+ 2500
+
+ 3000
+
+Fact-dimensional relationships (thousands)
+(e) Q(0,0,0)
+
+Fig. 8 Elapsed time of Algorithm 2 with readCharsNoSave and readChars, 5 different queries on
+the same set of MOs
+
+Geoinformatica
+
+almost 2 times faster than that with readCharsNoSave. However, for the query with
+much higher aggregation hierarchies, Q(0, 0, 0), the former algorithm is faster than
+the latter by more than a factor of 8.
+
+Figure 8a–e compare the scalability of Algorithm 2 with readCharsNoSave and
+readChars, in terms of elapsed time. We run 5 different queries for the same set of
+MOs. Each figure presents results for one query. The title of each figure indicates the
+aggregation categories of the corresponding query. The X axis denotes the number
+of relationships between facts and the LOCATION dimension, in thousands. The
+Y axis denotes the query performance, in seconds. Each figure shows one curve
+for each method. We see that both methods have linear complexity, because both
+methods basically iterate through fact-dimension relationships (see the “foreach”
+loop in line 3 of Algorithms 6.3 and A.1). However, in each figure, the curve for
+the algorithm with the readChars function has a much gentler slope. For example,
+consider Fig. 8e. When the number of fact-dimensional relationship grows from ca.
+430.000 to ca. 2.970.000 (i.e., by a factor of almost 7), the time taken to process the
+query grows by a factor of almost 7 for the algorithm with the readCharsNoSave
+function and only by a factor of 4 for the algorithm with readChars. This makes
+the algorithm with readChars much more scalable than with readCharsNoSave.
+Moreover, if we replace readCharsNoSave with readChars, we observe significant
+performance improvements. For example, let us consider Fig. 8e. With ca. 2.970.000
+fact-dimensional relationships, the algorithm with readChars is more than 8 times
+faster than that with readCharsNoSave. The former algorithm takes less time for ca.
+2.970.000 relationships than the latter algorithm for ca. 430.000 relationships.
+
+At this point, we have established that Algorithm 2 with the readChars function
+is much faster than that with readCharsNoSave. Figure 9 further investigates scal-
+ability of Algorithm 2 with readChars in terms of elapsed time. We run extensive
+
+Q(0,0,0)
+Q(1,0,0)
+Q(1,1,0)
+Q(1,1,1)
+Q(1,2,1)
+Q(1,3,1)
+Q(1,3,2)
+Q(1,3,3)
+Q(1,3,4)
+Q(1,3,5)
+
+)
+s
+(
+ 
+e
+m
+T
+
+i
+
+ 60
+
+ 50
+
+ 40
+
+ 30
+
+ 20
+
+ 10
+
+ 0
+
+ 0
+
+ 500
+
+ 1000
+
+ 1500
+Fact-dimensional relationships (thousands)
+
+ 2000
+
+ 2500
+
+ 3000
+
+Fig. 9 Elapsed time of Algorithm 2 with readChars, 10 different MOs, 10 different queries
+
+Geoinformatica
+
+experiments for the algorithm using 10 different queries on 10 different MOs (10
+Multidimensional Objects, each containing a large number of facts with the largest
+MO having around 3 million relationships). The X axis denotes the number of
+relationships between facts and the LOCATION dimension, in thousands. The Y
+axis denotes the query performance, in seconds. The figure depicts one curve for each
+of 10 queries. As in Fig. 7, we can see that, with readChars, each query demonstrates
+approximately the same performance. Moreover, each query scales linearly. We
+conclude that the algorithm scales well and its scalability is not affected by how high
+the aggregation categories are.
+
+8 Conclusions and future work
+
+The growth in the number and use of mobile devices is spurring interest in location-
+based services. Many location-based services, such as traffic hotspot predictors, need
+to aggregate uncertain data in both spatial and temporal hierarchies. In this paper
+we extend location-based data warehouses to better manage uncertain data for
+LBSs. We propose a novel, probabilistic, multidimensional data model that allows
+uncertainty in both facts and dimensions. In our model a dimension value in a
+hierarchy may partially (i.e., with a given probability) contain another dimension
+value. Our data model also allows two levels of uncertainty about facts. Not only
+can probabilities be assigned to fact characterizations, but our model can also record
+uncertainty about probabilities of fact characterizations (i.e., a fact characterization
+is assigned a probability range, rather than a single probability value). This paper
+also formally defines a set of algebraic query operators that support querying of
+the uncertain, probabilistic data. We give a query algebra for different kinds of
+probabilistic aggregates and also describe query processing techniques for the al-
+gebra. Finally, the paper presents an implementation of the data model and algebra.
+The implementation is evaluated both analytically and empirically, showing that the
+increased modeling power comes at a modest expected cost.
+
+In future work, we plan to pursue research along three avenues. First, we plan
+to further improve our modeling capabilities by including domain constraints in
+our model [61] (e.g., in a traffic jam the position of a car is dependent on the
+positions of other cars). Second, we plan to improve the implementation in several
+ways. The system is currently implemented in Java, which is relatively slow, so we
+will re-implement in C++. A second improvement is to optimize performance with
+pre-aggregation. Currently the aggregate values are computed from the base data,
+without use of pre-aggregation. Our current implementation also caches inferred fact
+relationships in memory, but we need to implement a strategy to allow the cache
+to spill to disk as it grows in size. Finally, we plan to provide a relational imple-
+mentation. The third avenue of future research is to develop techniques to visualize
+uncertain data and create user interfaces to query and manage probabilistic data.
+Visualization [62–64] is critically important to making OLAP systems easy to use,
+but there has been virtually no research on the visualization of probabilistic data and
+hierarchies.
+
+Acknowledgement This work is supported in part by the BagTrack project funded by the Danish
+National Advanced Technology Foundation under grant no. 010-2011-1.
+
+Geoinformatica
+
+A Electronic Appendix
+
+This is an electronic appendix that will accompany the paper in the journal’s digital
+library, but is not a part of the paper.
+
+A.1 Expected degrees of containment
+
+In this appendix, we introduce a new interpretation for degrees of containment.
+The motivation for the new interpretation is as follows. Assume that we are given
+a dimension D with its set of categories and the relation on its dimension values
+(cid:2). As mentioned in Section 3, with the safe degrees of containment, the notation
+v1 (cid:2)d v2, where v1 ∈ (cid:2)D, v2 ∈ (cid:2)D, and d ∈ [0; 1] means that the value v2 contains at
+least d· 100 % of the value v1. The disadvantage of this approach is that inferred,
+transitive relationships between dimension values are very likely to receive a degree
+of containment equal to 0, because we infer only those degrees that we can guarantee.
+This makes the data too uncertain for practical use.
+
+In order to make the transitive relationships more useful, we introduce the
+expected degrees of containment. Our approach is based on probability theory [54].
+We consider each dimension value as an infinite set of points. We deal with the
+probabilistic events of the form “any point in v1 is contained in v2”.
+
+Definition A.1 (Expected degree of containment) Given two dimension values, v1
+and v2, and a number, d ∈ [0; 1], the notations v1 (cid:2) v2 ∧ Degexp
+(v1, v2) = d (or v1 (cid:2)d
+v2, for short) mean that “v2 is expected to contain d· 100 % of v1”, or, more formally,
+“any point in v1 is contained in v2 with a probability of d”. We term d, expected degree
+of containment.
+
+Next, we define a rule for inferring non-immediate relationships between dimen-
+
+sion values with expected degrees.
+
+Definition A.2 (Transitivity of partial containment with expected degrees) The rule
+of transitivity of partial containment with expected degrees is defined as follows:
+
+∀(v, v1, . . . , vn, v(cid:9)) ∈ (cid:2)D × . . . × (cid:2)D
+
+(cid:18)
+
+n(cid:12)
+
+i=1
+
+v (cid:2)di
+
+vi ∧ vi (cid:2)d(cid:9)
+
+i
+
+v(cid:9) ⇒ v (cid:2) v(cid:9) ∧ Degexp
+
+(cid:5)
+
+(cid:4)
+v, v(cid:9)
+
+=
+
+(cid:19)
+
+n(cid:7)
+
+i=1
+
+di · d(cid:9)
+
+i
+
+The idea behind the rule from Definition A.2 is explained next. We will use
+notation P(e) for the probability of the event e. Let us first consider a special case
+of the rule, when i = 1 (i.e., when there is only one, unique path between values v
+and v(cid:9)). Then, the rule takes the following form:
+
+(cid:4)
+v, v1, v(cid:9)
+
+(cid:5)
+
+∀
+
+∈ (cid:2)D × (cid:2)D × (cid:2)D
+
+(cid:4)
+v (cid:2)d1
+
+v1 ∧ v1 (cid:2)d(cid:9)
+
+1
+
+v(cid:9) ⇒ v (cid:2)d1·d(cid:9)
+
+1
+
+(cid:5)
+
+v(cid:9)
+
+Geoinformatica
+
+1
+
+v means that P(e(cid:9)) = d(cid:9)
+
+First, v (cid:2)d1
+v1 means that P(e) = d1, where e is “any point in v is contained in v1”.
+1, where e(cid:9) is “any point in v1 is contained in v”.
+Second, v1 (cid:2)d(cid:9)
+The conjunction of these two events, e ∧ e(cid:9) (i.e., “any point in v is contained in v(cid:9)”) is
+equivalent to v (cid:2) v(cid:9)). Next, having assumed that the events e and e(cid:9) are independent,
+P(e ∧ e(cid:9)) = d1 · d(cid:9)
+
+1. This means that we have inferred the relationship v (cid:2)d1·d(cid:9)
+
+The general case of the rule allows n paths between v and v(cid:9). The ith path goes
+through a value, vi. Then, the event e (i.e., “any point in v is contained in v(cid:9)”) is a
+i=1 ei, where ei is “any point in v is contained in v(cid:9),
+disjunction of n disjoint events,
+given the ith path”. The events e1, e2, . . . en are disjoint, because (1) we assume that
+values from the same category, in particular, the values v1, v2, . . . vn do not overlap,
+and (2) consequently, the n events “any point in v is contained in vi” are disjoint.
+Thus, the general case of the rule is n applications of the rule’s special case. The ith
+application concerns an ith path and infers the probability di · d(cid:9)
+i of the event ei. This
+i=1 di · d(cid:9)
+means that the event e has the probability of d = Degexp(v, v(cid:9)) =
+i (i.e.,
+that there is a relationship v (cid:2)d v(cid:9)).
+
+(cid:20)
+n
+
+v(cid:9).
+
+(cid:21)
+
+n
+
+1
+
+The aggregation process must perform correct aggregation, which intuitively
+means that the aggregate results should be correct with respect to the underlying
+facts, i.e., include the correct fraction (as specified by the hierarchy) of a value of
+a particular fact in a particular part of an aggregate result. Thus, no over- or under-
+counting of facts should occur in the aggregation process. To ensure this, a warehouse
+must consider all relevant aggregation paths between the source and destination
+category. Since no aggregation path is ignored during inferences of transitive partial
+containment relationships with expected degrees, the rule thus offers support for
+correct aggregation, which is missing from the analogous rule with safe degrees.
+A further support is offered by the rules for inferring fact characterizations (see
+Section 4). The example below illustrates the need to consider all aggregation paths
+in order to achieve correct aggregation.
+
+Example A.1 We show how to infer transitive partial containment relationships with
+expected degrees using the hierarchy of Fig. 10.
+
+First, we demonstrate the support for correct aggregation. In the subdimension
+D p, we have values e1 ∈ CInterval, e2 ∈ CInterval and e ∈ CScope such that e1 (cid:2)1 e and
+e2 (cid:2)1 e. Then, in the subdimension Dg, we have a value p1 ∈ CPoly_3 such that p1 (cid:2)0.3
+e1 and p1 (cid:2)0.7 e2. In other words, we have two aggregation paths between values p1
+and e. Consequently, by “summing up” the paths, we infer that p1 (cid:2)0.3·1+0.7·1=1 e.
+
+Second, we demonstrate the improvement in certainty of transitive relationships,
+compared to those obtained by the rule with safe degrees. In the subdimension Dl, we
+have value a1 ∈ CLink such that p (cid:2)0.8 a1. Consequently, we infer that p1 (cid:2)1·0.8=0.8 a1.
+Note that the last relationship would have received a (much lower) safe degree of 0,
+by p-to-p transitivity.
+
+The set of fact-dimension relationships is stored in the LBDW and the probabilis-
+tic fact characterizations are inferred when needed. For the inference, the warehouse
+uses the rules described next, in Sections A.1.1 and A.1.2. In essence, the rules
+provide a recursive definition of the notion of probabilistic fact characterization. The
+rules are valid with expected degrees of containment.
+
+Fig. 10 Dimension type Tr
+from Fig. 3 (part) and its
+instance
+
+Geoinformatica
+
+A.1.1 Basic rules
+The three basic rules for inferring fact characterizations for all ( f, v) ∈ F × (cid:2)D are
+given below.
+
+1.
+
+2.
+
+3.
+
+( f, v, pmin, pmax) ∈ Rc, p ⇒ f (cid:3)c
+
+If a fact, f , is attached to and covers a dimension value, v, with the probability
+[ pmin; pmax], then we can infer that f covers v with the probability of [ pmin; pmax].
+[ pmin; pmax] v
+If a fact, f , is attached to and inside a dimension value, v, with the probability of
+[ pmin; pmax], then we can infer that f is inside v with a probability of [ pmin; pmax].
+[ pmin; pmax] v
+If a fact f covers a dimension value v with a probability of [ pmin; pmax], then f is
+also inside v with the same probability. The idea behind the rule is as follows. If
+a piece of content covers a dimension value with some probability then it is also
+inside it with at least that probability.
+
+( f, v, pmin, pmax) ∈ Ri, p ⇒ f (cid:3)i
+
+f (cid:3)c
+
+[ pmin; pmax] v ⇒ f (cid:3)i
+
+[ pmin; pmax] v
+
+A.1.2 The characterization sum rule
+
+In the following, we present the most important rule for inferring a fact characteri-
+zation, called the characterization sum rule. Among other things, the rule provides
+support for correct aggregation. We first give the rule and then explain what it
+does.
+
+Geoinformatica
+
+Definition A.3 (Characterization sum rule) For any fact, f , and dimension values,
+v1, v2, . . ., vn, and v, the following holds:
+(cid:16)
+vi (cid:2)di
+
+⇒ f (cid:3)i
+
+[ pmin; pmax] v)
+
+v ∧ f (cid:3)i
+[ pi
+
+n(cid:12)
+
+vi
+
+; pi
+
+(cid:19)
+
+(cid:18)
+
+(cid:17)
+
+,
+
+]
+
+min
+
+max
+
+where
+
+i=1
+
+n(cid:7)
+
+i=1
+
+pmin =
+
+di · pi
+
+min
+
+and
+
+pmax = min
+
+di · pi
+
+max
+
+, 1
+
+(cid:19)
+
+(cid:18)
+
+n(cid:7)
+
+i=1
+
+min
+
+min
+
+The basic idea behind the rule is that we obtain the probability for a fact
+characterization by summing up probabilities for that fact characterization obtained
+through n different aggregation paths. Let a fact f be inside values v1, v2, . . ., and vn
+with probabilities at least p1, p2, . . ., and pn, respectively. Then, if any point from v1,
+v2, . . ., and vn is contained in the dimension value, v, with probabilities d1, d2, . . ., and
+dn, respectively, then f is also inside v with probability of at least p1
+·
+min
+· dn (if the sum is
+d2 + . . . + pn
+max
+lower than 1) or 1 (if the sum is equal to or greater than 1).
+
+· dn and at most p1
+
+· d2 + . . . + pn
+
+· d1 + p2
+
+· d1 + p2
+
+max
+
+max
+
+(cid:21)
+n
+
+∧ ei
+3
+
+i=1 P(ei
+
+), where ei
+
+3 are independent, P(ei
+
+A more formal way to explain the rule is as follows. Let P(e) be the probability
+of event e and P(e ∧ e(cid:9)) represent the probability of the conjunction of events e
+and e(cid:9). First, let the event e1 be “a piece of content is inside a segment v” (i.e., is
+“ f (cid:3)i v”). We need to compute pmin, which is a lower bound on P(e1). Clearly,
+3 is “vi (cid:2) v”. Since events ei
+2 is “ f (cid:3)i vi” and ei
+P(e1) =
+2
+) · P(ei
+) ≥ di
+) = P(ei
+and ei
+2
+3
+or P(ei
+) = di, if di is an expected or safe degree, respectively. Next, P(ei
+(cid:21)
+3
+2
+min
+n
+and P(ei
+min.
+3
+The case of pmax (i.e., the maximum probability that a piece of content is inside
+a segment v) is analogous. However, since in this case we sum upper bounds on
+probabilities, the resulting upper bound, pmax, may be higher than 1. Since according
+to probability theory the maximum probability of any event is 1, we “cut” pmax down
+to 1. We note that pmin will always be at most 1, which follows from Eq. 1 (Section 4)
+and the fact that di ≤ 1 for all is.
+
+) = di. This means that P(e1) ≥
+
+min and P(ei
+(cid:21)
+n
+
+3
+) ≥ pi
+i=1 di · pi
+
+min. So, pmin =
+
+). Next, P(ei
+2
+
+i=1 di · pi
+
+) ≥ pi
+
+∧ ei
+3
+
+2
+
+2
+
+Since no aggregation path is ignored in the process of inferring fact characteri-
+zations, the characterization sum rule offers significant support for correct aggrega-
+tion. Furthermore, if expected degrees are used for constructing an MO, the rule
+for inferring transitive relationships between dimension values (see Section A.1)
+provides additional support. In particular, the combined effect of these two rules
+is that a query engine may perform inferences on an MO in any order without
+losing any information (i.e., transitive relationships between values first, then fact
+characterizations, or in the reverse order).
+
+Example A.2 Given a dimension hierarchy from Fig. 10, we exemplify the use of
+the characterization sum rule. Suppose our data warehouse has data on (uncer-
+tain) positions of a user in the kilometer-post representation, which are stored as
+( f1, p1, 0, 0.1) ∈ Ri, p and ( f1, p2, 0.9, 1) ∈ Ri, p. Then, the positions of the user in the
+link-node representation are deduced as follows. First, assuming that the degrees
+from Fig. 10 are expected degrees, we infer the following relationships: p1 (cid:2)0.8 a1,
+p1 (cid:2)0.2 a2, p2 (cid:2)0.8 a1, and p2 (cid:2)0.2 a2. Second, by basic rule 2, we obtain the fact
+
+[0;0.1] p1 and f1 (cid:3)i
+
+characterizations f1 (cid:3)i
+sum rule, we infer the characterizations f1 (cid:3)i
+p1
+min
+0.9 = 0.18, and p2
+
+= 0.8 · 0 + 0.8 · 0.9 = 0.72, p1
+
+max
+= 0.2 · 0.1 + 0.2 · 1 = 0.22.
+
+max
+
+[0.9;1] p2. Finally, by the characterization
+] a2, where
+; p2
+= 0.2 · 0 + 0.2 ·
+
+] a1 and f1 (cid:3)i
+= 0.8 · 0.1 + 0.8 · 1 = 0.88, p2
+
+; p1
+
+[ p2
+
+[ p1
+
+max
+
+max
+
+min
+
+min
+
+min
+
+Geoinformatica
+
+A.2 The rest of the algebra
+
+For unary operators, we assume one n-dimensional MO,
+
+M = {S, F, DM, RM}
+
+DM = {Di, i = 1, . . . , n},
+
+RM = {Ri, i = 1, . . . , n}.
+
+M1 = (S1, F1, DM1
+
+, RM1
+
+)
+
+M2 = (S2, F2, DM2
+
+, RM2
+
+)
+
+where
+
+and
+
+and
+
+where
+
+For binary operators, we assume two n-dimensional MO’s
+
+DM1
+
+RM1
+
+= {D1
+i
+= {R1
+i
+
+, i = 1, . . . , n},
+, i = 1, . . . , n}, and
+
+DM2
+
+= {D2
+i
+= {R2
+i
+
+RM2
+
+, i = 1, . . . , n},
+
+, i = 1, . . . , n}.
+
+In addition, we use the notation (cid:2)Di for the union of all the dimension values from Di.
+
+A.2.1 Selection
+
+The selection operator is used to select a subset of the facts in an MO based on a
+predicate.
+
+Definition A.4 (Selection operator) Let K = {i, c}, where the symbols i and c stand
+for “inside” and “covering”, respectively. The selection operator, σ , uses a predicate
+
+q : (cid:2)D1 × . . . × (cid:2)Dn × ([0; 1] × [0; 1])n × Kn (cid:4) {true, false}
+
+Geoinformatica
+
+The parameters of q are n dimension values, each from a different dimension, n
+intervals of probability values, and n “inside” or “covering” symbols. Applying the
+operator to M yields the following set of facts.
+
+⎧
+⎨
+⎩ f ∈ F | ∃(v1, . . . , vn) ∈ (cid:2)D1 × . . . × (cid:2)Dn
+
+⎛
+
+⎝∃
+
+(cid:4)(cid:9)
+
+(cid:10)
+
+(cid:9)
+
+(cid:10)(cid:5)
+
+p1
+min
+
+; p1
+
+max
+
+, . . . ,
+
+pn
+min
+
+; pn
+
+max
+
+⎛
+
+(cid:10)
+
+∈ ([0; 1] × [0; 1])n
+
+⎝∃(k1, . . . , kn) ∈ Kn
+
+⎛
+
+⎝q
+
+(cid:4)
+
+(cid:9)
+
+v1,
+
+p1
+min
+
+; p1
+
+max
+
+, k1, . . . , vn,
+
+pn
+min
+
+; pn
+
+max
+
+, kn
+
+∧
+
+(cid:9)
+
+(cid:10)
+
+(cid:5)
+
+n(cid:12)
+
+f (cid:3)k j(cid:14)
+p j
+min
+
+; p j
+
+max
+
+⎠
+
+⎠
+
+⎠
+
+(cid:15) v j
+
+j=1
+
+⎞
+
+⎞
+
+⎞
+
+⎫
+⎬
+
+⎭
+
+Selection chooses the set of facts that are characterized by dimension values
+where q evaluates to true. This operator supports probabilistic covering/inside fact
+characterizations. Specifically, the operator allows us to formulate queries that select
+facts that are characterized (1) with given intervals of uncertainty (i.e., [ pi
+])
+for a characterization by the dimension Di and (2) kind of characterization (i.e.,
+inside, covering, or both) by means of ki for a characterization by the dimension
+Di. In addition, we restrict the fact-dimension relations accordingly, while the
+dimensions and the fact schema stay the same.
+
+; pi
+
+max
+
+min
+
+Example A.3 (Selection operator) Continuing Example A.2, suppose that we would
+like to select reliable data on male users, m ∈ CSex, on a link, a1 ∈ CL_L, at a future
+time, t ∈ CSecond. For this, the predicate, q, is defined as follows.
+(cid:10)
+(cid:9)
+
+(cid:5)
+
+(cid:10)
+
+(cid:9)
+
+(cid:10)
+
+(cid:9)
+
+p3
+min
+
+; p3
+
+max
+
+, k3
+
+= true ⇔
+
+(cid:4)
+v1,
+
+q
+
+, k1, v2,
+
+; p1
+
+p1
+min
+max
+(v1 = m ∧ p1
+min
+(v2 = a1 ∧ [ p2
+(v3 = t ∧ p3
+
+min
+
+= p1
+; p2
+min
+= p3
+
+max
+
+max
+
+max
+
+, k2, v3,
+
+p2
+min
+
+; p2
+
+max
+= 1 ∧ k1 = i) ∧
+
+] ⊆ [0.5; 1] ∧ k2 = i ∧
+= 1 ∧ k3 = i)
+
+The predicate defines the reliable data as the fact characterizations such as: (1) in the
+USER and TIME dimension, the minimum and maximum probability equals to 1,
+(2) in the LOCATION dimension, the minimum probability is at least 0.5 and the
+maximum probability is any (i.e., up to 1).
+
+Suppose we have two characterizations f1 (cid:3)i
+
+[1;1] t in the USER
+and TIME dimension, respectively. This means that the value of the predicate q
+depends on the characterizations in the LOCATION dimension. Since we have
+inferred the characterization f1 (cid:3)i
+[0.72;0.88] a1, the fact f1 would contribute to the
+result (i.e. f1 ∈ F(cid:9)). However, if we replace a1 with a2 in the query, then the fact
+f1 would be outside the result, because of the characterization f1 (cid:3)i
+[0.18;0.22] a2.
+
+[1;1] m and f1 (cid:3)i
+
+Geoinformatica
+
+As another example, we could select all data that is unreliable with respect to
+positioning, for instance, to remove it from a subsequent computation, as follows:
+
+(cid:9)
+
+(cid:4)
+v1,
+
+q
+
+p1
+min
+= true ⇔
+
+; p1
+max
+(cid:9)
+p2
+min
+
+, k1, v2,
+(cid:10)
+
+; p2
+
+max
+
+; p2
+
+p2
+min
+max
+⊆ [0; 0.5)
+
+(cid:10)
+
+(cid:9)
+
+(cid:10)
+
+(cid:9)
+
+(cid:10)
+
+(cid:5)
+
+, k2, v3,
+
+p3
+min
+
+; p3
+
+max
+
+, k3
+
+A.2.2 Other aggregate functions
+
+The SUM function, is a generalization of COUNT. Intuitively, the former sums
+arbitrary values of a measure, while the latter sums unit values. Suppose, in an MO,
+the nth dimension supplies data for the function. We assume that this dimension
+is regular (i.e. (1) there are only full containment relationships in the dimension
+hierarchy and (2) facts are only mapped to this dimension deterministically). Then,
+we define the minimum expected sum by modifying the definition of the minimum
+expected count as follows.
+
+Definition A.5 (SUM function) Given the group G, the minimum expected sum is:
+
+SUMmin(G) =
+
+(cid:16)
+p1,j
+
+min
+
+N(cid:7)
+
+j=1
+
+· . . . · pn−1,j
+
+min
+
+· g
+
+(cid:5)(cid:17)
+
+(cid:4)
+vn, fj
+
+where g(vn, f j) is a numerical value assigned to a dimension value v such that v (cid:2) vn
+and ( f j, v, 1, 1) ∈ Rn.
+
+Note that only the most precise data is summed. Definitions of maximum or
+average expected and possible or def inite sums can be obtained by modifying the
+definitions of the corresponding counts analogously.
+
+Example A.4 (SUM function) For example, suppose in our case study, we added
+a dimension for vehicle weights. Suppose further that in the new dimension the
+semantics of containment relationships is as follows: wi (cid:2) w j means that the weight
+represented by wi is lower that that represented by w j. In addition, suppose (1) values
+w5 ∈ (cid:2)D4, w2.5 ∈ (cid:2)D4, and w1.75 ∈ (cid:2)D4, stand for 5, 2.5, and 1.75 tons, respectively, (2)
+w2.5 (cid:2) w5 and w1.75 (cid:2) w5, and (3) ( f1, w1.75, 1, 1) ∈ R4 and ( f2, w2.5, 1, 1) ∈ R4. Thus,
+v(w5, f1) = 1.75 and v(w5, f2) = 2.5. Then, we could find the minimum expected sum
+of vehicle weights from the group G(cid:9)
+= Group(m, a1, t, w5) (see Example 5.2), as
+l
+follows: SUMmin(G(cid:9)
+l
+
+) = 1 · 0.72 · 1 · 1 · 1.75 + 1 · 1 · 1 · 1 · 2.5 = 1.26 + 2.5 = 3.76.
+
+Next, we consider the AVG function.
+
+Definition A.6 (AVG function) Given the group G, we define (different kinds of)
+the function as follows:
+
+AVGmod(G) = SUMmod(G)
+COU NTmod(G)
+
+where mod is one of the following: min, max, avg, def , and pos.
+
+Finally, we consider the MIN and MAX functions. We give a formal definition for
+
+the MIN function only. The MAX function may be defined analogously.
+
+Geoinformatica
+
+Definition A.7 (MIN function) Given the group G, we define the possible and
+def inite minimum as follows:
+
+MINmod(G) = min({v(vn, f j), j = 1, . . . , N})
+
+where mod is either pos or def and min is a function that returns the minimum
+number from a set of numbers. Analogously with the COUNT function, MINpos
+(MINdef) is defined, if G is a liberal (conservative) group.
+
+A.2.3 Union operator
+
+The union operator is used to take the union of two MOs. Prior to defining the
+operator itself, we define two helper union operators, union on dimensions and union
+on fact-dimension relations.
+
+In Definition A.8, we assume two dimensions of the same type T:
+
+1. D1 with its set of categories CD1 and relation (cid:2)D1 and
+2. D2 with its set of categories CD2 and (cid:2)D2 .
+
+Let us also assume that CD1
+
+= {C1
+j
+
+, j = 1, . . . , m} and CD2
+
+= {C2
+j
+
+, j = 1, . . . , m}.
+
+Definition A.8 (Dimension union) The dimension union operator on dimensions,
+(cid:8)
+
+D, is defined as follows:
+
+D 
+
+D(cid:9) = D1
+
+D2 =
+
+(cid:16)
+CD(cid:9) , (cid:2)D(cid:9)
+
+(cid:17)
+
+where CD(cid:9) = {C1
+j
+
+C2
+j
+
+(cid:8)
+
+, j = 1, . . . , m}. The relation (cid:2)D(cid:9)
+
+is defined as follows:
+
+∀(v1, v2) ∈ (D1 ∪ D2)×(D1 ∪ D2)
+
+(cid:16)
+v1 ∈ Desc(v2)∧v1 (cid:2)D(cid:9)
+
+d
+
+v2 ⇔ v1 (cid:2)D1
+d1
+
+v2 ∨ v1 (cid:2)D2
+d2
+
+v2
+
+(cid:17)
+
+where Desc(v2) is a set of immediate predecessors of v2 and d depends on d1 and d2.
+
+Stated less formally, given two dimensions of the same type, the union operator on
+dimensions performs set union on corresponding categories and builds a new relation
+on dimension values: there exists a direct relationship between two dimension values
+if there exists a direct relationship between the values in the first dimension, in the
+second dimension, or in both. The degree of containment for a resulting relationship
+may be determined in different ways. We discuss this issue later in this section. Note
+that only the degrees of containment for the direct relationships are found using
+these rules. The indirect relationships between values in the resulting dimension are
+inferred using our transitivity rules from Section 4.
+
+In Definition A.9, we assume two fact-dimension relations:
+
+1. R1 that relates facts from a set F1 with dimension values from a dimension D1
+
+and
+
+2. R2 that relates facts from a set F2 with dimension values from a dimension D2.
+
+The sets of facts are of the same fact type and the dimensions are of the same
+dimension type.
+
+Geoinformatica
+
+Definition A.9 (Fact-dimension union) The union operator on fact-dimension rela-
+tions,
+
+R, is defined as follows:
+
+(cid:8)
+
+R 
+
+(cid:3)(cid:4)
+
+R1
+
+R2 =
+
+f, v, p(cid:9)
+
+, p(cid:9)
+
+min
+
+max
+
+(cid:5)
+
+(cid:4)
+
+|
+
+f, v, p1
+
+min
+
+, p1
+
+max
+
+∈ R1 ∨
+
+f, v, p2
+
+min
+
+, p2
+
+max
+
+∈ R2
+
+(cid:5)
+
+(cid:4)
+
+(cid:5)
+
+(cid:6)
+
+where p(cid:9)
+
+min and p(cid:9)
+
+max depend on p1
+
+min, p1
+
+max, p2
+
+min, and p2
+
+max.
+
+Stated less formally, given two fact-dimension relations, relating facts and dimen-
+sions of the same type, the union operator on the relations builds new fact-dimension
+relation: the new relation relates a fact and a dimension value if the first relation, the
+second relation, or both the relations relate(s) the fact and the value from the first
+dimension, from the second dimension, or from both. The probabilities for a resulting
+relationship may be determined in different ways. We discuss this issue later in this
+section. Note that only fact-dimension relations are found using these rules. The fact
+characterizations are inferred using the rules from Section 4.
+
+Definition A.10 (Multidimensional union) Consider two n-dimensional MO’s with
+the same fact schema (i.e., S1 = S2). The union operator on MOs,
+ 
+
+, is defined as:
+
+(cid:8)
+
+M1
+
+M2 =
+
+(cid:4)
+S(cid:9), F(cid:9), D(cid:9)
+
+M(cid:9) , R(cid:9)
+M(cid:9)
+
+(cid:5)
+
+where
+
+(cid:8)
+
+1. S(cid:9) = S1,
+2. F(cid:9) = F1
+3. D(cid:9)
+4. R(cid:9)
+
+M(cid:9) = {D1
+M(cid:9) = {R1
+
+i
+
+i
+
+F2,
+(cid:8)
+(cid:8)
+
+D D2
+, i = 1, . . . , n},
+i
+R R2
+, i = 1, . . . , n}.
+i
+
+Stated less formally, given two MO’s with common fact schemas, the union
+D
+
+operator combines dimensions and fact-dimension relations with the help of the
+and
+
+R operator, respectively.
+
+(cid:8)
+
+(cid:8)
+
+A.2.4 Other operators
+
+Other operators, such as projection and identity-based join, are like their determin-
+istic counterparts. These operators do not transform the probabilities of the fact
+characterizations or the degrees of containment in the dimensions. They only need
+to preserve the probabilities. Therefore, we define the probabilistic version of these
+operators as their deterministic counterparts in [5] except the probabilistic operators
+take probabilistic MOs as arguments and result in probabilistic MOs.
+
+A.3 Additional implementation details
+
+A.3.1 Computing fact characterizations
+
+The readChars function stores inferred relationships between dimension values for
+later use. However, this solution requires some memory for storing the relationships.
+If there is a need to reduce memory usage, a version of the function without storage
+
+Geoinformatica
+
+of inferred relationships, readCharsNoSave, may be used. Algorithm 4 presents
+the pseudocode for readCharsNoSave. In the following, we discuss how to modify
+Algorithm 3 to obtain an algorithm for readCharsNoSave. Naturally, pathscati
+that
+are used to store inferred relationships is removed from the list of input parameters.
+Then, we remove lines 9–14 that use the dynamically computed relationships for
+computing fact characterizations. Finally, we remove lines 22–23 that store the newly
+inferred relationships.
+
+i
+
+A.3.2 Generalizations of computing aggregate values
+
+Now, we discuss how to modify Algorithms 6.2 and 6.3 in order to implement
+several generalizations of the aggregation algorithm. Algorithm 2 uses liberal groups,
+denoted Groupl(v1, v2, . . . , vn), and outputs minimum counts, denoted COU NTmin
+(v1, v2, . . . , vn). We discuss how to also implement conservative and degree-of-
+confidence grouping and to also produce maximum and average counts (see
+Definitions 5.2 and 5.3).
+
+The generalized aggregation algorithm is presented in Algorithm A.2. In the
+following, we compare Algorithm A.2 with Algorithm 2. We have three extra input
+parameters. First, the collection of maximum probability fact-dimension hashtables,
+, i = 1, 2, . . . , n}, is now also required for computing maximum or
+Rht
+average counts. Second, gr ∈ {l, c, d} indicates which grouping to use: liberal, v,
+conservative, c, or degree-of-confidence, d. Third, the set of probability intervals,
+
+= {Rht
+
+M,max
+
+i,max
+
+min(cid:9); pi
+
+{[ pi
+max(cid:9)], i = 1, 2, . . . , n}, is used for filtering facts out in case of degree-of-
+confidence grouping. If gr is set to l or c, this parameter is ignored. Finally, mod ∈
+{min, max, avg} indicates which kind of count to compute. The output parameter,
+COU NTmod, now depends on mod.
+
+Geoinformatica
+
+Geoinformatica
+
+Next, the initialization part (lines 1–5) does not change at all.
+However, the body of the main, “foreach” loop in line 6 changes significantly,
+though it has the same structure. First, in lines 7–8, we compute fact characteri-
+zations, which corresponds to lines 7–8 of Algorithm 2. Second, in lines 9–29, we
+construct and fill the groups according to these characterizations, which corresponds
+to lines 9–15 of Algorithm 2.
+
+As for computing fact characterizations, in line 8, we now call the function
+readPairChars instead of readChars. The differences between the functions are
+as follows. The readPairChars function returns two lists of fact characterizations,
+f _charsi,min and f _charsi,max instead of one, f _charsi, because both minimum and
+maximum probabilities of facts are used for filtering with degree-of-confidence
+grouping and for computing average counts (i.e., with gr = d and mod = avg). Ac-
+cordingly, the readPairChars function takes as input two fact-dimension hashtables,
+Rht
+i . The body of this function is very similar to
+that of readChars from Algorithm 3. The only difference is that two sets of fact-
+dimensional relationships are read (see line 2 in Algorithm 3) and used later for
+computations.
+
+i,max, instead of one, Rht
+
+i,min and Rht
+
+As for constructing and filling groups, several important modifications are made.
+For each group, the “while” loop now iterates over dimensions instead of the
+“foreach” loop (see line 12, in both the algorithms), because an early stop is now
+done if a fact, f , is filtered out. The early stop is requested by setting the boolean
+flag, contrib to f alse. The flag is initialized in line 11. The “while” loop’s variable, i,
+is initiated in line 11 and updated in line 26. The body of the “while” loop consists
+of three parts. First, in line 13–14, we read the minimum and maximum probabilities,
+max, of the fact characterization considered, f (cid:3) vi, which corresponds to
+pi
+min and pi
+line 13 in Algorithm 2. Second, the switch block in lines 15–20 checks whether the
+fact must be filtered out. If so, then contrib is set to false. Third, if the fact, f , has
+not been filtered out, the switch block in lines 21–24 updates the running total of the
+fact’s contribution to the group, p.
+
+min and pi
+
+Now we discuss how to check whether the fact must be filtered out (lines
+15–20). We do the check according to the definition of grouping operators from
+Definition 5.2. We do the check differently for conservative (case gr = c, lines 16–
+17), degree-of-confidence (case gr = d, lines 18–19), and liberal (case gr = l, line 20)
+grouping. Specifically, with the conservative grouping, it is enough to check whether
+the maximum probability, pi
+max, is lower than 1. However, with the degree-of-
+confidence grouping, we are forced to check whether both minimum and maximum
+max(cid:9)]. At the same
+max, fall within the given interval, [ pi
+probabilities, pi
+time, with the liberal grouping, every fact contributes to the result, regardless of its
+probabilities. For this reason, no check is performed. As for updating the running
+total of the fact’s contribution to the group, p, in lines 21–25, we do it according
+to the definition of COUNT aggregation functions from Definition 5.3. We do it
+differently for minimum count (case mod = min, line 23), maximum count (case
+mod = max, line 24), and average count (case mod = avg, line 25). Specifically, with
+the minimum or maximum count, only minimum or maximum probabilities, pi
+min or
+pi
+max, contributes to the result, respectively. At the same time, with the average count,
+the average of two probabilities, pi
+
+, contributes to the result.
+
+min(cid:9); pi
+
+max
+
+min
+
++ pi
+2
+
+Finally, we update the count of the current group, denoted COU NTmod
+(v1, v2, . . . , vn), in lines 27–28, which correspond to line 14 in Algorithm 2. Now the
+
+Geoinformatica
+
+update is done only if the fact, f , has not been filtered out (i.e., if contrib has not
+been set to f alse).
+
+In the following, we discuss the complexity of the functions readChars and
+readCharsNoSave presented in Algorithms 6.3 and A.1, respectively. The function
+readChars runs in O(mk) time, if all the non-immediate relations between dimension
+values have been computed before. In this case, we only run the loop in lines 11–13 in
+k times per iteration of the loop in lines 3–30, which does m iterations. The function
+readCharsNoSave is much slower. It runs in O(mck2) time, where c is the number
+of categories per dimension, because it always performs the breadth-first search to
+compute the non-immediate relations.
+
+References
+
+1. Kothuri R, Godfrind A, Beinat E (2004) Pro oracle spatial, Apress
+2. Harinath S, Quinn SR (2005) Professional SQL Server Analysis Services 2005 with MDX, Wrox
+3. Kimball R, Reeves L, Ross M, Thornwaite W (1998) The data warehouse lifecycle toolkit. Wiley
+4. Han J (2008) Olap, spatial. In: Encyclopedia of GIS, pp 809–812
+5. Pedersen TB, Jensen CS, Dyreson CE (2001) A foundation for capturing and querying complex
+
+multidimensional data. Inf Syst 26(5):383–423
+
+6. Dyreson CE, Pedersen TB, Jensen CS (2003) Incomplete information in multidimensional data-
+
+bases. In: Multidimensional databases, pp 282–309
+
+7. Parker A, Subrahmanian VS, Grant J (2007) A logical formulation of probabilistic spatial data-
+
+bases. IEEE Trans Knowl Data Eng 19(11):1541–1556
+
+8. Euman a/s (2008). http://www.euman.com
+9. Dyreson CE (1996) A bibliography on uncertainty management in information systems. In: Un-
+
+certainty management in information systems, pp 415–458
+
+10. Date CJ (1986) Null values in database management. Reading, ch. 15. Addison-Wesley, MA,
+
+pp 313–334
+
+11. Grant J (1980) Incomplete information in a relational database. Fundam Math III(3):363–378
+12. Bosc P, Galibourg M, Hamon G (1988) Fuzzy querying with SQL: extensions and implementa-
+
+13. Barbará D, García-Molina H, Porter D (1992) The management of probabilistic data. IEEE
+
+tion aspects. Fuzzy Set Syst 28:333–349
+
+Trans Knowl Data Eng 4(5):487–502
+
+14. Dyreson CE, Pedersen TB, Jensen CS (2003) Incomplete information in multidimensional data-
+
+bases. In: Multidimensional databases, pp 282–309
+
+15. Benjelloun O, Sarma AD, Halevy AY, Theobald M, Widom J (2008) Databases with uncertainty
+
+16. Cheng R, Singh S, Prabhakar S, Shah R, Vitter JS, Xia Y (2006) Efficient join processing over
+
+and lineage. VLDB J 17(2):243–264
+
+uncertain data. In: CIKM, pp 738–747
+
+17. Cavallo R, Pittarelli M (1987) The theory of probabilistic databases. In: VLDB, pp 71–81
+18. Gelenbe E, Hébrail G (1986) A probability model of uncertainty in data bases. In: ICDE, pp 328–
+
+19. Dalvi NN, Suciu D (2007) Efficient query evaluation on probabilistic databases. VLDB J
+
+20. Papadias D, Zhang J, Mamoulis N, Tao Y (2003) Query processing in spatial network databases.
+
+21. Saltenis S, Jensen CS, Leutenegger ST, Lopez MA (2000) Indexing the positions of continuously
+
+moving objects. In: SIGMOD conference, pp 331–342
+
+22. Sun J, Papadias D, Tao Y, Liu B (2004) Querying about the past, the present, and the future in
+
+spatio-temporal databases. In: ICDE, pp 202–213
+
+23. Trajcevski G, Wolfson O, Zhang F, Chamberlain S (2002) The geometry of uncertainty in moving
+
+24. Trajcevski G (2003) Probabilistic range queries in moving objects databases with uncertainty.
+
+objects databases. In: EDBT, pp 233–250
+
+In: MobiDE, pp 39–45
+
+25. Cheng R, Kalashnikov DV, Prabhakar S (2004) Querying imprecise data in moving object
+
+environments. IEEE Trns Knowl Data Eng 16(9):1112–1127
+
+333
+
+16(4):523–544
+
+In: VLDB, pp 802–813
+
+Geoinformatica
+
+26. Cheng R, Kalashnikov DV, Prabhakar S (2003) Evaluating probabilistic queries over imprecise
+
+data. In: SIGMOD Conference, pp 551–562
+
+27. Pedersen TB, Tryfona N (2001) Pre-aggregation in spatial data warehouses. In: SSTD, pp 460–
+
+28. Tao Y, Kollios G, Considine J, Li F, Papadias D (2004) Spatio-temporal aggregation using
+
+29. Zhang D, Tsotras VJ, Gunopulos D (2002) Efficient aggregation over objects with extent.
+
+480
+
+sketches. In: ICDE, pp 214–226
+
+In: PODS, pp 121–132
+
+30. Zhang D, Gunopulos D, Tsotras VJ, Seeger B (2003) Temporal and spatio-temporal aggregations
+
+over data streams using multiple time granularities. Inf Syst 28(1–2):61–84
+
+31. Güting RH, Böhlen MH, Erwig M, Jensen CS, Lorentzos NA, Schneider M, Vazirgiannis M
+(2000) A foundation for representing and quering moving objects. ACM Trans Database Syst
+25(1):1–42
+
+32. NCHRP (1997) A generic data model for linear referencing systems. Transportation Research
+
+Board, Washington, DC,
+
+33. Speicys L, Jensen CS (2008) Enabling location-based services—multi-graph representation of
+
+transportation networks. Geoinformatica 12(2):219–253
+
+34. Hage C, Jensen CS, Pedersen TB, Speicys L, Timko I (2003) Integrated data management for
+
+mobile services in the real world. In: VLDB, pp 1019–1030
+
+35. Jensen CS, Kligys A, Pedersen TB, Timko I (2004) Multidimensional data modeling for location-
+
+36. Timko I, Pedersen TB (2004) Capturing complex multidimensional data in location-based data
+
+based services. VLDB J 13(1):1–21
+
+warehouses. In: GIS, pp 147–156
+
+37. Burdick D, Deshpande PM, Jayram TS, Ramakrishnan R, Vaithyanathan S (2007) Olap over
+
+uncertain and imprecise data. VLDB J 16(1):123–144
+
+38. Jarke M, Lenzerini M, Vassiliou Y, Vassiliadis P (2003) Fundamentals of data warehouses.
+
+Springer, Heidelberg
+
+39. Vaisman AA, Zimányi E (2009) What is spatio-temporal data warehousing? In: DaWaK, pp 9–23
+40. Malinowski E, Zimányi E (2008) Advanced data warehouse design: from conventional to spatial
+
+and temporal applications. Springer, Heidelberg
+
+41. Escribano A, Gómez LI, Kuijpers B, Vaisman AA (2007) Piet: a gis-olap implementation.
+
+42. Gómez LI, Haesevoets S, Kuijpers B, Vaisman AA (2009) Spatial aggregation: data model and
+
+In: DOLAP, pp 73–80
+
+implementation Inf Syst 34(6):551–576
+
+43. Gómez LI, Kuijpers B, Vaisman AA (2011) A data model and query language for spatio-
+
+temporal decision support. Geoinformatica 15(3):455–496
+
+44. Gómez LI, Gómez SA, Vaisman AA (2012) A generic data model and query language for
+
+spatiotemporal olap cube analysis. In: EDBT, pp 300–311
+
+45. Malinowski E, Zimányi E (2007) Logical representation of a conceptual model for spatial data
+
+warehouses. Geoinformatica 11(4):431–457
+
+46. Pourabbas E (2003) Cooperation with geographic databases. In: Multidimensional databases,
+
+pp 393–432
+
+47. da Silva J, Vera ASC, de Oliveira AG, do Nascimento Fidalgo R, Salgado AC, Times VC (2007)
+
+Querying geographical data warehouses with geomdql. In: SBBD, pp 223–237
+
+48. da Silva J, Times VC, Salgado AC (2006) An open source and web based framework for
+
+geographic and multidimensional processing. In: SAC, pp 63–67
+
+49. Bimonte S, Miquel M (2010) When spatial analysis meets olap: Multidimensional model and
+
+50. Bimonte S, Bertolotto M, Gensel J, Boussaid O (2012) Spatial olap and map generalization:
+
+51. Viswanathan G, Schneider M 2011 Olap formulations for supporting complex spatial objects in
+
+operators. IJDWM 6(4):33–60
+
+Model and algebra. IJDWM 8(1):24–51
+
+data warehouses, In: DaWaK, pp 39–50
+
+52. Xu J, Güting RH (2013) A generic data model for moving objects. Geoinformatica 17(1):125–172
+53. Timko I, Dyreson CE, Pedersen TB (2005) Probabilistic data modeling and querying for location-
+
+based data warehouses. In: SSDBM, pp 273–282
+
+54. DeGroot MH, Schervish MJ (2002) Probability and statistics. Addison-Wesley, Reading
+55. Klug AC (1982) Equivalence of relational algebra and relational calculus query languages having
+
+aggregate functions. J ACM 29(3):699–717
+
+56. Abiteboul S, Kanellakis PC, Grahne G (1987) On the representation and querying of sets of
+
+possible worlds. In: SIGMOD Conference, pp 34–48
+
+Geoinformatica
+
+57. Oracle berkeley db (2008). http://www.oracle.com/technology/products/berkeley-db/index.html
+58. Dyreson CE (1996) Information retrieval from an incomplete data cube. In: VLDB, pp 532–543
+59. Cormen TH, Leiserson CE, Rivest RL, Stein C (2001) Introduction to algorithms, 2nd edn. The
+
+60. Brinkhoff T (2002) A framework for generating network-based moving objects. Geoinformatica
+
+MIT Press, Cambridge
+
+6(2):153–180
+
+61. Burdick D, Doan A, Ramakrishnan R, Vaithyanathan S (2007) Olap over imprecise data with
+
+domain constraints. In: VLDB, pp 39–50
+
+62. Martino SD, Bimonte S, Bertolotto M, Ferrucci F (2009) Integrating google earth within olap
+
+tools for multidimensional exploration and analysis of spatial data. In: ICEIS, pp 940–951
+
+63. Silva R, Moura-Pires J, Santos MY (2011) Spatial clustering to uncluttering map visualization in
+
+64. Dyreson CE, Florez OU (2011) Building a display of missing information in a data sieve.
+
+solap. In: ICCSA, vol 1. pp 253–268
+
+In: DOLAP, pp 53–60
+
+Igor Timko was an Assistant Professor (in Italian: Ricercatore a Tempo Determinato, RTD) in
+the Database and Information Systems Group at the Faculty of Computer Science, Free University
+of Bozen-Bolzano, Italy. His research interests include Moving Objects Databases, Spatio-temporal
+aggregation, Spatio-temporal OLAP, spatio-temporal multidimensional databases, and Probabilistic
+OLAP, probabilistic multidimensional databases. Igor currently works as a translator.
+
+Geoinformatica
+
+Curtis Dyreson is an assistant professor in the Department of Computer Science at Utah State
+University, USA. He’s also the ACM SIGMOD DiSC Editor, the Information Director for ACM
+Transactions on Database Systems, the Information Director for ACM SIGMOD, and serves on
+the ACM SIGMOD Executive Committee. He will be the general co-Chair of SIGMOD 2014. His
+research interests include temporal databases, XML databases, data cubes, and providing support
+for proscriptive metadata. Prior to Utah State University, he was a professor at Washington State
+University, James Cook University, Aalborg University, and Bond University.
+
+Torben Bach Pedersen Pedersen is professor in the Database and Programming Technologies
+group at the Department of Computer Science, Faculty of Engineering, Science, and Medicine,
+Aalborg University (AAU), Denmark. Before joining AAU in 2000, he held positions as industrial
+research fellow and database administrator at KMD (now CSC Scandihealth) for more than six
+years. His research concerns aspects of business intelligence, i.e., topics such as multidimensional
+databases, data warehousing, on-line analytical processing (OLAP), data mining, data integration,
+etc., with a special focus on complex application areas (location-based services, web data, music,
+real-time integration, etc.). He serves on the Editorial Boards of the International Journal of Data
+Warehousing and Mining, Journal of Computing Science and Engineering, and LNCS Transactions
+on Large-Scale Data- and Knowledge- Centered Systems. In 2007, he served as PC Chair for
+DOLAP. In 2009, he served as General Chair for SSTD, PC Chair for DaWaK and Regional Chair
+(Europe) for DASFAA. In 2010, he served as PC Chair for DaWaK. In 2011, he served as Panels
+Chair for ER. In 2012, he serves as co-chair of EnDM and Cloud-I. He is a member of the SSTD
+Endowment and is chairman of the Danish Bibliometric Committee for Computer Science.
+
+

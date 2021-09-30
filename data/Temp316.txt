@@ -1,0 +1,1695 @@
+This article was downloaded by: [Clemson University]
+On: 27 March 2015, At: 09:38
+Publisher: Taylor & Francis
+Informa Ltd Registered in England and Wales Registered Number: 1072954 Registered
+office: Mortimer House, 37-41 Mortimer Street, London W1T 3JH, UK
+
+International Journal of Geographical
+Information Science
+Publication details, including instructions for authors and
+subscription information:
+http://www.tandfonline.com/loi/tgis20
+
+An OLS regression model for context-
+aware tile prefetching in a web map
+cache
+Ricardo García Martín a , Juan Pablo de Castro Fernández a , Elena
+Verdú Pérez a , María Jesús Verdú Pérez a & Luisa María Regueras
+Santos a
+a Department of Signal Theory, Communications and Telematics
+Engineering , University of Valladolid , Valladolid , Spain
+Published online: 30 Oct 2012.
+
+To cite this article: Ricardo García Martín , Juan Pablo de Castro Fernández , Elena Verdú Pérez ,
+María Jesús Verdú Pérez & Luisa María Regueras Santos (2013) An OLS regression model for context-
+aware tile prefetching in a web map cache, International Journal of Geographical Information
+Science, 27:3, 614-632, DOI: 10.1080/13658816.2012.721555
+
+To link to this article:  http://dx.doi.org/10.1080/13658816.2012.721555
+
+PLEASE SCROLL DOWN FOR ARTICLE
+
+Taylor & Francis makes every effort to ensure the accuracy of all the information (the
+“Content”) contained in the publications on our platform. However, Taylor & Francis,
+our agents, and our licensors make no representations or warranties whatsoever as to
+the accuracy, completeness, or suitability for any purpose of the Content. Any opinions
+and views expressed in this publication are the opinions and views of the authors,
+and are not the views of or endorsed by Taylor & Francis. The accuracy of the Content
+should not be relied upon and should be independently verified with primary sources
+of information. Taylor and Francis shall not be liable for any losses, actions, claims,
+proceedings, demands, costs, expenses, damages, and other liabilities whatsoever or
+howsoever caused arising directly or indirectly in connection with, in relation to or arising
+out of the use of the Content.
+
+This article may be used for research, teaching, and private study purposes. Any
+substantial or systematic reproduction, redistribution, reselling, loan, sub-licensing,
+systematic supply, or distribution in any form to anyone is expressly forbidden. Terms &
+
+Conditions of access and use can be found at http://www.tandfonline.com/page/terms-
+and-conditions
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 International Journal of Geographical Information Science, 2013
+Vol. 27, No. 3, 614–632, http://dx.doi.org/10.1080/13658816.2012.721555
+
+An OLS regression model for context-aware tile prefetching in a web
+map cache
+
+Ricardo García Martín*, Juan Pablo de Castro Fernández, Elena Verdú Pérez,
+María Jesús Verdú Pérez and Luisa María Regueras Santos
+
+Department of Signal Theory, Communications and Telematics Engineering, University of
+Valladolid,Valladolid, Spain
+
+(Received 31 May 2012; ﬁnal version received 3 August 2012)
+
+The increasing popularity of web map services has motivated the development of more
+scalable services in the spatial data infrastructures. Tiled map services have emerged as
+a scalable alternative to traditional map services. Instead of rendering map images on
+the ﬂy, a collection of pre-generated image tiles can be served very fast from a server-
+side cache. However, during the start-up of the service, the cache is initially empty and
+users experience a poor quality of service. Tile prefetching attempts to improve hit rates
+by proactively fetching map images without waiting for client requests.
+
+While most popular prefetching policies in traditional web caching consider only
+the previous access history to make predictions, signiﬁcant
+improvements could
+be achieved in web mapping by taking into account the background geographic
+information.
+
+This work proposes a regressive model to predict which areas are likely to be
+requested in the future based on spatial cross-correlation between an unconstrained
+catalog of geographic features and a record of past cache requests. Tiles that are antic-
+ipated to be most frequently requested can be pre-generated and cached for faster
+retrieval. Trace-driven simulations with several million cache requests from two differ-
+ent nation-wide public web map services in Spain demonstrate that accurate predictions
+and performance gains can be obtained with the proposed model.
+
+Keywords: web mapping; tile cache; regressive model; OLS; prefetching; geographic
+features
+
+Introduction
+
+1.
+The Web Map Service (WMS) standard of the Open Geospatial Consortium (OGC) offers a
+standardized and ﬂexible way of serving cartographic digital maps of spatially referenced
+data through HTTP requests (de la Beaujardiere 2006). However, spatial parameters in
+requests are not constrained, which force images to be generated on the ﬂy each time a
+request is received, limiting the scalability of these services.
+
+OGC describes geospatial data visualization from data to a map as a workﬂow
+
+composed of four processes (Doyle and Cuthbert 1998) as shown in Figure 1:
+
+(1) Selection of geospatial data to be displayed
+(2) Generation of display elements from the selected geospatial data
+
+*Corresponding author. Email: ricgar@tel.uva.es
+
+© 2013 Taylor & Francis
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 International Journal of Geographical Information Science
+
+615
+
+Device
+characteristics
+
+Image constraints
+
+Display
+
+Render
+
+Style
+
+Display element
+generator
+
+Query constraints
+
+Filter
+
+Image
+
+Image format
+(i.e, GIF, JPEG, PNG)
+
+Thin client
+
+Medium client
+
+Thick client
+
+Display
+elements
+
+Raster/vector
+descriptions
+
+Features
+
+OpenGIS specification for
+simple features
+(i.e. polygon, polyline)
+
+Data
+source
+
+PostGIS database,
+shapefile
+
+Figure 1. OGC model of portrayal workﬂow (image adapted from Doyle and Cuthbert (1998)).
+
+(3) Rendering of display elements into an image
+(4) Display of the rendered map to the user.
+
+In the most common scenario, the WMS client is a thin client (a Web Map client such
+as Google Maps, Bing Maps, or OpenLayers) that executes inside the users’s web browser
+and displays the map images rendered by the WMS server. The processes involved in the
+image generation by the WMS server (namely ﬁltering, display element generation, and
+rendering) cause delays typically on the order of several seconds. This delay and process-
+ing overhead could be removed by distributing pre-rendered map images from a cache.
+However, there is only limited potential to cache images between the client and the server,
+since most users requests correspond to different images.
+
+A common approach to improve the cachability of requests is to divide the map into a
+discrete set of images, called tiles, and restrict user’s requests to that set. In order to offer
+a tiled web map service, the web map server renders the map across a ﬁxed set of scales
+through progressive generalization. This process reduces the amount of data and adjusts the
+information to the given scale. Rendered map images are then divided into tiles, describing
+a tile pyramid as depicted in Figure 2. A detailed examination of the principles of tile-based
+online mapping systems is offered in Sample and Loup (2010).
+
+Several speciﬁcations have been developed to address how cacheable image tiles are
+advertised from server-side and how a client requests cached image tiles. The Open Source
+Geospatial Foundation (OSGeo) developed the WMS Tile Caching (usually known as
+WMS-C) proposal (Erle et al. 2006), and the OGC later released the Web Map Tile Service
+(WMTS) standard (Masó et al. 2010) inspired by the former and other similar initiatives.
+One problem that arises when deploying these server-side caches in practical imple-
+mentations is that the storage requirements are often prohibitive for many organizations,
+thus forcing the use of partial caches containing just a portion of the total tiles.
+
+Even if there are enough available resources to store a complete cache of the whole
+map, ﬁlling the cache is a very time-consuming process and may render the proce-
+dure unaffordable within a reasonable time frame. Moreover, many tiles will never be
+requested, so it is not worth to cache those ‘unpopular’ tiles because no gain will be
+obtained.
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 616
+
+R. García Martín et al.
+
+Coarse
+resolution
+
+Level 0
+
+Level 1
+
+Level l
+
+Detailed
+resolution
+
+Figure 2. Tile pyramid representation.
+
+In any case, during the start-up of the service, the cache is initially empty, so no cache
+gain is produced and users experience a poor quality of service (QoS). The QoS evolves in
+time as the cache is getting loaded with tiles. Therefore, an objective is to achieve a higher
+QoS as soon as possible, that is, those tiles that are likely to be most frequently accessed
+should be pre-generated and cached ﬁrst.
+
+In this scenario, the web map cache behaves as a proxy web cache. If the requested
+tile is already stored in the cache (cache hit), it is delivered very quickly directly from
+the cache. In contrast, if a cache miss is produced, the request is forwarded to the web
+map server, which generates the map image on the ﬂy and sends it back to the proxy, that
+inserts the object in the cache for faster retrieval of future requests. This process is known
+as on-demand caching.
+
+Web map tile caching is a paging problem, and the same strategies applied to other pag-
+ing problems, such as main memory management, can be applied. However, as each object
+is associated with a geographic location, map tile caching can beneﬁt from the spatial
+locality principle as stated by Tobler’s ﬁrst law of geography, which states that ‘Everything
+is related to everything else, but near things are more related than distant things’ (Tobler
+1970). This principle is at the core of spatial autocorrelation statistics.
+
+Moreover, web map tile caching could also beneﬁt from the spatial cross-correlation
+between tile requests and diverse geographic features. For the rest of the document,
+we adopt the same concept of a geographic feature as described in the OGC Abstract
+Speciﬁcation (Kottman and Reed 2009): ‘A feature is an abstraction of a real world phe-
+nomenon; it is a geographic feature if it is associated with a location relative to the Earth.’
+For example, a temperature overlay on a weather map and a segment of a road are examples
+of geographic features.
+
+The presence of some hot spots, corresponding to geographic feature types, such
+as coastlines, cities, major roads or tourist attractions, was identiﬁed by exploring the
+web application Hotmap (http://hotmap.msresearch.us) (Fisher 2007b). Hotmap is a map
+mashup developed by Microsoft researchers to visualize data about users’ interaction with
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 International Journal of Geographical Information Science
+
+617
+
+a Microsoft’s Live Search Maps, by superposing a heatmap of the log ﬁles over the original
+maps (Fisher 2007a).
+
+In the same way, some popular features were also observed in the descriptive model
+based on the mining of web map server logs presented in Garcia (2011) which drove much
+of users’ attention.
+
+Thus, there is some evidence that users’ behavior is closely related to the seman-
+tic content of geographic features. Identifying which geographic features users ﬁnd
+the most signiﬁcant can help server administrators to deﬁne priority areas for tile
+prefetching.
+
+1.1. Related work
+Unlike on-demand caching, tile prefetching fetches objects and stores them in advance of
+being requested, anticipating that these objects are likely to be accessed in the future and
+such accesses would be satisﬁed very fast directly from the cache rather than by retrieving
+the objects from the original WMS server. Prefetching schemes can be categorized as short-
+term and long-term (Venkataramani et al. 2002).
+
+In short-term prefetching, map caches use recent access history of individual clients
+to predict and prefetch those objects that are likely to be accessed immediately after-
+wards. For example, Lee et al. (2002) use a Neighbor Selection Markov Chain to predict
+the possible next movement of a given user based on a previous-k-movement approach;
+Yesilmurat and Isler (2011) use a heuristic approach for retrieving the next possible tiles
+from a given tile according to the user’s former navigations, assuming an inertial move-
+ment and assigning more importance to the latest movements; Park and Kim (2001) present
+a prefetching policy based on the use of the Hilbert curve to select neighboring objects for
+caching.
+
+In contrast, long-term prefetching uses global object access patterns to identify a
+collection of valuable objects that should be introduced into the cache. For example,
+Kang et al. (2001, 2002) approximate which tiles will be used in advance based on the
+global tile access pattern of all users and the semantics of query. The server collects
+and maintains the transition probabilities between adjacent tiles, and these probabili-
+ties are used to predict which tiles have the higher probability of accessing in next
+time.
+
+Li et al. (2012) consider both short-term and long-term popularity features and propose
+
+a Markov prefetching model in a cluster-based caching system.
+
+However, none of these works consider the background geographic information present
+in the visited areas. Map tiles are not randomly visited, but there are some map regions
+that are signiﬁcantly more popular than others. Nevertheless, these studies do not con-
+sider what is motivating users to visit these tiles. On the contrary, Quinn and Gahegan
+(2010) propose a model for determining popular areas for tile caching by considering geo-
+graphic features. It considers variables revealed by Hotmap to be of interest to web map
+users, such as populated places, major roads, or coastlines. Using this approach, there exist
+some commercial and open source tile cache implementations, such as ArcGis (http://
+www.esri.com/software/arcgis/index.html), MapServer (http://mapserver.org), MapProxy
+(http://mapproxy.org), or ModGeoCache (http://code.google.com/p/mod-geocache), that
+allow seeding only the tiles that cover an arbitrary geographic area speciﬁed in a vari-
+ety of given spatial data sources, such as shapeﬁles, gpx ﬁles, Web Feature Services (WFS)
+services, or spatial databases.
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 618
+
+R. García Martín et al.
+
+However, Quinn’s work presents several limitations. On the one hand, even if the
+selected features correspond to popular places in the service under test, they may not be
+representative of user’s behavior in other scenarios. For illustration purposes, consider that,
+in a spatial data infrastructure (SDI) of hydrographic content, hydrographic features such
+as rivers, lakes, or reservoirs, would probably be much more representative than, for exam-
+ple, major roads. Moreover, it relies on the server administrator to intuitively identify the
+features of interest. It would be desirable that adequate variables were automatically cho-
+sen. On the other hand, the output of that model is a vector mask of boolean nature,
+indicating whether a tile should be cached or not. It would be more useful that the out-
+put was a kind of probabilistic estimator for the tiles, so that the most popular ones could
+be cached with the given resources. Both requirements can be easily met by using multiple
+linear regression.
+
+1.2. Contributions
+In this article, we propose
+
+(cid:129) a general architecture for tile prefetching using a general catalog of geographic
+
+features and the history of the service,
+
+(cid:129) a novel predictive model that automatically assigns priorities to tiles as a linear
+
+combination of geographic variables in a general catalog, and
+
+(cid:129) a method for automatic parameterization of the model by means of an ordinary
+least squares (OLS) regression estimator used to ﬁt the model to the observed past
+accesses.
+
+This approach overcomes the previously discussed limitations found in Quinn and
+Gahegan (2010). First, there is no need of the administrator to manually select the variables
+of interest, but the model automatically chooses appropriate weights for each predictor vari-
+able. Second, it provides nonbinary probabilities to tiles, which allows the prioritization of
+some regions over others. Third, it is adaptive. It can be executed in the background so that
+if users’ needs and interests change over time, the model can be automatically adjusted
+accordingly.
+
+1.3. Overview
+This article is structured as follows. A general architecture of tile prefetching that uses a
+collection of geographic features and the history of past accesses is proposed in Section 2.
+A particular implementation of this architecture based on linear regression, with a short
+description of the data sources from the analyzed web map services, is presented in
+Section 3. The methods and metrics used for simulation and results analysis are explained
+in Section 4. The results of the simulations are presented and discussed in Section 5.
+Finally, the conclusions of the article and future work are gathered together in Section 6.
+
+2. System architecture
+
+This section describes the proposed general architecture of tile prefetching. This architec-
+ture uses a predictive model to anticipate future requests out of an unconstrained catalog
+of geographic features and previous history (see Figure 3).
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 International Journal of Geographical Information Science
+
+619
+
+Analysis Subsystem
+
+Feature
+Selector
+
+Feature
+Catalog
+
+SDI
+
+Tile Proxy
+
+e
+n
+i
+f
+e
+r
+
+s
+r
+e
+t
+e
+m
+a
+r
+a
+p
+
+Tile 
+Service
+
+History
+Log
+
+Model
+extractor
+
+Cache
+
+Cache 
+Manager
+
+Seeding
+planner
+
+Tile 
+generator
+
+Figure 3. System architecture of tile prefetching.
+
+The feature catalog can be populated with vector or raster features, retrieved from
+an SDI through standard OGC services, such as the WFS (Vretanos 2005) or the Web
+Coverage Service (WCS) (Whiteside and Evans 2008), respectively. As the feature catalog
+can contain hundreds of geographic feature types, a feature selector reduces this amount by
+selecting a subset of the general catalog. It applies a spatial ﬁlter to contain only those fea-
+tures that spatially intersect the study area. Multicollinearity between variables should also
+be reduced, by removing the most intercorrelated variables, using principal components
+analysis (PCA), or other data reduction techniques. This feature selection process does not
+take users’ requests into account, but only the properties of the geographic features and
+their relationships.
+
+The tile service offers a standard interface for users to request tiles, such as WMTS
+or WMS-C. For a given request, the tile service queries the cache manager to ﬁnd if the
+requested tile is stored in the cache. If a cache hit is produced, the cached tile is simply
+retrieved. Otherwise, the cache manager requests the tile generator to obtain the requested
+tile, whether from a WMS server or any other data source. The generated tile is then
+inserted into the cache and retrieved to the client by the tile service.
+
+The cache manager logs received requests for their use into the analysis subsystem.
+Since storing the statistics of individual tiles belonging to ﬁne-grained resolution levels
+could result in a signiﬁcant overhead, the full tile-space has been undersampled to the grid
+deﬁned at a coarser level.
+
+The model extractor uses a machine learning algorithm to infer, based on the selected
+features and the history of previous accesses, a probabilistic model to estimate future
+requests. The output of this model is a set of parameters speciﬁc to each learning algo-
+rithm. For example, in this particular case in which an OLS regression model is used, the
+output parameters of the model are the computed coefﬁcients of the linear combination
+of features. Then, the seeding planner uses the resulting coefﬁcients to compute the lin-
+ear combination of features, yielding a raster whose values assign different probabilities to
+tiles. The seeding planner feeds the cache with prefetched tiles according to these assigned
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 620
+
+R. García Martín et al.
+
+probabilities in descending order. Moreover, the output parameters are back-propagated to
+the model selector to further reﬁne the selected feature types. This way, those feature types
+whose contribution to the ﬁnal output is very low can be discarded.
+
+3. Methodology
+
+3.1. Tile prefetching method
+The model extractor needs previous knowledge of past tile accesses in order to learn which
+features are representative of user’s behavior. This implies that during the start-up of the
+service, there is an initial delay until some statistics are collected before the method can be
+run.
+
+The method is based on a set of hypotheses:
+
+H1: Tile requests as well as the semantic content of the cache elements are spatially
+correlated; hence, certain geographic features could model their relationships and
+form an adequate vector base to project the observed pattern of requests.
+
+H2: A linear combination of geographic features’ attributes can be simple and powerful
+enough to achieve signiﬁcative performance gains with a modest consumption of
+resources.
+
+H3: Cache’s workload is stationary; hence, a model computed at present can charac-
+
+terize the requests in the future.
+
+As long as these hypotheses are true, a cache seeding plan can be deﬁned after register-
+ing system’s activity for a certain period of time. This predictive model can be used to
+anticipate which tiles will be requested by users and prefetch these popular map regions to
+improve the QoS and user’s experience. In the same way, this model could be used by a
+cache replacement policy to remove unpopular tiles to make room to new ones.
+
+The resulting estimator obtains for each tile a measurement of the probability of future
+requests. Tiles are ordered by probability and the cache is populated with the most probable
+tiles until a desired resource consumption threshold is reached.
+
+3.2. Data sources
+Simulations were driven by trace ﬁles from two different nation-wide publicly available
+tiled web map services in Spain: IDEE-Base and Aerial Ortophotography National Plan
+(PNOA), accounting for 6.5 million requests logged for 3 months between 19 March
+2010 and 17 June 2010. These service logs have been provided by the National Geographic
+Institute of Spain (IGN; http://www.ign.es/ign/main/index.do?locale=en). Cartography
+from both services can be visualized through a map viewer of the Spanish SDI (http://
+www.idee.es/clientesIGN/wmsGenericClient/index.html?lang=EN).
+
+The Numeric Cartographic Base service of the Spanish Spatial Data Infrastructure
+(IDEE-Base) allows viewing the Numeric Cartographic Base 1:25,000 and 1:200,000 of
+the IGN. PNOA serves imagery from the Aerial Ortophotography National Plan, which
+updates every 2 years Spanish coverage by aerial photography, high-resolution and high
+accuracy digital orthophotography, and high-density and high accuracy digital terrain
+model.
+
+Figure 4 shows the heatmap of requests to the PNOA service at a given resolution level.
+
+It reveals the presence of some popular areas related to geographic features.
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 International Journal of Geographical Information Science
+
+621
+
+Figure 4. Heatmap of requests received in the study area by the Spanish Aerial Ortophotography
+National Plan (PNOA) service at resolution level 18, between 19 March and 17 June 2010. Darker
+areas correspond to most viewed tiles. Representation in logarithmic scale.
+
+This study encompasses the region corresponding to the Iberian Peninsula and sur-
+rounding areas, concretely the geographic bounding box deﬁned by the coordinates
+(−11.9971 ◦W, 5.5804 ◦E, 33.8379 ◦S, 45.0872 ◦N).
+
+The study area covers a total of 3200 × 2048 tiles at resolution level 15 with the tiling
+schemes used by IDEE and PNOA, and the number of tiles grows in powers of four when
+increasing the resolution level. The average ﬁle size is approximately 12 KB in PNOA and
+4.25 KB in IDEE.
+
+To reduce noisy data, trace ﬁles were ﬁltered to contain only valid web map requests,
+
+so the model is ‘trained’ with requests that would actually be cached.
+
+It must be noted that the performance gain achievable by the use of a tile cache will
+vary depending on how the tile requests are distributed over the tiling space. If those were
+uniformly distributed, the cache gain would be proportional to the cache size. However,
+it has been found that tile requests closely adhere to a cumulative Pareto distribution as
+shown in Figures 5 and 6. These ﬁgures plot the percentile of accesses with respect to the
+requested tiles (not the whole tiling space), so tiles that have never been requested are not
+represented by the percentile.
+
+)
+
+%
+
+(
+ 
+s
+t
+s
+e
+u
+q
+e
+R
+
+100
+
+80
+
+60
+
+40
+
+20
+
+0
+
+0
+
+12
+13
+14
+15
+16
+17
+18
+19
+
+20
+
+40
+
+60
+
+80
+
+100
+
+Requested tiles (%)
+
+Figure 5. Percentile of requested tiles in IDEE-Base at resolution levels 12–19.
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 622
+
+R. García Martín et al.
+
+)
+
+%
+
+(
+ 
+s
+t
+s
+e
+u
+q
+e
+R
+
+100
+
+80
+
+60
+
+40
+
+20
+
+0
+
+0
+
+20
+
+40
+
+60
+
+80
+
+100
+
+Requested tiles (%)
+
+18
+19
+
+Figure 6. Percentile of requested tiles in PNOA at resolution levels 18 and 19.
+
+This kind of power-law distribution has also been observed by Fisher (2007)a. Pareto’s
+law (Pareto 1896), also known as the 20/80 rule, is identiﬁed in the IDEE-Base map service
+at resolution level 14 (see Figure 5), where 20% of the requested tiles receive 80% of the
+total number of requests. The services that show Pareto distributions are well suited for
+caching, because high cache hit ratios (CHRs) can be found by caching a reduced fraction
+of the total tiles.
+
+This behavior is generally more prominent at lower (coarser) resolution levels than at
+higher ones because the smaller tiling space and broader geographic area covered by the
+requested tiles allow to cover interesting areas with less tiles.
+
+3.3. Regression analysis
+In this work, a regressive method is applied to ﬁt these statistics from the multiple geo-
+graphic features of the catalog, used as independent or predictor variables. This results in a
+collection of regression coefﬁcients, which indicate the weight of the contribution of each
+feature to the value of the estimator.
+
+Regression analysis is the term used to describe a family of techniques that seek
+to model the relationship between a dependent or response variable and a number of
+independent or predictor variables.
+
+If y = {yi} is a set of n observations or measurements of the response variable, with
+corresponding records of matching values for the set of m independent variables x = {xij},
+then a series of linear equations can be constructed as shown in Equation (1):
+
+that can be rewritten into matrix notation as
+
+yi =
+
+βjxij + (cid:3)i
+
+m(cid:2)
+
+j=1
+
+Y = BX + E
+
+(1)
+
+(2)
+
+The regression coefﬁcients β = {βj} indicate the weight of each variable in the linear com-
+bination. As the number of observations n is usually greater than the number of coefﬁcients
+m (the system is said to be over-determined), an additional error component (cid:3) is required
+to allow for the degree of ﬁt of the expression to the particular observed data values.
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 International Journal of Geographical Information Science
+
+623
+
+One approach to this problem is to seek a best ﬁt solution for the vector β that min-
+imizes the difference between the ﬁtted model and observed values at these data points.
+The procedure most widely applied in practice, called OLS, seeks to minimize the sum of
+squared errors. The solution for the coefﬁcients using this approach is obtained from the
+matrix expression:
+
+ˆB = (X T X )−1X T Y
+
+(3)
+
+where the hat (ˆ) symbol indicates an estimate.
+
+In this work, each observation yi of the dependent variable corresponds to the number
+of requests of each map tile. The explanatory variables X correspond to the geographic
+features, and their values are extracted from attributes either contained in or associated
+with a feature. Consider, for example, a geographic feature type of highways. The asso-
+ciated variable could be binary-valued, indicating whether this feature intersects the area
+represented by each tile. It could also be deﬁned as a continuous variable measured as the
+distance from the sampled point to the nearest highway, or even it could account for the
+number of vehicles that get through over a ﬁxed period of time.
+
+In this work, variables have been deﬁned over the tiling space as function of distance
+to actual geometries. In Quinn and Gahegan (2010), a distance buffer is applied around
+geometries to account for the spatial correlation of the tiles comprised within the screen
+bounds while the user pans along them. This way, tiles that fall into this buffer are con-
+sidered for caching. This approach yields boolean results. In contrast, we apply a decaying
+function for the feature to model the following assumptions:
+
+(cid:129) Most interesting tiles to users are those crossed by the feature.
+(cid:129) Those tiles that are crossed by the feature are closely followed by adjacent ones
+
+shown in the client rendering view.
+
+(cid:129) The semantic correlation falls abruptly with distance.
+
+Speciﬁcally, a gaussian function f (d) (see expression (4)) has been used to assign values
+to tiles as a function of the Euclidean distance d, measured in number of tiles, from each
+tile to the nearest tile crossed by the feature:
+
+f (d) = e− 1
+
+2 ( d
+
+bw )2
+
+(4)
+
+The parameter bw controls the width of the ‘bell’, and it is related to the number of tiles
+that typically fall into the visible area of a map client. A width of 10 tiles (bw = 10) has
+been used for simulation.
+
+Variables computed this way are deﬁned in the range [0,1], and no further normalization
+is required. Those tiles crossed by a feature are assigned a value f (0) = 1, whereas values
+close to 0 are assigned to tiles that are far away from the feature.
+
+4. Simulation
+
+4.1. Performance evaluation
+In order to validate the hypotheses stated in Section 3.1, against the proposed model, the
+request logs from the analyzed web map services have been used. These logs represent
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 624
+
+R. García Martín et al.
+
+a more realistic pattern of user’s behavior than a synthetic pattern, since they have been
+recorded in a real working system.
+
+The request logs were divided into two time ranges: the ﬁrst one was used as source to
+‘train’ the model of the predictor and the second one was used to validate the predictions
+obtained from the model created previously.
+
+The ﬁrst dataset represents the requests received just after the start-up of the service.
+This corresponds to the training stage. During this stage, counters for each tile are col-
+lected. At the end of this stage, an OLS regression method is applied to get the best ﬁt
+of the variables from the feature catalog with the observations from the ﬁrst dataset. The
+resulting coefﬁcients of the OLS solution are used at the predictor to estimate the future
+‘popularity’ of tiles. The second dataset simulates the future requests and it is used to
+validate the predictive model.
+
+4.2. Simpliﬁed model
+Given the exponential nature of the scale pyramid (see Figure 2), it is not practical to
+work with the statistics from every individual tile. Therefore, a simpliﬁed model has been
+used by means of undersampling the full tile space. This model reduces the number of
+counters by summing the counters of adjacent tiles into a single one. The grid at a coarser
+level has been used to determine which tiles should be grouped together. This way, if the
+grid deﬁned at resolution level l is used to simplify statistics at resolution level m (with
+l ≤ m), the counters of the n = 4m–l tiles at resolution m geographically contained in the
+corresponding tile at resolution l are summed to a single counter. The overhead derived
+from the indexing of the features and the users’ requests is negligible compared to the
+actual storage of tiles. With the simpliﬁed model, each dataset requires only a single value
+for each group of n image tiles.
+
+The experiment was conducted using the simpliﬁed model to the grid cell at the reso-
+lution level 15. The model has been applied to make predictions at resolution levels 16 and
+18, respectively, for IDEE and PNOA, using the past requests to these services at these
+resolution levels for training.
+
+4.3. Catalog of geographic features
+
+Explanatory variables were computed for each map tile using diverse geographic data
+sources extracted from the Numerical Cartographic Base (BCN200) of the IGN, which
+stores national topographic and thematic data. A short description of the geographic fea-
+ture types used, the number of features and their geometry types, as well as the percentage
+of tiles in the study area covered by each feature are given in Table 1. These geographic
+features are plotted over a map in Figure 7 for visual interpretation. It shows that the cor-
+relation between separate independent variables is very low, which is adequate for spatial
+regression. In this work, instead of using a feature selector to automatically choose the
+most appropriate feature types, those are manually selected. Both types of features, those
+that are intuitively expected to be relevant and irrelevant to the model for each service,
+have been considered.
+
+4.4. Metrics
+
+The performance of the proposed method has been evaluated using both the cache hit ratio
+(CHR) and the byte hit ratio (BHR), the two most widely used metrics for evaluating cache
+performance.
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 International Journal of Geographical Information Science
+
+625
+
+Table 1. Geographic feature types from the catalog, with their number of features and their types,
+and the percentage of tiles covered at resolution level 15.
+
+Feature type
+
+Geometry type
+
+Coverage (%)
+
+Number of features
+
+National highway
+Castle
+Religious building
+Runway
+Harbor
+Wetland
+Dam
+Fuel channel
+
+Multilinestring
+Point
+Point
+Multipolygon
+Multipolygon
+Multipolygon
+Multilinestring
+Multilinestring
+
+0.4832
+0.0169
+0.1612
+0.0149
+0.0221
+0.0399
+0.0217
+0.0831
+
+4828
+1128
+10842
+1469
+205
+218
+1021
+223
+
+The CHR is deﬁned as the ratio of the number of requests that hit in the cache to the
+
+total number of user’s requests.
+
+The BHR reﬂects the ratio of the number of bytes served directly from the cache to the
+total bytes served to the users. As opposite to conventional web proxies where requested
+object sizes can be very heterogeneous, in a web map all objects are image tiles with the
+same dimensions (typically 256 × 256 pixels), whose sizes usually do not show a large
+dispersion. The tile images are usually encoded with efﬁcient formats such as PNG, GIF,
+or JPEG that rarely reach 100 KB in size.
+
+5. Results and discussion
+The OLS regression method is applied to ﬁt the explanatory variables (attributes of
+geographic features) to the dependent variable (training dataset of users’ requests).
+
+Training datasets include the requests received in each service on 19 March 2010 and
+for different time frames: 1 hour, 5 hours, 1 day, 7 days, and 30 days. This allows to
+analyze the stationarity of the results with the training time. The target dataset used to
+evaluate predictions comprises requests from server logs received from 19 April to 17 June
+2010 (∼2 months). The number of requests contained in each dataset is summarized in
+Table 2.
+
+Figures 8 and 9 show the evolution of the regression coefﬁcients over time for the
+PNOA and IDEE services, respectively. The results show that the inﬂuence of each feature
+type on the value of the estimator is different for each service. For example, while the
+weight assigned to Harbors exceeds that of Runways for PNOA, the opposite happens
+for IDEE. Negative weights can be interpreted as ‘repulsive’ features that compensate the
+effect of other ones with positive inﬂuence in particular undesired regions.
+
+The validation of the model was made via simulation using the following workﬂow:
+
+(1) Those tiles that are requested during the training stage are inserted into the cache.
+(2) The predictive model is deﬁned as the linear combination of inputs weighted by
+the coefﬁcients computed in the training stage. This model estimates the popular-
+ity of map tiles, which is then used to deﬁne priorities for the actuation of a tile
+prefetching policy.
+
+(3) Cache seed is simulated by processing exhaustively the dataset to assign to each
+
+requested tile an estimation of probability.
+
+(4) Tiles are ordered by probability to emulate the prefetching stage.
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 626
+
+R. García Martín et al.
+
+Highways
+
+Wetlands
+
+Dams
+
+Harbors
+
+Runways
+
+Religious buildings
+
+Castles
+
+Fuel channels
+
+Figure 7. Catalog of geographic features used for simulation in the regressive model.
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 International Journal of Geographical Information Science
+
+627
+
+Table 2. Number of requests collected in the datasets used for simulation for PNOA and IDEE at
+resolution levels 18 and 16, respectively.
+
+Training
+
+Target
+
+1 Hour
+
+5 Hours
+
+1 Day
+
+7 Days
+
+30 Days
+
+62 days
+
+PNOA18
+IDEE16
+
+1029
+382
+
+1965
+728
+
+50478
+10073
+
+323482
+78316
+
+847058
+379778
+
+4861289
+696743
+
+1 Hour
+5 Hours
+1 Day
+7 Days
+30 Days
+
+i
+
+s
+t
+n
+e
+c
+i
+f
+f
+e
+o
+c
+ 
+n
+o
+s
+s
+e
+r
+g
+e
+r
+ 
+d
+e
+z
+
+i
+
+i
+l
+
+a
+m
+r
+o
+N
+
+0.6
+
+0.5
+
+0.4
+
+0.3
+
+0.2
+
+0.1
+
+0
+
+−0.1
+
+−0.2
+
+Highways Castles Rel. builds. Runways Harbors Wetlands
+
+Fuels
+
+Dams
+
+Figure 8. OLS regression coefﬁcients in PNOA for different training time frames: 1 hour, 5 hours,
+1 day, 7 days, and 30 days. Coefﬁcients are normalized, so the sum of positive coefﬁcients equals
+unity.
+
+(5) Cache content is modeled as a subset of that ordered set whose size depends on the
+percentage of cache desired. In order to avoid an undesired bias due to the spatial
+arrangement of tiles, those with the same priority are chosen in random order.
+
+Figures 10 and 11 show the respective performance for PNOA and IDEE, measured as
+the CHR, obtained by ﬁrst prefetching the tiles estimated to be most frequently requested
+and the prefetching progressively the rest of tiles in descending order of priority until the
+resources’ consumption limit is reached.
+
+In order to evaluate the performance of the proposed method (labeled as ols in
+
+Figures 10 and 11), it has been compared with
+
+(cid:129) an optimal algorithm (opt), not implementable in practice, as it uses the true
+
+knowledge of future requests, but useful for comparative analysis, and
+
+(cid:129) a strategy that maintains in cache tiles requested on the history of past accesses and
+
+then randomly selects objects for caching (hist).
+
+Both ols and hist methods coincide for an initial low fraction of tiles (∼1%). These
+cache hits correspond to the ones achieved by the tiles requested and cached during the
+training stage, before heuristics come into play. In both, PNOA and IDEE, the cache hits
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 628
+
+R. García Martín et al.
+
+1 Hour
+5 Hours
+1 Day
+7 Days
+30 Days
+
+Highways Castles Rel. builds. Runways Harbors Wetlands
+
+Fuels
+
+Dams
+
+Figure 9. OLS regression coefﬁcients in IDEE for different training time frames: 1 hour, 5 hours,
+1 day, 7 days, and 30 days. Coefﬁcients are normalized, so the sum of positive coefﬁcients equals
+unity.
+
+0.5
+
+0.4
+
+0.3
+
+0.2
+
+0.1
+
+0
+
+−0.1
+
+−0.2
+
+i
+
+s
+t
+n
+e
+c
+i
+f
+f
+e
+o
+c
+ 
+n
+o
+s
+s
+e
+r
+g
+e
+r
+ 
+d
+e
+z
+
+i
+
+i
+l
+
+a
+m
+r
+o
+N
+
+)
+
+%
+
+(
+ 
+
+R
+H
+C
+
+90
+
+80
+
+70
+
+60
+
+50
+
+40
+
+30
+
+20
+
+10
+
+0
+
+0
+
+100
+
+↑
+opt
+
+ols:7d
+↓
+←ols:5h
+←ols:1h
+
+ols:30d→
+ols:1d→
+
+↑
+hist:30d
+
+hist:7d
+↓
+
+↑
+hist:1d
+
+hist:5h
+↓
+↑
+hist:1h
+
+10
+
+20
+
+30
+
+40
+
+50
+
+60
+
+70
+
+80
+
+90
+
+100
+
+Cached tiles (%)
+
+ols
+
+hist
+
+Figure 10. Comparative CHRs obtained for PNOA with different training periods: 1 hour (1h),
+5 hours (5h), 1 day (1d), 7 days (7d), and 30 days (30d).
+
+achieved by these cached tiles increase with the training time. This is due to the stationarity
+of requests; in a larger time, more requests are received and these (and their neighborhood)
+are likely requested again in the future.
+
+Beyond the initial fraction of tiles where both methods coincide, the ols method quickly
+exceeds hist’s performance as the proportion of cached tiles increases. Since the hist
+method bases its operation exclusively in the knowledge of past accesses, it is not able
+to further deﬁne object priorities and it caches tiles randomly. In contrast, the ols method is
+able to generalize for making predictions, by using the geographic implicit relationships,
+which geographic features users ﬁnd most signiﬁcant.
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 International Journal of Geographical Information Science
+
+629
+
+100
+
+↑
+opt
+
+ols:30d→
+ols:1d→
+
+ols:7d
+↓
+
+←ols:5h
+←ols:1h
+
+↑
+hist:30d
+
+hist:7d
+↓
+
+↑
+hist:1d
+
+hist:5h
+↓
+↑
+hist:1h
+
+)
+
+%
+
+(
+ 
+
+R
+H
+C
+
+90
+
+80
+
+70
+
+60
+
+50
+
+40
+
+30
+
+20
+
+10
+
+0
+
+0
+
+10
+
+20
+
+30
+
+40
+
+50
+
+60
+
+70
+
+80
+
+90
+
+100
+
+Cached tiles (%)
+
+ols
+
+hist
+
+Figure 11. Comparative CHRs obtained for IDEE with different training periods: 1 hour (1h),
+5 hours (5h), 1 day (1d), 7 days (7d), and 30 days (30d).
+
+As shown in Figure 10, the stationary state is reached in PNOA very soon. Beyond
+1 day, the performance is not signiﬁcantly incremented with successive training. However,
+in IDEE (see Figure 11), a reﬁnement of the model is achieved with training, yielding
+performance improvements. In any case, good accuracy is achieved with a short training
+period of a few hours.
+
+This way, in PNOA, for a training time of 1 day, and for a 20% of cached tiles, the
+ols method achieves a CHR of 92.49%, whereas the hist method achieves only 32.84%.
+For IDEE, by maintaining the same resources and training time, the ols method achieves a
+CHR of 91.86%, while the hist method achieves 36.89%.
+
+A comparison of the performance, measured as the BHR, of PNOA and IDEE is shown,
+in Figures 12 and 13, respectively. The BHRs obtained by the ols model and the hist
+strategy consistently outperform those obtained for the CHRs. As discussed in Quinn and
+Gahegan (2010), due to greater variation in colors and patterns, the popular areas, stored
+as compressed image ﬁles, use a larger proportion of disk space than the relatively feature-
+less de-prioritized tiles. As the most popular tiles are ﬁrst cached, and those are usually
+bigger in size, this metric achieves better results than the CHR. Quantitatively, in PNOA,
+for a training time of 1 day, and for a 20% of cached tiles, the ols method achieves a BHR
+of 97.56%, whereas the hist method achieves only 42.91%. For IDEE, by maintaining the
+same resources and training time, the ols method achieves a BHR of 97.12%, whereas a
+the hist method achieves 46.09%.
+
+6. Conclusions and future work
+
+Serving pre-generated map image tiles from a server-side cache has become a popular and
+an effective way of distributing map imagery on the web. However, storage needs are often
+prohibitive, which force the use of partial caches.
+
+The solution proposed in this article is based on the deﬁnition of priority areas for
+tile prefetching, to maximize the user’s QoS while keeping resource consumption at a
+given level. The objective is to maintain in cache the tiles, which are likely to be most
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 10
+
+20
+
+30
+
+40
+
+50
+
+60
+
+70
+
+80
+
+90
+
+100
+
+Cached tiles (%)
+
+Figure 12. Comparative BHRs obtained for PNOA with different training periods: 1 hour (1h),
+5 hours (5h), 1 day (1d), 7 days (7d), and 30 days (30d).
+
+630
+
+R. García Martín et al.
+
+opt
+↓
+
+100
+
+ols:7d
+↓
+
+ols:30d→
+ols:1d→
+
+←ols:5h
+
+←ols:1h
+
+↑
+hist:30d
+
+hist:7d
+↓
+
+)
+
+%
+
+(
+ 
+
+R
+H
+B
+
+)
+
+%
+
+(
+ 
+
+R
+H
+B
+
+90
+
+80
+
+70
+
+60
+
+50
+
+40
+
+30
+
+20
+
+10
+
+0
+
+0
+
+90
+
+80
+
+70
+
+60
+
+50
+
+40
+
+30
+
+20
+
+10
+
+0
+
+0
+
+↑
+hist:1d
+
+hist:5h
+↓
+↑
+hist:1h
+
+↑
+hist:1d
+
+hist:5h
+↓
+↑
+hist:1h
+
+100
+
+opt
+↓
+ols:30d→
+ols:1d→
+
+←ols:5h
+
+←ols:1h
+
+ols:7d
+↓
+
+↑
+hist:30d
+
+hist:7d
+↓
+
+ols
+
+hist
+
+ols
+
+hist
+
+10
+
+20
+
+30
+
+40
+
+50
+
+60
+
+70
+
+80
+
+90
+
+100
+
+Cached tiles (%)
+
+Figure 13. Comparative BHRs obtained for IDEE with different training periods: 1 hour (1h),
+5 hours (5h), 1 day (1d), 7 days (7d), and 30 days (30d).
+
+requested in the future. To determine those priority areas, a regression model from a catalog
+of geographic features, such as runways, highways, or harbors, has been used. Appropriate
+weights for the linear combination of the features are computed through OLS regression to
+ﬁt the model to a collection of past accesses during an initial training phase.
+
+This model has been tested using trace-driven simulations from the logs of two differ-
+ent nation-wide public web map services in Spain. The high cache performance obtained,
+measured for both the cache hit rate and the byte hit rate, demonstrates that the proposed
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 International Journal of Geographical Information Science
+
+631
+
+model can effectively predict future accesses to the web map services under test, based on
+a general catalog of geographic features and a short collection of past accesses.
+
+The model is founded on three hypotheses (see Section 3.1) about the nature of user’s
+
+behavior and the spatial distribution of the semantic content of the cache.
+
+As long as the model achieves a respectably high ratio of successful predictions based
+only on a linear combination of geographically sparse features, hypotheses H1 and H2 can
+be considered true. Moreover, the initial assumption of hypothesis H3 is supported by the
+consistency of the model’s coefﬁcients and its prediction’s accuracy with different training
+time frames. These hypotheses are true for the two different datasets used in the experi-
+ments and seem to be conservative and reasonable assumptions that can be applied to other
+speciﬁc scenarios. Hence, these ﬁndings can be applied to a broad range of applications
+dealing with real-world geographic information.
+
+Better results are achieved by the proposed model when users exhibit similar patterns
+of selecting tiles. This is the usual behavior as mentioned in Fisher (2007a) and observed
+in this work. Obviously, if the spatial distribution of requests became closer to a random
+pattern, the performance of the system would decrease to the one achieved by a random
+strategy.
+
+In the future, other regression models could be used. For example, a weighted least
+squares (WLS) regression could reduce the inﬂuence of non-requested tiles on the ﬁnal
+model. Another promising approach could be the use of a local model, that is, with a
+geographically weighted regression (GWR). This may reﬂect that the inﬂuence of some
+features on users’ attention varies depending on the geographic location.
+
+In order to maintain the model as simple as possible, multicollinearity between vari-
+ables should be reduced, by removing the most intercorrelated variables, using PCA, or
+other data reduction techniques.
+
+Despite the fact that good results have been obtained with the use of a linear model, a
+nonlinear combination of the features could reﬂect more closely users’ behavior. Arbitrary
+functions could be ﬁtted by the use of intelligent systems, such as neural networks.
+
+A cache replacement policy could also beneﬁt from these predictive models to evict
+
+from the cache those tiles that are expected to be least requested.
+
+Acknowledgments
+This work has been partially supported by the Spanish Ministry of Science and Innovation through
+the project ‘España Virtual’ (ref. CENIT 2008–1030), a research fellowship from the University
+of Valladolid in Spain, the National Centre for Geographic Information (CNIG), and the National
+Geographic Institute of Spain (IGN).
+
+References
+de la Beaujardiere, J., 2006. OpenGIS web map server implementation speciﬁcation. OpenGIS
+project document 06-042. [online] http://www.opengeospatial.org/standards/wms [Accessed
+May 2012].
+
+Doyle, A. and Cuthbert, A., 1998. Essential model of interactive portrayal. OpenGIS project
+document 98-061 [online]. Available from: http://www.opengis.org [Accessed May 2012].
+Erle, S., et al., 2006. WMS-C WMS tile caching [online]. Oregon, Open Geospatial Foundation.
+Available from: http://wiki.osgeo.org/wiki/WMS Tile Caching [Accessed 17 April 2012].
+Fisher, D., 2007a. Hotmap: looking at geographic attention. IEEE Transactions on Visualization and
+
+Computer Graphics, 13 (6), 1184–1191.
+
+Fisher, D., 2007b. How we watch the city: popularity and online maps. CHI workshop on imaging the
+city [online]. Available from: http://research.microsoft.com/apps/pubs/default.aspx?id=69421
+[Accessed 17 April 2012].
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 632
+
+R. García Martín et al.
+
+García, R., et al., 2011. A descriptive model based on the mining of web map server logs for tile
+prefetching in a web map cache. International Journal of Systems Applications, Engineering &
+Development, 5 (4), 469–476.
+
+Kang, V.K., et al., 2002. Performance proﬁts of tile pre-fetching in multi-level abstracted web geo-
+graphic information systems. In: Proceedings of the international symposium on Internet and
+Multimedia, December, Jakarta, Indonesia.
+
+Kang, Y.K., Kim, K.C., and Kim, Y.S., 2001. Probability-based tile pre-fetching and cache replace-
+ment algorithms for web geographical information systems. In: Proceedings of the 5th East
+European conference on advances in databases and information systems, ADBIS ’01, 25–28
+September, Vilnius, Lithuania. London: Springer, 127–140.
+
+Kottman, C., and Reed, C., 2009. The OpenGIS abstract speciﬁcation topic 5: features v5.0.
+OpenGIS project document 08-126. [online] http://portal.opengeospatial.org/ﬁles/?artifact_
+id=29536 [Accessed May 2012].
+
+Lee, D., et al., 2002. Adaptation of a neighbor selection Markov Chain for prefetching tiled Web GIS
+data. In: T. Yakhno, ed. Advances in information systems, Vol. 2457 of Lecture notes in computer
+science. Berlin/Heidelberg: Springer, 213–222.
+
+Li, R., et al., 2012. A prefetching model based on access popularity for geospatial data in a cluster-
+based caching system. International Journal of Geographical Information Science, in press.
+Masó, J., Pomakis, K., and Juliá, N., 2010. OpenGIS web map tile service implementation standard.
+OpenGIS project document 07-057r7. [online] http://www.opengeospatial.org/standards/wmts
+[Accessed May 2012].
+
+Pareto, V., 1896. Cours d’economie politique. Geneva: Droz.
+Park, D.J. and Kim, H.J., 2001. Prefetch policies for large objects in a Web-enabled GIS application.
+
+Data & Knowledge Engineering, 37 (1), 65–84.
+
+Quinn, S. and Gahegan, M., 2010. A predictive model for frequently viewed tiles in a Web map.
+
+Sample, J.T. and Loup, E., 2010. Tile-based geospatial information systems: principles and practices.
+
+Tobler, W., 1970. A computer movie simulating urban growth in the Detroit region. Economic
+
+Transactions in GIS, 14 (2), 193–216.
+
+Online-Ausg. Boston, MA: Springer.
+
+Geography, 46, 234–240.
+
+Venkataramani, A., et al., 2002. The potential costs and beneﬁts of long-term prefetching for content
+
+distribution. Computer Communications, 25 (4), 367–375.
+
+Vretanos, P.A., ed., 2005. Web feature service implementation speciﬁcation. Open Geospatial
+
+Consortium Inc., OGC 04-094.
+
+Whiteside, A., and Evans, J.D., 2008. Web Coverage Service (WCS) Implementation Standard.
+OpenGIS project document 07-067r5. [online] http://www.opengeospatial.org/standards/wcs
+[Accessed May 2012].
+
+Yesilmurat, S. and Isler, V., 2011. Retrospective adaptive prefetching for interactive Web GIS
+
+applications. GeoInformatica, 1–32. doi:10.1007/s10707-011-0141-8.
+
+Downloaded by [Clemson University] at 09:38 27 March 2015 

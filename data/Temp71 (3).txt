@@ -1,0 +1,2324 @@
+bs_bs_banner
+
+Research Article
+
+Transactions in GIS, 2016, 00(00): 00–00
+
+A Parallel Scheme for Large-scale Polygon Rasterization
+on CUDA-enabled GPUs
+
+Chen Zhou,(cid:2),† Zhenjie Chen,(cid:2),† Yuzhe Pian,(cid:2),† Ningchuan Xiao‡ and
+Manchun Li(cid:2),†
+(cid:2)Department of Geographic Information Science, Nanjing University
+†Jiangsu Provincial Key Laboratory of Geographic Information Science and Technology,
+Nanjing University
+‡Department of Geography, Ohio State University
+
+Abstract
+This research develops a parallel scheme to adopt multiple graphics processing units (GPUs) to accelerate
+large-scale polygon rasterization. Three new parallel strategies are proposed. First, a decomposition strat-
+egy considering the calculation complexity of polygons and limited GPU memory is developed to achieve
+balanced workloads among multiple GPUs. Second, a parallel CPU/GPU scheduling strategy is proposed
+to conceal the data read/write times. The CPU is engaged with data reads/writes while the GPU rasterizes
+the polygons in parallel. This strategy can save considerable time spent in reading and writing, further
+improving the parallel efﬁciency. Third, a strategy for utilizing the GPU’s internal memory and cache is
+proposed to reduce the time required to access the data. The parallel boundary algebra ﬁlling (BAF) algo-
+rithm is implemented using the programming models of compute uniﬁed device architecture (CUDA), mes-
+sage passing interface (MPI), and open multi-processing (OpenMP). Experimental results conﬁrm that the
+implemented parallel algorithm delivers apparent acceleration when a massive dataset is addressed (50.32
+GB with approximately 1.3 3 108 polygons), reducing conversion time from 25.43 to 0.69 h, and obtain-
+ing a speedup ratio of 36.91. The proposed parallel strategies outperform the conventional method and
+can be effectively extended to a CPU-based environment.
+
+1 Introduction
+
+Polygon rasterization is an important technique in geospatial computation used to convert vec-
+tor polygon data into raster data (Chang 2010; Goodchild 2011). The rasterized result can
+then be widely employed for large-area raster-based geo-computation such as digital terrain
+analysis (Jiang et al. 2013), watershed hydrological (Liu et al. 2014), and dynamic geographical
+modeling (Li et al. 2013). Because of a dramatic increase in data volumes, existing sequential
+algorithms can no longer meet the strong demand for the rapid rasterization of massive vector
+data (Hawick et al. 2003; Torrens 2010). This has necessitated the development of parallel
+computing techniques for polygon rasterization. Among many modern acceleration technolo-
+gies, graphics processing units (GPUs) have increasingly become a standard in scientiﬁc compu-
+tations; a variety of data intensive computations can be accelerated using massively parallel
+threads to achieve considerably improved performance (Owens et al. 2007; Kirk and Wen-mei
+
+Address for correspondence: Zhenjie Chen, Department of Geographic Information Science, Nanjing University, 163 Xianlin Avenue,
+Nanjing, Jiangsu Province, China 210023. E-mail: chenzj@nju.edu.cn
+Acknowledgements: This work was supported by the National Natural Science Foundation of China (Grant no. 41571378), and the
+National High Technology Research and Development Program of China (Grant no. 2011AA120301). Sincere thanks are given to Dr.
+Sun Chao for technical assistance.
+
+VC 2016 John Wiley & Sons Ltd
+
+doi: 10.1111/tgis.12213
+
+2
+
+C Zhou, Z Chen, Y Pian and M Li
+
+2012). Developing GPU-based parallel technology has become a means for rapidly converting
+massive vector data to raster data.
+
+In recent years, considerable effort has been dedicated to the development of parallel tech-
+niques for polygon rasterization; nevertheless, there is still much room for improvement of
+massively rasterization efﬁciency. Conventional CPU-based parallel rasterization techniques
+have succeeded in a moderate parallel speedup (Healey et al. 1998; Wang et al. 2013). How-
+ever, the acceleration performance was limited when addressing massive polygon datasets. To
+develop a GPU-based accelerating technique, Zhang (2011) parallelized the scan-line rasteriza-
+tion algorithm on a single GPU, where all of the coordinates were stored in the GPU’s shared
+memory. Although a considerable speedup ratio (20.5) was achieved, three urgent issues
+remain to be solved.
+
+1. The GPU’s internal memory is constrained, limiting the volume of data that can be proc-
+essed (Hou et al. 2011; Zhang and Owens 2011). In the existing processing of polygon
+calculations, a dataset with small data volume, rather than a large-scale dataset, greater
+in size than the GPU’s memory, was addressed (Simion et al. 2012; Zhao and Zhou
+2013). When managing a massive dataset that exceeds the GPU memory, polygons must
+be decomposed into subsets. Moreover, vector polygons have inherently complex struc-
+tures; they vary signiﬁcantly in size and calculation complexity and involve voluminous
+data (Meng et al. 2007; Bakkum and Skadron 2010; Ye et al. 2011; Luo et al. 2012).
+The equal treatment of different polygons can lead to unbalanced workloads. A rational
+decomposition strategy for polygons that can achieve effective load balancing is urgently
+needed.
+In the existing strategy, a single GPU was used instead of multiple GPUs, and thus the
+achieved performance acceleration was limited. To fully utilize the computational resour-
+ces of CPUs and GPUs, a rational strategy for task scheduling is required.
+
+2.
+
+3. Although the shared memory in a GPU is faster to access, it is typically small and cannot
+store all the polygon coordinates. Zhang (2011) utilized shared memory to store the
+polygonal nodes and could not process polygons with more than 1,024 nodes. A strategy
+for more rationally utilizing the GPU memory that can improve data-reading efﬁciency
+and process large-sized polygons is required. To address these issues, new GPU-based
+parallel strategies for large-scale polygon rasterization are necessary.
+
+The objective of this research is to develop a parallel scheme to accelerate the large-scale
+polygon rasterization process under multiple GPUs based on the compute uniﬁed device archi-
+tecture (CUDA). Three novel parallel strategies are proposed for this purpose. First, a decom-
+position strategy is developed to ensure balanced workloads for multiple GPUs. In this
+strategy, a measure model is ﬁrst designed to estimate polygon complexity; then, polygons can
+be decomposed according to ascending calculated complexity and limited GPU memory. Sec-
+ond, a parallel CPU/GPU scheduling strategy is proposed to conceal data read/write time,
+where the CPU is engaged with data reads/writes while the GPU rasterizes polygons in parallel.
+Third, a strategy for utilizing the GPU’s internal memory and cache is proposed to improve
+data-reading efﬁciency and address polygons with excessive numbers of nodes. The proposed
+parallel scheme is implemented and performed in a cluster with two GPUs. The accuracy loss
+of the rasterized result is evaluated and the parallel performance is tested in terms of execution
+time, speedup ratio, and load balancing. Performance of the proposed and conventional strat-
+egies is compared when addressing different datasets. Finally, the extension of the proposed
+strategy to CPU-based parallel implementations is discussed.
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+Large-scale Polygon Rasterization on CUDA-enabled GPUs
+
+3
+
+2 Background
+
+2.1 GPU Architecture and CUDA Programming Model
+
+GPUs have evolved into highly parallel multi-core systems that permit large datasets to be manip-
+ulated in an efﬁcient manner, especially for massively parallel applications. Sample GPU architec-
+ture is illustrated in Figure 1a. In the GPU computing architecture supported by NVIDIA, the
+multiprocessors, or blocks of processing units, are structured in a grid. The block threads are
+grouped into warps (32 threads/warp). Each warp performs the same computations, however, on
+different data; this is called single-instruction multiple data (SIMD) mode (Nickolls et al. 2008).
+The memory hierarchy for the GPU includes registers in addition to local, global, shared, texture,
+and constant memories. The multiprocessor registers are distributed evenly across the threads
+that are currently running. Data can also be stored in local memory that is private to each thread;
+however, this has the same high latency as global memory. One part of the memory is used as
+memory to be shared by all processor blocks. Accessing shared memory is slower than using
+registers, but faster than global memory. GPU global memory is large (several GB) and can be
+accessed by all threads, blocks, and grids; access, however, is slow. Texture memory is typically
+used for graphics and constant memory accelerates uniform access. With the latest Kepler GPUs,
+level-1 (L1) and level-2 (L2) caches are optimized for memory access.
+
+CUDA is a popular framework that allows general-purpose programming of GPUs
+(Mielikainen et al. 2013). A major advantage of CUDA, compared to other GPU programming
+models, is that it uses a C language; hence, the C function code originally written for a CPU can
+frequently be ported to a CUDA kernel with minimal modiﬁcation. Furthermore, NIVIDA pro-
+vides developers with C libraries that expose all the device functionalities required to integrate
+CUDA into a C program (Sui et al. 2012; Tang et al. 2015). For these reasons, CUDA is chosen
+in this research to accelerate the polygon rasterization process. In the CUDA programming envi-
+ronment, there is a clear separation between the host code (for the CPU) and the kernel code (for
+the GPU) (see Figure 1b). The host code contains all the processing allocated to the CPU; it can
+manipulate data transfers between the CPU and GPU memories and launch kernel code on the
+GPU. The kernel code is executed in parallel on the GPU in SIMD mode (NVIDIA Corp 2013).
+
+Currently, two types of GPU parallel environments are commonly employed when performing
+GPU-based parallel algorithms. They are one GPU on one CPU node and multiple GPUs on sepa-
+rate parallel CPU nodes where one node has one GPU. In this research, we focus on the design and
+implementation of parallel strategies under multiple GPUs that reside on separate CPU nodes.
+
+2.2 Analysis of Polygon Rasterization Algorithms
+
+The processing of polygon rasterization includes traversing polygons to determine the raster pix-
+els, either inside the polygon or on the boundary, and assigning an attribute value to these raster
+pixels. Conventional algorithms include the scan-line, boundary algebra ﬁlling (BAF), and ray-
+crossings algorithms (Gharachorloo et al. 1989; Haines 1994; Feito et al. 1995; Hormann and
+Agathos 2001). Although different algorithms have different principles, they have identical inher-
+ent parallelisms. In particular, high-level independence exists between processing of different pol-
+ygons and little inter-communication is necessary between GPU threads. These coincide with the
+characteristics of GPU-based massive-data parallelization. The BAF algorithm is the most efﬁ-
+cient and was chosen as the testing algorithm in this study (Xia and Liu 2006; Sun and Li 2006).
+The basic principle includes the following steps: (1) traverse all boundaries clockwise within the
+minimal bounding rectangle (MBR); (2) if the direction of the current boundary is upward, sub-
+tract the attribute value to the raster pixels on the left side of the boundary; if the direction is
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+4
+
+C Zhou, Z Chen, Y Pian and M Li
+
+Figure 1 (a) GPU architecture; and (b) CUDA programming model
+
+downward, add the attribute value to the raster pixels on the left side; if the direction is parallel,
+skip this boundary; and (3) repeat step (2) until all the boundaries are processed.
+
+The general process of parallel rasterization includes ﬁve procedures: (1) data decomposi-
+tion; (2) polygon data reading; (3) data transfers; (4) polygon ﬁlling computation; and (5) ras-
+terization results writing. Before applying the sequential algorithm in a GPU environment, we
+must ﬁrst consider those parts that can be implemented on the GPU and those that can be allo-
+cated to the CPU. Among the ﬁve procedures, polygon-ﬁlling computation is the most time-
+consuming procedure; it can be written as a CUDA kernel function executed on the GPU. In
+parallel execution, each CUDA thread is responsible for rasterizing a different polygon. The
+other procedures are executed on the CPU in this implementation.
+
+3 Parallel Scheme for Polygon Rasterization
+
+3.1 Data Decomposition Strategy
+
+A rational strategy for decomposing polygons can ensure load balancing and therefore improve
+parallel efﬁciency (Brinkhoff et al. 1995). In this study, a measure model for estimating the cal-
+culation complexity of each polygon is designed. Then, the polygons are decomposed according
+to the calculated complexity and limited GPU memory.
+
+According to the basic principle of the BAF algorithm, the inﬂuencing factors that may affect
+the calculation complexity of polygon rasterization include the number of nodes, MBR area, shape,
+and cell size. The complexity of a polygon is deﬁnitely related to its number of nodes (Guo et al.
+2015). The MBR area represents the spatial extent of a polygon. The shape means the spatial distri-
+bution of the nodes of a polygon. For the i-th polygon, the shape can be expressed as
+
+shapei5
+
+number of nodesi ðrightÞ
+number of nodesi
+
+(1)
+
+where number of nodesi ðrightÞ is the number of nodes located in the right half of the MBR
+and number of nodesi is the total number of nodes. The cell size affects the rasterization efﬁ-
+ciency by changing the number of raster pixels. In our evaluation, three groups of experiments
+were conducted to independently test the inﬂuence of each factor on the rasterization time. For
+each group of experiments, the value of cell size was set to 10, 30, 50, and 70 m, and then:
+
+1. To test number of nodes,
+
+its value was changed from 20 to 380, with MBR
+
+area 5 238,974.38 m2 and shape 5 0.5.
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+Large-scale Polygon Rasterization on CUDA-enabled GPUs
+
+5
+
+Figure 2 Inﬂuence of different factors on rasterization time (cell size was set as 10, 30, 50, and
+70 m). Experimental results on the; (a) number of nodes; (b) MBR area; and (c) shape
+
+2. To test MBR area, its value was changed from 238,974.38 to 1,314,359.09 m2, with
+
+3. To test shape, its value was changed from 0.1 to 0.9, with number of nodes 5 20 and
+
+number of nodes 5 20 and shape 5 0.5.
+
+MBR area 5 238,974.38 m2.
+
+Figure 2 indicates that the changes in the different factors inﬂuenced the rasterization time
+to varying degrees: (1) The number of nodes and MBR area are dominated factors that can
+affect rasterization efﬁciency and the shape is a subordinate factor; and (2) The cell size has an
+obvious inﬂuence on number of nodes and MBR area. Speciﬁcally, when cell size (cid:3) 30 m, the
+increasing ratio of MBR area is larger than that of number of nodes; when cell size > 30 m, the
+increasing ratio of number of nodes is larger than that of MBR area. Accordingly, different
+weight values should be assigned to number of nodes and MBR area when performing different
+cell sizes. The measure model can be developed using the following steps: (1) For the i-th poly-
+gon, the values of number of nodes, MBR area, and shape are ﬁrst calculated; and (2) The nor-
+malized values of number of nodes, number of nodesnorm
+
+, can be calculated as:
+
+i
+
+number of nodesnorm
+
+i 5
+
+log10ðnumber of nodesiÞ2 min
+i51(cid:4)n
+
+flog10ðnumber of nodesiÞg
+
+max
+i51(cid:4)n
+
+flog10ðnumber of nodesiÞg2 min
+i51(cid:4)n
+
+flog10ðnumber of nodesiÞg
+
+(2)
+where n denotes the total number of polygons, log10ðnumber of nodesiÞ is the logarithmic
+value of number of nodes,maxi51(cid:4)nflog10ðnumber of nodesiÞg is the maximum value of the
+logarithmic value, and mini51(cid:4)nflog10ðnumber of nodesiÞg is the minimum value. The nor-
+malized values of MBR area, MBR areanorm
+
+, can be calculated as
+
+i
+
+MBR areanorm
+
+i 5
+
+log10ðMBR areaiÞ2 min
+i51(cid:4)n
+
+flog10ðMBR areaiÞg
+
+max
+i51(cid:4)n
+
+flog10ðMBR areaiÞg2 min
+i51(cid:4)n
+
+flog10ðMBR areaiÞg
+
+where log10ðMBR areaiÞ is the logarithmic value of MBR area, maxi51(cid:4)nflog10ðMBR areaiÞg
+is the maximum value of the logarithmic value, and mini51(cid:4)nflog10ðMBR areaiÞg is the mini-
+mum value. An ﬁnally, (3) the complexity, complexityi, can be calculated as:
+
+0:43number of nodesnorm
+
+i 10:53MBR areanorm
+
+i 10:13shapei;
+
+complexityi5
+
+when cell size (cid:3) 30 m
+
+0:53number of nodesnorm
+
+i 10:43MBR areanorm
+
+i 10:13shapei;
+
+when cell size >30 m
+
+8
+
+>>>>><
+>>>>>:
+
+(3)
+
+(4)
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+6
+
+C Zhou, Z Chen, Y Pian and M Li
+
+Figure 3 Data decomposition strategy
+
+i
+
+where number of nodesnorm
+denotes the normalized value of number of nodes and MBR areanorm
+denotes the normalized value of MBR area. When cell size (cid:3)30 m, the weights for number of
+nodesnorm
+are 0.4 and 0.5, respectively; when cell size >30 m, the weights
+i
+are 0.5 and 0.4, respectively. The weight for shapei is always 0.1. Thus, the polygon complex-
+ity ranges from zero to one; a larger value means a more complex calculation.
+
+and MBR areanorm
+
+i
+
+i
+
+Because each GPU has limited internal memory, massive polygons cannot be processed
+simultaneously and must be decomposed into several subsets. The procedure for data decompo-
+sition includes the following three steps (Figure 3):
+
+1. Forming a distribution queue. For the i-th polygon, its calculation complexity is ﬁrst
+computed using Equation (4). Then, its memory usage is calculated according to the number of
+nodes, which can be expressed as:
+
+MUi5sizeof ðPointXÞ1sizeof ðPointYÞ1sizeof ðAttributeValueÞ
+
+(5)
+
+where PointX and PointY are the arrays of X and Y coordinates, respectively, and Attribute-
+Value is the attribute value. Then, all the polygons are sorted in ascending order according to
+the complexity and a polygon distribution queue is formed.
+
+2. Decomposing polygons into subsets and chunks. Two polygons are taken from the
+queue to a subset each time: one from the head and the other from the end. The polygons are
+assigned in this order until completion. Each GPU is assigned one of the subsets. However, if
+the total memory of a subset exceeds the memory limitation of the GPU, the subset must be
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+Large-scale Polygon Rasterization on CUDA-enabled GPUs
+
+7
+
+further subdivided into smaller chunks in each GPU. When the GPU’s limited memory is
+MUlimit, the number of polygons in a subdivided chunk should conform to the following:
+
+Nma x
+X
+
+i51
+
+MUi (cid:3) MUlimit2 MUgpuresult
+
+(6)
+
+where MUgpuresult is the memory used to store the rasterization results produced by the GPU
+and Nmax is the maximum number of polygons. Within each GPU, when completing the calcu-
+lations of memory usage, remove a polygon from the head of the corresponding subset each
+time and then add the memory. If the total memory does not exceed Mlimit-Mgpuresult, continue
+to remove a polygon until Equation (6) is not satisﬁed. The selected Nmax polygons are assigned
+in a chunk; a GPU must address its own chunks sequentially.
+
+3. Distributing polygons to blocks and threads. In a chunk of polygons, the grid holds all the
+polygons sorted in ascending order. Each time, the ﬁrst and last polygons in the queue are
+assigned to a block until all the polygons are assigned, completing the block-level decomposition.
+Inside each block, polygons are assigned to threads in a circular distribution: one polygon is
+assigned to each thread; whenever a thread completes, another polygon is assigned to that thread
+until all the polygons in this block are processed, completing the thread-level decomposition.
+
+Using this approach, the original dataset can be decomposed evenly for multiple GPUs.
+Each GPU can hold several chunks of polygons and address these chunks sequentially. More-
+over, datasets with different sizes can be rationally decomposed and addressed. A small dataset
+is decomposed into different subsets for multiple GPUs; a large dataset is further decomposed
+into chunks within each GPU.
+
+3.2 Parallel CPU/GPU Scheduling Strategy
+
+When addressing large-scale datasets, the polygons in a GPU are typically subdivided into
+chunks. The processing of different chunks of polygons within a GPU can be organized into a
+streaming. In this processing streaming, the operations for each chunk of polygons, such as
+polygon reading, data transfers, ﬁlling computation, and result writing, must be executed
+sequentially and repeatedly. However, the CPU is usually idle when the GPU is busy process-
+ing, wasting the CPU’s computational resources. Hence, a parallel CPU/GPU scheduling strat-
+egy is designed to fully utilize the resources from both the CPU and GPU.
+
+In the processing streaming within each CPU parallel node, the GPU is tasked with the paral-
+lel computation of the polygon ﬁlling computation whereas the CPU is tasked with scheduling
+(Figure 4). The process executed by the GPU includes: (1) receiving the polygon data from the
+CPU; (2) performing a polygon distribution; (3) invoking the BAF algorithm for each thread to
+compute the polygon ﬁlling; and (4) writing the computation results into the GPU rasterization
+result and returning it to the CPU. The CPU scheduling includes the ﬁrst and any recurrent sched-
+uling. The ﬁrst scheduling process includes: (1) determining the number of chunks to be processed
+according to the data decomposition result; (2) reading the ﬁrst chunk of polygons, sending them
+to the GPU for parallel processing, and reading the second chunk of polygons while the GPU is
+busy; and (3) receiving the GPU processing result and entering the recurrent-scheduling phase.
+The recurrent-scheduling procedure includes: (1) delivering the polygons to the GPU; (2) creating
+two threads and writing the previous GPU processing result in one thread and reading the next
+chunk of polygons in the other; (3) receiving the GPU processing result; and (4) repeating Steps 1-
+3 until all the chunks of polygons are processed. This strategy allows the CPU to read the next
+chunk of polygons and write the previous GPU processing results while the GPU is busy.
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+8
+
+C Zhou, Z Chen, Y Pian and M Li
+
+Figure 4 Parallel CPU/GPU scheduling strategy
+
+Signiﬁcant time in the streaming dedicated to reading polygons and writing results can be saved.
+Hence, data reads/writes by the CPU and GPU parallel processing can be executed concurrently.
+
+3.3 Strategy for Utilizing GPU Memory and Cache
+
+The use of GPU memory and cache has a signiﬁcant inﬂuence on the data-access rate and subse-
+quently affects the computational efﬁciency (Yang et al. 2008; Hou et al. 2011). In this study, a
+strategy is proposed for efﬁciently using the GPU’s memory and cache.
+
+Information saved in the GPU includes the X and Y coordinates, attribute values, and ras-
+terization results. This information, especially the X and Y coordinates and rasterization
+results, typically requires considerable storage space and is more effectively stored in the global
+memory. The attribute values for different polygons have ﬁxed sizes and are repeatedly
+accessed during the rasterization process. Hence, they are suitable for storage in the shared
+memory. Considering that the shared memory is not sufﬁciently large to store all attribute val-
+ues and that access conﬂicts arise when multiple threads attempt to read from the same loca-
+tion, thus compromising performance, each thread is assigned a unique address in the shared
+memory to store the attributes for different polygons successively (Figure 5a). In this manner,
+when the thread processes a polygon, it ﬁrst reads the attribute value from the global memory
+and places it in the shared memory to allow the attribute value to be accessed quickly during
+the ﬁlling computation. Temporary variables and data created during the execution of each
+thread are stored in the registers and local memory.
+
+The enhancement of cache locality can further improve the data-access rate (Mu et al.
+2014; Sugimoto et al. 2014). L2 cache stores data recently read from the global memory for
+subsequent fast access. Each thread accesses the coordinates repeatedly throughout the compu-
+tation process. To improve the temporal locality of the L2 cache, all coordinates currently
+processed should be stored in the L2 cache. Because polygon size varies signiﬁcantly, large-
+sized polygons with many nodes must be segmented into smaller polygons to conform to the
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+Large-scale Polygon Rasterization on CUDA-enabled GPUs
+
+9
+
+Figure 5 (a) Strategy for GPU memory storage; and (b) strategy for segmenting large-sized polygons
+
+limited size of the L2 cache. The formula to calculate the number of nodes, Nodes, for new pol-
+ygons after the segmentation process is:
+
+Nodes5
+
+8
+>>><
+>>>:
+
+Mcache
+sizeof ð23NtÞ
+
+;
+
+Mcache
+sizeof ð23Ntpm3NpÞ
+
+;
+
+when Nt<Ntpm3Np
+
+when Nt (cid:5) Ntpm3Np
+
+(7)
+
+where Mcache is the memory size of the L2 cache, Nt is the total number of threads, Ntpm is the
+maximum number of threads per multiprocessor, and Np is the number of multiprocessors. All
+smaller segmented polygons have Nodes nodes, except for the last polygon, which could have
+fewer nodes. When addressing a convex polygon, it can be segmented immediately; when proc-
+essing a concave polygon, it should be converted into several convex polygons and then seg-
+mented using the above strategy (Rogers 1984). To ensure the correct rasterization results,
+every two spatially adjacent smaller polygons must have common boundaries (Figure 5b). In
+this manner, the coordinates of the newly segmented polygons can be stored entirely in the L2
+cache, resulting in a faster coordinates-access rate.
+
+3.4 Parallel Implementation
+
+Using the strategies proposed for data decomposition, CPU/GPU scheduling, and memory and
+cache utilization, a parallel scheme for polygon rasterization is constructed. The parallel
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+10
+
+C Zhou, Z Chen, Y Pian and M Li
+
+Table 1
+Implementation pseudo-code of the GPU-based parallel scheme. poSrcVector and poD-
+stImg are the input vector data ﬁles and output result, respectively; p denotes the speciﬁed num-
+ber of CPU parallel nodes; CellSize is the speciﬁed resultant cell size, with pszAttribute as the
+polygon attribute values. GPUNum is the number of GPUs. For each GPU, BlockNum is the speci-
+ﬁed number of blocks and ThreadNum is the number of threads
+
+If rank 5= 0 then
+
+If rank 5= 0 then
+
+hDstDS5CreateOutputDataset(poSrcVector, poDstImg, CellSize, NumberOfNodes)
+
+void GPUPolygonRasterization (poSrcVector, poDstImg, p, CellSize, pszAttribute, GPUNum,
+BlockNum, ThreadNum)
+/* Initialize the MPI and GDAL */
+1: MPI_Initialize
+2: GDAL_Initialize
+/* The master node (with rank 0) creates a resultant raster dataset */
+3:
+4:
+5: end if
+/* The master node calculates the complexity of each polygon, sorts polygons according to
+their complexities and decomposes into subsets for multiple GPUs */
+6:
+7:
+8:
+
+CalculateFeatures(ahPolygons, NumberOfNodes, MBRArea, shape, ahPolygonMem)
+CalculatePolygonComplexity(ahPolygons,NumberOfNodes, MBRArea, shape,
+PolygonComplexity)
+SortPolygon(ahPolygons, PolygonComplexity)
+SubsetDecompose(poSrcVector, PolygonComplexity, GPUNum, DecomposeResult)
+
+9:
+10:
+11: end if
+/* The master node sends the decomposition results to the other parallel nodes */
+12: MPI_Bcast(DecomposeResult)
+/* Each node receives the decomposition result, and reads corresponding polygons */
+13: MPI_Recv(DecomposeResult)
+14: ReadPolygons(poSrcVector, ahPolygons)
+/* Each node decomposes the polygons into chunks for each GPU according to the memory
+limitation */
+15: ChunkDecimpose(ahPolygons, ahPolygonMem, MemLimit, ChunkNum, ChunkPolygon)
+/* Decompose polygons for different blocks according to the number of blocks */
+16: BlockDecompose(ChunkPolygon, BlockNum, ThreadNum, BlockPolygon)
+/* Initialize GPU device */
+17: cudaSetDevice(0);
+/* Rasterize different chunks of polygons circularly with the CPU/GPU scheduling */
+18 for iChunk50 to ChunkNum-1 do
+/* Read the ﬁrst chunk of polygons */
+19:
+20:
+21:
+22:
+/* Transfer coordinates, attribute values and result raster from CPU to GPU */
+23:
+/* Invoke the kernel function */
+24:
+
+end if
+cudaMalloc(PointX, PointY, AttributeValue, hDstDS)
+
+Kernel_PolygonRasterizationnBlockNum, ThreadNumo(PointX, PointY, AttributeValue,
+
+cudaMemcpy(PointX, PointY, AttributeValue, hDstDS)
+
+ReadPolygons(poSrcVector, ChunkPolygon[iChunk])
+
+If iChunk5=0 then
+
+hDstDS, BlockPolygon, BlockNum, ThreadNum)
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+Large-scale Polygon Rasterization on CUDA-enabled GPUs
+
+11
+
+ReadPolygons(poSrcVector, ChunkPolygon[iChunk11])
+
+#pragma omp section
+ReadPolygons(poSrcVector, ChunkPolygon[iChunk11])
+#pragma omp section
+WriteResult(ResultRaster[iChunk-1])
+
+Else
+
+If iChunk5=0 then
+
+#pragma omp parallel sections
+
+WriteResult(ResultRaster[iChunk-1])
+
+Else if iChunk5=ChunkNum-1 then
+
+/* Read the next chunk of polygons */
+25:
+26:
+27:
+28:
+29:
+/* OpenMP parallel computation */
+30:
+31:
+32:
+33:
+34:
+35:
+/* Transfer rasterization result from GPU to CPU */
+36:
+37: end for
+/* Exit the CUDA environment */
+38: cudaFree(PointX,PointY,AttributeValue,hDstDS)
+39: cudaThreadExit()
+/* Write the last result raster into the dataset */
+40: WriteResult(ResultRaster[iChunk-1])
+/* Exit the parallel program */
+41: GDAL_Finalize
+42: MPI_Finalize
+
+cudaMemcpy(hDstDS,ResultRaster[iChunk])
+
+end if
+
+scheme is implemented using a standard C11 programming environment. Under the GPU-
+based environment, CUDA is used as the parallel programming framework. In the CPU-based
+environment, the message-passing interface (MPI) and open multi-processing (OpenMP) pro-
+gramming models are used. MPI is the speciﬁcation of a standard library for message passing
+and is used to access different parallel CPU nodes and distribute tasks. OpenMP is an industry
+standard application programming interface (API) for shared memory programming and is
+employed for parallelizing calculations within each node. The open-source geospatial data
+abstraction library (GDAL) is employed to read the vector data and write the raster data. The
+pseudo-code of the general parallel implementation is described in Table 1; the pseudo-code of
+the detailed CUDA kernel function is described in Table 2. The main procedures are presented
+below.
+
+Step 1: Initialization step. The master parallel node (with rank 0) analyzes all the input
+parameters provided by the user. Such parameters include the number of GPUs, blocks per
+GPU, threads per block (TPB), and resultant cell size. The master node creates a resultant raster
+dataset according to the speciﬁed cell size.
+
+Step 2: The master parallel node calculates the values of the number of nodes, the
+MBR area, the shape, and the memory usage for each polygon. The master node calculates
+the polygon complexity for each polygon, sorts all polygons according to their complexity,
+and then performs data decomposition according to the number of GPUs. It forms a distri-
+bution queue and then forms different subsets. During this procedure, other parallel nodes
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+12
+
+C Zhou, Z Chen, Y Pian and M Li
+
+Table 2
+Pseudo-code of the BAF kernel function. PointX and PointY are the coordinates of the
+polygons; AttributeValue represents the array of attribute values of the polygons. hDstDS is used
+to store the GPU rasterization result. BlockPolygon denotes the serial number of the polygons in
+each block. BlockNum is the speciﬁed number of blocks and ThreadNum is the number of
+threads
+
+__global__ static void Kernel_PolygonRasterization(PointX, PointY, AttributeValue, hDstDS,
+BlockPolygon, BlockNum, ThreadNum)
+1: const size_t threadID 5 size_t(threadIdx.x)
+2: const size_t blockID 5 size_t(blockIdx.x)
+3: __shared__ outValue[ThreadNum]
+/* Invoke the BAF algorithm to rasterize each polygon */
+4: for iShape5 BlockPolygon[blockID]1threadID to BlockPolygon[blockID11] do
+Get the number of polygon boundaries ncount for iShape-th polygon
+5:
+Get the polygon nodes array of iShape-th polygon inPoly from PointX and PointY
+6:
+Get the attribute value outValue[threadID] for iShape-th polygon
+7:
+Calculate the coordinates of the MBR minX, maxX, minY, maxY
+8:
+for in 5 0 to ncount-1 do
+9:
+10:
+
+Get the coordinates of the current boundary ((inPolyin.x, inPolyin.y), (inPolyin11.x,
+inPolyin11.y))
+Calculate the number of raster pixels crossed by the boundary crosscount
+
+end if
+
+end for
+
+hDstDS[pixel]5 hDstDS[pixel]-outValue[threadID]
+
+if (inPolyin.y > inPolyin11.y) then
+for pixel 5 0 to crosscount do
+
+if (inPolyin.y < inPolyin11.y) then
+for pixel 5 0 to crosscount do
+
+11:
+/* The moving direction of the current boundary is downward */
+12:
+13:
+14:
+15:
+16:
+/* The moving direction of the current boundary is upward */
+17:
+18:
+19:
+20:
+21:
+/* The moving direction of the current boundary is parallel */
+22:
+23:
+24:
+25:
+26: iShape5iShape1ThreadNum
+27: end for
+
+if (inPolyin.y 5= inPolyin11.y) then
+
+hDstDS[pixel]5 hDstDS[pixel]1outValue[threadID]
+
+skip this boundary
+
+end for
+
+end for
+
+end if
+
+end if
+
+wait. Upon completion, the master parallel node sends the decomposition results to other
+parallel nodes.
+
+Step 3: All parallel nodes
+
+the decomposition results and read their
+corresponding polygons. Each parallel node forms different chunks of polygons according to
+the limited memory of the GPU. The polygon chunks are sent to the GPU to process in
+sequence.
+
+receive
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+Large-scale Polygon Rasterization on CUDA-enabled GPUs
+
+13
+
+Step 4: For each chunk, the large-sized polygons are segmented ﬁrst. Each GPU distributes
+polygons to different blocks and threads. Threads invoke the BAF algorithm to rasterize the
+polygons in parallel. During multi-threading parallel execution, concurrent reading and writing
+are usually the problem. CUDA has provided a solution for concurrent reading. In particular,
+block threads in a GPU are grouped into warps (32 threads/warp). Half of a warp (i.e. 16
+threads) in a block can concurrently access the global memory. Different threads can access the
+global memory alternately. This approach can alleviate the problem of concurrent reading.
+Furthermore, the calculation of a polygon is minimized into its MBR, reducing the number of
+raster pixels affected by concurrent access, and the atomic operation in CUDA is added. Using
+this approach, the correctness of the rasterized result can be guaranteed. Upon completion,
+each GPU returns the rasterization result to the CPU.
+
+Step 5: Parallel nodes on the CPU receive the GPU result and write into the resultant raster
+dataset. When all chunks are processed, the master parallel node updates the resultant raster
+dataset and exits the parallel execution.
+
+When performing a vector dataset with n polygons, the time complexity of the sequential
+polygon rasterization algorithm is O(n3). For a parallel algorithm, the time is mainly composed
+of data decomposition, I/O, polygon ﬁlling computation, and data transfer times. The data
+decomposition also includes the calculations of polygon complexity and memory usage, decom-
+position into subsets, decomposition into chunks, and decomposition for blocks and threads.
+The corresponding time complexities are O(n2), O(n), O(n), and O(n), respectively. Therefore,
+the time complexity for data decomposition is O(n2). The time complexities for I/O, polygon
+ﬁlling computation, and data transfers are O(n), O(n3), and O(n), respectively. Consequently,
+the time complexity for a GPU-based parallel algorithm is O(n3).
+
+4 Experiments
+
+4.1 Experiment Design
+
+The experimental GPU cluster contained two HP Z620 workstations. Each workstation
+included a NVIDIA Corporation Tesla K20c GPU. The GPU had 2,496 CUDA cores, 5 GB of
+global memory, 48 KB of shared memory, and 1.25 MB of L2 cache memory. According to the
+technical speciﬁcations, it contained 13 multiprocessors and up to 2,048 threads could be
+assigned to each multiprocessor. Thus, a maximum of 2,048 3 13 5 26,624 threads could run
+concurrently in parallel on the physical GPU. The two workstations were interconnected via a
+dual-port gigabit Ethernet network. The CPU-based parallel implementations were performed
+on an IBM parallel cluster that contained eight computing nodes, each with the following hard-
+ware conﬁguration: two Intel(R) Xeon(R) CPUs (E5-2620 clocked at 2.00 GHz, six-core
+model), 16 GB of memory, and a 2 TB hard drive. The software implementation included
+CUDA 5.5, OpenMPI 1.4.1, OpenMP 2.0, and GDAL 1.9.2.
+
+For the experiments,
+
+four datasets stored in a PostgreSQL/PostGIS database were
+employed. A basic description of the datasets used is listed in Table 3. The geographical projec-
+tions of the datasets were all Albers equal-area conic projections. Dataset 1 had a data volume
+of 5.03 GB and approximately 1.3 3 107 polygons. The total area was approximately
+104,199 m2. In this dataset, the mean number of nodes was 49.65, the mean MBR area was
+56,516.02 m2, the mean shape was 0.47 and the mean complexity was 0.41. This dataset was
+used to verify the accuracy of the rasterized result. Dataset 2 was formed by duplicating dataset
+1 ﬁrst by a ratio of ten and then moved spatially to maintain each subset disjointed. Using this
+approach, dataset 2 had a data volume of 50.32 GB and was primarily employed to evaluate
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+14
+
+C Zhou, Z Chen, Y Pian and M Li
+
+Table 3 Basic description of datasets employed in the experiments
+
+Name of datasets
+
+Dataset 1
+
+Dataset 2
+
+Dataset 3
+
+Dataset 4
+
+Data volume
+Number of polygons
+Number of nodes Maximum 28,850
+
+5.03 GB
+1,296,574
+
+MBR area (m2)
+
+Shape
+
+Mean complexity
+
+49.65
+
+Minimum 4
+Mean
+Maximum 105793680.33
+Minimum 0.069568
+Mean
+56516.02
+Maximum 0.96
+Minimum 0.00
+0.47
+Mean
+0.41
+
+50.32 GB
+12,965,742
+28,850
+4
+49.65
+105793680.33
+0.069568
+56516.02
+0.96
+0.00
+0.47
+0.41
+
+765 MB
+741,562
+5,207
+4
+25.59
+207386837.01
+0.000035
+24056.99
+0.94
+0.00
+0.45
+0.56
+
+537 MB
+53,646
+1,175,064
+4
+643.15
+7388485247.58
+0.065404
+11928497.24
+0.99
+0.00
+0.47
+0.56
+
+the performance of the proposed parallel implementation. Datasets 3 and 4 were used to con-
+duct comparisons on the parallel performance of the proposed implementation and a conven-
+tional implementation. These datasets were actual Chinese land use data derived from the
+national land survey program of China introduced in 2007. These datasets could be promoted
+to reasonably recognize, manage, and utilize Chinese land resources. For each dataset, there
+were more than 20 land types, e.g., forest, shrub, woods, dense grass, moderate grass, sparse
+grass, streams and rivers, lakes, reservoirs and ponds, beach and shore, urban built-up, and
+rural settlements (Liu et al. 2009).
+
+In our experiments, the efﬁciency of the parallel algorithm was evaluated according to the
+execution time, speedup ratio, and load balancing index. The execution time is the time
+between invoking the algorithm and the completion of the last computing unit. The speedup
+ratio is that of the time used by the sequential CPU algorithm to the time used by the GPU algo-
+rithm (Preis et al. 2009). The load balancing index is the ratio of time spent on the slowest com-
+puting unit to the fastest. To verify the proposed parallel algorithm, four sets of experiments
+were conducted: (1) evaluating the accuracy loss of the rasterized result quantitatively; (2) cal-
+culating and analyzing the execution time, speedup ratio, and load balancing; (3) comparing
+the performance of the proposed and conventional implementations when addressing different
+types of datasets; and (4) testing the extension of the proposed method to CPU-based parallel
+implementations.
+
+4.2 Accuracy Veriﬁcation
+
+Polygon rasterization is a process always accompanied by accuracy loss and therefore, veriﬁca-
+tion of the converted results is necessary. In this experiment, dataset 1 was addressed by the
+proposed parallel algorithm. The resultant cell size was set at 20 m, the data format was Geo-
+TIFF ﬁle format (*.tif), the data volume was 752 MB, and the attribute values assigned to the
+raster pixels were the land use types. An overview of the original dataset and its rasterized
+result can be seen in Figure 6.
+
+To demonstrate quantitatively the accuracy, we compared the area loss of the same land
+type before and after rasterization. The accuracy loss of the i-th land use type, Ei, is deﬁned as:
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+Large-scale Polygon Rasterization on CUDA-enabled GPUs
+
+15
+
+Figure 6 Parallel polygon rasterization result: (a) Overview of original dataset; and (b) its raster-
+ization result
+
+Ei5ðAi2Ai
+
+0Þ=Ai
+0
+
+(8)
+
+where i51, 2, . . ., n, is the index of the land use type, Ai
+0 is the area of each land type in vector
+format (a reference for this land use type), and Ai is the area of each land type in raster format
+after rasterization (Liao and Bai 2010). Positive (negative) accuracy loss indicates that the ras-
+ter area after rasterization is larger (smaller) than the vector area before rasterization for a cer-
+tain land type. The comparisons are listed in Table 4. The results indicate that the rasterization
+result can achieve little accuracy loss. The total accuracy loss was 0.549174% and the largest
+loss was 0.914937% for mountain dry land. This demonstrates that the proposed rasterization
+result was highly accurate and is appropriate for further spatial analysis.
+
+4.3 Performance Evaluation
+
+4.3.1 Execution time and speedup ratio
+
+To conﬁgure the computational GPU resources optimally, the block number should be a multi-
+ple of the number of multiprocessors and the TPB number should be a multiple of 32 (Christian
+2013). In this experiment, dataset 2 was employed and the resultant cell size was set to 10 m,
+TPB and block numbers were altered, and the corresponding execution time and speedup ratio
+were calculated (Figure 7). The results are as follows:
+
+1. The CPU sequential execution time was 25.43 h. For the GPU processing, all curves
+expressed similar trends. The execution time decreased initially as the block number multi-
+plied, followed by a rising trend, with the shortest time being 0.73 h (TPB number 5 128),
+0.69 h (TPB number 5 256), 0.86 h (TPB number 5 512), and 1.10 h (TPB
+number 5 1,024). Moreover, the speedup ratio increased linearly at the start before gradu-
+ally decreasing, with the highest value being 34.79 (TPB number 5 128), 36.91 (TPB
+number 5 256), 29.73 (TPB number 5 512), and 23.08 (TPB number 5 1,024). This indi-
+cates that the proposed GPU-based parallelization dramatically reduces processing time.
+2. When the TPB number was 128, 256, 512, or 1,024, the most efﬁcient corresponding
+block numbers were 182, 104, 52, and 26, respectively. This ﬁnding accounts for the
+fact that, when the total number of threads approaches the maximum number of threads
+allowed by the GPU (26,624 in this experiment), the GPU’s computational resources are
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+16
+
+C Zhou, Z Chen, Y Pian and M Li
+
+Table 4 Accuracy loss of parallel polygon rasterization results
+
+Land use type
+
+Vector area (m2)
+
+Raster area (m2) Accuracy loss (%)
+
+Number of raster
+pixels
+
+Forest
+Shrub
+Woods
+Other woodland
+Dense grass
+Moderate grass
+Sparse grass
+Stream and rivers
+Lakes
+Reservoir and
+
+ponds
+
+Beach and shore
+Urban built-up
+Rural settlements
+Other built-up
+
+lands
+
+Salina
+Bare soil
+Bare rock
+Mountain paddy
+
+land
+
+Hill paddy land
+Plain paddy land
+Mountain dry
+
+land
+
+Hill dry land
+Plain dry land
+Totals
+
+2,168,936,549.55
+250,946,734
+480,456,860.8
+240,420,601.57
+930,134,853.2
+
+3,614,003.41
+7,535,456.93
+2,302,203,949.81
+5,795,422,161.54
+4,395,560,316
+
+3,325,439,904
+7,153,303,740.36
+10,462,050,304
+1,343,142,454
+
+1,006,343.50
+120,364,696.72
+57,290,591.82
+471,785.50
+
+5,422,387
+627,517
+1,201,260
+601,197
+2,325,305
+9,041
+18,859
+5,755,696
+14,488,609
+10,989,266
+
+8,313,625
+17,883,436
+26,155,125
+3,357,962
+
+2,514
+300,868
+143,177
+1,174
+
+0.000841%
+2,168,954,800
+0.023936%
+251,006,800
+0.009811%
+480,504,000
+240,478,800
+0.024207%
+930,122,000 20.001382%
+0.066314%
+0.108063%
+0.003234%
+0.000370%
+0.003323%
+
+3,616,400
+7,543,600
+2,302,278,400
+5,795,443,600
+4,395,706,400
+
+0.000304%
+3,325,450,000
+0.000988%
+7,153,374,400
+10,462,050,000 20.000003%
+0.003153%
+1,343,184,800
+
+1,005,600 20.073881%
+120,347,200 20.014536%
+57,270,800 20.034546%
+469,600 20.463240%
+
+189,904,839.68
+42,044,033,079.41
+347,619.50
+
+474,689
+105,108,491
+877
+
+189,875,600 20.015397%
+42,043,396,400 20.001514%
+0.914937%
+
+350,800
+
+1,007,155,292.35
+21,819,728,089.86
+
+2,517,716
+54,549,884
+104,099,470,227.28 260,248,675
+
+1,007,086,400 20.006840%
+0.001034%
+21,819,953,600
+0.549174%
+104,099,470,000
+
+fully exploited, attaining the highest level of efﬁciency. Increasing the number of threads
+further is likely to incur competition for resources and cause access conﬂicts that could lead
+to a rapid reduction in parallel efﬁciency. This means that additional increases in computa-
+tional resources will not enhance efﬁciency once performance has reached its peak.
+
+3. When the total number of threads remained unchanged, the parallel efﬁciency varied
+with different TPB and block conﬁgurations. In the following, (TPB number, block num-
+ber) represents the conﬁguration of the TPB and blocks, respectively, allocated. When
+the number of total threads was 13,312, the speedup ratio for conﬁgurations (128, 104),
+(256, 52), (512, 26), and (1024, 13) was 16.86, 18.57, 14.57, and 14.06, respectively.
+When the number of total threads was 19,968, the speedup for conﬁgurations (128,
+156), (256, 78), and (512, 39) was 29.24, 31.14, and 20.34, respectively. The speedup
+attained its peak when the TPB number was 256. This ratio is marginally higher than
+when the TPB number was 128. This is mainly because of the increasing warps in each
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+Large-scale Polygon Rasterization on CUDA-enabled GPUs
+
+17
+
+Figure 7 Experimental results for: (a) execution time; and (b) speedup ratio
+
+Table 5
+
+Time components of GPU-based parallel rasterization (unit: hour)
+
+TPB 3 block Decomposition I/O Computing
+
+Data
+transfers
+
+Execution
+time
+
+Speedup
+
+Sequential
+
+processing
+
+-
+
+GPU
+
+processing
+
+256 3 1
+256 3 13
+256 3 26
+256 3 39
+256 3 52
+256 3 65
+256 3 78
+256 3 91
+256 3 104
+
+0.13
+0.12
+0.14
+0.13
+0.15
+0.14
+0.12
+0.13
+0.13
+
+0.86 24.57
+
+-
+
+25.43
+
+1.00
+
+0.23
+0.24
+0.21
+0.22
+0.24
+0.21
+0.23
+0.22
+0.21
+
+7.37
+3.64
+2.73
+1.60
+0.84
+0.54
+0.35
+0.30
+0.22
+
+0.12
+0.12
+0.11
+0.13
+0.14
+0.12
+0.12
+0.11
+0.13
+
+7.85
+4.12
+3.19
+2.08
+1.37
+1.01
+0.82
+0.76
+0.69
+
+3.24
+6.17
+7.98
+12.21
+18.57
+25.17
+31.14
+33.44
+36.91
+
+block, which lead to faster thread switches and improved performance. The speedup
+value was signiﬁcantly higher than when the TPB number was 512 or 1,024. This is pri-
+marily because of the competition for the limited memory and cache caused by the
+excessive threads in each block, leading to a considerable decrease in efﬁciency.
+
+Parallel processing time consists mainly of data decomposition, I/O, polygon ﬁlling computa-
+tion, and data transfers times (Table 5). Despite an increase in the block number, the time required
+for decomposing data, I/O, and data transfers does not vary signiﬁcantly with the same data
+because the time required for these tasks are all closely related to the data source. The I/O time was
+less than with the sequential algorithm, demonstrating that the proposed CPU/GPU scheduling
+strategy can effectively conceal the data read/write time. Computing time decreased rapidly from
+24.57 to 0.22 h, further indicating the effectiveness of the proposed parallel strategies.
+
+4.3.2 Load balancing
+
+For a parallel algorithm with effective load balancing, all computing units tend to complete
+their tasks simultaneously. The differences in processing times can reﬂect intuitively the
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+18
+
+C Zhou, Z Chen, Y Pian and M Li
+
+Figure 8 Experimental load balancing
+
+effectiveness of the adopted parallel strategies. Experimental statistics were collected for the
+execution time of each block for each GPU. The ratio of the longest to the shortest processing
+time was calculated for each GPU. The average of these ratios was then used to assess the load
+balancing. The formula is:
+
+Load balancing5
+
+(9)
+
+1
+Ngpu
+
+Ngpu
+X
+
+max
+j(cid:3)Nb
+
+fTjg
+
+i51
+
+min
+j(cid:3)Nb
+
+fTjg
+
+where Ngpu is the number of GPUs, Nb is the block number of each GPU, Tj is the processing
+time for block j on GPU i, and max j(cid:3)Nb fTjg and min j(cid:3)Nb fTjg are the longest and shortest proc-
+essing time of the blocks, respectively. As Load balancing approaches one, the load is increas-
+ingly balanced. In this experiment, the TPB number is set at 256. Load balancing was
+measured with different block numbers (Figure 8). The results demonstrate that the parallel
+algorithm delivers a desirable load balance, with its maximum Load balancing value no higher
+than 1.30. When the block number increased to 104, the Load balancing value decreased grad-
+ually and the load became more balanced, with its optimal value at 1.16. As the block number
+increases, delays and resource competition occurs among the threads, leading to a gradual
+unbalancing of the load and a slower increase to the Load balancing value.
+
+4.4 Performance Comparison with Conventional GPU-based Strategy
+
+For GPU-based polygon rasterization, Zhang (2011) proposed a conventional parallel scan-line
+algorithm. In the conventional work, the computing resource used was an NVIDIA Fermi
+C2050 GPU device, the dataset consisted of 717,057 polygons, and the implemented scan-line
+algorithm had a time complexity of O(n3) when addressing n polygons. This experiment pri-
+marily compared the performance of the proposed and conventional parallel strategies. For a
+fair comparison, the conventional strategy was applied to parallelize the BAF algorithm and
+performed with our datasets under the proposed parallel GPU environment.
+
+A well-designed GPU-based strategy should be applicable for different types of polygon
+datasets. The conventional strategy has some limitations for datasets: the volume of the dataset
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+Large-scale Polygon Rasterization on CUDA-enabled GPUs
+
+19
+
+n
+o
+i
+t
+a
+t
+n
+e
+m
+e
+p
+m
+
+l
+
+i
+
+n
+o
+i
+t
+a
+t
+n
+e
+m
+e
+p
+m
+
+l
+
+i
+
+n
+o
+i
+t
+a
+t
+n
+e
+m
+e
+p
+m
+
+l
+
+i
+
+n
+o
+i
+t
+a
+t
+n
+e
+m
+e
+p
+m
+
+l
+
+i
+
+n
+o
+i
+t
+a
+t
+n
+e
+m
+e
+p
+m
+
+l
+
+i
+
+n
+o
+i
+t
+a
+t
+n
+e
+m
+e
+p
+m
+
+l
+
+i
+
+d
+e
+t
+n
+e
+s
+e
+r
+p
+
+e
+h
+T
+
+l
+a
+n
+o
+i
+t
+n
+e
+v
+n
+o
+C
+
+d
+e
+t
+n
+e
+s
+e
+r
+p
+
+e
+h
+T
+
+l
+a
+n
+o
+i
+t
+n
+e
+v
+n
+o
+C
+
+d
+e
+t
+n
+e
+s
+e
+r
+p
+
+e
+h
+T
+
+l
+a
+n
+o
+i
+t
+n
+e
+v
+n
+o
+C
+
+d
+o
+h
+t
+e
+m
+e
+v
+i
+t
+a
+r
+a
+p
+m
+o
+C
+
+s
+
+5
+9
+.
+7
+1
+
+8
+5
+.
+2
+3
+
+s
+
+2
+7
+.
+4
+8
+5
+
+k
+r
+o
+w
+
+t
+o
+n
+n
+a
+C
+
+k
+r
+o
+w
+
+t
+o
+n
+n
+a
+C
+
+h
+
+9
+6
+.
+0
+
+1
+9
+.
+6
+3
+
+h
+
+3
+4
+.
+5
+2
+
+s
+
+6
+5
+.
+5
+
+8
+6
+.
+5
+2
+
+s
+
+7
+1
+.
+2
+4
+1
+
+s
+
+7
+9
+.
+5
+
+1
+8
+.
+3
+2
+
+e
+m
+
+i
+t
+
+l
+a
+i
+t
+n
+e
+u
+q
+e
+S
+
+o
+i
+t
+a
+r
+
+p
+u
+d
+e
+e
+p
+S
+
+e
+m
+
+i
+t
+
+l
+e
+l
+l
+a
+r
+a
+P
+
+4
+
+t
+e
+s
+a
+t
+a
+D
+
+2
+
+t
+e
+s
+a
+t
+a
+D
+
+s
+e
+d
+o
+n
+
+4
+2
+0
+1
+
+n
+a
+h
+t
+
+e
+r
+o
+m
+
+h
+t
+i
+
+w
+s
+n
+o
+g
+y
+l
+o
+p
+
+i
+
+g
+n
+d
+u
+l
+c
+x
+e
+
+3
+
+t
+e
+s
+a
+t
+a
+D
+
+t
+e
+s
+a
+t
+a
+d
+
+d
+e
+t
+a
+c
+i
+l
+
+p
+m
+o
+C
+
+t
+e
+s
+a
+t
+a
+d
+
+e
+g
+r
+a
+L
+
+t
+e
+s
+a
+t
+a
+d
+
+l
+
+e
+p
+m
+S
+
+i
+
+i
+
+g
+n
+n
+a
+e
+M
+
+t
+e
+s
+a
+t
+a
+D
+
+i
+
+s
+e
+g
+e
+t
+a
+r
+t
+s
+
+l
+a
+n
+o
+i
+t
+n
+e
+v
+n
+o
+c
+
+d
+n
+a
+
+d
+e
+s
+o
+p
+o
+r
+p
+
+f
+o
+
+s
+n
+o
+s
+i
+r
+a
+p
+m
+o
+c
+
+f
+o
+
+s
+t
+l
+u
+s
+e
+r
+
+l
+a
+t
+n
+e
+m
+
+i
+r
+e
+p
+x
+E
+
+6
+
+e
+l
+b
+a
+T
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+20
+
+C Zhou, Z Chen, Y Pian and M Li
+
+to be processed cannot exceed the GPU memory and the number of polygon nodes in the data-
+set cannot be greater than 1,024. Therefore, the datasets employed in this experiment were
+classiﬁed into three types: simple, large, and complicated. The simple dataset represents the
+case where the data volume is less than the GPU’s limited memory and the included polygons
+have less than 1,024 nodes. The large dataset represents the case where the volume is larger
+than the GPU memory, and the complicated dataset represents the case where the polygons
+vary considerably in complexity. In this experiment, dataset 3, excluding polygons with more
+than 1,024 nodes, was used as the simple dataset. There were only 105 polygons with more
+than 1,024 nodes in dataset 3. Datasets 2 and 4 were used as the large and complicated data-
+sets, respectively. The execution time and speedup ratios of the conventional and the proposed
+implementations for different datasets were calculated (Table 6).
+
+For dataset 3, both the proposed and conventional implementations performed well. The
+CPU sequential execution time was 142.17 s. The conventional implementation obtained a
+minimum time of 5.97 s and the best speedup ratio was 23.81. The proposed implementation
+demonstrated superior performance with a time of 5.56 s and speedup of 25.68. In the conven-
+tional strategy, the dataset was placed completely into the GPU memory and all polygon nodes
+were stored in the shared memory. This strategy can accelerate the access rate of the polygon
+nodes and improve parallel efﬁciency. For the proposed implementation, the decomposition
+strategy achieved improved workloads between GPU threads, leading to marginally improved
+efﬁciency. The result demonstrates that the proposed strategy can achieve superior performance
+compared with the conventional strategy. In the proposed implementation, although the data
+decomposition procedure required a time cost, its inﬂuence on the acceleration of the GPU
+computation was signiﬁcant.
+
+For dataset 2, a large dataset compared with the GPU memory, the conventional imple-
+mentation could not work. The reason is that the conventional strategy ignores the data volume
+that is greater than the GPU memory and fails to present a suitable approach to decompose a
+large dataset into subsets. The proposed implementation performed well: the execution time
+was reduced from 25.43 to 0.69 h and the best speedup achieved was 36.91.
+
+Dataset 4 was a complicated dataset where some of the polygons included considerable
+complexity. In this dataset, the mean values of the number of nodes, MBR area, shape, and
+complexity were 643.15, 11,928,497.24 m2, 0.47, and 0.56, which are larger than those of the
+other datasets. In particular, there were 740 polygons having more than 1,024 nodes; the maxi-
+mum number of nodes was 1,175,064. The conventional implementation utilizes the shared
+memory in the GPU to store all the coordinates and failed to address dataset 4. In general,
+although the shared memory is faster to access compared with the global memory, it is small.
+Therefore, the conventional method could not manage those polygons with excessive numbers
+of nodes. In the proposed implementation, the polygon coordinates are stored in the global
+memory and the attribute values are stored in the shared memory. This approach ensures sufﬁ-
+cient memory to store the polygons with excessive numbers of nodes. Polygons are decomposed
+according to their calculation complexities to ensure balanced workloads. Moreover, polygons
+with excessive numbers of nodes can be segmented into smaller polygons. Using these
+approaches, complicated datasets can be effectively addressed. For a sequential time of
+584.72 s, the proposed implementation obtained an optimized execution time of 17.95 s and a
+best speedup of 32.58.
+
+In summary, compared with the conventional strategy, the proposed strategies can achieve
+slightly better parallel performance for simple datasets and perform much better for large and
+complicated datasets.
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+Large-scale Polygon Rasterization on CUDA-enabled GPUs
+
+21
+
+Figure 9 Experimental results of different CPU-based parallel implementations using conventional
+data decomposition strategy and proposed strategy: (a) Execution time and (b) speedup ratios of
+parallel MPI implementation using conventional and proposed strategies; and (c) Execution time
+and (d) speedup ratios of parallel MPI/OpenMP implementation using conventional and proposed
+strategies
+
+4.5 Extension of the Data Decomposition Strategy to CPU-Based Implementations
+
+Under different parallel platforms, a well-designed data decomposition strategy is critical for
+parallel polygon rasterization to achieve balanced workloads. Although the proposed strategy
+was designed for GPU-based environments, it can also be extended to CPU-based environ-
+ments. The principle of the proposed strategy can be summarized in two important steps: calcu-
+lating polygon complexity and distributing evenly into subsets, and dividing each subset
+according to the memory limitation. When applied to CPU-based environments, the data
+decomposition procedure can be stated as follows: (1) The calculation complexity for each
+polygon is calculated and sorted in ascending order; (2) All polygons are distributed into sub-
+sets, which equal the number of CPU parallel processes; and (3) Within each parallel process, if
+the subset memory continues to exceed the memory limitation, the subset is further decom-
+posed into different chunks.
+
+We implemented two parallel implementations under the CPU environment. One was
+based on the MPI model and the other was a combination of the MPI and OpenMP model. In
+implementing the MPI model, a number of processes were invoked to facilitate parallelization.
+Based on the MPI implementation, the MPI/OpenMP implementation created multiple threads
+in each process to achieve hybrid parallelization. For each implementation, we implemented
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+22
+
+C Zhou, Z Chen, Y Pian and M Li
+
+two versions. One implemented the proposed strategy; the other utilized the conventional strat-
+egy where polygons were distributed sequentially and each process was allocated the same
+number of polygons. The execution time and speedup ratios were calculated (see Figure 9). For
+the parallel MPI implementation, the computing units represent processes; for parallel MPI/
+OpenMP implementation, they represent the combination of processes and threads.
+
+In Figure 9, the sequential time is 25.43 h. For the MPI implementation, the optimized time
+was 1.51 and 1.25 h for the conventional and proposed strategies, respectively. The speedup
+ratios were 16.89 and 20.29, respectively. For the MPI/OpenMP implementation, the minimum
+times were 1.47 and 1.20 h for the conventional and proposed strategies, respectively. The
+speedup ratios were 17.24 and 21.12, respectively. The results suggest that for each parallel
+implementation, the version that used the proposed strategy demonstrated superior performance.
+The conventional strategy ensures load balancing in terms of polygon numbers. Conversely, the
+proposed strategy achieves balanced workloads in terms of calculation complexity. Experimental
+results demonstrate that the proposed strategy can obtain better load balancing, requires less exe-
+cution time, and achieves a considerably higher speedup ratio. The MPI/OpenMP implementa-
+tion required less time than the MPI implementation. The reason is that hybrid parallelization
+can fully adopt lightweight threads, accelerating computationally intensive ﬁlling calculations.
+
+5 Discussion
+
+This section discusses the broader extension and limitations of the proposed approaches.
+
+It is practical to apply the proposed strategies to other geospatial applications that share
+similar algorithmic characteristics. The generic characteristics of polygon rasterization can be
+described as follows. High-level
+independence exists between polygons and little inter-
+communication is necessary during parallel computation. There are many polygon operations
+in geo-computation that share similar characteristics, e.g. polygon area calculations, coordinate
+transactions, and data format conversion. When developing new GPU-based CUDA codes for
+these applications, the proposed parallel strategies including those of data decomposition,
+CPU/GPU scheduling, and memory and cache utilization can be broadened to achieve different
+parallel implementations with little modiﬁcation.
+
+Nevertheless, there are limitations when applying the proposed approaches to other appli-
+cations such as overlay and intersection calculations, wherein strong relationships exist
+between different polygons. For these applications, the calculation complexity is related to the
+spatial proximity of the polygons, rather than the complexity of the polygons themselves (i.e.
+type, area, shape, and structural features). When parallelizing these applications, spatially adja-
+cent polygons must be ﬁrst determined and then, the intersection calculation of these polygons
+can be conducted. Therefore, the strategies proposed in this study are not appropriate for this
+kind of polygon-based applications and new strategies need to be studied.
+
+6 Conclusions
+
+This research proposed three novel strategies to support the parallel scheme such that multiple
+GPUs could be fully utilized to accelerate massive-scale polygon rasterization processes. In partic-
+ular, a data decomposition strategy was designed in accordance with the calculation complexity
+of the polygons and GPU internal memory to ensure load balancing (1); a parallel CPU/GPU
+scheduling strategy was suggested to conceal data read/write times to improve performance (2);
+and a utilization strategy for the GPU internal memory and cache was proposed to hasten data
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+Large-scale Polygon Rasterization on CUDA-enabled GPUs
+
+23
+
+access (3). The parallel BAF algorithm was implemented using the CUDA programming model
+and executed under a GPU cluster of two workstations with two GPUs. Results conﬁrm that:
+
+1. The proposed GPU-based parallel polygon rasterization implementation can signiﬁcantly
+accelerate the enormous time-consuming conversion process. For a 50.32 GB dataset
+with approximately 1.3 3 108 polygons, the processing time was reduced from 25.43 to
+0.69 h and achieved a desirable speedup (36.91) and effective load balancing. This indi-
+cates improved performance compared with the sequential implementation.
+
+2. Compared with the conventional GPU-based parallel polygon rasterization algorithm,
+the proposed parallel algorithm can outperform the other with different dataset types
+including simple, large-scale, and complicated.
+
+3. The proposed data decomposition strategy can be extended efﬁciently to CPU-based par-
+allel environments. The CPU-based parallel
+implementations that use the proposed
+decomposition strategy can also achieve superior performance compared to the conven-
+tional strategy.
+
+References
+
+Bakkum P and Skadron K 2010 Accelerating SQL database operations on a GPU with CUDA. In Proceedings of
+the Third Workshop on General-Purpose Computation on Graphics Processing Units, Pittsburgh, Pennsyl-
+vania: 94–103
+
+Brinkhoff T, Kriegel H P, Schneider R, and Braun A 1995 Measuring the complexity of polygonal objects. In
+ACM Proceedings of the Third ACM International Workshop on Advances in Geographical Information
+Systems, Baltimore, Maryland: 109–17
+
+Chang K T 2010 Introduction to Geographic Information Systems. New York, McGraw-Hill
+Christian S 2013 Efﬁcient local search on the GPU: Investigations on the vehicle routing problem. Journal of Par-
+
+Feito F, Torres J C, and Urena A 1995 Orientation, simplicity, and inclusion test for planar polygons. Computers
+
+allel Distribute Computing 73: 14–31
+
+and Graphics 19: 595–600
+
+Gharachorloo N, Gupta S, Sproull R F, and Sutherland I E 1989 A characterization of ten rasterization techni-
+ques. In Proceedings of the Sixteenth Annual ACM Conference on Computer Graphics and Interactive Tech-
+niques, Boston, Massachusetts: 355–68
+
+Goodchild M F 2011 Scale in GIS: An overview. Geomorphology 130: 5–9
+Guo M Q, Guan Q F, Xie Z, Wu L, Luo X G, and Huang Y 2015 A spatially adaptive decomposition approach
+for parallel vector data visualization of polylines and polygons. International Journal of Geographical Infor-
+mation Science 29: 1419–1440
+
+Haines E 1994 Point in polygon strategies. Graphics Gems 4: 24–6
+Hawick K A, Coddington P D, and James H A 2003 Distributed frameworks and parallel algorithms for process-
+
+ing large-scale geographic data. Parallel Computing 29: 1297–333
+
+Healey R G, Dowers S, and Minetar M 1998 Parallel Processing Algorithms for GIS. London, Taylor and Francis
+Hormann K and Agathos A 2001 The point in polygon problem for arbitrary polygons. Computational Geometry
+
+20: 131–44
+
+Hou Q M, Sun X, Zhou K, Lauterbach C, and Manocha D 2011 Memory-scalable GPU spatial hierarchy con-
+
+struction. IEEE Transactions on Visualization and Computer Graphics 17: 466–74
+
+Jiang L, Tang G A, Liu X J, Song X D, Yang J Y, and Liu K 2013 Parallel contributing area calculation with gran-
+
+ularity control on massive grid terrain datasets. Computers and Geosciences 60: 70–80
+
+Kirk D B and Wen-mei W H 2012 Programming Massively Parallel Processors: A Hands-on Approach. Amster-
+
+dam, the Netherlands, Elsevier
+
+Li J, Jiang Y F, Yang C W, Huang Q Y, and Rice M 2013 Visualizing 3D/4D environmental data using many-
+core graphics processing units (GPUs) and multi-core central processing units (CPUs). Computers and Geo-
+sciences 59: 78–89
+
+Liao S B and Bai Y 2010 A new grid-cell-based method for error evaluation of vector-to-raster conversion. Com-
+
+putational Geoscience 14: 539–49
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+24
+
+C Zhou, Z Chen, Y Pian and M Li
+
+Liu J Y, Zhang Z X, Xu X L, Kuang W H, Zhou W C, Zhang S W, Li R D. Yan C Z, Yu D S, Wu S X, and Jiang
+N 2009 Spatial patterns and driving forces of land use change in China in the early 21st century. Journal of
+Geographical Sciences 20: 483–94
+
+Liu J Z, Zhu A X, Liu Y B, Zhu T X, and Qin C Z 2014 A layered approach to parallel computing for spatially
+
+distributed hydrological modeling. Environmental Modelling and Software 51: 221–27
+
+Luo L J, Wong M D F, and Leong L 2012 Parallel implementation of R-trees on the GPU. In Proceedings of the
+
+Seventeenth Asia and South Paciﬁc Design Automation Conference, Sydney, Australia: 353–58
+
+Meng L K, Huang C Q, Zhao C Y, and Lin Z Y 2007 An improved Hilbert curve for parallel spatial data parti-
+
+tioning. Geo-spatial Information Science 10: 282–86
+
+Mielikainen J, Huang B, Wang J, Huang H-L A, and Mitchel D G 2013 Compute uniﬁed device architecture
+(CUDA)-based parallelization of WRF Kessler cloud microphysics scheme. Computers and Geosciences 52:
+292–99
+
+Mu S, Deng Y D, Chen Y B, Li H M, Pan J M, Zhang W J, and Wang Z H 2014 Orchestrating cache management
+and memory scheduling for GPGPU applications. IEEE Transactions on Very Large Scale Integration Sys-
+tems 22: 1803–14
+
+Nickolls J, Buck I, Garland M, and Skadron K 2008 Scalable parallel programming with CUDA. Queue 6(2):
+
+40–53
+
+NVIDIA Corp 2013 Compute Uniﬁed Device Architecture Programming Guide. Santa Clara, CA, NVIDIA Corp
+Owens J D, Luebke D, Govindaraju N, Harris M, Kruger J, Lefohn A E, and Purcell T J 2007 A survey of
+
+general-purpose computation on graphics hardware. Computer Graphics Forum 26(1): 80–113
+
+Preis T, Virnau P, Paul W, and Schneider J J 2009 GPU accelerated Monte Carlo simulation of the 2D and 3D
+
+Ising model. Journal of Computational Physics 228: 4468–77
+
+Rogers D F 1984 Procedural Elements for Computer Graphics. New York, McGraw-Hill
+Simion B, Ray S, and Brown A D 2012 Speeding up spatial database query execution using GPUs. Procedia Com-
+
+puter Science 9: 1870–979
+
+Computing 40(5): 59–69
+
+Sugimoto Y, Ino F, and Hagihara K 2014 Improving cache locality for GPU-based volume rendering. Parallel
+
+Sui H G, Peng F F, Xu C, Sun K M, and Gong J Y 2012 GPU-accelerated MRF segmentation algorithm for SAR
+
+Sun H F and Li W B 2006 The improved algorithm for boundary algebra ﬁlling. Software Guide 11: 64–6 (In
+
+images. Computers and Geosciences 43: 159–66
+
+Chinese with English abstract)
+
+Tang W W, Feng W P, and Jia M J 2015 Massively parallel spatial point pattern analysis: Ripley’s K function
+accelerated using graphics processing units. International Journal of Geographical Information Science 29:
+412–39
+
+Torrens P M 2010 Geography and computational social science. GeoJournal 75: 133–48
+Wang Y F, Chen Z J, Cheng L, Li M C, and Wang J C 2013 Parallel scan-line algorithm for rapid rasterization of
+
+vector geographic data. Computers and Geosciences 59: 31–40
+
+Xia R B and Liu W J 2006 Method for determining whether a certain point is inside a polygon in plane. Chinese
+
+Journal of Mechanical Engineering 42(3): 130–35 (In Chinese with English abstract)
+
+Yang Z Y, Zhu Y T, and Pu Y 2008 Parallel image processing based on CUDA. In Proceedings of the IEEE Inter-
+
+national Conference on Computer Science and Software Engineering, Wuhan, China: 198–201
+
+Ye J Y, Chen B, Chen J, Fang Y, and Wu L 2011 A spatial data partition algorithm based on statistical cluster.
+
+In Proceedings of the Nineteenth International Conference on Geoinformatics, Shanghai, China: 1-6
+
+Zhang J T 2011 Speeding up large-scale geospatial polygon rasterization on GPGPUs. In Proceedings of the ACM
+SIGSPATIAL Second International Workshop on High Performance and Distributed Geographic Informa-
+tion Systems, Chicago, Illinois: 10-7
+
+Zhang Y and Owens J D 2011 A quantitative performance analysis model for GPU architectures. In Proceedings
+of the Seventeenth International Symposium on High Performance Computer Architecture, San Antonio,
+Texas: 382–93
+
+Zhao S S and Zhou C H 2013 Accelerating polygon overlay analysis by GPU. Progress in Geography 32: 114–20
+
+(In Chinese with English abstract)
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+

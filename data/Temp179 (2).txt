@@ -1,0 +1,2025 @@
+Geoinformatica
+DOI 10.1007/s10707-015-0227-9
+
+Planning unobstructed paths in traffic-aware
+spatial networks
+
+Shuo Shang1,2 · Jiajun Liu3 · Kai Zheng4 · Hua Lu5 ·
+Torben Bach Pedersen5 · Ji-Rong Wen6
+
+Received: 23 July 2014 / Revised: 5 February 2015 / Accepted: 23 March 2015
+© Springer Science+Business Media New York 2015
+
+Abstract Route planning and recommendation have received significant attention in recent
+years. In this light, we study a novel problem of planning unobstructed paths in traffic-
+aware spatial networks (TAUP queries) to avoid potential traffic congestions. We propose
+two probabilistic TAUP queries: (1) a time-threshold query like “what is the path from
+the check-in desk to the flight SK 1217 with the minimum congestion probability to take
+at most 45 minutes?”, and (2) a probability-threshold query like “what is the fastest path
+from the check-in desk to the flight SK 1217 whose congestion probability is less than
+20 %?”. These queries are mainly motivated by indoor space applications, but are also
+applicable in outdoor spaces. We believe that these queries are useful in some popular
+applications, such as planning unobstructed paths for VIP bags in airports and planning con-
+venient routes for travelers. The TAUP queries are challenged by two difficulties: (1) how
+to model the traffic awareness in spatial networks practically, and (2) how to compute the
+TAUP queries efficiently under different query settings. To overcome these challenges, we
+construct a traffic-aware spatial network Gta(V , E) by analyzing uncertain trajectories of
+moving objects . Based on Gta(V , E), two efficient algorithms are developed to compute
+
+(cid:2) Shuo Shang
+
+jedi.shang@gmail.com
+
+1
+
+3
+
+4
+
+State Key Laboratory of Petroleum Resources and Prospecting, China University of Petroleum,
+Beijing, China
+
+2 Department of Computer Science, China University of Petroleum, Beijing, China
+
+CSIRO, Canberra, Australia
+
+School of ITEE, The University of Queensland, Brisbane, Australia
+
+5 Department of Computer Science, Aalborg University, Aalborg, Denmark
+
+6 MOE Key Laboratory of Data Engineering and Knowledge Engineering, Renmin University,
+
+Beijing, China
+
+the TAUP queries. The performances of TAUP queries are verified by extensive experiments
+on real and synthetic spatial data.
+
+Keywords Traffic-aware spatial networks · Probabilistic path planning · Efficiency ·
+Spatio-temporal databases
+
+Geoinformatica
+
+1 Introduction
+
+The continuous proliferation of GPS-enabled mobile devices [26] (e.g., car navigation sys-
+tems and smart phones) and online map services (e.g., GoogleMaps,1 BingMaps2 and
+MapQuest3) enable people to acquire their current geographic positions in real time and to
+interact with servers to query spatial information regarding their trips [14, 23–25]. In the
+meantime, with the rapid development of indoor positioning systems (e.g., Wi-Fi, RFID,
+and Bluetooth), the movements of moving objects in indoor spaces are increasingly tracked
+and recorded [9, 10], which makes it possible to plan and to optimize the travel routes of
+moving objects in indoor spaces. The potential market of these location based services in
+the near future enables many novel applications. Emerging ones are TAUP queries that plan
+unobstructed paths in traffic-aware spatial networks to avoid potential traffic congestions.
+This type of queries are mainly motivated by indoor space applications, but are also applica-
+ble in outdoor spaces. We believe that the TAUP queries are useful in popular applications
+such as path planning and recommendation. To give examples, we describe the following
+two application scenarios:
+
+Indoor Scenario: At an international airport, bags are collected from travelers and deliv-
+ered to the corresponding aircrafts. The movements of bags are constrained in a large
+transfer network, which is made up by hundreds of conveyer belts, trolleys and buggies.
+The travel routes of bags are roughly planned when they are collected, such as “Check-
+in 8:55am → Screen machine 9:30am → Tilt-tray sorter 9:50am → Flight SK1217
+10:20am”. The travel path between any two adjacent intended places is uncertain. Large
+amounts of bags may create many traffic congestions in the transfer network and the
+delivery of some bags may be delayed. Suppose the travel routes of all bags in delivery
+are available, our task is to find unobstructed paths for VIP bags to avoid the potential
+congestions and to guarantee their arrival times. This work is motivated by the BagTrack
+project,4 which is dedicated to improving bag handling in aviation industry globally.
+Outdoor Scenario: Trajectory sharing and search are pervasive nowadays. Travelers
+can easily upload their trajectories to some specialized web sites such as Bikely,5 GPS-
+Way-points,6 Share-My-Routes,7 Microsoft GeoLife.8 In practice, most of the exist-
+ing trajectory data are stored in compressed format (lossy compression leads to the
+
+1http://maps.google.com/
+2http://www.bing.com/maps/
+3http://www.mapquest.com
+4http://daisy.aau.dk/bagtrack
+5http://www.bikely.com/
+6http://www.gps-waypoints.net/
+7http://www.sharemyroutes.com/
+8http://research.microsoft.com/en-us/projects/geolife/
+
+Geoinformatica
+
+uncertainty). Compared to original trajectories, compressed trajectories have clear advan-
+tages in data processing, transmitting, and storing [12]. By analyzing historical travel
+trajectories of commuters, it is possible to construct a comprehensive traffic model to
+describe the traffic conditions in road networks, and to help users plan an unobstructed
+travel route and to avoid the potential traffic congestions.
+
+In this light, we propose two novel probabilistic TAUP queries: (1) a time-threshold
+query like“what is the path from the check-in desk to the flight SK 1217 with the mini-
+mum congestion probability to take at most 45 minutes?”, (2) a probability-threshold query
+like “what is the fastest path from the check-in desk to the flight SK 1217 whose conges-
+tion probability is less than 20 %?”. These queries are applied in spatial networks, since in
+a large number of practical scenarios, moving objects move in a constrained environment
+(e.g., transfer networks in the indoor scenario, and road networks in the outdoor scenario)
+rather than a Euclidean space. The TAUP queries are challenging due to three reasons. First,
+it is necessary to establish a practical traffic model to detect the potential traffic conges-
+tions (time-delays)9 and describe the traffic conditions in spatial networks, by analyzing
+uncertain trajectories (i.e., roughly planned routes in the indoor scenario, and compressed
+trajectories in the outdoor scenario) of moving objects. Second, the uncertainty should be
+taken into account during the uncertain trajectory reconstruction, thus a probabilistic model
+and an efficient trajectory reconstruction algorithm are required. Third, we need to develop
+efficient algorithms to compute the TAUP queries under different query settings.
+
+To overcome these challenges, we construct a traffic-aware spatial network Gta(V , E)
+to detect potential time-delays and model traffic conditions in spatial networks. First, we
+propose an efficient algorithm to reconstruct uncertain trajectories. An uncertain trajectory
+is reconstructed into several possible paths, and all possibilities are taken into account. Then,
+we map these possible paths onto spatial networks. For each vertex v ∈ Gta(V , E), we
+maintain a set of traffic records to describe its traffic conditions. Based on Gta(V , E), we
+propose two novel probabilistic path queries (TAUP) and develop efficient algorithms to
+compute them. To sum up, the main contributions of this paper are as follows:
+
+– We define two novel TAUP queries in traffic-aware spatial networks. It provides new
+features for advanced spatio-temporal information systems, and may benefit users in
+popular applications such as route planning and recommendation.
+
+– We propose a comprehensive probabilistic model to evaluate the uncertainty when
+reconstructing uncertain trajectories, and a traffic-aware spatial network based on
+uncertain trajectory data to model the traffic conditions practically (Sections 2 and 3).
+– We develop two algorithms to compute the time-threshold and probability-threshold
+
+TAUP queries efficiently (Section 4).
+
+– We conduct extensive experiments on real and synthetic spatial data to investigate the
+
+performance of the developed algorithms (Section 5).
+
+Note that this paper is an expanded version of our previous work [15]. We inherit the
+definition of traffic-aware spatial network, which covers the majority of the contents in Sec-
+tions 2 and 3. In this paper, we propose two new probabilistic path queries in traffic-aware
+spatial networks (TAUP queries), and develop efficient algorithms to compute them (refer
+to Section 4, pages 11 – 16). In addition, we conduct extensive experiments to demonstrate
+
+9For a moving object o, when it arrives at vertex p, vertex p is occupied by other objects, and the number
+of objects to be processed exceeds the capability of vertex p. Then, object o has to be waiting at p, and this
+scenario is called congestion. The computation method of congestion time-delay is introduced in Section 3.1.
+
+Geoinformatica
+
+the performance of the two new queries under different query settings (refer to Section 5,
+pages 18 – 20). Compared to the conference version [15], more than 40 percent significantly
+new materials are added into the journal version.
+
+The rest of the paper is organized as follows. Section 2 introduces spatial networks and
+uncertain trajectories used in this paper, as well as uncertain trajectory reconstruction algo-
+rithm. The construction of traffic-aware spatial network is detailed in Section 3. The TAUP
+query processing is addressed in Section 4, which is followed by the experimental results
+in Section 5. This paper is concluded in Section 7 after some discussions of related work in
+Section 6.
+
+2 Uncertain trajectory reconstruction
+
+2.1 Preliminaries
+
+2.1.1 Spatial networks
+
+Spatial networks (i.e., transfer networks in the indoor space, and road networks in the out-
+door space) are modeled by a connected and undirected graph G(V , E), where V is the
+set of vertices and E is the set of edges. A weight is assigned to each edge to represent
+application specific factors such as traveling time. Given two vertices a and b in a spatial
+network, the network distance between them is the length of their shortest network path
+(i.e., a sequence of edges linking a and b where the accumulated weight is minimal). Data
+points (e.g., trajectory sample points) are embedded in networks and they may be located in
+edges. If the network distances to the two end vertices of an edge are known, it is straight-
+forward to derive the network distance to any point in this edge. Thus, we assume that all
+data points are in the vertices for the simplification of description.
+
+2.1.2 Uncertain trajectory
+
+There are two categories of uncertain trajectory data: roughly planned travel routes
+in the indoor space, and compressed trajectories in the outdoor spaces. In the indoor
+space, travel routes of bags are roughly planned such as “Check-in 8:55am → Screen
+machine 9:30am → Tilt-tray sorter 9:50am → Flight SK1217 10:20am”, where sam-
+ple points (intended places) are the vertices on a spatial network. In the outdoor
+space, raw trajectory samples obtained from GPS devices are typically of the form of
+(cid:4)longitude, latitude, timestamp(cid:5). How to select historical trajectory data of travelers
+and how to map the tuple (cid:4)longitude, latitude, timestamp(cid:5) onto a spatial network are
+interesting research problems themselves, but they are outside the scope of this paper. We
+assume that trajectory data are selected and all trajectory sample points have already been
+aligned to the vertices on the spatial network by some map-matching algorithms [1, 2, 6, 20].
+Between any two adjacent sample points a and b, the exact travel path of moving objects is
+uncertain in both indoor and outdoor spaces. The spatio-temporal attributes of an uncertain
+trajectory are defined as follows.
+
+Definition 1 Uncertain Trajectory
+An uncertain trajectory τ of a moving object in a spatial network G is a finite sequence of
+time stamped positions: τ = (cid:4)p1, p2, . . . , pn(cid:5), where pi is a vertex in G, and pi.t is its
+timestamp, for i = 1, 2, .., n.
+
+Geoinformatica
+
+2.2 Uncertain trajectory reconstruction algorithm
+
+Given a spatial network G(V , E), each vertex v ∈ G.V is allocated a threshold v.k to
+describe its traffic processing capability. That means at most v.k moving objects can be
+processed at vertex v in one minute, and each individual moving object will take 1
+v.k minutes
+processing time.
+
+Given an uncertain trajectory segment τseg(pi, pj ) connecting two adjacent sample
+points pi and pj , it is difficult to find the exact path P (pi, pj ) between them due to the
+rough route planning (indoor) or trajectory compression loss (outdoor). Here, we propose
+a random walk based probabilistic model to evaluate the uncertainty of trajectories, and
+all possibilities are considered. Conceptually, we assume that the movement of object o
+between pi and pj is according to a random walk, and its moving space is constrained
+by two thresholds. First, the maximum moving time between pi and pj is constrained by
+(pj .t − pi.t), where pi.t and pj .t are the timestamps of pi and pj , respectively. Second,
+there should be no loop in P (pi, pj ), which means that one vertex cannot appear twice in
+one path. The length and probability of path P = (cid:4)p1, . . . , pk(cid:5) are defined as follows:
+
+P .length =
+
+(pi, pi+1).weight + 1
+
+pi+1.k
+
+(cid:3)
+
+k−1(cid:2)
+
+i=1
+
+(cid:4)
+
+P .prob =
+
+(pi, pi+1).prob
+
+k−1(cid:5)
+
+i=1
+
+(1)
+
+(2)
+
+Here, (pi, pi+1).weight and (pi, pi+1).prob are the weight and probability of edge
+(pi, pi+1), respectively. Suppose a moving object o is at vertex pi and it may select edge
+(pi, pi+1) as its following moving direction. This probability is defined as the probability
+of edge (pi, pi+1).
+
+p1
+
+6
+
+n2
+
+3
+
+n1
+
+7
+
+7
+
+3
+
+n3
+
+7
+
+n4
+
+6
+
+n7
+
+3
+
+n5
+
+3
+
+n6
+
+3
+
+n8
+
+6
+
+8
+
+p2
+
+P1 = <p1, n1, n2, n4, n5, p2> P1.length= 6 1 3 1 7 1 3 1 8 1 = 32
+n7
+
+n4
+
+n2
+
+1/1
+
+p1
+
+1/1
+
+1/3
+
+n1
+
+n3
+
+1/2
+
+n5
+
+n6
+
+1/3
+
+n8
+
+p2
+
+P1 = <p1, n1, n2, n4, n5, p2> P1.prob =1 x
+
+x 1 x ½ x = 1/18
+
+Fig. 1 Probabilistic model
+
+Geoinformatica
+
+All valid sub-paths of the trajectory segment τseg(pi, pj ) can be retrieved according to
+Algorithm 1. Here, pi and pj are two adjacent sample points and Procedure (pi) is a recur-
+sive function. A depth-first traversal is conducted to find all possible sub-paths connecting
+pi and pj . A network expansion [4] starts from pi, and all adjacent vertices of pi are
+scanned iteratively (line 4). For each vertex n adjacent to pi, we check whether it conflicts
+the two thresholds: n cannot appear twice in the same path (lines 5–6), and the path length
+cannot be greater than (pj .t − pi.t) (lines 7–8). If n satisfies both thresholds, the related
+information of path(n) are recorded, including its vertices, length and probability (lines 9–
+11). Once the destination pj has been scanned by the expansion, a valid sub-path is found
+and stored in P athlist (pi, pj ) (lines 12–16). Otherwise, a new recursive function based on
+n will be conducted (line 17). Finally, all the possible sub-paths connecting pi and pj are
+returned to users (line 20).
+
+An example of trajectory segment reconstruction is shown in Fig. 1, where p1 and p2 are
+two adjacent trajectory sample points, and n1, n2, . . . , n8 are vertices in a spatial network
+G. Each edge is assigned a weight to represent the travel time along this edge, and each
+vertex is assigned a threshold to describe its traffic processing capability. In Fig. 1, the
+traffic processing capability for each vertex is 1, thus the processing time for each individual
+object is also 1. The maximum moving time between p1 and p2 is p2.t − p1.t = 33.
+
+There exist three sub-paths P1, P2 and P3 that satisfy both thresholds mentioned
+above. For P1 = (cid:4)p1, n1, n2, n4, n5, p2(cid:5), according to Eq. 1, its length is computed as
+P1.length = 6 + 1 + 3 + 1 + 7 + 1 + 3 + 1 + 8 + 1 = 32. The probability computation
+is more complex than the length computation. (p1, n1) is the first edge of P1 and its
+
+Geoinformatica
+
+probability is 1
+1 . We assume that the movement of objects is according to a random walk.
+At n1, a moving object m has four choices: {p1, n2, n3, n5} for the next step. Vertex p1 is
+invalid in this case, since a loop (cid:4)p1, n1, p1(cid:5) is formed. As a result, the rest three vertices
+share the same probability 1
+1 probability to be the next vertex, since
+n1 will form a loop. Following this procedure, the probability of P1 is computed based on
+Eq. 2: P1.prob = 1
+18 . Similarly, we compute the length and proba-
+1
+bility of P2 = (cid:4)s1, n1, n5, s2(cid:5) and P3 = (cid:4)s1, n1, n3, n6, n5, s2(cid:5). P2 has the length 24 and the
+= 1
+12 . P3 has the length 32 and the probability 1
+probability 1
+9 .
+1
+1
+Other sub-paths that cannot satisfy both thresholds are labeled as invalid paths and are
+
+3 . Then, at n2, n4 holds 1
+
+× 1
+3
+
+× 1
+1
+
+× 1
+3
+
+× 1
+2
+
+× 1
+4
+
+× 1
+3
+
+× 1
+3
+
+× 1
+3
+
+× 1
+1
+
+× 1
+1
+
+= 1
+
+= 1
+
+pruned. Then, we normalize the original probabilities of valid sub-paths P1, P2, and P3.
+
+Pi.probN =
+
+Pi.prob
+(cid:6)
+k
+i=1 Pi.prob
+
+Here, Pi.probN is the normalized probability of Pi. Consequently, P robN (P1) =
+3 and P robN (P3) = 1/9
+1/18
+9 . At this stage, the trajectory
+1/4
+segment Tseg(si, sj ) is reconstructed to three possible sub-paths P1, P2, P3.
+
+9 , P robN (P2) = 1/12
+
+= 1
+
+= 2
+
+= 4
+
+1/4
+
+1/4
+
+After that, we combine the possible sub-paths from different trajectory segments to
+create a full path P (s, d) = (cid:4)P1, P2, . . . , Pk(cid:5) connecting the source s and the destina-
+tion d, where P1, P2, . . . , Pk are sub-paths from trajectory segments τseg1, τseg2, . . . , τsegk,
+respectively. The length and probability of P (s, d) can be computed as P (s, d).length =
+(cid:6)
+
+(cid:7)
+
+k
+i=1(Pi.length) and P (s, d).prob =
+
+k
+i=1 Pi.prob, respectively.
+
+3 Traffic-aware spatial network
+
+3.1 Time-delay
+
+For any vertex v in a spatial network G(V , E), if the number of moving objects to be
+processed by v is over its processing capability v.k, a time-delay (congestion) will occur.
+Suppose the processing capability of v is v.k per minute, and each individual moving object
+will take 1
+v.k minutes processing time. If the gap between any two moving objects is less
+than 1
+v.k minutes, a time-delay will be triggered. The time-delay for object o at vertex v is
+estimated as follows.
+
+Td (o, v, Ta(o, v)) =
+
+oi ∈Op
+
+oi.prob · ( 1
+v.k
+(cid:6)
+
++Ta(oi, v)) +
+
+oj ∈Ow
+
+− Ta(o, v)
+oj .prob
+v.k
+
+(cid:6)
+
+⎧
+⎪⎪⎪⎨
+⎪⎪⎪⎩
+
+0
+
+if C1
+
+if C2
+
+C1: v is occupied at the time point Ta(o, v), and Op is the set of moving objects being
+processed by v at this time point. In addition, there are also |Ow| moving objects waiting
+to be processed.
+C2: v is available at the time point Ta(o, v), thus the corresponding time-delay is 0. Here
+Ta(o, v) is the arrival time of object o at vertex v.
+
+The total time cost of object o at vertex v is the sum of waiting time (time-delay) and
+processing time. Thus the leaving time of moving object o from vertex v can be computed
+as follows.
+
+Tl(o, v) = Ta(o, v) + Td (o, v, Ta(o, v)) + 1
+v.k
+
+(3)
+
+(4)
+
+(5)
+
+Geoinformatica
+
+n1
+
+1:25
+
+n2
+
+12:26:30
+
+n5
+
+0:55
+
+12:27:15
+
+n6
+
+0:45
+
+0:35
+
+n7
+
+1:15
+
+n8
+
+0:30
+
+v
+
+0:40
+
+1:05
+
+n3
+
+n4
+
+Fig. 2 Time-delay
+
+An example is shown in Fig. 2, where P1 = (cid:4)n1, n2, v, n3, n4(cid:5) and P2 = (cid:4)n5, n6, v, n7, n8(cid:5)
+are two reconstructed probabilistic trajectories for moving objects o1 and o2 respectively. P1
+has 50 % probability while P2 has 75 % probability. Vertex v is an intersection and its traffic
+processing capability is v.k = 4 per minute, which means processing an individual moving
+4 minute = 15 seconds. The expected arrival time of o1 at v is 12:28:40,
+object will take 1
+while o2’s expected arrival time at v is 12:28:45. When o2 arrives at v, the processing of o1
+is not finished until 10 seconds later. Referring to Eqs. 4 and 5, the time-delay of moving
+object o2 at vertex v can be estimated as Td (v, o2) = 50 % × 0 : 10 = 0 : 05. The estimated
+leaving time of o2 from v is 12 : 28 : 45 + 0 : 05 + 0 : 15 = 12 : 29 : 05, and the expected
+arrival time of o2 at vertices n7 and n8 will be delayed correspondingly.
+
+Note that at some time points, there may exist more than one moving object with the
+status of “being processed by vertex v” (referring to Eq 4). For example, in Fig. 2, moving
+object o1 is being processed within the time range [12:28:40, 12:28:55], and the estimated
+processing time of o2 is within the time range [12:28:50, 12:29:05]. In the overlapped time
+range [12:28:50, 12:28:55], o1 and o2 are both in the status of “being processed by v”.
+Suppose there is a new moving object o3, and the arrival time of o3 at v is within the
+overlapped time range [12:28:50, 12:28:55], to estimate the time-delay of o3, the influences
+from both o1 and o2 should be taken into account. In addition, if more than one moving
+object arrive at one vertex at the same time point, we will arrange their schedules randomly.
+
+3.2 Traffic-aware spatial network
+
+To detect potential time-delays and model traffic conditions practically, we construct a
+traffic-aware spatial network Gta(V , E) by analysing the uncertain trajectories over spatial
+networks. In our definition, a traffic-aware spatial network Gta(V , E) is a spatial network,
+where each vertex v ∈ Gta.V has been assigned a threshold v.k to describe its traffic pro-
+cessing capability. There are also a set of traffic information records attached to v to describe
+its traffic conditions. Each record is in the form of (object, probability, expected arrival time,
+time-delay, processing time).
+
+Given a spatial network G(V , E) and a set of uncertain trajectories T , the construction
+of a traffic-aware spatial network takes two steps. First, we reconstruct the uncertain tra-
+jectories in T according to a random walk probabilistic model, and map the reconstructed
+trajectories (with probability) onto G(V , E). Second, we sort the vertices in reconstructed
+trajectories according to their timestamps, and then refine their time-delays.
+
+An example is shown in Fig. 3, where n1, n2, . . . , n6 are vertices and their traf-
+fic processing capabilities are all 1 moving object per minute. There are 2 uncertain
+trajectories τ1 = (cid:4)s1, d1(cid:5) and τ2 = (cid:4)s2, d2(cid:5) of moving objects o1 and o2, respectively.
+Trajectory τ1 is reconstructed into two possible paths P1 = (cid:4)s1, n2, n1, n4, d1(cid:5) and
+P2 = (cid:4)s1, n2, n5, n4, d1(cid:5), and each of them has 50 % probability; while τ2 is reconstructed
+
+Geoinformatica
+
+n1
+
+2:30
+
+n4
+
+2:00
+
+s1
+
+2:00
+
+n2
+
+1:30
+
+2:30
+
+1:30
+
+2:00
+
+17:25:30
+s2
+17:23:30
+
+2:00
+
+n3
+
+1:30
+
+2:30
+
+n5
+1:30
+
+n6
+
+d1
+
+d2
+
+Fig. 3 Traffic-aware spatial network construction
+
+into two possible paths P3 = (cid:4)s2, n3, n2, n5, d2(cid:5) and P4 = (cid:4)s2, n3, n6, n5, d2(cid:5), and each of
+them also has 50 % probability. Then, we map all possible paths onto the spatial net-
+work, and compute the expected arrival times (ignore the time-delay) as the timestamps for
+vertices in all possible paths. For instance, the departure time of P1 is 17:25:30, and the
+expected arrival time of n2, n1, n4 and d1 are 17:27:30, 17:30:00, 17:33:30, and 17:36:30,
+respectively.
+
+We maintain a dynamic priority heap containing these timestamps. At each step, we
+only refine the timestamp on the top of the heap. In Fig. 3, n3 ∈ P3, P4 will be refined
+firstly, followed by n2 ∈ P1, P2. Then, we detect the first time-delay at vertex n2 ∈ P3.
+The expected arrival time of moving object o1 at n2 is 17:27:30 with 100 % probability
+(P1 and P2), while the expected arrival time of o2 at n2 is 17:28:00 with 50 % probability
+(P3). Referring to Eqs. 4 and 5, the time-delay of o2 ∈ P3 at n2 is 0:30, and the estimated
+leaving time is 17:29:30. Due to the time-delay at n2, the expected arrival times for the rest
+vertices in P3 (i.e., n5 and d2) have to be adjusted correspondingly. The refinement follows
+this procedure, step by step, until the priority heap is empty and all time-stamps have been
+refined. For each vertex v ∈ V , we maintain a set of traffic records to describe its traffic
+conditions. The refinement results of Fig. 3 are demonstrated in Table 1.
+
+The complete procedure of establishing a traffic-aware spatial network is detailed in
+Algorithm 2. Given a spatial network G(V , E) and a set of uncertain trajectories T , for each
+uncertain trajectory τ , we reconstruct its possible paths and map them onto G(V , E) (lines
+1–6). In the next, we select the vertex v with the minimum timestamp and refine it (lines
+8–9). If a time-delay is detected, the timestamps of the rest vertices following v in the same
+path are updated correspondingly (lines 10–11).
+
+Geoinformatica
+
+Table 1 Traffic information records
+
+vertex
+
+traffic records
+
+n1
+n2
+n3
+n4
+n5
+n6
+
+(o1, 50 %, 17:30:00, 0, 1:00)
+(o1, 100 %, 17:27:30, 0, 1:00), (o2, 50 %, 17:28:00, 0:30, 1:00)
+(o2, 100 %, 17:25:30, 0, 1:00)
+(o1, 100 %, 17:33:30, 0, 1:00)
+(o1, 50 %, 17:31:00, 0, 1:00), (o2, 50 %, 17:31:30, 0:15, 1:00), (o2, 50 %, 17:32:00, 0:22 1
+(o1, 50 %, 17:29:00, 0, 1:00)
+
+2 , 1:00)
+
+3.3 Traffic records indexing and search
+
+Each vertex v ∈ Gta(V , E) maintains a set of traffic records to describe its traffic conditions
+(refer to Table 1). We notice that there may exist a large number of records (e.g, hundreds of
+or thousands of records, depending on the number of uncertain trajectories) at one vertex.
+Such massive traffic data may prevent the computation from being addressed in real time.
+To accelerate the computing process, we establish a B-tree for the column “expected arrival
+time”. Note that the utilization of the well known B-tree is only for improving the search
+efficiency. Other indexing approaches can also be easily adapted. Given a moving object o
+and its expected arrival time Ta(o, v) at vertex v, if a moving object oi in the traffic records
+of v satisfies (6), it will be labeled as “a waiting object” (i.e., when moving object o arrives
+at v, oi is waiting for being processed) and put into data set Ow. Otherwise, if oi satisfies (7),
+it will be labeled as “a processing object” (i.e., when o arrives at v, oi is being processed)
+and put into data set Op. According to Eq. 4, the time-delay of moving object o at vertex v
+can be obtained.
+
+Ta(oi, v) < Ta(o, v) < Ta(oi, v) + Td (oi, v, Ta(oi, v))
+
+(cid:12)
+
+Ta(oi, v) + Td (oi, v, Ta(oi, v)) < Ta(o, v)
+Ta(o, v) < Ta(oi, v) + Td (oi, v, Ta(oi, v)) + 1
+v.k
+
+(6)
+
+(7)
+
+4 Probabilistic TAUP query processing
+
+In this section, we propose two novel probabilistic path queries in traffic-aware spatial
+networks (TAUP queries), and develop two algorithms to compute them efficiently.
+
+Definition 2 Congestion Probability
+Given a traffic-aware spatial network Gta(V , E) and a moving object o, the congestion
+probability of object o at vertex v is defined by
+
+o(v).probc = 1 −
+
+(1 − oi(v).probc) ·
+
+(1 − oj (v).probc).
+
+(8)
+
+(cid:5)
+
+oi ∈Op
+
+(cid:5)
+
+oj ∈Ow
+
+Here, Op is the set of “processing objects” (these objects are being processing when
+o arrives at v, refer to Eq. 7), and Ow is the set of “waiting objects” (these objects are
+waiting to be processed when o arrives at v, refer to Eq. 6). Parameter oi(v).prob is the
+probability of the scenario that when object o arrives at v, object oi is being processed at v,
+and parameter oj (v).prob is the probability of the scenario that when o arrives at v, oj is
+
+Geoinformatica
+
+follows:
+
+being processed. In the aforementioned two scenarios, vertex v is occupied by other objects,
+and the movement of object o is obstructed.
+
+The travel time and congestion probability of path P = (cid:4)v1, v2, . . . , vk(cid:5) are defined as
+
+P .time =
+
+(cid:3)
+w(vi, vi+1) + 1
+
+(cid:4)
+
+vi+1.k
+
+k−1(cid:2)
+
+i=1
+
+P .probc = 1 −
+
+(1 − o(vi).probc)
+
+k(cid:5)
+
+i=1
+
+(9)
+
+(10)
+
+Here, w(vi, vi+1) is the weight of edge (vi, vi+1), and o(vi).probc is the congestion
+probability of object o at vertex v.
+
+4.1 Time-threshold TAUP query
+
+Definition 3 Time-threshold TAUP Query
+Given a traffic-aware spatial network Gta(V , E), a query source s, a query destination d,
+a departure time t, and a time-threshold τ.t, time-threshold TAUP query finds the path
+P from s to d with the minimum congestion probability and its travel time is no greater
+than τ.t, such that ∀P (cid:7) ∈ P athlist (s, d) \ {P }(P (s, d).time ≤ τ.t ∧ P (cid:7)(s, d).time ≤
+τ.t → P (s, d).probc < P (cid:7)(s, d).probc), where P athlist (s, d) is a path set that contains
+all possible paths from s to d.
+
+Network expansion is a conventional (e.g., Dijkstra’s expansion [4]) method to compute
+the shortest/fastest path problem in spatial networks, but it fails to compute the time-
+threshold TAUP query due to the non-awareness of moving-object processing time and
+congestion probability at each vertex in Gta(V , E). To overcome this weakness, we develop
+a novel search algorithm named TAUPtime to compute the time-threshold TAUP query in
+real time. In TAUPtime, we maintain a time label (travel time, refer to Eq. 9) and a probabil-
+ity label (congestion probability, refer to Eq. 10) for each vertex v in a network expansion
+tree. The time label P (s, v).time is defined by
+
+P (s, v).time = P (s, c).time + w(c, v) + 1
+v.k
+
+,
+
+(11)
+
+where v and c are vertices in Gta(V , E), and c is the parent vertex of v (i.e., c = v.pre) in
+the expansion tree, and 1
+
+v.k is the individual moving object processing time at vertex v.
+
+We also define a travel time lower bound P (v, d).time.lb = sd(v, d) < P (v, d).time
+to estimate the travel time from v to d, where sd(v, d) is the shortest path distance from v
+to d. The all-pair shortest path distances in Gta(V , E) are pre-computed.
+
+(cid:12)
+
+P (s, v) = P (s, c).time + w(c, v) + 1
+v.k
+P (v, d).time > P (v, d).time.lb = sd(v, d)
+
+⇒ P (s, v).time + P (v, d).time > P (s, c).time + w(c, v) + 1
+v.k
+
++ sd(v, d)
+
+Geoinformatica
+
+The value of (P (s, v).time + P (v, d).time) is the total travel time from s to d via v. If the
+value of (P (s, c).time + w(c, v) + 1
++ sd(v, d)) is greater than time threshold τ.t, we
+v.k
+have that
+(cid:12)
+
+P (s, c).time + w(c, v) + 1
+v.k
+P (s, v).time + P (v, d).time > P (s, c).time + w(c, v) + 1
+v.k
+
++ sd(v, d) > τ.t
+
++ sd(v, d)
+
+⇒ P (s, v).time + P (v, d).time > τ.t
+
+Thus there does not exist any travel path from s to d via v whose total travel time is no
+greater than τ.t, and vertex v can be pruned from the expansion tree safely.
+
+The congestion probability label of vertex v is defined by
+
+P (s, v).probc = 1 − (1 − P (s, c).probc) · (1 − o(v).probc),
+
+(12)
+
+where P (s, v).probc is the congestion probability of path P (s, v), and o(v).probc is the
+congestion probability of moving object o at vertex v (refer to Eq. 10).
+
+In the TAUPtime algorithm, we inherit the best-first search strategy from the conventional
+network expansion (e.g., Dijkstra’s algorithm). At each time, we select the vertex v with the
+minimum congestion probability label P (s, v).probc for expansion. We also check the time
+label of v to guarantee that the value of (P (s, v).time + P (v, d).time) is no greater than
+the time threshold τ.t. The TAUPtime search algorithm is detailed in Algorithm 3. The query
+input includes a source s, a destination d, a departure time t, and a time threshold τ.t, while
+the output is the path P (s, d) with the minimum congestion probability. Initially, the path
+P (s, d) is set to null, and the set of scanned vertices is also set to null, and the probability
+label of each vertex v ∈ V is set to 0 (line 1–2). The source s is labeled as scanned vertex
+and is put in the heap Os. Its time label is set to 0, and its probability label is set to 1 (lines
+3–4). During the search process, in each iteration, we select the vertex c with the minimum
+
+Geoinformatica
+
+probability label P (s, c)c.probc from the heap Os (lines 5–7). Once c = d, the destination
+d has been reached and the path P (s, d) is found (lines 8–12). We evaluate the distance
+label for each adjacent vertex of c. If the value of (P (s, c).time + w(c, n) + 1
++ sd(n, d))
+n.k
+is greater than time threshold τ.t, vertex n can be pruned safely. Otherwise, for vertex n, if
+its current probability label is greater than the new label (1 − (1 − P (s, c).probc) · (1 −
+o(n).probc)), its probability label and time label are updated, respectively, and n is put into
+the heap Os (lines 13–19).
+
+4.2 Probability-threshold TAUP query
+
+Definition 4 Probability-threshold TAUP Query
+Given a traffic-aware spatial network Gta(V , E), a query source s, a query destination d,
+a departure time t, and a probability threshold τ.p, the probability-threshold TAUP query
+finds the path P from s to d with the minimum travel time and its congestion prob-
+ability is less than τ.p, such that ∀P (cid:7)(s, d) ∈ P athlist (s, d) \ {P }(P (s, d).probc <
+τ.p ∧ P (cid:7)(s, d).probc < τ.p → P (s, d).time < P (s, d).time), where P athlist (s, d) is a
+path set that contains all paths from s to d.
+
+To compute the probability-threshold TAUP query efficiently, we develop a novel
+TAUPprob algorithm. For each vertex v ∈ Gta(V , E), we maintain a time label v.time and
+congestion probability label v.probc, and their definitions are given as follows.
+
+v.time = P (s, c).time + w(c, v) + 1
+n.k
+
++ sd(v, d)
+
+v.probc = 1 − (1 − c.probc) · (1 − o(v).probc)
+
+(13)
+
+(14)
+
+Geoinformatica
+
+Here, c is the parent vertex of v in the expansion tree, and sd(v, d) is the shortest path
+distance between vertex v and the query destination d. The time label includes two parts:
+(P (s, c).time + w(c, v) + 1/v.k) describes the travel time from the query source s to vertex
+v via c, while sd(v, d) is the heuristic part to estimate the travel time from v to d. Intu-
+itively, the value of sd(v, d) is always less than the exact travel time from v to d, since the
+moving object processing time is not taken into account. Thus the correctness of TAUPprob
+algorithm can be guaranteed.
+
+The TAUPprob is detailed in Algorithm 4. The query input includes a source s, a desti-
+nation d, a departure time t, and a probability threshold τ.p, while the output is the path
+P (s, d) with the minimum travel time. Initially, the path P (s, d) is set to null, and the set of
+scanned vertices is also set to null. The time label of each vertex v ∈ V is set to +∞, and
+the probability label is set to 0 (line 1–2). The source s is labeled as scanned vertex and is
+put in the heap Os (line 3). During the search process, in each iteration, we select the vertex
+c with the minimum time label c.time from the heap Os (lines 4–6). Once c = d, the desti-
+nation d has been reached and the path P (s, d) is found (lines 8–11). If the value of n.probc
+is no greater than probability threshold τ.p, vertex n can be pruned safely. Otherwise, for
+vertex n, if the value of P (s, n).time is greater than that of P (s, c).time + w(c, v) + 1
+n.k ,
+the value of P (s, n).time is updated to that of P (s, c).time + w(c, v) + 1
+n.k . We also
+update the probability label and time label of n, respectively, and we put n into the heap Os
+(lines 12–19).
+
+5 Experimental results
+
+We conducted extensive experiments on real and synthetic spatial data sets to demonstrate
+the performance of TAUP queries. The two data sets used in our experiments were the
+Beijing Road Network (BRN) and synthetic Indoor Transfer Network (ITN), which con-
+tain 28,342 vertices and 6,105 vertices, respectively, stored as adjacency lists. In BRN, we
+adopted the real trajectory data collected by MOIR project [11]. In ITN, synthetic trajectory
+data were used. All algorithms were implemented in Java and tested on a Linux platform
+with Intel Core i7-3520M Processor (2.90GHz) and 8GB memory. The experimental results
+were averaged over 20 independent trials with different query inputs. The main performance
+metrics were CPU time and the number of visited vertices. The number of visited vertices
+was selected as a metric for two reasons: (i) it can describe the exact amount of data access;
+(ii) it can reflect the real disk I/O cost to a certain degree. The parameter settings are listed
+in Table 2. By default, the number of uncertain trajectories were 40,000 and 20,000 in BRN
+and ITN respectively to construct the traffic-aware spatial network.
+
+Table 2 Parameter settings
+
+Uncertain trajectory length
+
+Number of reconstructed paths
+
+Time threshold τ.t (minutes)
+
+Congestion probability threshold τ.p
+
+BRN
+
+ITN
+
+2 − 10
+10, 000 − 40, 000
+(default 10,000)
+30 − 50
+10 % − 50 %
+
+2 − 10
+10, 000 − 40, 000
+(default 10,000)
+20 − 40
+10 % − 50 %
+
+Geoinformatica
+
+5.1 Performance of uncertain trajectory reconstruction
+
+First of all, we studied the performance of the uncertain trajectory reconstruction (UTR) in
+Algorithm 1, when uncertain trajectory length (the number of sample points) varies (Fig. 4).
+The length of uncertain trajectory was set from 2 to 10 in both BRN and ITN. Longer
+trajectories lead to more computation efforts, thus the CPU time and the number of visited
+vertices are expected to be higher in both BRN and ITN. Generally, the maximum CPU time
+is under 700 ms in BRN and under 400 ms in ITN, while the maximum number of visited
+vertices is less than 2000 in BRN and is around 1500 in ITN.
+
+5.2 Traffic-aware spatial network Gta(V , E) construction
+
+Figure 5 demonstrates the performance of the construction of Traffic-Aware spatial net-
+work Gta(V , E) (refer to Algorithm 2), including the construction times (Fig. 5a and c) and
+network sizes (Fig. 5b and d) in BRN and ITN, respectively. The number of reconstructed
+possible paths (reconstructed trajectories) is from 10,000 to 40,000 in both BRN and ITN.
+Obviously, more trajectory data leads to higher construction time, and larger size of the con-
+structed traffic-aware spatial network. The traffic-aware spatial network construction is an
+off-line process due to the huge amount of possible paths, and the traffic records are stored
+in disk. For each vertex v ∈ Gta(V , E), we maintain a pointer pointing to the positions of
+the related traffic records in disk. Once the vertex v is scanned by a network expansion, the
+related traffic records can be accessed efficiently.
+
+UTR
+
+UTR
+
+)
+s
+m
+
+(
+ 
+
+i
+
+e
+m
+T
+-
+U
+P
+C
+
+)
+s
+m
+
+i
+
+(
+ 
+e
+m
+T
+-
+U
+P
+C
+
+ 800
+
+ 600
+
+ 400
+
+ 200
+
+ 0
+
+ 500
+
+ 400
+
+ 300
+
+ 200
+
+ 100
+
+ 0
+
+s
+c
+i
+t
+r
+e
+V
+d
+e
+
+ 
+
+t
+i
+s
+V
+
+i
+
+s
+c
+i
+t
+r
+e
+V
+ 
+d
+e
+t
+i
+s
+V
+
+i
+
+2,500
+
+2,000
+
+1,500
+
+1,000
+
+500
+
+0
+
+1,500
+
+1,000
+
+500
+
+0
+
+2
+
+4
+
+6
+Uncertain Trajectory Length
+
+8
+
+10
+
+4
+
+2
+6
+Uncertain Trajectory Length
+
+8
+
+10
+
+UTR
+
+UTR
+
+2
+
+4
+
+6
+Uncertain Trajectory Length
+
+8
+
+10
+
+4
+
+2
+6
+Uncertain Trajectory Length
+
+8
+
+10
+
+Fig. 4 Performance of uncertain trajectory reconstruction
+
+T-A Network Construction
+
+T-A Network Construction
+
+Geoinformatica
+
+10000
+
+20000
+
+30000
+
+40000
+
+Number of Reconstructed Paths
+
+10000
+
+20000
+
+30000
+
+40000
+
+Number of Reconstructed Paths
+
+T-A Network Construction
+
+T-A Network Construction
+
+)
+
+B
+M
+
+i
+
+(
+ 
+e
+z
+S
+ 
+k
+r
+o
+w
+t
+e
+N
+
+)
+
+B
+M
+
+(
+ 
+
+i
+
+e
+z
+S
+ 
+k
+r
+o
+w
+e
+N
+
+t
+
+5,000
+
+2,500
+
+0
+
+6,000
+
+4,000
+
+2,000
+
+0
+
+i
+
+)
+d
+n
+o
+c
+e
+s
+(
+ 
+e
+m
+T
+ 
+n
+o
+i
+t
+c
+u
+r
+t
+s
+n
+o
+C
+
+)
+d
+n
+o
+c
+e
+s
+(
+ 
+
+i
+
+e
+m
+T
+n
+o
+
+ 
+
+i
+t
+c
+u
+r
+t
+s
+n
+o
+C
+
+2,500
+
+2,000
+
+1,500
+
+1,000
+
+500
+
+0
+
+2,500
+
+2,000
+
+1,500
+
+1,000
+
+500
+
+0
+
+20000
+
+10000
+40000
+Number of Reconstructed Paths
+
+30000
+
+20000
+
+10000
+40000
+Number of Reconstructed Paths
+
+30000
+
+Fig. 5 Performance of traffic-aware spatial network construction
+
+5.3 Performance of TAUP query processing
+
+We studied the performance of the time-threshold TAUP query processing (refer to Algo-
+rithm 3) and probability-threshold TAUP query processing (refer to Algorithm 4) in
+Sections 5.3.1 and 5.3.2, respectively.
+
+5.3.1 Effect of time threshold τ.t
+
+Figure 6 shows the effect of τ.t on the time threshold TAUP query processing. For the
+purpose of comparison, a baseline algorithm was also implemented. Compared to TAUPtime,
+the baseline algorithm did not use the travel time lower bound P (v, d).time.lb to prune
+the search space. The baseline algorithm is denoted as “TAUPtime without lower bound” in
+Fig. 6. Intuitively, the larger the time threshold is, the larger search space it may need. Thus
+the CPU time and the number of visited vertices are expected to be higher when the value
+of time threshold increases. In Fig. 6, it is clear that the time-threshold TAUP query can be
+computed within 1 minute in both BRN and ITN, and with the help of travel time lower
+bound, the query efficiency is improved notably. The CPU time and the number of visited
+vertices of the baseline algorithm are almost as twice as those of TAUPtime.
+
+It is worth to note that (1) the number of visited vertices may be greater than the size of
+vertex set V , since a vertex may be visited several times in one query; (2) the CPU time is
+not fully corresponding to the Disk I/O times. In some cases, the increment of computation
+cost may offset the benefits from the reduction of Disk I/O times.
+
+Geoinformatica
+
+1,000
+
+)
+s
+m
+
+i
+
+(
+ 
+e
+m
+T
+-
+U
+P
+C
+
+)
+s
+m
+
+(
+ 
+
+i
+
+e
+m
+T
+-
+U
+P
+C
+
+500
+
+0
+
+ 300
+
+ 200
+
+ 100
+
+ 0
+
+TAUPtime
+TAUPtime without lower bound
+
+TAUPtime
+TAUPtime without lower bound
+
+30
+
+35
+
+40
+Time Threshold (minutes)
+
+45
+
+50
+
+30
+
+35
+
+40
+Time Threshold (minutes)
+
+45
+
+50
+
+TAUPtime
+TAUPtime without lower bound
+
+TAUPtime
+TAUPtime without lower bound
+
+r
+e
+b
+m
+u
+N
+ 
+s
+e
+c
+i
+t
+r
+e
+V
+ 
+d
+e
+t
+i
+s
+V
+
+i
+
+r
+e
+b
+m
+u
+N
+ 
+s
+e
+c
+i
+t
+r
+e
+V
+d
+e
+
+ 
+
+t
+i
+s
+V
+
+i
+
+5,000
+
+2,500
+
+0
+
+800
+
+400
+
+0
+
+20
+
+25
+
+30
+
+35
+
+40
+
+20
+
+25
+
+30
+
+35
+
+40
+
+Time Threshold (minutes)
+
+Time Threshold (minumtes)
+
+Fig. 6 Effect of time threshold τ.t
+
+5.3.2 Effect of congestion probability threshold τ.p
+
+Figure 7 shows the performance of probability-threshold TAUP query processing when the
+value of τ.p varies. For the purpose of comparison, the TAUPprob algorithm without the
+heuristic part was used as baseline algorithm. It is denoted as “TAUPprob without heuristic”
+in Fig. 7. Generally, a lager probability threshold will lead to a larger search space. Thus
+the CPU time and the number of visited vertices are expected to increase when the value
+of τ.p increases. From Fig. 7, it is clear that with the help of heuristic search strategy,
+the performance of probability-threshold TAUP query processing is improved by 1.5 – 2
+times in terms of both CPU time and the number of visited vertices. These results clearly
+demonstrate the superiority of the heuristic strategy.
+
+6 Related work
+
+6.1 Path queries in spatial networks
+
+In static spatial networks, Dijkstra’s algorithm [4] and the A∗ algorithm [7] are two classical
+methods to address the shortest path problem. In Dijkstra’s algorithm, an expansion wave-
+front is expanded from the source s. A priority heap H is adopted to maintain the unscanned
+vertexes. At each expansion, vertex v with the minimum distance label (usually the network
+distance from s to v) will be selected, and removed from the priority heap, and labeled as
+
+TAUPprob
+TAUPprob without heuristic
+
+TAUPprob
+TAUPprob without heuristic
+
+Geoinformatica
+
+10
+
+30
+Congestion Probability Threshold (%)
+
+20
+
+40
+
+50
+
+10
+
+20
+
+30
+Congestion Probability Threshold (%)
+
+40
+
+50
+
+TAUPprob
+TAUPprob without heuristic
+
+TAUPprob
+TAUPprob without heuristic
+
+r
+e
+b
+m
+u
+N
+ 
+s
+e
+c
+i
+t
+r
+e
+V
+ 
+d
+e
+t
+i
+s
+V
+
+i
+
+r
+e
+b
+m
+u
+N
+ 
+s
+e
+c
+i
+t
+r
+e
+V
+ 
+d
+e
+t
+i
+s
+V
+
+i
+
+5,000
+
+2,500
+
+0
+
+800
+
+400
+
+0
+
+)
+s
+m
+
+i
+
+(
+ 
+e
+m
+T
+-
+U
+P
+C
+
+)
+s
+m
+
+i
+
+(
+ 
+e
+m
+T
+-
+U
+P
+C
+
+1,000
+
+500
+
+0
+
+ 300
+
+ 200
+
+ 100
+
+ 0
+
+10
+
+30
+Congestion Probability Threshold (%)
+
+20
+
+40
+
+50
+
+10
+
+30
+Congestion Probability Threshold (%)
+
+50
+
+20
+
+40
+
+Fig. 7 Effect of congestion probability threshold τ.p
+
+scanned vertex. In the next, all the unscanned neighbor vertex to v will be put into H , until
+the destination d has been reached and the shortest path from s to d is found. In A∗ algo-
+rithm, the value of sd(vs, v)+dE(v, vd ), where dE(v, vd ) is the Euclidean distance between
+v and vd , is used as the distance label of vertex v, to estimate the network distance from vs
+to vd via v. A∗ algorithm is an heuristic searching approach, and its performance is greater
+than Dijkstra’s algorithm in general.
+
+Time-dependent road network [5] and probabilistic road network [8] are two represen-
+tative dynamic spatial networks. In time-dependent road networks, each edge may have
+different weight (travel cost) at different times. Time-dependent shortest path (TDSP) query
+is a variant of dynamic shortest path problem, which is designed to find the best departure
+time for users, to minimize the global traveling time from a source to a destination over
+a large road network, where the traffic conditions are dynamically changing from time to
+time. However, the TDSP query only considers the dynamic edge weight, but the possibility
+of traffic congestion at each vertex and the corresponding vertex time-delay are not taken
+into account. While in our TAUP query, the edge weight is a constant value, and our study
+focuses on computing the possibility of traffic congestions and the corresponding time-
+delays at vertices. The vertex time-delay depends on the number of moving objects there
+and also on their arrival times; thus, it is not a constant value. That is the main difference
+between the TDSP query and our TAUP query; thus, the optimization techniques can hardly
+be used in our problem. Similarly, in probabilistic road networks, each edge is assigned a set
+of probabilistic data to describe the traveling cost along this edge, and probabilistic short-
+est path (PSP) queries [8] ask for (i) the fastest path constrained by a probability threshold,
+
+Geoinformatica
+
+and (ii) the path with the highest probability constrained by a travel time threshold. Due to
+the similar reasons of the TDSP query (the possibility of traffic congestion and vertex time-
+delay are not taken into account), the optimization techniques in the PSP query cannot be
+used in our TAUP query.
+
+Despite the bulk of literature on shortest path queries [4, 5, 7, 8], none of the existing
+work can address the proposed TAUP query due to two reasons: Dijkstra’s algorithm and
+A∗ algorithm are not aware of the time-delay and moving object processing time, and time-
+dependent and probabilistic shortest path queries are based on different traffic models from
+ours.
+
+This paper is an expanded version of our previous works [15, 16]. We inherit the concept
+of traffic-aware spatial network, which covers the majority of the contents in Sections 2
+and 3. In this paper, we propose two new probabilistic path queries in traffic-aware spatial
+networks (TAUP queries), and develop efficient algorithms to compute them (refer to Sec-
+tion 4). In addition, we conduct extensive experiments to demonstrate the performance of
+the two new queries under different query settings (refer to Section 5). Compared to the
+conference version [15], more than 40 percent significantly new materials are added into
+the journal version.
+
+6.2 Uncertain trajectory data management
+
+Uncertain trajectory data management [3, 13, 17, 19, 21, 22, 27, 28] has received significant
+attention in recent ten years. Wolfson et al. [21, 22] addressed the update problem of mov-
+ing objects by proposing an information cost model that captured the uncertainty, deviation
+and communication. Pfoser et al. [13] proposed a formal quantitative approach to the aspect
+of uncertainty in modeling moving objects. Massive uncertain trajectory data enabled many
+novel spatial queries. Trajcevski et al. introduced continuous range queries [19] and near-
+est neighbor queries [18] on uncertain trajectories. Zhang et al. [27] devised an efficient
+location-prediction method, and integrated it into an effective indexing structure designed
+for uncertain moving objects. Zheng et al. [28] presented the probabilistic range queries on
+uncertain trajectories in road networks and the corresponding efficient solutions.
+
+7 Conclusions and future directions
+
+In this paper, we studied a novel problem of planning unobstructed paths in traffic-aware
+spatial networks (TAUP queries) to avoid the potential traffic congestions. We propose two
+probabilistic TAUP queries based on time threshold and congestion probability threshold,
+respectively. The TAUP queries are useful in some popular applications, such as planning
+unobstructed paths for VIP bags in airports and recommending convenient routes to trav-
+elers. As a solution, we constructed a traffic-aware spatial network to model the traffic
+awareness and developed two algorithms to compute the TAUP queries efficiently. The per-
+formance of the developed algorithms were verified by extensive experiments on real and
+synthetic spatial data.
+
+Four interesting directions for future research exist. First, it is of our interest to estab-
+lish a new pattern-based probabilistic model by analyzing historical traffic data, to replace
+the existing random-walk based model in uncertain trajectory construction (refer to Algo-
+rithm 1). Second, it is our plan to establish a new spatial index on traffic-aware spatial
+networks, and to develop a much tighter lower bound to prune the search space and to fur-
+ther enhance the query efficiency. Third, we are interested to study the cost-aware path
+
+Geoinformatica
+
+planning problem in traffic-aware spatial networks. We may define different levels of seg-
+ment cost in traffic-aware spatial networks, and low-cost segments (e.g., priority segment
+and express lane) may have higher priority in path planning. We may also make a trade-off
+between time/probability threshold and segment cost. Some paths may not guarantee the
+given thresholds, but they may achieve a comparable low travel cost, and they may still need
+to be taken into account. Fourth, we plan to adopt parallel computing technique to accel-
+erate the process of traffic-aware spatial network construction, especially when we have
+massive volume of uncertain trajectories to be processed. The construction of traffic-aware
+spatial network takes two steps: first, we reconstruct uncertain trajectories to possible paths,
+and second we use these reconstructed paths to construct traffic-aware spatial network. The
+parallel computing technique is useful in the first step, because the reconstruction process
+for different uncertain trajectories are independent, and the whole task can easily be divided
+into N sub-tasks for N different workers. The overall performance of the first step can be
+improved by approximate N times in terms of CPU time.
+
+Acknowledgments This work is partly supported by the National Natural Science Foundation of China
+(NSFC. 61402532), the Science Foundation of China University of Petroleum-Beijing (No. 2462013
+YJRC031), and the Excellent Talents of Beijing Program (No. 2013D009051000003).
+
+References
+
+pp 853–864
+
+pp 205–216
+
+1. Alt H, Efrat A, Rote G, Wenk C (2003) Matching planar maps. In: SODA, pp 589–598
+2. Brakatsoulas S, Pfoser D, Salas R, Wenk C (2005) On map-matching vehicle tracking data. In: VLDB,
+
+3. Cheng R, Kalashnikov DV, Prabhakar S (2004) Querying imprecise data in moving object environments.
+
+IEEE Trans Knowl Data Eng 16(9):1112–1127
+
+4. Dijkstra EW (1959) A note on two problems in connection with graphs. Numer Math 1:269–271
+5. Ding B, Yu JX, Qin L (2008) Finding time-dependent shortest paths over large graphs. In: EDBT,
+
+6. Greenfeld J (2002) Matching gps observations to locations on a digital map. In: 81th annual meeting of
+
+7. Hart PE, Nilsson NJ, Raphael B (1968) A formal basis for the heuristic determination of minimum cost
+
+the transportation research board
+
+paths. IEEE Trans Syst Cybern 4(2):100–107
+
+8. Hua M, Pei J (2010) Probabilistic path queries in road networks: traffic uncertainty aware path selection.
+
+9. Jensen CS, Lu H, Yang B (2009) Graph model based indoor tracking. In: Mobile data management,
+
+In: EDBT, pp 347–358
+
+pp 122–131
+
+In: SSTD, pp 208–227
+
+real-time. In: VLDB, pp 1538–1541
+
+empirical evaluation. In: ACM GIS
+
+pp 111–132
+
+10. Jensen CS, Lu H, Yang B (2009) Indexing the trajectories of moving objects in symbolic indoor space.
+
+11. Liu K, Deng K, Ding Z, Li M, Zhou X (2009) Moir/mt: monitoring large-scale road network traffic in
+
+12. Muckell J, Hwang J-H, Lawson C, Ravi S (2010) Algorithms for compressing gps trajectory data: an
+
+13. Pfoser D, Jensen CS (1999) Capturing the uncertainty of moving-object representations. In: SSD,
+
+14. Shang S, Ding R, Zheng K, Jensen CS, Kalnis P, Zhou X (2014) Personalized trajectory matching in
+
+spatial networks. VLDB J 23(3):449–468
+
+15. Shang S, Lu H, Pedersen TB, Xie X (2013) Finding traffic-aware fastest paths in spatial networks. In:
+
+16. Shang S, Lu H, Pedersen TB, Xie X (2013) Modeling of traffic-aware travel time in spatial networks.
+
+SSTD, pp 128–145
+
+In: MDM, p 4
+
+17. Shang S, Yuan B, Deng K, Xie K, Zheng K, Zhou X (2012) Pnn query processing on compressed
+
+trajectories. GeoInformatica 16(3):467–496
+
+Geoinformatica
+
+18. Trajcevski G, Tamassia R, Ding H, Scheuermann P, Cruz IF (2009) Continuous probabilistic nearest-
+
+neighbor queries for uncertain trajectories. In: EDBT, pp 874–885
+
+19. Trajcevski G, Wolfson O, Hinrichs K, Chamberlain S (2004) Managing uncertainty in moving objects
+
+databases. ACM Trans Database Syst 29(3):463–507
+
+20. Wenk C, Salas R, Pfoser D (2006) Addressing the need for map-matching speed: localizing globalb
+
+curve-matching algorithms. In: SSDBM
+
+21. Wolfson O, Chamberlain S, Dao S, Jiang L, Mendez G (1998) Cost and imprecision in modeling the
+
+position of moving objects. In: ICDE, pp 588–596
+
+22. Wolfson O, Sistla AP, Chamberlain S, Yesha Y (1999) Updating and querying databases that track
+
+mobile units. Distributed and Parallel Databases 7(3):257–387
+
+23. Yuan J, Zheng Y, Xie X, Sun G (2011) Driving with knowledge from the physical world. In: KDD,
+
+pp 316–324
+
+24. Yuan J, Zheng Y, Xie X, Sun G (2013) T-drive: enhancing driving directions with taxi drivers’
+
+intelligence. IEEE Trans Knowl Data Eng 25(1):220–232
+
+25. Yuan J, Zheng Y, Zhang C, Xie W, Xie X, Sun G, Huang Y (2010) T-drive: driving directions based on
+
+26. Zarchan P (1996) Global positioning system theory and applications. In: American institute of aeronau-
+
+taxi trajectories. In: GIS, pp 99–108
+
+tics and astronautics, p 1
+
+27. Zhang M, Chen S, Jensen CS, Ooi BC, Zhang Z (2009) Effectively indexing uncertain moving objects
+
+for predictive queries. PVLDB 2(1):1198–1209
+
+28. Zheng K, Trajcevski G, Zhou X, Scheuermann P (2011) Probabilistic range queries for uncertain
+
+trajectories on road networks. In: EDBT, pp 283–294
+
+Shuo Shang is a professor of computer science at China University of Petroleum, Beijing, China. He was a
+research assistant professor at Department of Computer Science, Aalborg University, Denmark. He received
+his B.Sc. degree from Peking University, China, in 2008, and Ph.D. degree from The University of Queens-
+land, Australia, in 2012 respectively, both in Computer Science. His research interests include efficient query
+processing in spatio-temporal databases, spatial trajectory computing, and location based social media. He
+has served on program committees and session chairs for several database conferences and as invited reviewer
+for several database journals, including ICDE, TKDE, The VLDB Journal, ACM TIST, GeoInformatica,
+KAIS, DKE, and IEICE Transactions.
+
+Geoinformatica
+
+Jiajun Liu is a Research Fellow in CSIRO, Australia. He obtained his Ph.D in Computer Science from The
+University of Queensland in 2012. His research interests include multimedia and spatial-temporal database.
+He has served as invited reviewer for many prestigious conferences and journals such as ACM MM, ICDE,
+TOIS and TKDE.
+
+Kai Zheng is an ARC DECRA (Australia Research Council Discovery Early-Career Researcher Award)
+Fellow with The University of Queensland. He obtained his Ph.D in Computer Science from The University
+of Queensland in 2012. His research interests include uncertain database, spatial-temporal query processing,
+and trajectory computing. He has served as program committee and invited reviewer for many prestigious
+conferences and journals such as SIGMOD, PVLDB, ICDE, TKDE and VLDB Journal.
+
+Geoinformatica
+
+Hua Lu is an associate professor in the Department of Computer Science, Aalborg University, Denmark. His
+current research concerns indoor space data management, complex queries on spatial data, and social media
+data management. He has served on PCs for ICDE, SSTD, MDM, PAKDD, APWeb, MobiDE, and so on. He
+has also served as PC cochair or vice chair for ISA 2011, MUE 2011 and MDM 2012, and demo chair for
+SSDBM 2014.
+
+Torben Bach Pedersen is a Professor of Computer Science at Aalborg University, Denmark. His research
+concerns business intelligence and big data, especially “Big Multidimensional Data”- the integration and
+analysis of large amounts of complex and highly dynamic multidimensional data. He is an ACM Dis-
+tinguished Scientist, an IEEE Senior Member, and a member of the Danish Academy of Technical
+Sciences.
+
+Geoinformatica
+
+Ji-Rong Wen is a professor at Renmin University of China. He is also a National “1000 Plan” Expert of
+China. His main research interest lies on Web big data management, information retrieval, data mining and
+machine learning. He was a senior researcher at MSRA, and he has 50+ U.S. patents in Web search and
+related areas. He has published extensively on prestigious international conferences and journals. He is cur-
+rently the associate editor of ACM Transactions on Information Systems (TOIS). He is an IEEE senior
+member.
+
+

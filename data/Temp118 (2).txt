@@ -1,0 +1,3246 @@
+Geoinformatica (2011) 15:497–540
+DOI 10.1007/s10707-010-0114-3
+
+Spatiotemporal pattern queries
+
+Mahmoud Attia Sakr · Ralf Hartmut Güting
+
+Received: 16 November 2009 / Revised: 30 June 2010 /
+Accepted: 22 July 2010 / Published online: 12 August 2010
+© Springer Science+Business Media, LLC 2010
+
+Abstract This paper presents a novel approach to express and evaluate the complex
+class of queries in moving object databases called spatiotemporal pattern queries (STP
+queries). That is, one can specify temporal order constraints on the fulfillment of
+several predicates. This is in contrast to a standard spatiotemporal query that is
+composed of a single predicate. We propose a language design for spatiotemporal
+pattern queries in the context of spatiotemporal DBMSs. The design builds on the
+well established concept of lifted predicates. Hence, unlike previous approaches,
+patterns are neither restricted to specific sets of predicates, nor to specific moving
+object types. The proposed language can express arbitrarily complex patterns that
+involve various types of spatiotemporal operations such as range, metric, topological,
+set operations, aggregations, distance, direction, and boolean operations. This work
+covers the language integration in SQL, the evaluation of the queries, and the
+integration with the query optimizer. We also propose a simple language for defining
+the temporal constraints. The approach allows for queries that were never available.
+We provide a complete implementation in C++ and Prolog in the context of
+the Secondo platform. The implementation is made publicly available online as a
+Secondo Plugin, which also includes automatic scripts for repeating the experiments
+in this paper.
+
+Keywords Moving objects databases · Trajectory · Lifted predicate ·
+Spatiotemporal patterns · Secondo
+
+M. A. Sakr (B) · R. H. Güting
+
+Database Systems for New Applications, FernUniversität in Hagen,
+58084 Hagen, Germany
+e-mail: mahmoud.sakr@fernuni-hagen.de
+
+R. H. Güting
+e-mail: rhg@fernuni-hagen.de
+
+M. A. Sakr
+Faculty of Computer and Information Sciences,
+University of Ain Shams, Cairo, Egypt
+
+498
+
+1 Introduction
+
+Geoinformatica (2011) 15:497–540
+
+The area of moving objects databases has been active since the early 2000s, and is
+recently receiving a lot of interest because of the advances in the positioning and
+sensor technologies that generates large amounts of moving objects data. These
+databases deal with the geometries that change over time, also called spatiotemporal
+data. There are two classes of models for such data. The first deals with the current
+movement and the predicted near future (e.g. [21]). These models are optimized for
+cheaper updates. The second class deals with the trajectories or the history of the
+movement (e.g. [16]), and these models are optimized for cheaper queries. In this
+paper, we focus on the second class of models, the trajectory databases.
+
+Having the spatiotemporal trajectories of the moving objects stored in a database
+system allows for issuing spatiotemporal queries. One can query, for example, for
+animals which crossed a certain lake during a certain time interval or for the total
+length of a car trajectory inside a certain zone. There has been a lot of work on
+providing spatiotemporal data management and query operations (e.g. [4]). Recently
+more focus is given to the nearest neighbor queries (e.g. [11, 15]), and the trajectory
+similarity queries (e.g. [19]).
+
+However, due to the recent application domains, trajectories are getting longer.
+Additionally, due to the privacy restrictions, trajectories are getting anonymized. The
+precise position and/or extent of the moving objects are more and more replaced by
+the events or the changes that happened during the movement, the so called semantic
+trajectories [2]. It is difficult to query, for example, sequences of such changes of
+data using traditional spatiotemporal queries. This difficulty comes from the fact,
+that they are composed of one predicate. In many cases, one would need to express
+temporal orders (relative or absolute) of several changes, each of which need to be
+expressed as a predicate. For example, f ind all trains that encountered a delay of more
+than half an hour after passing through a snow storm is a query that expresses two
+changes/predicates, one happening after the other. It is very difficult if not impossible
+to express such a query using the traditional spatiotemporal query methods.
+
+Spatiotemporal pattern (STP) queries provide a more complex query framework
+for moving objects. In particular, they specify temporal order constraints among a set
+of time-dependent predicates. For example, suppose the predicates P, Q, and R that
+may hold over one or more time intervals and/or instants. We would like to be able
+to express conditions like the following:
+
+•
+•
+•
+
+P then (later) Q then R.
+P ending before 8:30 then Q for no more than 1 h.
+(Q then R) during P.
+
+The predicates P, Q, and R, etc. might be of the form:
+
+• Vehicle X on road W.
+• Train X is inside a snow storm Y.
+• The extent of the storm area Y is larger than 4 kms2.
+• The speed of air plane Z is between 400 and 500 km/h.
+
+For such conditions to hold, there must exist a time interval for each of the predicates,
+during which it is fulfilled, and this set of time intervals must fulfill the temporal
+
+Geoinformatica (2011) 15:497–540
+
+499
+
+order in the condition. The spatiotemporal patterns described by such conditions
+cannot be expressed by traditional spatiotemporal queries. One would rather need
+the spatiotemporal pattern queries.
+
+More about the importance of STP queries in many fields of application is
+illustrated in [9]. So far we are talking about the spatiotemporal patterns that
+occur within individual trajectories. That is every trajectory in the database can
+individually answer the pattern without knowledge of other trajectories. The term
+Spatiotemporal Patterns is also used in the literature to refer to group patterns.
+This is more related to the spatiotemporal data mining literature. The methods
+analyze simultaneous movements and the interaction between objects (e.g. patterns
+like leadership, play, fighting, migration, trend-setting,
+... etc). The research in
+this direction aims at developing a toolbox of data mining algorithms and visual
+analytic techniques for movement analysis. For example, algorithms for the flock,
+leadership, convergence and encounter patterns are presented in [12]. In this paper,
+we are focusing on the individual spatiotemporal pattern queries, simply denoted
+spatiotemporal pattern queries (STP queries) during the rest of the paper.
+
+Few proposals exist for handling STP queries as will be detailed in the related
+work section. All of them lack generality in the patterns that can be expressed. They
+are limited to certain moving objects types (moving points in most of the proposals),
+and to certain types of spatiotemporal predicates (spatial predicates and nearest
+neighbor predicates). The approach described in this paper, expresses and evaluates
+STP patterns that are neither restricted to certain types of moving objects, nor to
+certain types of predicates. Our contributions are the following:
+
+• The proposed approach is based on a very general and powerful class of
+predicates, the so-called lifted predicates [16]. They are very powerful as they
+are simply the time dependent version of arbitrary static predicates. Instead of
+returning a bool value (like standard predicates) they return a moving(bool)
+(time dependent booleans as defined later). Our approach allows one to formu-
+late temporal constraints on the results of arbitrary expressions returning such
+moving booleans. Formulating STP queries over lifted predicates allows for a
+wide range of queries that are not addressed before.
+
+• The proposed approach can be easily extended to support more complex pat-
+
+•
+
+terns. Section 6 describes one such extension.
+In contrast to previous work we are able to actually integrate STP queries into
+the query optimizer. Obviously for an efficient execution of pattern queries
+on large databases the use of indexes is mandatory. In Section 7 we consider
+how STP queries can be mapped by the query optimizer to efficient index
+accesses.
+
+• We propose a simple language for describing the relationship between two time
+intervals (e.g. Allen’s operators). The language makes it easier, from the user
+point of view, to express interval relations without the need to memorize their
+names.
+
+• The complete implementation of the work in this paper is done in the context
+of the Secondo platform [25]. It is publicly available as a Secondo Plugin and
+can be downloaded from the Plugins web site [22]. Parallel to this paper, we
+have written a user manual describing how to install and run the Plugin within a
+Secondo system.
+
+500
+
+Geoinformatica (2011) 15:497–540
+
+• There are automatic scripts for repeating the experiments in this paper. They are
+installed during the installation of the Plugin. Section 11 describes the procedure
+to repeat the experiments. The scripts, together with the well documented source
+code provided in the Plugin, allow the readers to explore our approach, further
+elaborate on it, and compare with other approaches.
+
+The rest of this paper is organized as follows. Section 2 reviews the related work.
+Section 3 gives a brief background about the moving objects databases and recalls
+some necessary definitions from previous work. In Section 4, we define the proposed
+language. Section 5 formalizes the spatiotemporal pattern predicate as a constraint
+satisfaction problem, and explains the evaluation algorithms. In Section 6, the basic
+spatiotemporal pattern predicate is extended into a more expressive version. In
+Section 7 we show how to integrate our approach seamlessely with the query
+optimizers. Section 8 is dedicated to the technical aspects of the implementation
+in the Secondo framework. The experimental evaluation is shown in Section 9. In
+Section 10, we demonstrate two application examples that emphasize the expressive
+power of our approach. Section 11 and the Appendices at the end of the paper
+describe the experimental repeatability. Finally we conclude in Section 12.
+
+2 Related work
+
+A theory and a design for spatiotemporal pattern queries, although important, are
+not yet well established. Only few proposals exist. In [5], a model that relies on a
+discrete representation of the spatiotemporal space is presented. The 2D space is
+partitioned in a finite set of user defined partitions, called zones, each of which is
+assigned a label. The time domain is partitioned into constant-sized intervals. The
+trajectories are represented as strings of labels. For example, the trajectory part rzzzh
+represents a moving object that stayed in zone r for one time unit, moved to zone z
+and stayed there for three time units, then moved to zone h for one time unit. The
+user query is composed as a formal expression, which is then evaluated using efficient
+string matching techniques.
+
+This approach is not general in the sense that the space and time have to be
+partitioned. The partitioning depends on the intended application and has to be
+done in advance. Moreover, only patterns that describe the changes of the location
+of moving points can be expressed. The approach leaves behind all other kinds of
+predicates (e.g. topological, metric comparisons, ...) as well as other types of moving
+objects (e.g. moving regions).
+
+In [17], an index structure and efficient algorithms to evaluate STP queries that
+consist of spatial and neighborhood predicates is presented. The work addresses the
+problem of conjoint neighborhood queries (e.g. find all objects that were as close as
+possible to A at time T1 then were as close as possible to B at time T2). The two NN
+conditions in this query have to be evaluated conjointly. In other words, an object
+which minimizes the sum of the two distances at the two time points is the answer of
+this query.
+
+Again the approach addresses only limited types of predicates, and handles mov-
+ing points only. It tightly couples the evaluation of the predicates with the evaluation
+of the STP query itself. On the one hand, this allows for efficient evaluation of
+the STP query. It also allows for the conjoint neighborhood queries, which are not
+
+Geoinformatica (2011) 15:497–540
+
+501
+
+possible in our appraoch for example. On the other hand, it is very specific to this set
+of predicates. In order to support other predicates and/or other data types, one has to
+find a way to extend their evaluation algorithms. In the context of systems, a modular
+design that decouples the predicate evaluation from the STP query evaluation would
+be preferred.
+
+The series of publications [7–9], and [20] provide a concrete formalism for spa-
+tiotemporal developments. A spatiotemporal development is a composite structure
+built as an alternating sequence of spatiotemporal and spatial predicates, and they
+are themselves spatiotemporal predicates. They describe the change, wrt. time, in the
+spatial relationship between two moving objects. Consider, for example, a moving
+point MP and a moving region MR. The development MP Crosses MR is defined as:
+
+Crosses = Disjoint meet Inside meet Disjoint
+
+where meet is a spatial predicate that yields true when its two arguments touch
+each other, and Disjoint is a spatiotemporal predicate that yields true when its two
+arguments are always spatially disjoint. The spatiotemporal predicates, denoted by
+being capitalized, differ from the spatial predicates in that, the former hold at time
+intervals while the latter hold at instants. Spatiotemporal developments consider
+two spatiotemporal objects and precisely describe the change in their topological
+relationship.
+
+The spatiotemporal developments in their definition are not equivalent to spa-
+tiotemporal patterns, as they can only describe the change in the topological rela-
+tionship between two objects. This is not general enough to describe STPs. A natural
+way of describing STPs would involve several interactions between one trajectory
+and many other objects in the spatiotemporal space, as well as the trajectory’s own
+motion attributes (e.g. speed, direction, ...etc.).
+
+Additionally, all the related works discussed above share two limitations. First,
+they do not address issues of system integration and query optimization (e.g. SQL
+style syntax). Second, only sequential patterns are allowed. A pattern is not allowed
+to include, for example, concurrent predicates. As shown in the rest of this paper,
+our approach overcomes these limitations. Mainly, it is designed with expressiveness,
+system integration, and extensibility in mind.
+
+3 Moving objects databases
+
+In previous work [10, 16], and [4], a model for representing and querying moving
+objects is proposed. The work is based on abstract data types (ADT). The moving
+type constructor is used to construct the moving counterpart of every static data
+type. Moving geometries are represented using three abstractions; moving(point),
+moving(region) and moving(line). Simple data types (e.g. integer, bool, real) are also
+mapped to moving types. In the abstract model [16], moving objects are modeled as
+temporal functions that map time to geometry or value. For example, moving points
+are modeled as curves in the 3D space (i.e. time to the 2D space).
+
+In [10] a discrete data model implementing the abstract model is defined. For
+all data types in the abstract model, corresponding discrete types whose domains
+are defined in terms of finite representations are introduced. In the discrete model,
+moving types are represented by the sliced representation as units.
+
+502
+
+Geoinformatica (2011) 15:497–540
+
+["2003-11-20-06:06" "2003-11-20-06:06:08.692"[, (16229.0 1252.0), (16673.0 1387.0)
+
+t
+
+["2003-11-20-06:06:08.692" "2003-11-20-06:06:24.776"[, (16673.0 1387.0), (16266.0 1672.0)
+
+["2003-11-20-06:06:24.776" "2003-11-20-06:06:32.264"[, (16266.0 1672.0), (16444.0 1818.0)
+
+["2003-11-20-06:06:32.264" "2003-11-20-06:06:39.139"], (16444.0 1818.0), (16144.0 2227.0)
+
+Fig. 1 The sliced representation of an mpoint
+
+x
+
+y
+
+Definition 1 A data type moving(α) is a set of units. Every unit is a pair
+(I, Instant → α). The semantic of a unit is that at any time instant during the interval
+I, the value of the instance can be calculated from the temporal function Instant → α.
+Unit intervals are not allowed to overlap, yet gaps are possible (i.e. periods during
+which the value of the object is undefined).
+
+The moving data types are denoted by appending m to the standard type (e.g.
+mpoint denotes moving(point)). Similarly, the unit types are denoted by appending
+u. The mpoint, for example, is modeled in the discrete model as a set of upoints, each
+of which consists of a time interval and a line function. This is illustrated in Fig. 1.
+The coordinates of the mpoint at any time instant within the interval are obtained by
+evaluating the line function. The moving type constructor is similarly applied to the
+scalar data types (e.g. real, string, bool) [16]. A precise definition of the mbool data
+type is given in Section 4.
+
+The model offers a large number of operations that fall into three classes:
+
+1. Static operations over the non-moving types. Examples are the topological
+
+predicates, set operations and aggregations.
+
+2. Spatiotemporal operations offered for the temporal types (e.g. trajectory of an
+
+mpoint, area of an mregion).
+
+3. Lifted operations offered for combinations of moving and non-moving types.
+
+Basically they are time dependent versions of the static operations.
+
+Lifted operations are obtained by a mechanism called temporal lifting [16]. All the
+static operations defined for non-moving types are uniformly and consistently made
+applicable to the corresponding moving types. For example, a static predicate and its
+corresponding lifted predicate are defined as follows.
+
+Definition 2 A static predicate is a function with the signature
+
+T1 × .... × Tn → bool
+
+where Ti is a type variable that can be instantiated by any static/non-temporal data
+type (e.g. integer, point, region).
+
+Example BrandenburgGate inside Berlin.
+
+Definition 3 A lifted predicate is a function with the signature
+
+T1 × .... × Tk× ↑ Tk+1 × ...× ↑ Tn → mbool
+
+Geoinformatica (2011) 15:497–540
+
+503
+
+where ↑ is the moving type constructor. A lifted predicate is, hence, obtained by
+allowing one or more of the parameters of a static predicate to be of a moving data
+type. Consequently, the return type is a time dependent boolean mbool.
+
+Example Train_RE1206 inside Berlin.
+
+Note that inside in this example is a lifted predicate because the Train_RE1206
+is a moving object. It is therefore different from the standard inside predicate in the
+previous example.
+
+4 Spatiotemporal pattern predicates
+
+The Spatiotemporal Pattern Predicate (STP predicate) is the tool that we propose for
+expressing STP queries. It describes the pattern as a set of time-dependent predicates
+that are fulfilled in a certain temporal arrangement (e.g. a sequence). To motivate
+the idea of our design, consider the following example:
+
+Example A query for possible bank robbers may look for the cars which entered a
+gas station, kept close to the bank for a while, then drove away fast.
+
+The query describes an STP consisting of three time-dependent predicates: car
+inside gas station, car close to the bank, and speed of car ≥ 80 km/h. The predicates
+are required to be fulfilled in a sequential temporal order.
+
+We propose a modular language design of the STP predicate. It consists of
+two parts. The first defines a special kind of predicates that accept moving ob-
+ject arguments and report the time intervals, during which they are fulfilled. The
+second part is to define a language for temporal constraints on the predicate
+fulfillments.
+
+Fortunately, the lifted predicates [16] in Definition 3 do exactly what is needed in
+the first part. Lifted predicates yield objects of type mbool, which tell about the time
+intervals of the predicate fulfillment. Moreover, they are not restricted to certain data
+types of arguments nor to certain types of operations. Formulating the STP predicate
+on the top of the lifted predicates easily leverages a considerable part of the available
+infrastructure. The temporal constraints, in the second part, enforce certain temporal
+arrangements between the mbool results of the lifted predicates.
+
+We start here by a rough illustration. The details follow later in this section. The
+
+bank robbers query is written as follows:
+
+SELECT c.licencenumber
+FROM cars c, landmark l
+WHERE l.type = "gas station" and
+
+pattern([ c.trip inside l.region as gas,
+distance(c.trip, bank) < 50.0 as bnk,
+speed(c.trip) > 80000 as leaving],
+
+[stconstraint(gas, bnk, vec(aabb)),
+
+stconstraint(bnk, leaving, vec(abab, aa.bb, aabb)])
+
+504
+
+Geoinformatica (2011) 15:497–540
+
+where c.trip is an mpoint that stores the car’s trajectory. The STP predicate, denoted
+pattern in the SQL-like syntax, includes a set of three lifted predicates:
+
+c.trip inside l.region,
+distance(c.trip, bank) < 50.0,
+speed(c.trip) > 80000
+
+having the aliases gas, bnk, and leaving. The syntax of the STP predicate assigns
+aliases for the lifted predicates, so that they can be referred to in the temporal
+constraints. This is analogous to the aliases given to attributes and tables in the
+standard SQL. An alias of a lifted predicate can be any valid unique identifier. The
+STP predicate in this example includes two temporal constraints, denoted stconstraint
+in the SQL-like syntax. Each constraint is stating a temporal relationship between
+two of the lifted predicates (i.e. binary temporal constraints). The syntax vec(.) states
+the temporal order between the fulfillments of the two lifted predicates. Roughly
+speaking, the first temporal constraint states that the car came close to the bank after
+it has left the gas station. The second constraint is a bit more tricky. We wish to say
+that the car left the bank area quickly. This means that the car started fast, or may
+have started normally and then sped up after a while. The three arguments to the
+vec(.) operator state these three possibilities, as formalized later in this section.
+
+Now we start the formal definition of the STP predicate. We first recall the
+definition of the mbool data type from [10]. Let Instant denote the domain of time
+instants, isomorphic to R. Let IT be the set of possible time intervals, i.e:
+
+IT = {(t1, t2, lc, rc) | t1, t2 ∈ Instant,
+
+lc, rc ∈ {false, true}, t1 < t2,
+(t1 = t2) ⇒ lc = rc = true}
+
+That is, a time interval can be left-closed and/or right-closed as indicated by the
+values of lc and rc respectively. It is also possible that the interval collapses into a
+single time instant, see [10]. Let the domain of Boolean Unit ubool be:
+
+UBool = {(i, u)|i ∈ IT , u ∈ {false, true}}
+
+and the domain of mbool is:
+
+MBool = {U ⊂ UBool | ∀(i1, u1), (i2, u2) ∈ U :
+
+(i) i1 = i2 ⇒ u1 = u2
+(ii) i1 (cid:9)= i2 ⇒ i1 ∩ i2 = ∅ ∧
+
+i1 adjacent i2 ⇒ u1 (cid:9)= u2}
+
+where i1 adjacent i2 :⇔ i1.t2 = i2.t1 ∧ (i1.rc ∨ i2.lc). This last condition ensures the
+mbool objects have a unique representation, the one with the minimum number of
+units.
+
+Following we define a language for temporal relationships between pairs of
+time intervals. It will be the base for the temporal constraints between the lifted
+predicates inside the STP predicate. In the temporal logic literature some studies
+define the relationships between pairs of time intervals, and assign them names (e.g.
+the 13 Allen’s operators [1]). Here we propose a language, instead of names. This is
+
+Geoinformatica (2011) 15:497–540
+
+505
+
+because, in our case 26 such relationships are possible, which makes it difficult for
+a user to memorize the names. Table 1 shows the 26 terms of this language, and a
+graphical illustration of each. In the terms, the letters aa denote the begin and end
+time instants of the first interval. Similarly b b are the begin and end of the second
+interval. The order of letters describes the temporal relationship, that is, a sequence
+ab means a < b . The dot symbol denotes the equality constraint, hence, the sequence
+a.b means a = b , and a.a means that the start and the ends of the first interval are
+the same (i.e. the interval degenerates into a time instant).
+
+Formally, let IR be the set of interval relationships of Table 1, that is
+
+IR = {aabb, abba, ..., a.a.b.b}
+
+Let i1, i2 ∈ IT , ir = s1s2...sk ∈ IR (note that 4 <= k <= 7, that is, the shortest term
+includes two a’s and two b’s, and the longest term includes additionally three dots).
+
+Let rep(si) =
+
+⎧
+
+⎪⎪⎪⎪⎪⎪⎨
+⎪⎪⎪⎪⎪⎪⎩
+
+i1.t1
+i1.t2
+i2.t1
+i2.t2
+.
+
+is the first a in ir
+is the second a in ir
+is the first b in ir
+is the second b in ir
+
+if si
+if si
+if si
+if si
+if si = .
+
+i1 and i2 fulfill s1s2...sk
+
+:⇔∀ j ∈ {1, ..., k − 1} :
+
+(i) s j (cid:9)= . (cid:9)= s j+1 ⇒ rep
+(cid:7)
+(ii) s j+1 = . ⇒ rep
+
+(cid:6)
+s j
+
+(cid:6)
+
+(cid:7)
+
+s j
+
+= rep
+
+< rep
+(cid:6)
+s j+2
+
+(cid:7)
+
+s j+1
+
+(cid:6)
+
+(cid:7)
+
+Table 1 A language for
+expressing interval
+relationships
+
+Term Illustration
+
+Term Illustration
+Both arguments are intervals (Allen’s operators)
+
+Term Illustration
+
+aabb
+
+a.bab
+
+bb.aa
+
+aba.b
+
+baab
+
+a.abb
+
+bba.a
+
+b.baa
+
+aab.b
+
+a.ab.b
+
+bbaa
+
+a.bba
+
+abab
+
+a.ba.b
+
+a.a.bb
+
+abba
+
+aa.bb
+
+baa.b
+
+baba
+
+bb.a.a
+
+ba.ab
+
+ab.ba
+
+b.ba.a
+
+The first argument is an instant
+
+The second argument is an instant
+b.b.aa
+
+aa.b.b
+
+Both arguments are instants
+
+a.a.b.b
+
+506
+
+Geoinformatica (2011) 15:497–540
+
+Two time intervals i1, i2 ∈ IT fulfill a set of interval relationships if they fulfill any
+
+of them, that is:
+
+i1 and i2 fulfill SI ⊆ IR :⇔ ∃ ir ∈ SI : i1 and i2 fulfill ir
+
+The vec(.) in the SQL-like syntax allows for composing such SI subsets. For
+syntactic elegance, one can assign names to them, and use the names in the queries.
+This is done using the let statement as follows:
+
+let then = vec(abab, aa.bb, aabb);
+let later = vec(aabb);
+
+SELECT c.licencenumber
+FROM cars c, landmark l
+WHERE l.type = "gas station" and
+
+pattern([c.trip inside l.region as gas,
+distance(c.trip, bank) < 50.0 as bnk,
+speed(c.trip) > 80000 as leaving],
+
+[stconstraint(gas, bnk, later),
+
+stconstraint(bnk, leaving, then])
+
+That is, later and then can hence be used inside the stconstraint operator.
+
+For ease of presentation, in the following we define the STP predicate within the
+relational data model. The definitions can however be adapted easily to fit within
+other database models (e.g. object oriented), thanks to the ADT modeling of the
+moving objects which does not depend on a particular database model.
+
+Let tuple denote a tuple type in the sense of the relational data model.1 Let Dtuple
+denote the domain of the tuples conforming to this type. Let the domain of the type
+mbool be:
+
+A time-dependent predicate is a function with signature:
+
+hence it is a function
+
+Dmbool = MBool
+
+tuple → mbool
+
+f : Dtuple → Dmbool
+
+We denote a predicate with this signature as ptuple, and a set of such predicates as
+Ptuple when the tuple type is relevant.
+
+Note that the definition of a time-dependent predicate is more general than that
+of a lifted predicate. A lifted predicate also yields an mbool, but it must correspond
+to some standard static predicate, see Definition 3. Formally, the STP predicate is
+composed of a set of time-dependent predicates, and a set of temporal constraints, as
+shown later in this section. Throughout the text, however, we are often using the term
+lifted predicate instead of the more general term time-dependent predicate because the
+former seems more relevant from the user point of view. That is, users will be using
+
+1Here tuple is viewed as a type variable that can be instantiated by any valid tuple type.
+
+Geoinformatica (2011) 15:497–540
+
+507
+
+lifted predicates to compose their STP queries. This will become obvious from the
+many query examples in the rest of this paper.
+
+Let Ptuple = { p1, ..., pn} be a set of time-dependent predicates. A temporal con-
+
+straint on Ptuple is an element of the set:
+
+(cid:6)
+
+(cid:7)
+
+TC
+
+Ptuple
+
+= {1..n} × {1..n} × P(IR)
+
+Hence it is a binary temporal constraint, that assigns a pair of predicates in Ptuple a set
+of interval relationships. In the SQL-like syntax, the operator stconstraint expresses
+a temporal constraint. It accepts three arguments: two aliases of time-dependent
+predicates, and a set of interval relationships composed by the vec(.) operator.
+
+Based on the above definitions, a spatiotemporal pattern predicate is defined as
+
+follows:
+
+Definition 4 A spatiotemporal pattern predicate (STP predicate) is a pair (Ptuple, C),
+where C ⊆ TC(Ptuple).
+
+In SQL, the operator pattern denotes the spatiotemporal pattern predicate. For an
+STP predicate to hold, all the temporal constraints in C must be fulfilled. Formally it
+is as follows:
+
+Let t ∈ Dtuple be a tuple and Ptuple = { p1, ..., pn}, we denote by pk(t) the evaluation
+of pk ∈ Ptuple on t. Hence pk(t) ∈ MBool. We also define the set of candidate
+assignments CA(Ptuple, t) as:
+
+(cid:6)
+
+(cid:7)
+
+CA
+
+Ptuple, t
+
+= ptrue
+1
+
+× ... × ptrue
+
+n
+
+k
+
+= {i|(i, true) ∈ pk(t)}. That is, the CA(Ptuple, t) is simply the Cartesian
+where ptrue
+product of the sets of time intervals during which the time-dependent predicates in
+Ptuple are fulfilled with respect to the tuple t.
+
+Let ca = (i1, ..., in) ∈ CA(Ptuple, t) and let c = ( j, k, SI) ∈ TC(Ptuple) be a temporal
+
+constraint
+
+ca fulfills c :⇔ i j and ik fulfill SI
+
+Let C ⊆ TC(Ptuple) be a set of temporal constraints, and let t ∈ Dtuple be a tuple.
+
+The set of supported assignments of C is defined as:
+(cid:7)
+
+(cid:6)
+
+(cid:7)
+
+(cid:6)
+
+SA
+
+Ptuple, C, t
+
+=
+
+(cid:8)
+ca ∈ CA
+
+Ptuple, t
+
+| ∀ c ∈ C : ca fulfills c
+
+(cid:9)
+
+That is, for a candidate assignment to be a supported assignment, it must fulfill all the
+constraints in C. An STP predicate is fulfilled for a given tuple if and only if such a
+supported assignment is found.
+
+Definition 5 A spatiotemporal pattern predicate is a function with the signature
+tuple → bool. Given a tuple t of type tuple, its evaluation is defined as:
+(cid:7)
+
+(cid:6)(cid:6)
+
+(cid:7)
+
+(cid:7)
+
+(cid:7)
+
+(cid:6)
+
+(cid:6)
+
+eval
+
+Ptuple, C
+
+, t
+
+=
+
+SA
+
+Ptuple, C, t
+
+(cid:9)= ∅
+
+508
+
+Geoinformatica (2011) 15:497–540
+
+5 Evaluating spatiotemporal pattern predicates
+
+The formalization of the STP predicate in the previous section maps pretty well into
+the well known Constraint Satisfaction Problem (CSP). This section illustrates this
+mapping and the algorithms used to evaluate the STP predicate.
+
+Definition 6 Formally, a constraint satisfaction problem is defined as a triple
+(cid:17)X, D, C(cid:18), where X is a set of variables, D is a set of initial domains, and C is a set of
+constraints. Each variable xi ∈ X has a non-empty domain di ∈ D. CSP algorithms
+remove values from the domains during evaluation once it is discovered that the
+values cannot be part of a solution. Each constraint involves a subset of variables
+and specifies the allowable combinations of values for this subset. An assignment for
+a subset of variables is supported if it satisfies all constraints. A solution to the CSP
+is in turn a supported assignment of all variables.
+
+Recalling, from Definition 4, that the STP predicate contains the set Ptuple =
+{ p1, ..., pn} of time-dependent predicates, a straightforward way to construct the sets
+X, D of the CSP is as follows:
+
+1. For every pi ∈ Ptuple, define a variable xi with the same name as the alias of pi in
+
+the user query. Set X := X ∪ xi.
+
+2. Given a tuple t of type tuple, compute for every pi ∈ Ptuple its evaluation pi(t).
+3. For every ptrue
+
+, set Di := Di ∪ ptrue
+
+.
+
+∈ ptrue
+i
+
+ij
+
+ij
+
+That is, a CSP variable is created for every time-dependent predicate in the STP
+predicate. The aliases of the lifted predicates, as specified in the user query, are
+used as the variable names. The initial domain of every CSP variable is the set of
+time intervals during which the corresponding time-dependent predicate is fulfilled.
+Finally the set of constraints in the CSP is the same as the set of constraints in the
+STP predicate. As is shown next, this is not exactly how we map the STP predicate
+into a CSP. The main difference is that the domains of the variables (i.e. the set D)
+are evaluated in a lazy fashion. Following, we briefly discuss the known algorithms
+for solving CSPs. Later in this section, we will be proposing another algorithm for
+evaluating the CSP that fits more with our approach.
+
+A CSP having only binary constraints is called binary CSP and can be represented
+graphically in a constraints graph. The nodes of the graph are the variables and the
+links are the binary constraints. Two nodes are linked if they share a constraint.
+The neighborhood of a variable in the constraints graph are all variables that are
+directly linked to it. The spatiotemporal pattern predicate is fulfilled if and only if its
+corresponding CSP has at least one supported assignment.
+
+CSPs are usually solved using variants of the backtracking algorithm. The algo-
+rithm is a depth-first tree search that starts with an empty list of assigned variables
+and recursively tries to find a solution (i.e. a supported assignments of all variables).
+In every call, backtracking adds a new variable to its list and tries all the possible as-
+signments. If an assignment is supported, a new recursive call is made. Otherwise the
+algorithm backtracks to the last assigned variable. The algorithm runs in exponential
+time and space.
+
+Constraint propagation methods [3] (also called local consistency methods) can
+reduce the domains before backtracking to improve the performance. Examples
+
+Geoinformatica (2011) 15:497–540
+
+509
+
+are the ARC Consistency and Neighborhood Inverse Consistency (NIC) algorithms.
+They detect and remove some values from the variable domains that cannot be part
+of a solution. Local consistency algorithms do not guarantee backtrack-free search.
+To have the nice property of backtrack-free search one would need to enforce n-
+consistency (equivalent to global consistency), which is again exponential in time
+and space.
+
+The solvers for CSPs assume that the domains of the variables are known in
+advance. This is, however, a precondition that we wish to avoid. In the STP predicate,
+calculating the domain of a variable is equivalent to evaluating the corresponding
+lifted predicate. Since this can be expensive, we wish to delay the evaluation of the
+domains.
+
+The proposed algorithm Solve Pattern below tries to solve the sub-CSP of k − 1
+variables (CSPk−1) first and then to extend it to CSPk. Therefore, an early stop is
+possible if a solution to the CSPk−1 cannot be found. Which means that, in case no
+solution is found, the evaluation will be stopped as soon as this is realized, without
+the unnecessary evaluation of the remaining lifted predicates.
+
+The Solve Pattern algorithm uses three data structures: the SA list (for Supported
+Assignments), the Agenda and the Constraint Graph. The Agenda keeps a list of
+variables that are not yet consumed by the algorithm. One variable from the Agenda
+is consumed in every iteration. Every supported assignment in the SA list is a solution
+for the sub-CSP consisting of the variables that have been evaluated so far. In
+iteration k there are k − 1 previously evaluated variables and one newly evaluated
+variable (Xk with domain Dk). Every entry in SA at this iteration is a solution for
+the CSPk−1. To extend the SA, the Cartesian product of SA and Dk is calculated.
+Then only the entries that constitute a solution for CSPk are kept in SA. CSPk is
+constructed using the consumed variables and their corresponding constraints in the
+constraint graph.
+
+Algorithm Solve Pattern
+input: variables, constraints
+output: whether the CSP is consistent or not
+
+1. Clear SA, Agenda and Constraint Graph
+2. Add all variables to Agenda
+3. Add all constraints to the Constraint Graph
+4. WHILE Agenda not empty
+
+(a) Pick a variable Xi from the Agenda
+(b) Calculate the variable domain Di (i.e. evaluate the
+
+corresponding lifted predicate)
+
+(c) Extend SA with Di
+(d) IF SA is empty return NotConsistent
+
+5. return Consistent
+
+Algorithm Extend
+input: i, Di; the index and the domain of the newly
+evaluated variable
+
+1. IF SA is empty
+
+(a) FOREACH interval I in Di
+
+510
+
+Geoinformatica (2011) 15:497–540
+
+i. INSERT a new row sa in SA having sa[i]= I and
+
+undefined for all other variables
+
+ELSE
+(a) set SA = the Cartesian product SA × Di
+(b) Construct the subgraph CSPk that involves the
+
+variables in SA from the Constraint Graph.
+
+(c) FOREACH sa in SA
+
+i. IF sa does not satisfy the CSPk, remove sa from
+
+SA
+
+The methodology for picking the variables from the Agenda has a big effect on
+the run time. The best method will choose the variables, so that inconsistencies are
+detected soon. For example, suppose an STP predicate having four predicates with
+aliases u, v, w, and x. The constraints are:
+
+stconstraint(u, x, vec(abab)), stconstraint(v, x, later),
+and stconstraint(w, x, vec(bb.a.a)).
+
+If the variables are picked in sequential order u, v, w, then x, the space and time costs
+are the maximum. Since u, v, and w are not connected by any constraints, the SA is
+populated by the Cartesian product of their domains in the first three iterations. The
+actual filter to SA starts in the fourth iteration after x is picked.
+
+The function that picks the variables from the Agenda chooses the variables
+according to their connectivity rank in the Constraint Graph. The connectivity rank
+of a variable is the summation of its individual connectivities in the Constraint Graph.
+If a given variable is connected to an Agenda variable with a constraint, it gets
+0.5 connectivity score for this constraint. This means that evaluating this variable
+contributes 50% in evaluating the constraint because the other variable is still not
+evaluated. If the other variable in the constraint is a non-Agenda variable (i.e. a
+variable that is already evaluated), the connectivity score is 1. Back again to the
+example, in the first iteration, the variables u, v, and w have connectivity ranks of
+0.5, whereas x has 1.5. Therefore, x is picked in the first iteration. In the second
+iteration u, v, and w have equal connectivity ranks of 1, so the algorithm picks any of
+them.
+
+This variable picking methodology tries to maximize the number of evaluated
+constraints in every iteration with the hope that they filter the SA list and detect
+inconsistencies as soon as possible.
+
+The time cost of the Solve Pattern algorithm is
+
+where n is the number of variables, dk is the number of values in the domain of the
+kth variable and ek is the number of constraints in CSPk. The storage cost is
+
+n(cid:10)
+
+i(cid:11)
+
+i=1
+
+k=1
+
+dk × ek
+
+n(cid:10)
+
+i(cid:11)
+
+i=1
+
+k=1
+
+dk
+
+The algorithm runs in O(edn) and takes O(dn) space.
+
+Geoinformatica (2011) 15:497–540
+
+511
+
+The exponential time and space costs are not prohibitive in this case. This is
+because the calculations done within the iterations are simple comparisons of time
+instants. Moreover, the number of variables in an STP query is expected to be less
+than 8 in the normal case. The Solve Pattern algorithm is more focused on minimizing
+the number of evaluated lifted predicates (statement 4.b of the algorithm). The cost
+of evaluating the lifted predicates varies, but it is expected to be expensive because
+the evaluation usually requires retrieving and processing the complete trajectory
+of the moving object. The run time analysis of many lifted predicates is illus-
+trated in [4].
+
+6 Extending the definition of the STP predicates
+
+Back to the example of bank robbers, a sharp eyed reader will notice that the
+provided SQL statement can retrieve undesired tuples. Suppose that long enough
+trajectories are kept in the database. A car that entered a gas station in one day,
+passed close to the bank in the next day, and in a third day sped up will be part of the
+result. To avoid this, we would like to constrain the period between leaving the gas
+station till speeding up to be at most 1 h.
+
+Indeed the proposed design is flexible so that such an extension is easy to
+integrate. The idea is that after the STP predicate is evaluated, the SA data structure
+contains all the supported assignments. As illustrated before, a supported assignment
+assigns an interval to each lifted predicate during which it is satisfied. At the same
+time the interval values of all variables satisfy all the constraints in the STP predicate.
+Now that we know the time intervals, we can impose more constraints on them. For
+example, we state that the period between leaving the gas station (first predicate) till
+speeding up (third predicate) must be at most 1 h.
+
+The following describes formally an extended version of the STP predicate that
+allows for such additional constraints. Let Ptuple = { p1, ..., pn} be a set of time-
+dependent predicates, and let C ⊆ TC(Ptuple) be a set of temporal constraints. Let
+g be a function:
+
+g : In
+T
+
+× Dtuple → Dbool
+
+That is, g is a predicate that accepts a set of n time intervals and a tuple, and yields a
+bool.
+
+An extended STP predicate is defined as follows:
+
+Definition 7 An extended spatiotemporal pattern predicate is a triple (Ptuple, C, g).
+Given a tuple t of type tuple its evaluation is defined as:
+(cid:7)
+
+(cid:6)(cid:8)
+
+(cid:6)(cid:6)
+
+(cid:9)
+
+(cid:7)
+
+(cid:7)
+
+(cid:7)
+
+(cid:6)
+
+eval
+
+Ptuple, C, g
+
+, t
+
+=
+
+sa ∈ SA
+
+Ptuple, C, t
+
+| g(sa, t) = true
+
+(cid:9)= ∅
+
+That is, the boolean predicate g is applied to the supported assignments in SA and
+to the input tuple t. For the extended STP predicate to be fulfilled, g must be fulfilled
+at least once. The evaluation of the extended STP predicate is, hence, done in two
+parts, that both must succeed. The first solves the STP predicate (Ptuple, C) for the
+given tuple t, and the second part, which is processed only after the success of the
+
+512
+
+Geoinformatica (2011) 15:497–540
+
+first part, evaluates the boolean predicate g for every supported assignment. Hence,
+conditions on the list of supported assignments SA are possible.
+
+Syntactically, the user is provided with two functions start(.) and end(.) that yield
+the start and end time instants of the intervals in an SA element. The two functions
+are in the form:
+
+f : In
+T
+
+× {1, ..., n} → Instant
+
+Given a supported assignment sa ∈ SA and an index, the two functions yield the start
+and the end time instants of the time interval at this index in sa.
+
+Formally let sa = {i1, ..., in} ∈ SA(Ptuple, C, t).
+
+start(sa, k) = ik.t1, and
+end(sa, k) = ik.t2
+
+where 1 ≤ k ≤ n.
+
+To implement the extension, step 5 in the Solve Pattern algorithm is changed to
+return SA. The predicate g is then iteratively evaluated for the elements of the SA.
+The algorithm of evaluating the extended STP predicate is not shown in the paper,
+because it is a trivial change for the Solve Pattern algorithm.
+
+The extended STP predicate is denoted patternex in the SQL-like syntax. The bank
+
+robbers query is rewritten using it as follows:
+
+SELECT c.licencenumber
+FROM cars c, landmark l
+WHERE l.type = "gas station" and
+
+patternex([c.trip inside l.region as gas,
+distance(c.trip, bank) < 50.0 as bnk,
+speed(c.trip) > 100000 as leaving],
+
+[stconstraint(gas, bnk, later),
+
+stconstraint(bnk, leaving, then],
+
+start(leaving) - end(gas) < 1)
+
+where the additional condition start(leaving) - end(gas) < 1 ensures that
+the time period between the car getting out from the gas station (i.e. end(gas)) till it
+starts leaving the bank area (i.e. start(leaving)) is less than one hour. Note that in the
+SQL-like syntax, the start, and end operators get the predicate aliases, rather their
+indexes as in the definition.
+
+More complex conditions can be expressed. The time intervals can be used, for
+example, to retrieve parts from the moving object trajectory to express additional
+spatial conditions. For example, the query for possible bank robbers may more
+specifically look for the cars which entered a gas station, made a round or more
+surrounding the bank, then drove away fast. To check that the car made a round
+surrounding the bank, a possible solution is to check the part of the car trajectory
+close to the bank for self intersection. The query may be written as follows
+
+SELECT c.licencenumber
+FROM cars c, landmark l
+WHERE l.type = "gas station" and
+
+Geoinformatica (2011) 15:497–540
+
+513
+
+patternex([c.trip inside l.region as gas,
+distance(c.trip, bank) < 50.0 as bnk,
+speed(c.trip) > 100000 as leaving],
+
+[stconstraint(gas, bnk, later),
+
+stconstraint(bnk, leaving, then],
+
+isSelfIntersecting(
+
+trajectoryPart(c.trip, start(bnk), end(bnk))) and
+
+(start(leaving) - end(bnk)) < 1)
+
+where trajectoryPart computes the spatial trajectory of the moving object between
+two time instants and isSelfIntersecting checks a line for self intersection.
+
+7 Optimizing spatiotemporal pattern predicates
+
+In Section 5 we explained the evaluation of the spatiotemporal pattern predicate.
+The proposed algorithm is efficient because it avoids the unnecessary evaluation of
+lifted predicates. In the context of large-scale DBMS, this is not enough. Obviously
+for an efficient execution of pattern queries on large databases the use of indexes is
+mandatory. It should be triggered by the query optimizer during the creation of the
+executable plans.
+
+In this section, we demonstrate a generic procedure for integrating the STP pred-
+icate with query optimizers. We do not assume a specific optimizer or optimization
+technique. The optimizer is however required to have some basic features that
+will probably be available in any query optimizer. In the following subsection, we
+describe these basic assumptions.
+
+7.1 Query optimization
+
+A typical query optimizer contains two basic modules; the rewriter and the planner
+[18]. The rewriter uses some heuristics to transform a query into another equivalent
+query that is, hopefully, more efficient or easier to handle in further optimization
+phases. The planner creates for the user query (or the rewritten version) the set
+of possible execution plans (possibly restricted to some classes of plans). Finally it
+applies a selection methodology (e.g. cost based) to select the best plan.
+
+We assume that the query optimizer contains the rewriter and the planner
+modules. We also assume that it supports the data types and operations on moving
+objects, in SQL predicates as described in [16] and [10].
+
+7.2 Query optimization for spatiotemporal pattern predicates
+
+One observation that we like to make clear is that the STP predicate itself does not
+process database objects directly. Instead, the first operation applied is the evaluation
+of the lifted predicates that compose the STP predicate. The idea, hence, is to design a
+general framework for optimizing the lifted predicates within the STP predicate. This
+framework should trigger the optimizer to use the available indexes for the currently
+supported lifted predicates as well as for those that might be added in the future. It
+
+514
+
+Geoinformatica (2011) 15:497–540
+
+should utilize the common index structures. Although specialized indexes, as in [17],
+can achieve higher performance, the overhead of maintaining them within a system
+is high and they only serve specific purposes, which makes them unfavorable in the
+context of systems.
+
+The idea is to add each of the lifted predicates, in a modified form, as an extra
+standard predicate to the query, that is, a predicate returning a boolean value.
+The standard predicate is chosen according to the lifted predicate, so that the
+fulfillment of the standard predicate implies that the lifted predicate is fulfilled at
+least once. This is done during query rewriting. The additional standard predicates in
+the rewritten query trigger the planner to use the available indexes. To illustrate
+the idea, the following query shows how the bank robbers query in Section 4 is
+rewritten.
+
+SELECT c.licencenumber
+FROM cars c, landmark l
+WHERE l.type = "gas station" and
+
+pattern([c.trip inside l.region as gas,
+distance(c.trip, bank) < 50.0 as bnk,
+speed(c.trip) > 100000 as leaving],
+
+[stconstraint(gas, bnk, later),
+
+stconstraint(bnk, leaving, then])
+
+and
+c.trip passes l.region and
+sometimes(distance(c.trip, bank) < 50.0) and
+sometimes(speed(c.trip) > 100000)
+
+The three lifted predicates in the STP predicate x inside y, distance(x,
+y) < z, and speed(x) < y are mapped to the standard predicates x passes
+y, sometimes(distance(x, y) < z), and sometimes(speed(x) < y), re-
+spectively. Here sometimes(.) is a predicate that accepts an mbool and yields true
+if the argument ever assumes true during its lifetime, otherwise false. Each of the
+standard predicates ensures that the corresponding lifted predicate is fulfilled at least
+once, a necessary but not sufficient condition for the pattern predicate to be fulfilled.
+Clearly, the rewritten query is equivalent to the original query.
+
+The choice of the standard predicate depends on the type of the lifted predicate
+and the types of the arguments. For example, the lifted spatial range predicates (i.e.
+the spatial projection can be described by a box) are mapped into the passes standard
+predicate. The passes predicate [16], in this example, is fulfilled if the car c.trip
+ever passed the gas station l.region. If passes fails, then we know that inside is
+never true and that pattern will also fail. The planner should have for the added
+passes predicate already some optimization rule available (e.g. use a spatial R-tree
+index when available). In Section 9.2.2 we show an optimized query written in the
+Secondo executable language.
+
+To generalize this solution, we define a table of mappings between the lifted
+predicates (or groups of them) and the standard predicates. Clearly, this mapping is
+extensible for the lifted predicates that can be introduced in the future. The mapping
+for the set of lifted predicates proposed in [16] is shown in Table 2.
+
+Geoinformatica (2011) 15:497–540
+
+515
+
+Table 2 Mapping lifted predicates into standard predicates
+
+Lifted Predicates
+=
+
+inside
+
+Type
+lifted spatial
+range
+
+Standard Predicates
+
+passes
+
+intersects
+
+= ,
+
+= ,
+
+=
+
+lifted equality
+
+sometimes( = )
+
+lifted left
+range
+
+sometimes(
+sometimes(
+
+lifted right
+range
+
+sometimes(
+sometimes(
+
+),
+
+),
+
+)
+
+)
+
+distance(
+
+,
+
+)
+
+threshold
+
+passes enlargeRect(bbox(
+
+), threshold, threshold)
+
+lifted spatial
+range
+
+Other lifted predicates,
+
+sometimes(
+
+)
+
+For the lifted spatial range predicates, they map into passes and the available
+translation rules for passes do the rest. The distance(x, y) < z is conceptually
+equivalent to a lifted spatial range predicate, where the spatial range is the minimum
+bounding box of the static argument extended by z in every side. Other types of
+lifted predicates are mapped into sometimes. We need to provide translation rules
+that translate sometimes(.) into index lookups. For every type of lifted predicates,
+one such translation rule is required. For example, the sometimes(Pred), where Pred
+is a lifted left range predicate, searches for a B-tree defined on the units of the moving
+object, and performs a left range search in the B-tree. We show examples for these
+translation rules within Secondo in Section 8.2.
+
+This two steps optimization helps develop a general framework for optimizing
+the sometimes(.) predicate, which may also appear directly in the user queries. Note
+that we can alternatively rewrite all lifted predicates into sometimes(.), and provide
+translation rules accordingly. It remains an implementation decision, which approach
+to use.
+
+516
+
+Geoinformatica (2011) 15:497–540
+
+8 The implementation in SECONDO
+
+Secondo [13, 14, 25] is an extensible DBMS platform that does not presume a
+specific database model. Rather it is open for new database model implementations.
+For example, it should be possible to implement relational, object-oriented, spatial,
+temporal, or XML models.
+
+Secondo consists of three loosely coupled modules: the kernel, GUI and query
+optimizer. The kernel includes the command manager, query processor, algebra
+manager and storage manager. The kernel may be extended by algebra modules.
+In an algebra module one can define new data types and/or new operations. The
+integration of the new types and/or operations in the query language is then achieved
+by adding syntax rules to the command manager.
+
+The Secondo kernel accepts queries in a special syntax called Secondo executable
+language. The SQL-like syntax is provided by the optimizer. For more information
+about Secondo modules see [25] and [24]. For more information about extending
+Secondo see the documentation on [23].
+
+If it is the case that a new data type needs a special graphical user interface
+(GUI) for display, the Secondo GUI module is also extensible by adding viewer
+modules. Several viewers exist that can display different data types. Moving objects,
+for example, are animated in the Hoese viewer with a time slider to navigate forwards
+and backwards.
+
+A large part of the moving objects database model presented in [4, 10, 16], that we
+also assume in the paper, is realized in Secondo. That is, the current Secondo version
+2.9.1 includes the algebra modules, the viewer modules, and the optimizer support
+for moving objects. In the following subsections, we describe the implementation of
+the STP predicate in Secondo 2.9.1. This implementation is available as a Secondo
+Plugin as explained in Section 11.
+
+8.1 Extending the kernel
+
+We have implemented the STP predicate in the Secondo kernel in a new algebra
+module called STPatternAlgebra. The algebra contains:
+
+1. One data type stvector. The class represents a set of interval relationships as
+defined in Section 4. The Secondo operator vec is used to create an stvector
+instance. The operator accepts a set of strings from Table 1, and constructs the
+stvector instance accordingly.
+
+Example: vec("aabb", "a.abb", "a.a.bb").
+
+2. The stconstraint operator. The operator represents a temporal constraint within
+
+the STP predicate. The signature of the operator is:
+
+string × string × stvector → bool
+
+The first and second parameters are the aliases for two lifted predicates.
+
+Example: stconstraint("predicate1", "predicate2",
+
+vec("a.a.bb")).
+
+Geoinformatica (2011) 15:497–540
+
+517
+
+3. The stpattern operator. The operator implements the STP predicate. It has the
+
+signature:
+
+tuple ×AliasedPredicateList × ConstraintList → bool
+
+where the AliasedPredicateList is a list of time-dependent predicates, each of
+which has an alias, and the ConstraintList is a list of temporal constraints (i.e. a
+list of stconstraint operators).
+
+4. The stpatternex operator. The operator implements the extended STP predicate,
+
+Section 6. It has the signature:
+
+tuple ×AliasedPredicateList × ConstraintList× bool → bool
+
+5. The start(.) and the end(.) operators, described in Section 6. They accept a string
+representing a predicate alias and return the start/end of the corresponding time
+interval. The operators have the signature:
+
+string → instant
+
+Using these operators, the query for bank robbers can be written in Secondo
+
+executable language as follows:
+
+query cars feed {c}
+landmark feed {l}
+
+filter[.type_l = "gas station"]
+
+product
+filter[.
+
+stpatternex[gas: .trip_c inside .region_l,
+
+bnk: distance(.trip_c, bank) < 50.0,
+leaving: speed(.trip_c) > 100000;
+
+stconstraint("gas", "bnk", vec("aabb")),
+
+stconstraint("bnk", "leaving", vec("abab",
+
+"aa.bb", "aabb"));
+
+duration2real(start("leaving") - end("gas")) < (1/24) ]]
+
+consume
+
+where feed is a postfix operator that scans a relation sequentially and converts it into
+a stream of tuples. The query performs a cross product between the tuples of the
+cars relation and the tuples of landmark relation that has the value “gas station" in
+their type attribute. The resulting tuple stream after the cross product is filtered using
+the extended STP predicate stpatternex. Finally, the consume operator converts the
+resulting tuple stream into a relation, so that it can be displayed.
+
+8.2 Extending the optimizer
+
+The Secondo optimizer is written in Prolog. It implements an SQL-like query
+language which is translated into an optimized query in Secondo executable lan-
+guage. The Secondo optimizer includes a separate rewriting module that can be
+switched on and off by setting the optimizer options. The planner implements a
+novel cost based optimization algorithm which is based on shortest path search in
+a predicate order graph. The predicate order graph (POG) is a weighted graph whose
+
+518
+
+Geoinformatica (2011) 15:497–540
+
+nodes represent sets of evaluated predicates and whose edges represent predicates,
+containing all possible orders of predicates. For each predicate edge from node x to
+node y, so-called plan edges are added that represent possible evaluation methods
+for this predicate. Every complete path via plan edges in the POG from the bottom-
+most node (i.e. zero evaluated predicates) till the top-most node (i.e. all predicates
+evaluated) represents a different execution plan. Different paths/execution plans
+represent different orderings of the predicates and different evaluation methods.
+The plan edges of the graph are weighted by their estimated costs, which in turn
+are based on given selectivities. Selectivities of predicates are either retrieved from
+prerecorded values, or estimated by sending selection or join queries on small
+samples of the involved relations to the Secondo kernel and reading the cardinality
+of the results. The algorithm is described in more detail in [14] as well as in the
+Secondo programmers guide [23].
+
+Our extension to the optimizer has three major parts: query rewriting, operator
+description, and translation rules. In the query rewriting, we choose to rewrite all the
+lifted predicates into sometimes(.). This is because an accurate rewriting based on
+the mapping in Table 2 requires that we know the data types of the arguments. The
+Secondo optimizer knows the data types only after query rewriting is done.
+
+Following are the Prolog rules that do the rewriting:
+
+inferPatternPredicates([], []).
+
+inferPatternPredicates([Pred|Preds],
+[sometimes(Pred)|Preds2] ):-
+
+assert(removefilter(sometimes(Pred))),
+inferPatternPredicates(Preds,Preds2).
+
+where the inferPatternPredicate accepts the list of the lifted predicates within the
+STP predicate as a first argument, and yields the a list of rewritten predicates in
+the second argument. The additional sometimes(.) predicates are kept in the table
+removefilter(.), so that it is possible to exclude them from the executable plan
+afterwards.
+
+In the operator descriptions, we annotated the lifted predicates by their types (e.g.
+lifted left range) as in Table 2. Then we provided translation rules for sometimes(.)
+for every type of lifted predicates. Following is an example for such a rule:
+
+indexselectLifted(arg(N), Pred ) =>
+
+gettuples(rdup(sort(windowintersectsS(
+dbobject(IndexName), BBox))),
+
+rel(Name, *))
+
+:-
+Pred =..[Op, Arg1, Arg2],
+((Arg1 = attr(_, _, _), Attr= Arg1) ;
+(Arg2 = attr(_, _, _), Attr= Arg2)),
+
+argument(N, rel(Name, *)),
+getTypeTree(Arg1, _, [_, _, T1]),
+getTypeTree(Arg2, _, [_, _, T2]),
+isLiftedSpatialRangePred(Op, [T1, T2]),
+(
+
+( memberchk(T1, [rect, rect2, region, point, line,
+
+points, sline]), BBox= bbox(Arg1)
+
+Geoinformatica (2011) 15:497–540
+
+519
+
+);
+( memberchk(T2, [rect, rect2, region, point, line,
+
+points, sline]), BBox= bbox(Arg2)
+
+)
+),
+hasIndex(rel(Name, _), Attr, DCindex,
+
+spatial(rtree, unit)),
+
+dcName2externalName(DCindex, IndexName).
+
+where this rule translates the lifted spatial range predicates into an R-tree window
+query, as indicated in the rule header. The => operator can be read as translates
+into. It means that the expression to the right is the translation of the expression
+to the left, if the conditions in the rule body hold. The body of the rule starts by
+inferring the types of the arguments of the lifted predicate within the sometimes(.).
+Then it uses them to make sure that the predicate is of the type lifted spatial range.
+Finally, it checks whether a spatial R-tree index on the involved relation and attribute
+is available in the catalog. It tries to find a spatial R-tree built on the units of the
+moving object. Similar translation rules are provided for other types of indexes. The
+optimized query in Section 9.2.2 shows the effect of these translation rules.
+
+9 Experimental evaluation
+
+We proceed with an experimental evaluation of the proposed technique. The in-
+tention is to give an insight into the performance. It is clear that the runtime of an
+STP predicate depends on the number and types of the lifted predicates. Therefore,
+we show three experiments. The first measures only the overhead of evaluating the
+spatiotemporal pattern predicate. That is, we set the time of evaluating the lifted
+predicates to negligible values.
+
+In the second experiment, we generate random STP predicates with varying
+numbers of lifted predicates and constraints and measure the run time of the queries.
+The experiment also evaluates the optimization of STP predicates. Every query is
+run twice; once without invoking the optimizer, and another time with the optimizer
+being invoked.
+
+The third experiment is dedicated to evaluate the scalability of the proposed ap-
+proach. It mainly evaluates the proposed optimization approach in large databases.
+A random set of queries is generated and evaluated against relations of cardinalities
+50,000, 100,000, 200,0000, and 300,000, where the trajectories are indexed using the
+traditional R-tree index.
+
+The first two experiments use the berlintest database that is available with the free
+distribution of Secondo. The last experiment uses the BerlinMOD benchmark [6] to
+generate the four relations. The benchmark is available for download on [25]. The
+three experiments are run on a Secondo platform installed on a Linux machine. The
+machine is a Pentium-4 dual-core 3.0 GHz processor with 2GB main memory.
+
+9.1 The overhead of evaluating STP predicates
+
+To perform the first experiment, we add two operators to Secondo; randommbool
+and passmbool. The operator randommbool accepts an instant and creates an mbool
+
+520
+
+Geoinformatica (2011) 15:497–540
+
+object whose definition time starts at the given time instant, and consists of a random
+number of units. The operator passmbool mimics a lifted predicate. It accepts the
+name of an mbool database object, loads the object and returns it. More details are
+given below.
+
+9.1.1 Preparing the data
+
+This section describes how the test data for the first experiment is created. The
+randommbool operator is used to create a set of 30 random mbool instances and store
+them as database objects. The operator creates mbool objects with a random number
+of units varying between 0 and 20. The first unit starts at the time instant provided
+in the argument. Every unit has a random duration between 2 and 50,000 ms. The
+value of the first unit is randomly set to true or false. The value of every other unit
+is the negation of its preceding unit. Hence, the minimal representation requirement
+[10] of the moving types in Secondo is met. That is, adjacent units can not be further
+merged because they have different values.
+
+The 30 mbool objects are created by calling randommbool(now()) 30 consec-
+utive times. This increases the probability that the definition times of the objects
+temporally overlap.
+
+9.1.2 Generating the queries
+
+The queries of the first experiment are selection queries consisting of one filter
+condition in the form of an STP predicate. The queries are generated with different
+experimental settings, that is, different numbers of lifted predicates and constraints
+in the STP predicate. The number of lifted predicates varies between 2 and 8. The
+number of constraints varies between 1 and 16. The queries are not generated for
+every combination. For example, it does not make sense to generate STP predicates
+with 2 lifted predicates and 10 constraints. For N lifted predicates, the number of
+constraints varies between N − 1 and 2N. The rationale of this is that, if the number
+of constraints is less than N − 1, then the constraint network can not be complete (i.e.
+some predicates are not referenced within constraints). On the other hand, having
+more than 2N constraints increases the probability of contradicting constraints. For
+every experimental setting, 100 random queries are evaluated and the average run
+time is recorded.
+
+A query with 3 lifted predicates and 2 constraints, for example, looks like:
+
+query thousand feed
+
+filter[.
+
+stpattern[a: passmbool(mb5),
+
+b: passmbool(mb13),
+c: passmbool(mb3);
+
+stconstraint("b", "a", later),
+
+stconstraint("b", "c", vec("abab") ]]
+
+count
+
+where query thousand feed streams the thousand relation, which contains 1,000
+tuples. For every tuple, the STP predicate stpattern is evaluated. Note that the
+predicate does not depend on the tuples. That is, the same predicate is executed
+1,000 times in the query. This is to minimize the effect of the time taken by Secondo
+
+Geoinformatica (2011) 15:497–540
+
+521
+
+to prepare for query execution. The lifted predicates are all
+passmbool(X), where X is one of the 30 stored random mbool objects.
+
+in the form of
+
+The constraints are generated so that the constraint graph is complete. We start
+by initializing a set called connected having one randomly selected alias. For every
+constraint, the two aliases are randomly chosen from the set of aliases in the query,
+so that at least one of them belongs to the set connected. The other alias is added
+to the set connected if it was not already a member. After the required number
+of constraints is generated, we check the completeness of the graph. If it is not
+complete, the process is repeated till we get a connected graph. The temporal
+connector for every constraint is randomly chosen from a set containing 31 temporal
+connectors namely, the 26 simple temporal connectors in Table 1 and 5 vector
+temporal connectors (later, follows, immediately, meanwhile, and then) (shown in
+Appendix A).
+
+Before running the queries, we query for the 30 mbool objects so that they are
+loaded into the database buffer. The measured run times should, hence, show the
+overhead of evaluating the STP predicates in Secondo because other costs are made
+negligible.
+
+9.1.3 Results
+
+The results are shown in Fig. 2. The number of lifted predicates is denoted as N.
+Increasing the number of lifted predicates and constraints in the STP predicate does
+not have a great effect on the run time. This is a direct result of the early pruning
+strategy in the Solve Pattern algorithm. The results show that the evaluation of STP
+predicate is efficient in terms of run time.
+
+9.2 STP queries with optimization
+
+The second experiment is intended to evaluate the run time of STP queries. It also
+evaluates the effect of the proposed optimization. Unlike the first experiment, the
+STP predicates in this experiment contain lifted predicates. We generate 10 random
+queries for every experimental setting and record the average run time. Every query
+is run twice; without being optimized, and after optimization.
+
+Fig. 2 The overhead of
+evaluating STP predicates
+
+N=2
+N=3
+N=4
+N=5
+N=6
+N=7
+N=8
+
+s
+e
+l
+p
+u
+T
+ 
+0
+0
+0
+1
+ 
+r
+e
+p
+ 
+s
+d
+n
+o
+c
+e
+S
+
+ 0.7
+
+ 0.6
+
+ 0.5
+
+ 0.4
+
+ 0.3
+
+ 0.2
+
+ 0.1
+
+ 0
+
+ 0
+
+ 2
+
+ 4
+
+ 8
+
+ 6
+
+ 12
+Number of Constraints
+
+ 10
+
+ 14
+
+ 16
+
+522
+
+Geoinformatica (2011) 15:497–540
+
+9.2.1 Preparing the data
+
+The queries use the Trains20 relation. It is generated by replicating the tuples of the
+Trains relation in the berlintest database 20 times. The Trains relation was created
+by simulating the underground trains of the city Berlin. The simulation is based on
+the real train schedules and the real underground network of Berlin. The simulated
+period is about 4 h in one day. The schema of Trains20 is similar to Trains with the
+additional attribute Serial:
+
+Trains20[Serial: int, Id: int, Line: int, Up: bool, Trip: mpoint]
+
+where Trip is an mpoint representing the trajectory of the train. The relation contains
+11,240 tuples and has a disk size of 158 MB. To evaluate the optimizer, a spatial R-
+tree index called Trains20_Trip_sptuni is built on the units of the Trip attribute. A set
+of 300 points is also created to be used in the queries. The points represent geometries
+of the top 300 tuples in the Restaurants relation in the berlintest database.
+
+9.2.2 Generating the queries
+
+The queries are generated in the same way as in the first experiment. In this
+experiment, however, we use actual lifted predicates instead of passmbool. Every
+lifted predicate in the STP predicate is randomly chosen from
+1. distance(trip, randomPoint) < randomDistance.
+2.
+
+speed(trip) > randomSpeed.
+
+where randomPoint is a point object selected randomly from the 300 restaurant
+points, randomDistance ranges between 0 and 50, and randomSpeed ranges between
+0 and 30. The distance(., .) < . is a sample for the lifted predicates that can be mapped
+into index access, so that we can evaluate the optimizer. While the queries in the first
+experiment are created directly in the Secondo executable language, they are created
+here in Secondo SQL. It is an SQL-like syntax that looks similar to the standard
+SQL, but obeys Prolog rules. The main differences are that everything is written in
+lower case, and lists are placed within square brackets.
+
+Here is one query example from the generated queries:
+
+SELECT count(*)
+FROM trains20
+WHERE pattern([ distance(trip, point170) < 18.0 as a,
+
+speed(trip) > 11.0 as b],
+
+[stconstraint("a", "b", vec("b.ba.a"))])
+
+where pattern is the SQL operator equivalent to stpattern in the executable language.
+The rewritten version of the query as generated by the rewriting module of the
+Secondo optimizer is:
+
+SELECT count(*)
+FROM trains20
+WHERE [ pattern([ distance(trip, point170) < 18.0 as a,
+
+speed(trip) > 11.0 as b],
+
+[stconstraint("a", "b", vec("b.ba.a"))]),
+
+sometimes(distance(trip, point170) < 18.0),
+sometimes(speed(trip) > 11.0)]
+
+Geoinformatica (2011) 15:497–540
+
+523
+
+Finally, the optimal execution plan is:
+
+Trains20_Trip_sptuni
+windowintersectsS[ enlargeRect(bbox(point170), 18.0, 18.0)]
+sort rdup Trains20
+
+gettuples
+
+filter[sometimes((distance(.Trip,point170) < 18.0))]
+{0.00480288, 1.69712}
+project[Trip]
+filter[. stpattern[ a:(distance(.Trip, point170) <
+
+18.0),
+
+b:(speed(.Trip) > 11.0);
+
+stconstraint("a", "b", vec("b.ba.a"))]]
+
+{0.00480288, 1.49038}
+filter[sometimes((speed(.Trip) > 11.0))]
+{0.883731, 1.48077}
+
+count
+
+where the predicates are placed within the f ilter[] operator, which means that
+they belong to the where clause in SQL. The rewriter generates for the two lifted
+predicates in the original query two standard sometimes predicates. The predicate
+sometimes( distance(., .) < .) is handled by the optimizer as a special kind of range
+predicate. Since the optimizer can find the spatial R-tree index that we created, it is
+used. The index access part in the query is:
+
+Trains20_Trip_sptuni windowintersectsS[enlargeRect
+
+(., ., .)]
+
+This part expands the minimum bounding box of point170 by the distance threshold
+value 18.0. The enlarged box is intersected with the R-tree to get the candidate tuple
+id’s. The rest of the query retrieves the data of the candidate tuples and performs the
+query. The pairs of numbers between the curly brackets do not affect the semantics
+of the query. They are estimated predicate selectivities and run time statistics used
+to help estimate the query execution progress.
+
+9.2.3 Results
+
+In Fig. 3, the chart to the left shows the average run times of the non-optimized
+STP queries. The chart to the right shows the average run times of their optimized
+counterparts. The N is again the number of lifted predicates. The run times of the
+optimized STP predicates are very promising.
+
+The high peak in the optimized queries chart at N = 2 and Number of Con-
+straints = 2 is because it happened that five of the ten generated queries have only
+speed(.) < . predicates. Since the sometimes(speed(.) < .) predicate does not map into
+index access, the average run time for this experimental setting is close to the non-
+optimized version.
+
+9.3 Scalability experiment
+
+This experiment evaluates the performance of the proposed approach in large
+databases. As shown in Section 7.2, the optimization of the STP predicate is carried
+
+524
+
+s
+d
+n
+o
+c
+e
+S
+
+ 30
+
+ 25
+
+ 20
+
+ 15
+
+ 10
+
+ 5
+
+ 0
+
+Non-Optimized Queries
+
+Optimized Queries
+
+Geoinformatica (2011) 15:497–540
+
+N=2
+N=3
+N=4
+N=5
+N=6
+N=7
+N=8
+
+ 30
+
+ 25
+
+ 20
+
+ 15
+
+ 10
+
+ 5
+
+ 0
+
+N=2
+N=3
+N=4
+N=5
+N=6
+N=7
+N=8
+
+ 0
+
+ 2
+
+ 6
+
+ 4
+ 8
+Number of Constraints
+
+ 10  12  14  16
+
+ 0
+
+ 2
+
+ 6
+
+ 4
+Number of Constraints
+
+ 8
+
+ 10  12  14  16
+
+Fig. 3 The run times for STP queries on the Trains20 relation
+
+out without special index structures, which is practically preferred in the context of
+systems. It remains however questionable, how far are the traditional indexes (e.g.
+R-trees) effective for such a type of queries. This experiment tries to answer this
+question.
+
+Obviously if all the lifted predicates within the STP predicate in a given query are
+not supported by the indexes in the database system, then one is out of luck, and
+the STP predicate will be evaluated for every tuple. Therefore, in this experiment,
+we compose the STP predicates by lifted predicates that are supported by index
+structures available in Secondo.
+
+9.3.1 Generating the data
+
+The data for this experiment is generated using the BerlinMOD benchmark [6]. It
+simulates an arbitrary number of cars moving in the city Berlin. The scenarios of
+the trips are quite realistic, simulating the trips to and from the work place, and the
+leasure time trips. The benchmark is downloadable from the Secondo web site [25].
+The trajectory data is generated by running Secondo scripts. It is possible to control
+the number of cars, and the number of observation days by editing a configuration
+file.
+
+For this experiment, we have generated the four relations described in Table 3.
+The table shows for every relation the number of cars/trajectories, the number of
+simulation days, the number of units of all trajectories, and the storage space of the
+relation. The number of units is analogous to the total number of observations of all
+cars, in the discrete sense. Note that in this moving objects model, the trajectories
+
+Table 3 The database relations used in the scalability experiment
+
+Relation name
+
+Number of cars
+
+Duration
+
+Number of units
+
+Size (GB)
+
+datascar50
+datascar100
+datascar200
+datascar300
+
+50,000
+100,000
+200,000
+300,000
+
+1 day
+1 day
+1 day
+1 day
+
+64,331,426
+128,437,840
+256,373,737
+384,923,972
+
+9.1
+18.2
+36.3
+54.5
+
+Geoinformatica (2011) 15:497–540
+
+525
+
+are continuous. That is, the locations of the cars between any two consecutive
+observations are linearly interpolated. The generation of the four relations using the
+BerlinMOD benchmark took about five days on the machine described in Section 9.
+For each of the four relations, a spatial R-tree index is derived for the trip
+attribute. The R-tree contains the bounding boxes of the units of the Trip attribute,
+which are of type upoint.
+
+9.3.2 Generating the queries
+
+The BerlinMOD benchmark generates for every car up to five trips in a working day.
+Two of them go to and from the work place, and the other three trips are leasure time
+trips in the afternoon/evening. The leasure time destinations are randomly chosen
+from the neighborhood of the car’s home location with a probability of 80%, and
+from the whole map with a probability of 20%. We use this information to design the
+experiment queries.
+
+For each of the four relations in this experiment, a set of ten queries is randomly
+generated. Each of the queries randomly picks a car and retrieves its home location
+and three locations from its neighborhood, call them atmmachine, supermarket, and
+bakery for example. The query looks for the cars that made a leasure time trip start-
+ing from the location home, and passing by the locations atmmachine, supermarket,
+and bakery in order. Since the locations are chosen from the neighborhood of an
+existing car, there is some probability that the cars will fulfill the pattern. A sample
+query for the relation datascar300 looks as follows:
+
+SELECT count(*)
+FROM datascar300 c
+WHERE [ pattern([ c.trip = home as pred1,
+
+c.trip = atmmachine as pred2,
+c.trip = supermarket as pred3,
+c.trip = bakery as pred4],
+
+[stconstraint("pred1", "pred2", later),
+stconstraint("pred2", "pred3", later),
+stconstraint("pred3", "pred4", later)])
+
+where home is the home location of the car, and the = lifted predicate is fulfilled in
+the time instants/intervals when its two arguments have the same spatial coordinates.
+Ten such queries are randomly generated for every relation. The next subsection
+shows the average runtimes.
+
+]
+
+9.3.3 Results
+
+In this experiment, we switch on the optimizer. Since the = lifted predicates in the
+queries belong to the lifted spatial range predicates, as shown in Table 2, the optimizer
+generates execution plans that use the R-tree indexes, that are generated during the
+data generation. Figure 4 shows the average runtimes. These results conclude two
+points:
+• Taking into consideration the large relation sizes as shown in Table 3, and the
+moderate machine specifications described in Section 9, the average runtimes are
+
+526
+
+Fig. 4 Scalability results
+
+Geoinformatica (2011) 15:497–540
+
+ 35
+
+ 30
+
+ 25
+
+ 20
+
+ 15
+
+ 10
+
+ 5
+
+)
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+ 
+n
+u
+r
+ 
+e
+g
+a
+r
+e
+v
+A
+
+ 0
+
+ 50
+
+ 100
+
+ 150
+
+ 200
+
+ 250
+
+ 300
+
+ 350
+
+Number Of Trajectories (x 1000)
+
+cheap regarding such complex query type. To be able to compare, we measured
+the average runtime of an optimized spatiotemporal range query on the 300,000
+relation, and it shows 20 s. This is in comparison to an average of 28.6 s for the
+STP query. This confirms that the proposed optimization approach works fine
+without the need for specialized index structures.
+
+• The runtime seems to scale linearly with the relation size. This is already
+expected since the STP predicate is applied to every tuple in the input (i.e. the
+tuples retrieved after the index access). Note that the BerlinMOD benchmark
+generates all the trips within the limited spatial space of the city Berlin. A larger
+number of cars in the simulation implies that the window queries on the R-tree
+index yield more candidates.
+
+To sum things up, the scalability of the STP queries as proposed in this paper is
+
+affected by four parameters:
+
+1. The number of lifted predicates in the STP predicate.
+2. The number of the temporal constraints in the STP predicate.
+3. The number of input tuples/trajectories.
+4. The length of the trajectories in terms of number of units.
+
+The scalability in terms of the first three parameters is evaluated already in the three
+experiments in this paper. The last parameter, the length of trajectories, affects the
+evaluation time of the STP predicate indirectly as it affects the evaluation time of the
+lifted predicates. This is because the lifted predicates are evaluated for the complete
+trajectory. When the trajectories are long (e.g. several weeks of observation time),
+the cost of evaluating the lifted predicates increases accordingly. The majority of
+them scale linearly with the number of units in the trajectory. More about the lifted
+predicate evaluation algorithms can be found in [4].
+
+In the STP predicate, the temporal constraints impose a certain temporal order
+between the lifted predicates. While evaluating the STP predicate, one gets temporal
+information from the lifted predicates evaluated so far. A proper analysis of this
+information can identify parts of the trajectory that can be safely ignored while
+evaluating other lifted predicates. In future work we plan to study how to utilize
+this information. Roughly, one would need to redefine the lifted predicates, so that
+
+Geoinformatica (2011) 15:497–540
+
+527
+
+they process the trajectory parts upon request (e.g. in a stream fashion) rather than
+the whole trajectory.
+
+10 Application examples
+
+To illustrate the expressive power of the proposed approach, we present in the
+following two subsections more examples for STP queries. Section 10.1 demonstrates
+a scenario called Finding Ali. It is about a kid called Ali, who moves on the street
+network of Cairo (the capital of Egypt). He makes several trips riding in several cars.
+We want to query for these cars using their movement profiles.
+
+In Section 10.2, we demonstrate example queries that the reader can try him-
+self/herself in Secondo. The queries are based on the berlintest database, that is
+available with the Secondo distribution. Unlike the first application, the queries are
+not linked to a single scenario. Hence we can demonstrate STP queries that involve
+moving points, moving regions, and many kinds of lifted operations.
+
+10.1 Finding Ali
+
+We assume that the road network of Cairo is observed for one month and that the
+complete trajectories of the cars are stored in the database. The queries assume the
+following schema:
+• Car[PlatesNumber: string, Trip: mpoint] where Trip is the complete trajectory of
+
+the car for the whole observation period.
+
+• Landmark[Name: string, Type: string, Location: point]
+• Heliopolis: A region object marking the boundary of the district Heliopolis where
+
+Ali lives.
+
+• AliHome: A point object marking Ali’s home.
+•
+•
+
+FamilyHome: A point object marking the house of the father’s family.
+SportsClub: A region object marking the boundary of the sports club in which
+Ali is a member.
+
+10.1.1 The go-to-school trips with the school bus
+
+The bus starts at the school at 6:00–6:30 am, enters the district Heliopolis at 6:45–
+7:00 am, stops near Ali’s home, picks Ali, exits Heliopolis at 7:45–8:00 am, then goes
+back to school.
+
+This query can be written without a spatiotemporal pattern predicate. The spa-
+tiotemporal window of every predicate is known. It can be expressed as a conjunction
+of 5 spatiotemporal range predicates (Bus inside School at the time interval [6:00,
+6:30] AND Bus inside Heliopolis at the time interval [6:45, 7] ...). We include this
+as an example of spatiotemporal pattern queries that can be expressed without STP
+predicates.
+
+10.1.2 The evening trips with grandfather
+
+Starting from Ali’s home, the grandfather drives Ali to the sports club. They stop at
+the sports club for at least 2 h. After the club they go by car to buy some bread, then
+back home.
+
+528
+
+Geoinformatica (2011) 15:497–540
+
+SELECT c.PlatesNumber
+FROM Car c, Landmark l
+WHERE
+
+l.Type like("%Bakery%") and
+
+patternex([distance(c.Trip, AliHome) < 20.0 as AtHome,
+
+c.Trip inside SportsClub as AtClub,
+distance(c.Trip, l.Location) < 20.0 as AtBakery,
+distance(c.Trip, AliHome) < 20.0 as BackHome],
+
+[AtHome later AtClub,
+
+AtClub later AtBakery,
+AtBakery later BackHome],
+
+end("AtClub") - start("AtClub") >= 2.0 and
+daypart(AtHome) = daypart(BackHome))
+
+In this query, the extended STP predicate is used to state that they stayed at least
+2 h in the sports club and that the whole pattern occurred in one day. Another note is
+that the query uses the predicate distance(c.Trip, AliHome) < 20.0 twice
+with two different aliases. The two aliases are needed to write the constraints. It is
+the responsability of the query optimizer to detect this common predicate (i.e. using
+common sub-expression optimization techniques) and evaluate it only once.
+
+10.1.3 The weekend trips with mother
+
+The mother starts from Ali’s home, drives only in main roads, stops near a shopping
+mall for at most 4 h then back home. The trip to the mall takes more than 1.5 times
+the estimated time because the mother uses only main roads. In Cairo it is easier to
+drive in main roads but they have high traffic.
+
+SELECT c.PlatesNumber
+FROM
+WHERE
+
+Car c, Landmark l
+l.Type like("%Mall%") and
+
+patternex([distance(c.Trip, AliHome) < 20.0 as AtHome,
+
+distance(c.Trip, l.Location) < 40.0 as AtMall,
+distance(c.Trip, AliHome) < 20.0 as BackHome],
+
+[AtHome later AtMall,
+
+AtMall later BackHome],
+
+end("AtMall") -
+(start("AtMall") - end("AtHome") >
+
+start("AtMall") <= 4.0 and
+
+1.5 * EstimatedDriveTime(l.location, AliHome) ))
+
+where we assume for simplicity that EstimatedDriveTime is a function that computes
+the normal period that a drive between two places takes. It may do so by finding the
+shortest path and multiply by the average driving speed.
+
+10.2 The Berlintest example
+
+In this example, we use the database berlintest, more specifically, the Trains relation
+and three newly added relations with the following schemas:
+
+SnowStorms[Serial: int, Storm: mregion]
+TrainsMeet[Line: int, Uptrip: mpoint, Downtrip: mpoint, Stations: points]
+TrainsDelay[Id: int, Line: int, Actual: mpoint, Schedule: mpoint]
+
+Geoinformatica (2011) 15:497–540
+
+529
+
+The SnowStorms relation contains 72 tuples, each of which contains a moving region,
+representing a snow storm that moves over Berlin. The TrainsMeet relation is
+generated from the Trains relation. The tuples contain all possible combinations of
+two trains that belong to the same line and move in opposite directions. The Stations
+attribute represents the train stations of the associated line. The TrainsDelay relation
+is also generated from the Trains relation. Each tuple contains the original Trip
+attribute (renamed into Schedule), and a delayed copy of it with delays of around
+30 min. The scripts for creating the three relations and for executing the example
+queries are available for download as will be explained in Appendix D.
+
+Table 4 lists the lifted operations used within the queries. We have designed the
+queries so that they illustrate the expressive power of our approach by using various
+lifted operations to compose complex pattern queries. The table shows only the
+operator signatures that are used in the queries. The complete list of valid signatures
+is in [16].
+
+Table 4 Lifted operations
+
+Operation
+at
+
+Signature
+
+isempty
+
+not
+rough center
+
+speed
+
+distancetraversed
+
+area
+intersection
+
+inside
+
+delay
+
+=
+
+xangle
+
+and
+
+, =,
+
+, =
+
+Type
+topological opera-
+tion
+
+set operation
+
+boolean operation
+aggregation
+
+metric property
+
+metric property
+
+metric property
+set operation
+
+spatial range predi-
+cate
+
+metric operation
+
+spatial range predi-
+cate
+direction
+
+boolean operation
+left/right
+range
+predicate
+
+Meaning
+computes a moving point that
+exists whenever the point argu-
+ment is inside the moving re-
+gion argument.
+true whenever the argument is
+defined.
+logical negation.
+aggregates the moving region
+into a moving point that repre-
+sents its center of gravity.
+the metric speed of the moving
+point.
+the  distance  that  the  moving
+point traversed since the start
+of its definition time.
+the area of the moving region.
+computes the common parts of
+the two arguments.
+true  whenever  the
+contained in the
+or passes some of the
+considers the first argument
+actual, and the second sched-
+uled  movement and computes
+the delay of the actual move-
+ment in seconds.
+true whenever
+point passes the point.
+the angle (in degrees) between
+x-axis and  the  tangent of  the
+moving point.
+logical and.
+true in the time intervals
+during which  the  comparison
+holds.
+
+the moving
+
+is
+
+.
+
+,
+
+530
+
+Geoinformatica (2011) 15:497–540
+
+10.2.1 Find the snow storms that passed over the train station mehringdamm
+
+with speed greater than 40 km/h
+
+SELECT *
+FROM
+WHERE
+
+snowstorms
+pattern([not(isempty(storm at mehringdamm)) as pred1,
+
+speed(rough_center(storm)) > 40.0 as pred2],
+
+[stconstraint("pred1","pred2", together)])
+
+where together is a vector temporal connector that yields true if the two predicates
+happen simultaneously.
+
+10.2.2 Find the snow storms that could increase their area over 1/4 km2 during the
+
+f irst traversed 5 km
+
+SELECT *
+FROM
+WHERE
+
+snowstorms
+pattern(
+[distancetraversed(rough_center(storm)) <= 5000.0
+
+as pred1, area(storm) > 250000.0 as pred2],
+
+[stconstraint("pred1","pred2", meanwhile)])
+
+10.2.3 Find the trains whose up and down trips meet inside one of the train stations
+
+SELECT
+FROM
+WHERE
+
+*
+trainsmeet
+pattern(
+[not(isempty(intersection(uptrip, downtrip)))
+
+as pred1, uptrip inside stations as pred2 ],
+
+ORDERBY
+
+[stconstraint("pred1","pred2", together)])
+line
+
+10.2.4 Find the trains that encountered a delay of more than 30 min after passing
+
+through the snow storm msnow
+
+SELECT *
+FROM
+WHERE
+
+trainsdelay
+pattern([not(delay(actual, schedule) > 1800.0)
+
+as pred1, actual inside msnow as pred2,
+delay(actual, schedule) > 1800.0 as pred3 ],
+
+[stconstraint("pred1", "pred2",
+
+vec("abab", "aba.b", "abba")),
+
+stconstraint("pred2", "pred3",
+
+vec("abab", "aba.b", "abba", "aa.bb", "aabb"))])
+
+10.2.5 Find the trains that are always heading north-west after passing mehringdamm
+
+SELECT *
+FROM
+WHERE
+
+trains
+patternex([trip = mehringdamm as pred1,
+ndefunit(((xangle(trip) >= 90.0) and
+
+Geoinformatica (2011) 15:497–540
+
+531
+
+(xangle(trip) <=180.0)), int2bool(1)) as pred2],
+
+[stconstraint("pred1","pred2",then)],
+(((start("pred2")- end("pred1"))
+< create_duration(0, 120000))
+
+and
+((inst(final(trip)) - end("pred2"))
+< create_duration(0, 15000))))
+
+where we use the ndefunit operator in this query to replace the undefined periods
+within the mbool by true units. This is because the xangle 2 operator yields undefined
+during the train stops in the stations. In other words, pred2 is true whenever the train
+is not heading other than north-west. The query restricts the results to the trains
+which started heading north at most 2 min after passing mehringdamm and remained
+so till at least 15 s before the end of the trip. These time margins are used to cut out
+small noisy parts in the data, so that the query yields results.
+
+11 System use and experimental repeatability
+
+The implementation of the described approach is made available as a Plugin for
+the Secondo system. It can be downloaded from the Plugin web site [22]. The User
+Manual (also available on the Plugin we site) describes how to install and run the
+Plugin. We have also made available the scripts for running the first and the second
+experiments in this paper, and the Berlintest application example, so that the results
+are repeatable. There are no scripts here for the third experiments. For interested
+readers, please refer to the BerlinMOD benchmark [6] to generate the test data,
+then use the queries as described in Section 9.3.
+
+Before running the scripts of the experiments, you need to install:
+
+1. The Secondo system version 2.9.1 or later.3 A brief installation guide is given
+in the Plugin User Manual on [22], and a detailed guide is given in the Secondo
+User Manual [24].
+
+2. The Spatiotemporal Pattern Queries Plugin (STPatterns) as described in [22].
+
+11.1 Repeating the first experiment
+
+During the installation of the STPattern Plugin, two files are copied to the Secondo
+bin directory $SECONDO_BUILD_DIR/ bin. These two files Expr1Script.sec and
+STPQExpr1Query.csv (described in Appendix A) automate the repeatability of the
+first experiment in this paper. The experiment can then be run as follows:
+
+1. Run SecondoTTYNT (i.e. in a shell, go to $SECONDO_BUILD_DIR/bin and
+
+write SecondoTTYNT).
+
+2The xangle operator is a corrected copy of the Secondo mdirection operator. It is presented only for
+the sake of this example. In the Secondo versions newer than 2.9.1, the mdirection operator works
+fine.
+3Since our optimizer extension wraps around the standard optimizer implementation, you may get
+different optimization results in later Secondo versions. The described results in this paper are
+obtained from version 2.9.1.
+
+532
+
+Geoinformatica (2011) 15:497–540
+
+2. Make sure that the berlintest database is restored (i.e. at the Secondo prompt,
+write list databases and make sure that berlintest database is in the list).
+Otherwise, restore it by writing
+
+restore database berlintest from berlintest
+
+at the Secondo prompt (press <return> twice).
+
+3. Execute the script by writing @Expr1Script.sec at the Secondo prompt. The
+script creates the required database objects and executes the experiment queries.
+This may take half an hour depending on your machine.
+
+Executing the script creates a Secondo relation STPQExpr1Result in the berlintest
+
+database, which stores the experimental results. Its schema is shown in Table 5.
+
+The experimental results are also saved to a comma separated file STPQ-
+Expr1Result.csv in the Secondo bin directory. The file has a similar structure as the
+table STPQExpr1Result.
+
+11.2 Repeating the second experiment
+
+Repeating the second experiments is also automated by script files that are copied
+to the Secondo directories during the installation of the STPattern Plugin. For the
+second experiment, two script files are used; the $SECONDO_BUILD_DIR/ bin/
+Expr2Script.sec file creates the necessary database objects, and the $SECONDO_
+BUILD_DIR/ Optimizer/ expr2Queries.pl executes the queries. The Expr2Script.sec
+file is described in Appendix B, and the expr2Queries.pl in Appendix C. The
+experiment is repeated as follows:
+
+1. Run SecondoTTYNT.
+2. Make sure that the berlintest database is restored, otherwise, restore it.
+3. Execute the Expr2Script.sec by writing @Expr2Script.sec at the Secondo
+
+prompt. This creates the necessary database objects.
+
+Table 5 The schema of the STPQExpr1Result relation
+
+Attribute
+
+no
+queryText
+
+Meaning
+
+Example
+
+A serial number for the query
+The query text
+
+0
+thousand feed
+filter [.stpattern[
+a:passmbool(mb10),
+b:passmbool(mb30);
+stconstraint("a", "b",
+vec("aa.b.b"))]] count
+2
+
+numPreds
+
+The number of the lifted predicates
+
+numConstraints
+
+The number of the constraints in the
+
+1
+
+ElapsedTimeReal
+
+0.171932
+
+ElapsedTimeCPU
+
+The measured CPU time, in seconds,
+
+0.16
+
+in the STP predicate
+
+STP predicate
+
+The measured response time,
+in seconds, for this query
+
+for this query
+
+Geoinformatica (2011) 15:497–540
+
+Table 6 The schemas of the Expr2StatsDO.csv and Expr2StatsEO.csv files
+
+Attribute
+
+Meaning
+
+NumberOfPredicates
+NumberOfConstraints
+Serial
+
+The number of the lifted predicates in the STP predicate
+The number of the constraints in the STP predicate
+A serial for the query in the range [0,9]. The serial is
+
+repeated with every experimental setup
+
+ExecTime
+
+The measured response time, in milliseconds, for this query
+
+443
+
+533
+
+Example
+
+2
+1
+1
+
+4. Quit SecondoTTYNT (i.e. write quit at the Secondo prompt), go to the
+Secondo optimizer folder $SECONDO_BUILD_DIR/ Optimizer and write
+SecondoPL. This starts the Secondo optimizer user interface in the single user
+mode.
+
+5. Write consult(expr2Queries). to let Prolog interpret the script file
+
+expr2Queries.pl.
+
+6. Open the berlintest database (i.e. write open database berlintest.).
+7. Write runSTPQExpr2DisableOptimization. to run the queries without enabling
+the optimization of the STP predicate, or runSTPQExpr2EnableOptimization.
+to run the queries with the optimization of the STP predicate being enabled. This
+can take more than an hour.
+
+The results are saved to the comma separated files Expr2StatsDO.csv and
+Expr2QueriesDO.csv in the Secondo optimizer folder if the STP predicate optimiza-
+tion is disabled. If it is enabled, the results are saved to the files Expr2StatsEO.csv
+and Expr2QueriesEO.csv.
+
+The files Expr2StatsDO.csv and Expr2StatsEO.csv show the run times. They
+
+include the columns described in Table 6.
+
+The files Expr2QueriesDO.csv and Expr2QueriesEO.csv have a similar structure.
+They exclude the ExecTime attribute and have two more attributes; the SQL
+attribute which stores the SQL-like query, and the ExecutablePlan which stores the
+execution plan generated by the Optimizer.
+
+12 Conclusions
+
+We propose a novel approach for spatiotemporal pattern queries. It combines
+efficiency, expressiveness and a clean concept. It builds on other moving objects data-
+base concepts. Therefore, it is convenient in the context of spatiotemporal DBMSs.
+Unlike the previous approaches, it is integrated with query optimizers. We also
+propose an algorithm for evaluating the constraint satisfaction problems, that is cus-
+tomized to fit the efficient evaluation of the spatiotemporal pattern predicates. In the
+paper, we demonstrate two application examples to emphasize the expressive power
+of our approach. Our work is completely implemented in the Secondo platform. The
+implementation and the scripts for experimental repeatability are available on the
+Web. The experimental evaluation shows that the run times are reasonable. As fu-
+ture work, we intend to revisit the definition of the lifted predicates, and extend them
+to process only the parts of the trajectories that are candidates for a solution of the
+STP predicate. This will allow for efficiently reporting patterns in long trajectories.
+
+534
+
+Geoinformatica (2011) 15:497–540
+
+A The Expr1Script.sec file
+
+This is a commented version of the Expr1Script.sec script.
+
+The script runs the first experiment with minimal user interaction. The experi-
+ment, as described in Section 9.1, is intended to evaluate the execution overhead
+of the STP predicates. This script first creates the required database objects, then
+executes the queries and logs the run times.
+
+close database;
+open database berlintest;
+
+let mb1 = randommbool(now());
+...
+let mb30 = randommbool(now());
+
+The commands open the database berlintest and creates 30 random mbool ob-
+jects with the names mb1... mb30. These objects are needed for the queries. The
+randommbool operator works as described in Section 9.1.1.
+
+let later = vec("aabb", "a.abb", "aab.b", "a.ab.b");
+let follows = vec("aa.bb", "a.a.bb", "aa.b.b", "a.a.b.b");
+let immediately = vec("a.bab", "a.bba", ...
+let meanwhile = vec(
+let then = vec( ...
+
+...
+
+The five vector temporal connectors are used in the queries as examples for vector
+temporal connectors. They are used together with the 26 simple temporal connectors
+to generate the queries.
+
+let STPQExpr1Query=
+
+[const rel(tuple([no:int, queryText: text,
+
+numPreds: int, numConstraints: int])) value ()]
+csvimport[’STPQExpr1Query.csv’, 0, "", "$"] consume;
+
+The query imports the experiment queries from the comma separated file STPQ-
+Expr1Query.csv and stores them in a Secondo relation called STPQExpr1Query.
+The [const . value .] operator tells the cvsimport operator the schema of the relation,
+which is shown in Table 7.
+
+The file contains 4,900 queries that were randomly generated as described in
+Section 9.1.2. The queries represent 49 experimental settings, each of which have
+
+Table 7 The schemas of the STPQExpr1Query.csv file and the STPQExpr1Query table
+
+Attribute
+
+no
+queryText
+numPreds
+numConstraints
+
+Meaning
+
+A serial for the query in the range [0, 4899]
+The query statement written in Secondo executable language
+The number of the lifted predicates in the STP predicate
+The number of the constraints in the STP predicate
+
+Geoinformatica (2011) 15:497–540
+
+535
+
+100 queries. The following query executes them and logs the results in the relation
+STPQExpr1Result:
+
+let STPQExpr1Result =
+STPQExpr1Query feed
+loopjoin[fun(queryTuple: TUPLE)
+
+evaluate(attr(queryTuple, queryText))
+project[ElapsedTimeReal, ElapsedTimeCPU]]
+consume;
+
+This query can take half an hour depending on your machine. You can query the
+results relation in any of the Secondo user interfaces [24] and create aggregations
+for the charts. Additionally, the following query exports the relation to the comma
+separated file STPQExpr1Result.csv in the Secondo bin directory.
+
+query STPQExpr1Result feed
+
+projectextend[; Serial: .no,
+
+NumberOfPredicates: .numPreds,
+NumberOfConstraints: .numConstraints,
+ResponseTime: .ElapsedTimeReal,
+CPUTime: .ElapsedTimeCPU]
+
+csvexport[’STPQExpr1Result.csv’, FALSE, TRUE]
+count
+
+NOTE We encourage the reader to get information about the Secondo operators
+by using the built-in operator descriptions. For example, to get help on the operator
+csvimport, write the following query at the Secondo prompt:
+
+query SEC2OPERATORINFO feed
+
+filter[.Name contains "csvimport"]
+
+consume
+
+B The Expr2Script.sec file
+
+This is a commented version for the Expr2Script.sec script.
+The script is used to generate the data required for running the second experiment
+in this paper without executing the queries. The queries need to be executed in the
+SecondoPL environment afterwards.
+
+close database;
+open database berlintest;
+
+let RestaurantsNumbered =
+
+Restaurants feed addcounter[no, 1] head[300] consume;
+
+let point1 =
+
+RestaurantsNumbered feed filter[.no = 1]
+
+extract[geoData];
+
+...
+
+536
+
+Geoinformatica (2011) 15:497–540
+
+let point300 =
+
+RestaurantsNumbered feed filter[.no = 300]
+
+extract[geoData];
+
+delete RestaurantsNumbered;
+
+First, the commands open the database berlintest. The geometries of the first
+300 restaurants in the Restaurants table are then copied to point objects (point1...
+point300) to be used in the queries.
+
+let later = vec("aabb", "a.abb", "aab.b", "a.ab.b");
+let follows = vec("aa.bb", "a.a.bb", "aa.b.b", "a.a.b.b");
+let immediately = vec("a.bab", "a.bba", ...
+let meanwhile = vec( ...
+let then = vec( ...
+
+The five vector temporal connectors, that are also created in Expr1Script.sec, are
+
+included here so that the two experiments can be run independently.
+
+let Trains20 = thousand feed head[20]
+Trains feed product consume;
+
+This query creates the Trains20 relation by replicating the tuples of the Trains
+relation 20 times. In the following query, we create an index on the Trains20 relation
+to test the proposed STP predicate optimization. The index is a spatial R-tree on the
+units of the Trip attribute. Instead of indexing the complete movement, the index is
+built on the units (i.e. a bounding box is computed for every unit in the Trip). This is
+done so that the bounding boxes better approximate the moving point.
+
+let Trains20_Trip_sptuni =
+
+Trains20 feed
+
+projectextend[Trip; TID: tupleid(.)]
+projectextendstream[TID; MBR: units(.Trip)
+
+use[fun(U: upoint) bbox2d(U) ]]
+
+sortby[MBR asc]
+bulkloadrtree[MBR];
+
+C The expr2Queries.pl file
+
+This Prolog file is used to run the queries of the second experiment and log the
+execution times. It defines four prolog predicates:
+
+1.
+
+2.
+
+runSTPQExpr2DisableOptimization/0: switches off STP predicate optimization
+by setting the optimizer options, and executes the queries.
+runSTPQExpr2EnableOptimization/0: switches on STP predicate optimization,
+and executes the queries.
+
+3. executeSQL/4: helper predicate for executing queries.
+4.
+
+runSTPQExpr2/4: the facts table that stores the queries. The file contains 490
+such facts, 10 queries for each of the 49 experimental settings. The queries are
+randomly generated as described in Section 9.2.2. For every query, the fact also
+stores its serial, number of lifted predicates, and number of constraints.
+
+Geoinformatica (2011) 15:497–540
+
+537
+
+D Running the Berlintest application example
+
+To execute the queries in the berlintest example, you need first to run the script
+BerlintestScript.sec from the SecondoTTYNT prompt. The script is installed within
+the STPattern Plugin. You also need to have the berlintest database restored in your
+system. The script file creates the required database objects but it doesn’t execute
+the queries. It first defines some temporal connectors:
+
+close database;
+open database berlintest;
+let later= vec("aabb", "a.abb", "aab.b", "a.ab.b");
+let follows= vec(...
+let immediately= vec(...
+let meanwhile= vec(...
+let then= vec(...
+let together= vec(...
+
+Then it restores the SnowStorms relation from the SnowStorms file in the Sec-
+
+ondo/bin directory, which is installed with the Plugin.
+
+restore SnowStorms from SnowStorms;
+
+The following command creates the relation TrainsMeet, that is used in the
+example in Section 10.2.3. Every tuple in the relation is a different combination of an
+up train, down train of the same line, and the stations where the train line stops.
+
+let TrainsMeet =
+
+Trains feedproject[Line, Trip, Up] {t2}
+
+filter[.Up_t2 = FALSE]
+
+Trains feedproject[Line, Trip, Up] {t1}
+
+filter[.Up_t1 = TRUE]
+
+hashjoin[Line_t2 , Line_t1 , 99997]
+extend[Line: .Line_t1, Uptrip: .Trip_t1,
+
+Downtrip: .Trip_t2,
+
+Stations: ((breakpoints(.Trip_t1,
+
+create_duration(0,5000) )
+union val(initial(.Trip_t1)))
+union val(final(.Trip_t1)))]
+
+project[Line, Uptrip, Downtrip, Stations]
+consume;
+
+Next we create the relation TrainsDelay, used in the example in Section 10.2.4.
+Every tuple has a schedule and an actual moving point. The schedule movement is a
+copy from the Trip attribute in the Trains relation. The actual movement should have
+delays of about half an hour. We shift the Trip 1,795 s forward, and apply a random
+positive or negative delay up to 10 s to the result. This creates actual movements with
+random delays between 29:45 and 30:05 min.
+
+let TrainsDelay=
+Trains feed
+extend[Schedule: .Trip,
+
+538
+
+Geoinformatica (2011) 15:497–540
+
+Actual: randomdelay(
+
+.Trip translate[create_duration(0, 1795000) ,
+0.0, 0.0], create_duration(0,10000) ) ]
+
+project[Id, Line, Actual, Schedule]
+consume;
+
+After running the BerlintestScript.sec script, use the Javagui to execute the queries.
+
+It is the graphical user interface for Secondo. To launch it:
+
+1. Start the Secondo kernel in server mode, the optimizer server, and the GUI:
+
+go to $SECONDO_BUILD_DIR/bin,
+
+In a new shell,
+SecondoMonitor -s.
+In a new shell, go to $SECONDO_BUILD_DIR/Optimizer, and type
+StartOptServer.
+In a new shell, go to $SECONDO_BUILD_DIR/Javagui, and type sgui. The
+Javagui will start and connect to both the kernel and the optimization server.
+
+and type
+
+2. Open the database. In the Javagui type:
+open database berlintest.
+
+3. Set the optimizer options. The Secondo optimizer maintains a list of options that
+controls the optimization. The examples in this paper require the options im-
+provedcosts, determinePredSig, autoSamples, rewriteInference, rtreeIndexRules,
+and autosave. To set each of these options, type in the Javagui:
+optimizer setOption(option)
+
+4. View the underlying network. Type:
+
+select * from ubahn to display the underground trains network.
+select * from trains to display the moving trains. Use the slider to view
+the results.
+Select the last query in the top-right panel and press hide to hide the trains.
+select * from snowstorms to display the moving snow storms.
+hide the snow storms.
+
+5. Type the example queries as in Section 10.2, and make sure to type everything in
+
+lower case.
+
+References
+
+843
+
+1. Allen JF (1983) Maintaining knowledge about temporal intervals. Commun ACM 26(11):832–
+
+2. Alvares LO, Bogorny V, Kuijpers B, Fernandes de Macedo JA, Moelans B, Vaisman A (2007)
+A model for enriching trajectories with semantic geographical information. In: GIS ’07: proceed-
+ings of the 15th annual ACM international symposium on advances in geographic information
+systems, pp 1–8
+
+3. Bessiere C (2006) Handbook of constraint programming, chap 3. Elsevier
+4. Cotelo Lema JA, Forlizzi L, Güting RH, Nardelli E, Schneider M (2003) Algorithms for moving
+
+objects databases. Comput J 46(6):680–712
+
+5. du Mouza C, Rigaux P (2005) Mobility patterns. Geoinformatica 9(4):297–319
+6. Düntgen C, Behr T, Güting RH (2009) BerlinMOD: a benchmark for moving object databases.
+
+VLDB J 18(6):1335–1368
+
+7. Erwig M, Schneider M (1999) Developments in spatio-temporal query languages. In DEXA ’99:
+Proceedings of the 10th international workshop on database & expert systems applications, p 441
+8. Erwig Ma, Schneider M (2002) Spatio-temporal predicates. IEEE Trans Knowl Data Eng
+
+14(4):881–901
+
+Geoinformatica (2011) 15:497–540
+
+539
+
+9. Erwig M (2004) Toward spatiotemporal patterns. In: de Caluwa R, de Tré G, Boudogua G (eds)
+
+Spatio-temporal databases. Springer-Verlag, New York, pp 29–54
+
+10. Forlizzi L, Güting RH, Nardelli E, Schneider M (2000) A data model and data structures for
+moving objects databases. In: SIGMOD ’00: proceedings of the 2000 ACM SIGMOD interna-
+tional conference on management of data, pp 319–330
+
+11. Frentzos E, Gratsias K, Pelekis N, Theodoridis Y (2007) Algorithms for nearest neighbor search
+
+on moving object trajectories. Geoinformatica 11(2):159–193
+
+12. Gudmundsson J, van Kreveld M, Speckmann B (2004) Efficient detection of motion patterns
+in spatio-temporal data sets. In: GIS ’04: proceedings of the 12th annual ACM international
+workshop on geographic information systems, pp 250–257
+
+13. Güting RH, Almeida V, Ansorge D, Behr T, Ding Z, Höse T, Hoffmann F, Spiekermann M,
+Telle U (2005) Secondo: an extensible DBMS platform for research prototyping and teaching.
+In: ICDE ’05: proceedings of the 21st international conference on data engineering, pp 1115–1116
+14. Güting RH, Behr T, Almeida V, Ding Z, Hoffmann F, Spiekermann M (2004) Secondo:
+an extensible DBMS architecture and prototype. Technical Report Informatik-Report 313,
+FernUniversität Hagen
+
+15. Güting RH, Behr T, Xu J (2010) Efficient k-nearest neighbor search on moving object trajecto-
+
+ries. VLDB J (online first)
+
+16. Güting RH, Böhlen MH, Erwig M, Jensen CS, Lorentzos NA, Schneider M, Vazirgiannis M
+(2000) A foundation for representing and querying moving objects. ACM Trans Database Syst
+25(1):1–42
+
+17. Hadjieleftheriou M, Kollios G, Bakalov P, Tsotras VJ (2005) Complex spatio-temporal pattern
+queries. In: VLDB ’05: proceedings of the 31st international conference on very large data bases,
+pp 877–888
+
+18. Ioannidis YE (1996) Query optimization. ACM Comput Surv 28(1):121–123
+19. Pelekis N, Kopanakis I, Marketos G, Ntoutsi I, Andrienko G, Theodoridis Y (2007) Similarity
+search in trajectory databases. In: TIME ’07: proceedings of the 14th international symposium
+on temporal representation and reasoning, pp 129–140
+
+20. Schneider M (2005) Evaluation of spatio-temporal predicates on moving objects. In: ICDE ’05:
+
+proceedings of the 21st international conference on data engineering, pp 516–517
+
+21. Wolfson O, Xu B, Chamberlain S, Jiang L (1998) Moving objects databases: issues and solutions.
+In: SSDBM’98: 10th international conference on scientific and statistical database management,
+pp 111–122
+
+22. Secondo Plugins. http://dna.fernuni-hagen.de/secondo.html/start_content_plugins.html
+23. Secondo Programmer’s Guide.
+
+http://dna.fernuni-hagen.de/secondo.html/files/programmersguide.pdf
+
+24. Secondo User Manual. http://dna.fernuni-hagen.de/secondo.html/files/secondomanual.pdf
+25. Secondo Web Site. http://dna.fernuni-hagen.de/secondo.html/
+
+Mahmoud Attia Sakr is a Ph.D. student at University of Hagen, Germany. He obtained a M.Sc.
+degree from University of Ain Shams in Cairo, Egypt in 2006. Currently he holds a DAAD scholar-
+ship for doctoral studies in Germany. His main research interests are moving objects databases and
+spatiotemporal pattern queries.
+
+540
+
+Geoinformatica (2011) 15:497–540
+
+Ralf Hartmut Güting has been a full professor in Computer Science at the University of Hagen,
+Germany, since 1989. He received his Diploma and Dr. rer. nat. degrees from the University of
+Dortmund in 1980 and 1983, respectively, and became a professor at that university in 1987. From
+1981 until 1984 his main research area was Computational Geometry. After a one-year stay at
+the IBM Almaden Research Center in 1985, extensible and spatial database systems became his
+major research interests; more recently, also spatio-temporal or moving objects databases. He is an
+associate editor of the ACM Transactions on Database Systems and an editor of GeoInformatica.
+He has published two German text books on data structures and algorithms and on compilers,
+respectively, and an English text book on moving objects databases, as well as around sixty journal
+and conference articles. His group has built prototypes of extensible and spatio-temporal database
+systems, the Gral system and the SECONDO system.
+
+

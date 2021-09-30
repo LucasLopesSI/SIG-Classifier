@@ -1,0 +1,1834 @@
+Geoinformatica
+DOI 10.1007/s10707-014-0213-7
+
+Querying visible points in large obstructed space
+
+Jianqiu Xu · Ralf Hartmut G ¨uting
+
+Received: 24 September 2013 / Revised: 16 April 2014 / Accepted: 10 June 2014
+© Springer Science+Business Media New York 2014
+
+Abstract Querying visible points is a fundamental problem in computational geometry and
+spatial databases. With the development of new applications such as trip planning and near-
+est neighbors, querying visible points plays a key role in obstacle space and the result can
+be further used such as defining the shortest path. Thereby, efficiently finding the result
+is essentially important. However, the performance of current methods decrease substan-
+tially for large datasets. To solve the problem, we proposes a new and fast algorithm to
+find visible points for an arbitrary query location inside a large polygon containing obsta-
+cles. The method is based on polygon triangulation. By decomposing the polygon into a set
+of triangles, we manage the polygon by organizing triangles in an efficient way instead of
+maintaining a large number of vertices. We propose a data structure to partition the search-
+ing space into several parts, each of which is independently processed. Afterwards, by
+recursively calling a method we search visible points by accessing triangles and return the
+result in a progressive way. Through a theoretical analysis, assuming the polygon contains
+N vertices in total, the time complexity of our algorithm is O(N), improving the exist-
+ing method O(NlogN). We prove the correctness of the algorithm and analyze the space
+complexity, which is O(N). The technique is extended to return visible points less than a
+threshold distance to the query location. Using both synthetic and real datasets, we perform
+extensive experiments to test our algorithm and demonstrate its efficiency and effectiveness.
+Visible points are efficiently processed in a large obstacle space with over one million ver-
+tices. Experimental results show that our technique gains more than one order of magnitude
+speedup compared to competitive methods using large datasets.
+
+Keywords Visible points · Obstacle space · Polygon triangulation
+
+Part of the work is done when the author is a Ph.D student in FernUniversit¨at in Hagen, Germany.
+
+J. Xu ((cid:2))
+Nanjing University of Aeronautics and Astronautics, Nanjing Jiangsu China
+e-mail: jianqiu@nuaa.edu.cn
+
+R. H. G¨uting
+Fern Universit¨at in Hagen, Hagen Germany
+e-mail: rhg@fernuni-hagen.de
+
+Geoinformatica
+
+1 Introduction
+
+In the area of computational geometry and geographical databases, querying visible points
+(VP) is a basic problem. The task is to find objects in an obstructed area that are visible
+to a query location [11, 29]. In Euclidean space, two arbitrary points are directly reachable
+and connected by a straight line fully located in the space. In contrast, an obstructed area
+contains obstacles that inhibit the existence of such a line, sometimes also the boundary of
+the space blocks the connection. In this context, the path connecting two locations should
+take into account obstacles and is usually not a straight line but pieces of segments, each of
+which consists of two vertices from obstacles as endpoints. Similarly, the distance between
+two objects in an obstructed area depends on the length of the shortest path, which cannot
+cross any obstacle. Finding visible points plays a pivotal role in an obstructed space and is
+the basic step for advanced queries such as trip planning and distance computation. In this
+paper, we study the problem of finding visible points to a query location and those qualified
+points are vertices from obstacles or the boundary of the polygon. Formally, the problem is
+defined as follows.
+
+Definition 1.1 Visible points query
+
+Let P denote a polygon in the plane containing a set of holes(“obstacles”) and each hole
+is represented by a simple polygon. Each polygon consists of a set of points {v1, v2, ..., vn}.
+Let q be an arbitrary query location inside P . VP returns all polygon points that are visible
+to q. Those points are from either the outer contour of P or obstacles. Visible means that the
+straight line between q and vi fulfills the condition: (i) completely inside P and (ii) does
+not cross any obstacle.
+
+P can be convex or concave, and obstacles inside P are called holes. In the following,
+we use terms points and vertices interchangeably. Figure 1 shows an example. The polygon
+contains three obstacles {O1, O2, O3}. We mark all visible points for the query location q
+by solid dots and connect each visible vertex to q by a dotted line. The other vertices are
+not visible to q as they are blocked by obstacles.
+
+VP is a fundamental problem in obstacle space and the result can be further used in many
+applications such as spatial queries and analysis, geographical systems and visualization
+environment. For example, in urban areas tourists are interested in places such as buildings
+and shops which are visible from their current locations. A pedestrian walking around the
+city center may search the nearest bus stop and the obstacles are nearby buildings and some
+streets without zebra crossings. Visible points are used to determine the path to the target
+location. In a battlefield or first person shooting games, a soldier/player wants to have an
+
+Fig. 1 Query visible points
+
+Geoinformatica
+
+overview of locations that are visible because the path might be blocked by mountains,
+islands and constructions.
+
+In some applications, the observer wants to choose the best location to have a good view
+in a certain area. Recently, the indoor space receives increasing attention [33, 34]. Distance
+computation and trip planning in an indoor environment involves finding visible points
+because walls and furniture are treated as obstacles inside a building. In a 3D environment
+the user wishes to find the best placement of surveillance cameras and choosing the hotel
+room with the best view [20]. We illustrate this by using a 2D example, see Fig. 2. The goal
+is to determine the visible area for a query location. Figure 2a and b report the result for
+two locations q1 and q2, respectively. Obviously, q1 has a better view than q2. Since visible
+obstacle vertices to the location are used to calculate the area, an efficient solution is needed
+to find them.
+
+Visible points play a pivotal role in determining the shortest path in obstacle space,
+e.g., robot motion planning. In the context of computational geometry, main memory based
+shortest path problem has been extensively studied [7, 26]. The algorithm takes obstacles
+into account and returns a path that does not cross any obstacle. A common approach is to
+construct a visibility graph based on the obstacle set and query locations. Each node corre-
+sponds to an obstacle vertex or the start (end) point, and each edge connects two vertices that
+are not obstructed by any obstacle. The method maintains the entire visibility graph in main
+memory. However, there is limited work in the spatial database literature. Maintaining a
+visibility graph is not feasible in spatial databases for two reasons. First, due to the size lim-
+itation of main memory, large spatial datasets cannot be completely stored such as visibility
+graph. Second, the time cost of creating the entire visibility graph is extremely high. Each
+edge represents a pair of visible points, and finding all these edges is a prohibitively expen-
+sive procedure for online query. In addition, whenever the start or end location changes, the
+graph has to be rebuilt as one needs to find out visible obstacle vertices for start and end
+locations, i.e., connecting them to the graph. To solve the problem, the solution is as fol-
+lows: the visibility graph is stored on the disk instead of the memory, and only built on the
+set of obstacle vertices, i.e., excluding start and end locations. Therefore, we do not update
+the graph when the query location changes. To answer the query, one first connects start and
+end locations to the graph and then runs Dijkstra’s algorithm. This method is general and
+scalable. Thereby, it is crucial to find an efficient method of connecting query locations to
+obstacle vertices that are visible to them, which is the task of this paper.
+
+Fig. 2 Calculate the visible area
+
+Geoinformatica
+
+In the literature, interesting queries in obstacle space have been investigated such as
+obstructed nearest neighbors [8, 31], visible nearest neighbors [10, 23] and range queries
+[37]. However, the results are different from this paper. The problem of obstructed near-
+est neighbors finds nearest neighbors under the shortest path metric in obstacle space,
+and returned objects can be visible or invisible to the query location. Regarding visi-
+ble nearest neighbors, target objects are not obstacle vertices but other interesting spatial
+objects. The issue aims at finding objects close to the query location instead of all vis-
+ible obstacle vertices. Efficient algorithms are proposed to find the result by employing
+spatial indices such as R-tree to prune the search space. However, this method is not
+applicable for our problem as distant objects might also be visible. We elaborate the dif-
+ference between those works and our problem in Section 2.1. To our knowledge, the
+only approach to finding the complete set of visible points for a query location is to per-
+form a rotational plane sweep (RPS) algorithm [27]. The time complexity for RPS is
+O(NlogN + N) where N is the total number of obstacle vertices. In detail, O(NlogN)
+is for sorting and O(N) is for sweep processing. However, the algorithm has to process
+all vertices without pruning any searching space. The performance decreases for a large
+dataset and cannot guarantee the efficiency when a large number of vertices (obstacles) are
+considered.
+
+In this paper, we propose a novel and fast algorithm to return visible points for the query
+location. The idea is to have a structure to manage the large polygon and utilize such a struc-
+ture to support operations on the polygon. The method is based on polygon triangulation
+[14, 22]. Initially, we decompose P into a set of triangles and represent P by those trian-
+gles. Then, we build a dual graph on them where each node corresponds to a triangle and
+an edge is created if two triangles are adjacent. The preprocessing step needs O(NlogN)
+for triangulation and is done once before the on-line searching (we assume there is no
+update for the polygon). Afterwards, we locate the triangle that the query point belongs
+to, and start searching visible points from the triangle. The intuition behind our approach
+is that (i) the three vertices consisting of the triangle are definitely visible to the query
+point and (ii) further results are found in a progressive way by visiting nearby triangles. We
+propose a structure to partition the searching space into several parts, and each part is indi-
+vidually processed. Such a structure is used to shrink the searching area. Then, we access
+adjacent triangles based on the dual graph to find qualified points. By calling a recursive
+method, the structure decreases the searching space after each partition. As a result, visi-
+ble points are incrementally obtained by visiting nearby triangles. By analyzing the time
+complexity, our method achieves O(N) in the worst case. The space complexity is O(n).
+We extend the work to support finding visible points within a distance to the query loca-
+tion. We demonstrate the efficiency and effectiveness of the technique through extensive
+experiments.
+
+The contribution of the paper is summarized as follows:
+
+• We introduce an efficient method to manage the large polygon. A data structure is pro-
+posed to handle the searching space. Based on that, an efficient algorithm is developed
+to incrementally find all obstacle vertices that are visible to the query location.
+
+• We analyze the time and space complexity of the algorithm, and also prove the
+
+• We extend the technique to find visible points that their distance is less than a threshold
+
+correctness.
+
+to the query location.
+
+• Using real and synthetic datasets, we carry out a thorough experimental evaluation. The
+
+results confirm the superiority of the technique over other methods.
+
+Geoinformatica
+
+The rest of the paper is organized as follows: related work is reviewed in Section 2.
+Section 3 introduces the framework. The algorithm is presented in Section 4. We analyze
+the time and space complexity of the algorithm, and also prove the correctness in Section 5.
+The technique is extended to one variation of the problem in Section 6. We conduct the
+experiment in Section 7 and conclude the paper in Section 8.
+
+2 Related work
+
+2.1 Nearest neighbors in obstacle space
+
+A comprehensive study of spatial query processing in the presence of obstacles is consid-
+ered in [36, 37]. A new challenge of the problem is to efficiently compute the length of
+the shortest path avoiding obstacles. Several algorithms are proposed for processing typical
+queries such as range queries, nearest neighbors, e-distance joins, closest pairs and dis-
+tance semi-joins. An R-tree is built on query objects and obstacle datasets for pruning the
+searching space. A local visibility graph is maintained for obstacles that may influence the
+query result. Among those queries, nearest neighbor receives more attention in the current
+state-of-the-art. There are two kinds: obstructed nearest neighbor and visible nearest neigh-
+bor, both of which are useful in geographical information systems and spatial databases.
+The former uses the obstacle distance to calculate the distance between objects and find
+objects with the minimum distance to the query location. A target with the minimum
+Euclidean distance might not be the result if it is blocked. The latter only considers objects
+that are visible to the query location, i.e., invisible objects are not qualified even they are
+closer.
+
+For obstructed nearest neighbor query, the method first finds the Euclidean nearest neigh-
+bor a and calculates the obstructed distance between a and the query point q, denoted
+by dO (q, a). Using the Euclidean lower-bound property, objects whose Euclidean dis-
+tance is larger than dO (q, a) cannot be the result. Therefore, dO (q, a) is used as a
+threshold to prune the searching space. An efficient algorithm is proposed in [31] to pro-
+cess data points and obstacles relevant to the query in an incremental way. Later, Gao et
+al. [8] study the problem of finding continuous obstructed nearest neighbors by a query
+line segment instead of a point. A concept called control point is introduced to sim-
+plify the computation and comparison of the obstructed distance between two objects.
+A quadratic-based method is proposed to form split points, at which place the nearest
+neighbor changes.
+
+Visible nearest neighbor is processed in [23], supporting static query point. The dataset
+consists of data objects and obstacles. Both of them are represented by polygons. Since
+objects represented by polygons can be partially visible, a new distance function called
+MinViDist is introduced to return the distance between a query point and the nearest visi-
+ble point of a polygon with regard to a given visibility setting. The algorithm is based on
+the observation that a farther object cannot effect the visibility of a near object. The query
+procedure performs nearest neighbor searching and checks the visibility in an incremental
+way without computing visible regions in advance. Continuous visible nearest neighbors
+is considered in [10] to return visible objects for a query line segment. The data set and
+the obstacle set are indexed by two separate R-Trees, and effective pruning heuristics are
+proposed to improve the search performance. Visible reverse k-nearest neighbor is pro-
+cessed in [9] that finds all data points having q as one of their k NNs and are visible
+to q.
+
+Fig. 3 Obstructed nearest
+neighbors
+
+Geoinformatica
+
+The above two nearest neighbor queries are different from the present one. Obstructed
+nearest neighbors return objects according to their obstacle distance to the query location.
+However, the visibility of returned objects is not considered. That is, objects can be visible
+or invisible to q. Figure 3 depicts this scenario, showing three interesting objects {a1, a2,
+a3}. The nearest object to q is a1, which is in fact not visible to q. Additionally, they are
+interested in finding k nearest objects. A threshold distance is used to prune farther objects.
+Given a spatial object ai, the obstacle distance between ai and q is calculated. Then, all
+objects whose Euclidean distance is larger than that value cannot be closer to q than ai due
+to Euclidean lower bound. In contrast, we aim to find all obstacle vertices that are visible
+to q. The Euclidean distance cannot be directly used to remove vertices that are far away
+from q as distant objects might also be visible. For visible nearest neighbor queries, there
+are also significant differences. The paper [10] returns interesting objects (e.g., restaurants
+and hotels) represented by points that are visible instead of obstacle vertices. They use
+the visible region to prune unqualified data objects, but do not check the visibility of each
+obstacle vertex. In [23], the authors make no distinction between point objects and obstacles,
+which is close to our case that processes obstacle vertices. They return objects if they are
+visible or partially visible (i.e., contents) as polygons are used to represent objects. The
+value MinViDist is useful to find the nearest visible object but cannot determine all visible
+points. The visibility of each obstacle vertex is not examined. Using the running example,
+{O1, O2, O3} are all visible to q and the result is < O2, O1, O3 > according to their
+MinViDist to q, see Fig. 4. Obviously, O1, O2 and O3 have both visible and invisible vertices
+to q, which are precisely determined in this paper. To sum up, those approaches are not
+applicable in our case and cannot return the correct result.
+
+Fig. 4 Visible nearest neighbors
+
+Geoinformatica
+
+2.2 Rotational plane sweep
+
+Sharir and Schorr [27] perform a rotational plane sweep for searching visible points. The
+algorithm first sorts all obstacle vertices in counter clockwise (or clockwise) order accord-
+−→
+qqh be the starting horizontal sweep line (qh.x is larger than the axis value of
+ing to q. Let
+q and all obstacle vertices), depicted in Fig. 5a. Afterwards, the vertices are stored in a pri-
+ority queue according to the angle. A binary search tree is used for visible checking, which
+−→
+qph. Each node in the tree stores the segment of an
+initially stores all segments intersecting
+obstacle and the key is set as the distance between q and the segment. For each vertex vi
+taken from the queue, three operations are performed: (1) visible checking; (2) inserts the
+segment vivj into the tree where rotating from qvi to qvj is in counter clockwise order;
+(3) deletes the segment vivk from the tree where rotating from qvi to qvk is in clockwise
+−→
+qvi neither passes
+order. If vi is visible to q, we put vi into the result set. This means that
+through any obstacle nor contains any obstacle vertex (excluding vi). Let min(T r) be the
+smallest key in the tree and there are two cases that vi is visible: (i) dist (q, vi) ≤ min(T r)
+−→
+and (ii) no obstacle segment in T r intersects
+qvi or the intersection point is q or vi. The
+algorithm repeats the same procedure for each vertex until the queue is empty. The time
+complexity is O(N + NlogN). Given a polygon with a large number of vertices, the perfor-
+mance decreases dramatically due to the costly sorting procedure and tree operations such
+as inserting and deleting.
+
+The above work deals with an open space, that is no outer boundary covering all obsta-
+cles. To let RPS support our problem, the algorithm is adapted as follows: (i) For points
+inside P , RPS is directly applied; (ii) For points located on the boundary, a bounding box is
+created to contain the outer boundary as a region inside and the space between the bounding
+box and the outer boundary is treated as obstacle areas, see Fig. 5b.
+
+Based on rotational plane sweep algorithm, one can create a visibility graph [5, 12, 24],
+which is utilized to compute the distance between two objects in the presence of obstacles.
+Each node corresponds to an obstacle vertex and each edge connects two vertices that are
+visible. Given the start and end locations, one computes the visibility graph and then uses the
+graph to find the shortest path in obstacle space. However, the procedure runs O(n2logn)
+time and takes O(n2) space [7]. Whenever the location changes, one needs to recreate the
+graph. The task of this paper is not to construct a visibility graph for the shortest path
+
+Fig. 5 Rotational plane sweep
+
+Geoinformatica
+
+searching, but find all visible points to the query location. Our method can be used to create
+edges in the graph by running the algorithm for each vertex.
+
+2.3 The shortest path and approximate visibility
+
+In computational geometry, there are some works on searching the shortest path in a poly-
+gon. Papers [13, 15] consider that P is a simple polygon (convex or concave) without holes.
+In this case, the funnel algorithm [6, 19] can be used. The method first defines the search-
+ing space called channel and then uses the funnel structure (a region defined by the shortest
+paths from the start location to two endpoints of an edge or diagonal of P ) to compute the
+shortest path. However, the method can not guarantee the shortest path if there are holes
+inside. Given a set of obstacles in 2D space, a start location and an end location, the goal is
+to find the shortest path connecting start and end locations which does not cross any obsta-
+cle [16, 21, 26]. A typical method involves two steps: (1) construct a visibility graph; (2)
+compute the shortest path on the graph. Some other methods are also proposed. A shortcut
+operation is introduced in [28] to discard portions of the obstacle space for the purpose of
+minimizing the searching space and the number of visited vertices. Therefore, not all visible
+vertices have to be dealt with during the query processing. The approach presented in [17]
+is to construct a relevant subgraph based on the overall visibility graph on P and search the
+graph using Dijkstra’s algorithm, constructing edges as the algorithm proceeds. We do not
+focus on finding the shortest path but visible points.
+
+Due to the time complexity of exact visibility computation, an approximate result is also
+useful in some applications. For example, an efficient method of updating visibility informa-
+tion is essentially important for a large dynamic virtual environment. The paper [18] defines
+an approximate visibility query that aims to find an approximate visibility set consisting of
+visible objects such that the visibility set is guaranteed to be less than a distance with a prob-
+ability comparing with the exact answer. They propose a pre-computation method based
+on the observation that the closer two viewpoints are, the more similar are their visibility
+vectors. An index structure is developed in particular to support visibility computation in
+dynamic environments. They divide the space into disjoint partitions, pick a representative
+point from each partition and then pre-compute the visibility vector of that point. A two-
+phase filtering technique is developed to reduce the cost of the index partition maintenance.
+Both the accuracy and efficiency of the method are tested. Spatial clustering in the presence
+of obstacles also receives considerable attention in the literature [25, 30, 35] and the purpose
+is to group spatial objects based on their distance or relative density in obstacle space.
+
+3 The framework
+
+Let {O1, O2, ..., On } be obstacles inside P and O0 denote the outer boundary of P . The
+contour of each Oi consists of a sequence of vertices and we define them in a counter
+clockwise order. Then, a vertex of P can be represented by vi = (o id, id, loc) (o id, id
+∈ Dint
+1 ∧ o id ≥ 0 ∧ id ≥ 0, loc ∈ Dpoint) where o id records the contour id and id
+defines the vertex order. Figure 6 depicts the polygon in Fig. 1 with the proposed vertex
+representation (the point information is omitted).
+
+1Using the algebraic terminology that for a data type α, its domain or carrier set is denoted as Dα .
+
+Geoinformatica
+
+Fig. 6 A polygon with holes
+
+Employing the algorithms from [14, 22], we perform polygon triangulation on P and
+get a set of triangles T ri each of which is denoted by tri(v1, v2, v3) ∈ T ri. We
+use the data type Dregion from spatial databases to represent a triangle (a polygon).
+The whole set of triangles is stored in a relation in which a tuple corresponds to a triangle.
+The data type Dregion is embedded as an attribute. In the relation, each triangle has a unique
+id and we sort triangles in increasing order on id, leading to a constant cost for accessing a
+tuple. Afterwards, we build a dual graph DG on these triangles where a node represents a
+triangle and an edge is created for two adjacent triangles. In this setting, the adjacency-list
+size for each node is three in maximum.
+
+Let (vi, vj ) denote a triangle edge. We denote the triangle where the query location q is
+located by triq . Three relationships (shown in Fig. 7) are defined in Def. 3.1 between q and
+triq : (1) inside; (2) meet; and (3) on border, defined in the following.
+
+Definition 3.1 Relationships between q and triq
+
+inside: q is inside triq ⇔ ¬∃ (vi, vj ): i (cid:9)= j ∧ (vi, vj ) Contains q.
+
+(1)
+(2) meet: q meets triq ⇔ ∃vi ∈ triq : vi.loc = q.
+(3)
+
+on border: q is on border of triq ⇔ ∃vi, vj : (vi, vj ) Contains q ∧ vi.loc (cid:9)= q ∧
+vj .loc (cid:9)= q.
+
+Fig. 7 Relationships between q
+and triq
+
+Given a query location, we first check the relationship between q and triq . Since q only
+fits to one case in each time, we process three cases separately. In each case, we use the
+dual graph to access triangles adjacent to triq to find more visible points. The framework
+of querying visible points is given in Algorithm 1, and we present the procedure of each
+case in the next section.
+
+Geoinformatica
+
+4 The VP query
+
+We outline the procedure of finding visible points in the beginning and then elaborate data
+structures and algorithms for each part in the following subsections. The idea is to determine
+at first visible points that are easy to find. Obviously, vertices from the triangle where the
+query location is located fulfill the condition. By observation, they in fact partition the
+searching space into several parts which do not have any overlap. Therefore, we process
+each part separately and summarize the result in the end. After each partition, the searching
+space decreases, and we repeat the procedure for each subspace.
+
+4.1 A clamp structure
+
+Before elaborating each sub algorithm, we introduce a structure called Clamp to be used for
+searching visible points. A clamp consists of three points with one being called apex and
+the other two being called feet, represented by
+
+Two connections are defined among the three points:
+
+−→
+af2, see Fig. 8a. Each
+connection starts from the apex and passes through one of the feet. A clamp partitions the
+space into two parts, cl.A and cl.A, as shown in Fig. 8b. We define that cl.A does not
+
+cl(a, f1, f2)(a, f1, f2 ∈ Dpoint).
+−→
+af1 and
+
+Fig. 8 Clamp structure
+
+Geoinformatica
+
+−→
+af1 and
+
+−→
+af2. One can calculate the angle of a clamp, that is ∠f1af2 or ∠f2af1.
+include lines
+We let cl.α denote the angle and define the value to be in the range (0, 180). Given a clamp
+and a point p, let β1=∠paf1 and β2=∠paf2 (β1, β2 ∈ (0, 180)) be two angles. We define
+the cover relationship between a clamp and p as below.
+
+Lemma 4.1 clamp covers p
+
+A clamp covers p if and only if cl.α = β1 + β2. This implies that the line
+
+−→
+ap is located
+
+inside cl.A.
+
+We prove that if
+
+−→
+ap inside cl.A, the cover condition cannot hold.
+
+Proof Proof by contradiction.
+
+If
+
+−→
+ap is inside cl.A, we have β2 + β1 + cl.α = 360. Let β2 = 360 − (β1 + cl.α). As
+cl.α = β1 + β2 (cover condition), then cl.α = β1 + 360 − (β1 + cl.α) by replacing β2. It
+contradicts.
+
+Figure 8c depicts an example with three points {p1, p2, p3}. According to the cover
+condition, the clamp covers p1 but does not cover p2 and p3. The case for p3 is straightfor-
+ward. For p2, as we define β1, β2 ∈ (0, 180), the cover condition does not hold if the three
+points {a, f1, p2} are co-linear. To sum up, a clamp structure partitions the space into two
+parts: cl.A and cl.A. Given a point, we can check whether this point is covered by a clamp
+or not.
+
+4.2 Inside
+
+If the inside condition holds, evidently, all vertices of triq are visible to q. We collect the
+three points and search more visible points inside P if exist. In the following, the notation
+Oi.vj is used to denote a vertex of P where i is the contour id and j is the vertex order.
+For example, O2.v3 represents the 3th vertex of the obstacle O2. We create three clamps by
+setting q as the apex and triangle vertices as the feet. Figure 9 shows an example: (1) cl1(q,
+O2.v2, O2.v3); (2) cl2(q, O2.v2, O3.v0); (3) cl3(q, O2.v3, O3.v0).
+
+The three clamps partition triq into three sub triangles. Each sub triangle formulates a
+clamp and determines the searching space. For each sub triangle, we only tackle points that
+are covered by the clamp and apply the depth-first method to search the adjacent triangles
+by accessing DG to find visible points. Without loss of generality, we take cl3 as an example
+to describe the procedure. By searching DG, we find the adjacent triangle to tri(q, O2.v3,
+O3.v0), that is tri(O1.v0, O2.v3, O3.v0). The next step is to check whether the adjacent
+triangle contains visible vertices to q. Since the two triangles are adjacent, i.e., share two
+vertices, only O1.v0 is checked. We denote the point to be checked by p. The following
+lemma is used to determine whether p is visible to q.
+
+Lemma 4.2 p is visible to q
+
+Let cl(q, f1, f2) be the current clamp with q being the apex and P olyq be a polygon with
+four vertices {q, f1, f2, p}. We say p is visible to q if P olyp is a strictly convex polygon. 2
+
+2Every internal angle is less than 180 degrees.
+
+Fig. 9 q inside triq
+
+Geoinformatica
+
+Proof This is guaranteed by the property of a convex polygon that every line segment
+between two vertices remains inside or on the boundary of the polygon.
+
+Note that if q, f1(f2) and p are co-linear, p is not visible to q as p is blocked by f1(f2).
+Given a polygon with n vertices, the time complexity for checking convex is O(n). Since
+P olyp always has four vertices, the time complexity is O(1). In Fig. 9, O1.v0 is visible to
+q and is collected. When p (the checked point) is visible, we split the clamp into two parts,
+and each part is also a clamp but with a smaller angle. For each subclamp, the apex remains
+the same (q), one foot is the same as before and the other foot is set to be p. cl3 is split into
+cl1
+3(q, O1.v0, O3.v0), shown in Fig. 10a. For each subclamp, we
+repeat the same procedure of visiting adjacent triangles to find visible points. Whenever a
+clamp is split, the angle of a subclamp becomes smaller to decrease the searching space in
+the sub procedure.
+
+3 (q, O1.v0, O2.v3) and clp2
+
+Now we consider the case that p is not visible. Considering cl1
+
+3 (q, O1.v0, O2.v3), by
+searching DG we find the triangle tri(O1.v3, O2.v3, O1.v0) and O1.v3 is not visible to
+q. The algorithm checks the edges (p, f1) and (p, f2) to determine whether the procedure
+of searching adjacent triangles should forward or stop. At the current state, p (the point to
+be checked) is O1.v3, f1 is O2.v3 and f2 is O1.v0 (or f1 is O1.v0 and f2 is O2.v3), see
+Fig. 10a. The searching stops on the edge if one of the following conditions holds.
+
+•
+
+If the edge belongs to the outer or obstacle contour of P , no adjacent triangles can be
+found.
+
+Fig. 10 Split the clamp
+
+Geoinformatica
+
+•
+
+If there exists an unvisited adjacent triangle to tri(p, f1, f2) sharing the edge (p, f1)
+(or (p, f2)), the searching stops when the internal angle ∠qf1p (∠qf2p) in P olyq is
+equal or larger than 180. The reason is if ∠qf1p ≥ 180 (∠qf2p ≥ 180), the vertex
+belonging to the adjacent triangle cannot be covered by the current clamp (see the cover
+condition in Lemma 4.1).
+
+The first condition is straightforward, and we prove the second condition as follows:
+
+Proof
+
+ii)
+
+i)
+
+no missing: Each clamp defines a sub searching space and there is no overlap
+among those subspaces. Therefore, the stop condition is individually checked for each
+clamp.
+no false hits: Without loss of generality, we consider the edge (p, f1). We prove
+by contradiction. Assuming p is covered by the clamp, P olyp is a strictly convex
+polygon. However, the angle ∠qf1p ≥ 180. This contradicts.
+
+In this example, O1.v3 is not visible to q. The searching stops at (O1.v0, O1.v3)
+since the edge belongs to the obstacle O1. The procedure also stops at the edge (O2.v3,
+3 (q, O1.v0, O2.v3) does not cover O0.v3. The vertices of P olyq are {q,
+O1.v3) because cl1
+O2.v3(f1), O1.v0 (f2), O0.v3} where p is O0.v3. As a result, the sub procedure for cl1
+3 (q,
+O1.v0, O2.v3) terminates at tri(O1.v0, O1.v3, O2.v3).
+
+Considering the other subclamp cl2
+
+3 (q, O1.v0, O3.v0), the algorithm finds tri(O1.v0,
+O3.v0, O3.v3) and checks O3.v3, which is visible. Then, cl2
+3 (q, O1.v0, O3.v0) is split
+into two parts and the same procedure is repeated. In the end, the algorithm returns
+{O3.v3, O1.v1} for cl2
+3 (q,
+
+3 (q, O1.v0, O3.v0), see Fig. 10b. We summarize the result of cl1
+
+Fig. 11 q meets a triangle
+
+Geoinformatica
+
+3 (q, O1.v0, O3.v0), and get the visible point set {O1.v0, O1.v1, O3.v3}
+O1.v0,O2.v3) and cl2
+for cl3. The procedure is the same for cl1 and cl2. Notice that O2.v1 is visible to q, but it is
+only found by cl2(q, O2.v2, O3.v0) for the reason that cl1 and cl3 do not cover O2.v1. In
+the end, we give the algorithms in Algorithm 2 and Algorithm 3.
+
+4.3 Meet
+
+In this case, the position of q equals to a triangle vertex. To determine the searching space,
+we process as follows. First, all triangles {tri1, trii , ..., trin} ⊂ T ri that contain q are col-
+lected. This step is optimized by building an R-tree on T ri as opposed to performing a
+linear searching. Then, for each trii we create a clamp with q being the apex and the two
+triangle vertices (not equal to q) being the feet. In the end, we call the function Depth-
+Traversal for each created clamp. In Fig. 11, q is located at O2.v2 and is contained by
+tri1(O2.v2, O2.v3, O3.v0) and tri2(O2.v2, O2.v1, O3.v0). Two clamps are created cl1(q,
+O2.v3, O3.v0) and cl2(q, O2.v1, O3.v0). The first clamp is split into several parts during
+searching, demonstrated in the figure. We give the algorithm in Algorithm 4.
+
+Fig. 12 q is on border of a
+triangle
+
+Geoinformatica
+
+4.4 On border
+
+Let (vi, vj ) denote the triangle edge that q is located on. There are two cases: (1) (vi, vj )
+belongs to one contour of P (obstacles or the outer boundary); (2) (vi, vj ) does not belong
+to any contour of P , demonstrated by q1 and q2 in Fig. 12. In the first case, two clamps are
+created to partition triq into two parts. We have cl1 = (q1, O3.v2, O0.v2), and cl2 = (q1,
+O3.v2, O0.v1). In the second case, the edge (vi, vj ) is shared by two triangles both of which
+are considered to partition the searching space. Each triangle is split into two parts, resulting
+in four clamps. In this example, we have cl1 = (q2, O2.v0, O2.v3), cl2 = (q2, O0.v3, O2.v0),
+cl3 = (q2, O0.v3, O1.v3), and cl4 = (q2, O1.v3, O2.v3). After the splitting, we call the
+DepthTraversal function to process each part. The algorithm is given in Algorithm 5.
+
+5 The analysis
+
+5.1 Time and space complexity
+
+The algorithm VP visits triangles to collect visible vertices to q and each triangle is only
+visited once. As a consequence, the complexity depends on the number of triangles after the
+decomposition of P . Let N (≥ 3) be the total number of vertices in P including the outer
+contour and obstacles, and H be the quantity of obstacles. We use T to denote the number
+of triangles after polygon triangulation, calculated by a well-known formula
+
+Now, we have to set the value of H for a polygon with N vertices. The lower and upper
+
+bounds can be determined, represented by
+
+T = N + 2 ∗ H − 2
+
+H ∈ [0, (N − 3)/3]
+
+(1)
+
+(2)
+
+Geoinformatica
+
+The lower bound shows a polygon without holes. The upper bound indicates that P has
+three vertices for the outer contour and all the other vertices are for holes. Combining Eqs. 1
+and 2, the number of triangles after decomposition is
+
+T ∈ [N − 2, 5N/3 − 4]
+
+(3)
+
+In the worst case, the algorithm has to visit all triangles, resulting in the time com-
+plexity O(5N/3 − 4) = O(N). Note that before running the VP algorithm, two pre-
+processing steps are needed: (1) polygon triangulation; and (2) building a dual graph.
+The time complexity for both of them is O(NlogN). This procedure is only done
+once, and therefore is not included in the on-line searching. It is often that problems
+are difficult to solve can be processed efficiently if the data has a certain structure.
+For our problem, we manage the large polygon by a set of triangles.
+
+The storage space includes three parts: (1) dual graph; (2) an auxiliary relation;
+(3) indices. The space complexity is O(n) for each case, and we analyze in the fol-
+lowing. According to the formula above, the number of produced triangles is O(n).
+The dual graph has O(n) nodes as each node corresponds to a triangle. There are
+at most O(3n) edges for the reason that a triangle should have three adjacent neigh-
+bors, but when the edge is located on the obstacle boundary, there is no neighbor.
+For the case meet, i.e., q is equal to an obstacle vertex, we need to efficiently find all tri-
+angles containing q. To accelerate the procedure, we create a relation in which each tuple
+stores (i) a vertex and (ii) the triangle id of the vertex. Note that a vertex may belong to more
+than one triangle. We take each triangle and decompose it into three tuples, each of which
+contains a vertex and a triangle id. The storage cost of the auxiliary relation is O(3n). The
+index part includes two b-trees: we maintain one for the triangle set with the key triangle
+id and the other for the auxiliary relation with the key vertex id. The space complexity for
+b-tree is O(n).
+
+Theorem 5.1 The VP algorithm runs O(n) time and uses O(n) space to find all visible
+obstacle vertices to the query location.
+
+To sum up, there are two advantages of the proposed method:
+
+• We decompose the large polygon into a set of triangles to efficiently maintain the data.
+Instead of managing a large amount of vertices, we handle a set of spatial objects and
+can leverage spatial indices such as R-Tree.
+
+• We create a graph on those triangles to keep the connectivity relationship between them
+
+for the purpose of accelerating the procedure for searching adjacent triangles.
+
+5.2 Correctness
+
+We turn to the correctness of our algorithm and give the analysis in the following.
+
+Theorem 5.2 Given a polygon P in the plane containing a set of holes (“obstacles”) and
+a query point q inside P , the VP algorithm returns all obstacle vertices that are visible
+to q.
+
+Proof We prove Theorem 5.2 by considering the following three aspects: (i) no missing
+result; (ii) no false hits; (iii) no duplicate.
+
+Geoinformatica
+
+(i)
+
+There is no vertex missing after polygon triangulation. This is guaranteed by tri-
+angulation theorem. After each partition, there is no overlap among subspaces and
+each part is individually processed. We safely prune unqualified data points and only
+stop searching when the current clamp meets an obstacle edge or the cover condi-
+tion does not hold. Otherwise, we access triangles based on the dual graph, which
+maintains all triangles and their adjacency. A triangle is either visited for check-
+ing the visibility or pruned by the stop condition. Therefore, there is no missing
+result.
+
+(ii) We examine the visibility between q and an obstacle vertex by checking the polygon,
+which consists of four points: q, the obstacle vertex and two feet points (see Lemma
+4.2). The visibility is guaranteed by the property of a convex polygon.
+
+(iii) During the searching procedure, whenever a visible vertex is found, we split the
+current clamp into two parts, producing two subspaces without overlapping. As a
+sequence, the method separately searches visible points in two subspaces. Thereby,
+there is no duplicate.
+
+6 Visible points within a range
+
+In spatial applications, users are often interested in objects that are close to them. Instead
+of finding all visible points, in this part we only return objects that their distance to q is
+less than a threshold. The extension of RPS and VP is straightforward. We calculate the
+distance between q and the object before returning the result, and only take objects fulfilling
+the distance condition. Besides the two algorithms, we implement a third method to return
+visible points within the query range, named VP Range. The method is based on the concept
+of visible and invisible regions used in [10, 23] and is explained as follows.
+
+The algorithm VP Range consists of three steps. First, we find all obstacles that are
+located in the query range because vertices are from obstacles. This is done by performing
+a breadth-first traversal of an R-tree built on obstacles. We insert qualified objects into a
+priority queue in which elements are sorted in increasing order of their minimum distance
+to q, and the one with the smallest distance is accessed first.
+
+Second, we visit each obstacle from the queue and prune some of them which cannot
+be the result. This is based on the pruning method that given an obstacle Oi and q, we can
+determine the invisible region blocked by Oi for q, see Fig. 13. O2 is the closest obstacle
+to q and the gray area is invisible to q. Therefore, vertices located inside the invisible area
+can be safely pruned. To accelerate the procedure of pruning invisible vertices, instead of
+checking whether a point is inside a region, we use the following two factors: block angle
+
+Fig. 13 Invisible region
+
+Geoinformatica
+
+−−−−→
+qOi.vi
+and dmax(q, Oi). Shown in Fig. 13, block angle is the maximum angle rotating from
+−−−−→
+qOi.vj (the rotating follows the direction of passing through the obstacle). The value
+to
+dmax(q, Oi) is the maximum distance between q and Oi. The pruning procedure is as fol-
+lows. Given an obstacle vertex, if it is within the block angle and the distance to q is larger
+than dmax(q, Oi), we prune such an vertex. Each obstacle from the queue will produce a
+pair (block angle, dmax(q, Oi)) and we put the pair into a list denoted by block list. For
+each Oi from the queue, we perform two operations:
+• We check each obstacle vertex to determine whether it is blocked by block list. If yes,
+
+we prune it. Otherwise, we put it into a candidate list.
+• Create a pair (block angle, dmax(q, Oi)) and insert
+
+into block list. Note that
+block angles from different obstacles may overlap. In this case, we merge them and
+take the maximum distance between those obstacles and q to create a new pair.3
+Consequently, the block list is also updated.
+
+it
+
+The output of the second step is a set of candidate vertices. In the third step, we run
+the rotational plane sweep algorithm to check the visibility of each candidate and return
+qualified objects. We give the algorithm VP Range in Algorithm 6.
+
+7 Experimental evaluation
+
+7.1 Setup and datasets
+
+In this part, we conduct the experimental study to test the performance of the proposed
+algorithm. The implementation is developed in an extensible database system SECONDO
+[1] and programmed in C/C++. A standard PC (Intel 3.3 GHz, 4 GB memory, 500GB disk)
+running Suse Linux (kernel version 2.6.34) is used. The dataset consists of two parts: syn-
+thetic dataset and real dataset. The tool MWGen [32] is used to create a relatively large
+polygon representing the overall walking area for a city. The program takes a set of roads as
+input, defines some parameters (e.g., the width of a road) and creates pavements and zebra
+crossings. Two road datasets are used, Berlin [2] and Houston [3].
+
+The real dataset is from the website [4], named CAR, containing the MBRs of streets
+in California. The original data format is in latitude/longitude and we convert the data
+
+3If we choose the method of checking the relationship between the invisible area and an vertex, merging two
+areas involves a costly operation, performing the union on two regions.
+
+Geoinformatica
+
+Fig. 14 Datasets statistics
+
+Fig. 15 Time cost
+
+into x and y coordinates using SECONDO tool (Gauss Kr¨uger coordinate system). We
+treat those MBRs as obstacles and create an outer bounding box to have a close space.
+The original data contains 2,249,727 MBRs, and some of them intersect with each other.
+For disjoint MBRs, we keep them, and for intersecting MBRs, we process them in two dif-
+ferent ways: 1) given a set of MBRs that intersect with each other, we take one of them and
+remove the others; 2) we perform the union on them and take the new polygon as a obstacle.
+Since the produced polygon may contain holes inside, we remove them from the data. We
+combine disjoint MBRs and processed polygons to be the whole dataset. Therefore, two
+different datasets are produced, named California-I and California-II, respectively. In each
+case, different numbers of MBRs are used by randomly selecting from the complete set to
+test the scalability of the algorithm. In California-I, the largest one contains 461,711 MBRs,
+and in Carlifornia-II the largest contains 56,498 MBRs.
+
+Let |P | denote the total number of vertices and |H | be the number of obstacles. We build
+a dual graph DG on triangles and use |DG.V| and |DG.E| to denote the number of nodes
+and edges, respectively. The polygon data as well as the dual graph are shown in Fig. 14.
+
+In the following, we evaluate the procedure of querying all visible points and compare
+the performance between VP and RPS. The rotational plane sweep algorithm is the only
+method that can return all visible obstacle vertices to the query location. In the experiment
+of finding visible points within a range, three methods are tested: the extension of VP and
+RPS, and VP Range.
+
+Geoinformatica
+
+Berlin
+Houston
+
+Berlin
+Houston
+
+[1,10]
+
+(10,20]
+
+(20,30]
+(a) Distribution of Visible Points
+
+(30, 50]
+
+[1,50]
+
+(50,100]
+(b) Distribution of Visited Triangles
+
+(100,300]
+
+Fig. 16 Results for synthetic data
+
+7.2 Effect of dataset size
+
+For each dataset, 5000 random points inside P are generated to be the set of query locations.
+We run both algorithms to find visible vertices and measure the execution time. The final
+result is the average value over all runnings where the time measurements are plotted in
+logarithmic scale. To perform a fair comparison, both algorithms have the same 5,000 query
+points. The complexity of RPS is O(NlogN + N) for each case, while our algorithm is
+O(N) in the worst case.
+
+As shown in Fig. 15, the experimental results confirm the efficiency of our algorithm
+where VP achieves more than one order of magnitude performance improvement. Time
+measurements are plotted in logarithmic scale. The precise value of the running time is
+reported in Fig. 22 in Appendix. Using real datasets, we test the scalability of both algo-
+rithms. There are several findings: (i) the time cost of RPS increases linearly when the
+dataset becomes large, but the time cost of VP maintains at the same level; (ii) VP far out-
+performs RPS; (iii) the running time of VP decreases marginally when the size of the dataset
+increases. We explain the reason of the last part in the next subsection.
+
+ 4500
+
+ 2000
+
+ 800
+
+ 300
+
+ 50
+
+ 5000
+ 2000
+ 1000
+
+CAR1
+CAR2
+CAR3
+CAR4
+CAR5
+
+ 100
+
+ 10
+
+ 1
+
+3200
+2000
+
+500
+200
+
+50
+
+10
+
+3500
+2000
+
+1000
+
+CAR1
+CAR2
+CAR3
+CAR4
+CAR5
+
+100
+
+10
+
+[1,100]
+
+(100,200]
+
+(200,500]
+
+>500
+
+(a) Distribution of Visible Points
+
+[1,1000]
+
+(1000,2000]
+(2000,3000]
+(b) Distribution of Visited Triangles
+
+>3000
+
+Fig. 17 Results for California-I
+
+Geoinformatica
+
+CAR1’
+CAR2’
+CAR3’
+CAR4’
+CAR5’
+
+5000
+
+1000
+
+500
+
+100
+
+ 2
+ 1
+
+ 0.1
+
+ 0.01
+
+ 31
+ 10
+
+ 1
+
+ 0.1
+
+ 0.01
+
+)
+c
+e
+s
+(
+e
+m
+
+i
+t
+ 
+d
+e
+s
+p
+a
+l
+E
+
+)
+c
+e
+s
+(
+e
+m
+
+i
+t
+ 
+d
+e
+s
+p
+a
+l
+E
+
+RPS
+VP
+
+RPS
+VP
+
+CAR1’
+CAR2’
+CAR3’
+CAR4’
+CAR5’
+
+ 6000
+
+ 1000
+
+ 500
+
+ 100
+
+ 7
+
+ 1
+
+ 0.1
+
+ 0.01
+
+ 10
+ 5
+
+ 1
+
+ 0.1
+
+ 0.01
+
+)
+c
+e
+s
+(
+e
+m
+
+i
+t
+ 
+d
+e
+s
+p
+a
+l
+E
+
+)
+c
+e
+s
+(
+e
+m
+
+i
+t
+ 
+d
+e
+s
+p
+a
+l
+E
+
+RPS
+VP
+
+RPS
+VP
+
+[1,100]
+
+(200,500]
+(100,200]
+(a) Distribution of Visible Points
+
+>500
+
+[1,1000]
+
+(1000,2000]
+
+(2000,3000]
+(b) Distribution of Visited Triangles
+
+>3000
+
+Fig. 18 Results for California-II
+
+7.3 The number of visible points and triangles
+
+Besides the time cost, for each query location we record the quantities of visible points
+and accessed triangles. Figure 16b show the results for Berlin and Houston. To analyze the
+data in a better way, we partition the result into several groups depending on the number of
+visible points and visited triangles. The value of x-dimension means the number of visible
+
+3
+
+0
+
+9
+
+0
+
+1
+
+5
+
+0
+
+2
+
+4
+
+0
+
+3
+
+6
+
+0
+
+3
+
+0
+
+9
+
+0
+
+1
+
+5
+
+0
+
+2
+
+4
+
+0
+
+3
+
+6
+
+0
+
+(a) Berlin
+
+(b) Houston
+
+3
+
+0
+
+9
+
+0
+
+1
+
+5
+
+0
+
+2
+
+4
+
+0
+
+3
+
+6
+
+0
+
+3
+
+0
+
+9
+
+0
+
+1
+
+5
+
+0
+
+2
+
+4
+
+0
+
+3
+
+6
+
+0
+
+(c) CAR5
+
+(d) CAR5’
+
+Fig. 19 Visible points by angle
+
+Geoinformatica
+
+ 5
+ 2
+ 1
+
+ 0.1
+
+ 0.01
+
+ 40
+ 20
+ 5
+
+ 1
+
+ 0.1
+
+ 0.01
+
+)
+c
+e
+s
+(
+e
+m
+
+i
+t
+ 
+d
+e
+s
+p
+a
+l
+E
+
+)
+c
+e
+s
+(
+e
+m
+
+i
+t
+ 
+
+d
+e
+s
+p
+a
+l
+E
+
+RPS
+VP
+VP_Range
+
+RPS
+VP
+VP_Range
+
+ 40
+ 10
+ 5
+
+ 1
+
+ 0.1
+
+ 0.01
+
+ 20
+ 5
+
+ 1
+
+ 0.1
+
+ 0.01
+
+)
+c
+e
+s
+(
+e
+m
+
+i
+t
+ 
+d
+e
+s
+p
+a
+l
+E
+
+)
+c
+e
+s
+(
+e
+m
+
+i
+t
+ 
+
+d
+e
+s
+p
+a
+l
+E
+
+RPS
+VP
+VP_Range
+
+RPS
+VP
+VP_Range
+
+5
+
+0
+
+0
+
+1
+
+0
+
+0
+
+0
+
+2
+
+0
+
+0
+
+0
+
+5
+
+0
+
+0
+
+0
+
+1
+
+0
+
+0
+
+0
+
+0
+
+1
+
+0
+
+0
+
+0
+
+2
+
+0
+
+0
+
+0
+
+5
+
+0
+
+0
+
+0
+
+1
+
+0
+
+0
+
+0
+
+0
+
+5
+
+0
+
+0
+
+0
+
+0
+
+(a) Berlin
+
+(b) Houston
+
+1
+
+0
+
+0
+
+0
+
+5
+
+0
+
+0
+
+0
+
+1
+
+0
+
+0
+
+0
+
+0
+
+5
+
+0
+
+0
+
+0
+
+0
+
+1
+
+0
+
+0
+
+0
+
+0
+
+0
+
+1
+
+0
+
+0
+
+0
+
+5
+
+0
+
+0
+
+0
+
+1
+
+0
+
+0
+
+0
+
+0
+
+5
+
+0
+
+0
+
+0
+
+0
+
+1
+
+0
+
+0
+
+0
+
+0
+
+0
+
+(c) CAR5
+
+(d) CAR5’
+
+Fig. 20 Visible points within a range
+
+points (accessed triangles) and the y-dimension shows the number of query locations that
+have such results. For example, in Fig. 16a, among 5000 queries in Berlin, there are 2,294
+query locations with less than 10 visible points. Similarly, the number of query locations
+receiving less than 10 visible points is 3,044 for Houston. To sum up, the number of visible
+points is less than 20 for 90 % of query locations. More than 90 % of query locations
+visited less than 100 triangles to find the results. The ratio of this number to all triangles
+is 0.07 % for Berlin and 0.02 % for Houston. In Section 5.1, we analyzed that in the worst
+case all triangles have to be accessed for our algorithm, but practically the number is quite
+small.
+
+We report the experimental statistics for real datasets in the following. As shown in
+Fig. 17 and 18, when the size of the dataset increases in terms of the number of vertices
+and the number of obstacles, we observe the following behavior. The number of visible
+points and accessed triangles for large datasets go to groups with a smaller value. For exam-
+ple, considering the number of visible points, CAR1 has 16 query locations receiving the
+number of visible points in the range [1, 100] and 168 for (100, 200]. The largest dataset
+CAR5 has 3,246 query locations for [1, 100] and 1,375 for (100, 200]. The same behavior
+appears for visited triangles. Since the efficiency of our algorithm depends on the number
+of accessed triangles (analyzed in Section 5.1), the less the number of visited triangles, the
+faster the algorithm is. The large dataset contains more obstacles, blocking the visible range
+for the query location. As a result, the number of visible points becomes small. This is the
+reason the time cost for the large dataset is even less than the small dataset (see Fig. 15b and
+c. The accurate value of above queries is reported from Figs. 22 to 24 in Appendix.
+
+Geoinformatica
+
+Table 1 The number of vertices
+in obstacles
+
+7.4 Angle
+
+Berlin
+
+Houston
+
+CAR
+
+CAR’
+
+|Avg(H )|
+
+8
+
+40.72
+
+4
+
+11.2
+
+−→
+qqh to
+
+Instead of finding all visible points, we define a searching range represented by [α1, α2) (α1,
+−→
+α2 ∈ [0, 360), α1 < α2). That is, starting from
+qqh, we return visible obstacle vertex vi to
+−→
+q that the angle rotating from
+qvi in counter clockwise order is between α1 and α2.
+To return the result, RPS is modified to process a subset of overall vertices (Fig. 19). After
+the sorting step, we prune some vertices that cannot be the result according to the angle
+and insert a subset of vertices into the priority queue. The searching procedure terminates
+when the angle of the vertex popped from the queue is larger than α2 as vertices coming
+later are needless for visibility checking. For our method, we check the angle of each vertex
+and only return qualified objects. In the experiment, we set the range between α1 and α2 to
+be the following: 30, 90, 150, 240, 360, e.g., [0, 30), [0, 90). The last setting is an extreme
+case, which is equal to the query of finding all visible points. In each case, the start angle is
+randomly selected in the domain. We use all datasets to perform the evaluation and report
+the result in Fig. 19 (the precise value is listed in Fig. 25). The result demonstrates that
+VP substantially outperforms RPS and shows a high performance regardless of the angle
+(Fig. 19).
+
+7.5 A spatial range
+
+In this part, we conduct the experiment of returning visible points less than a distance
+(Euclidean distance) to the query location. The performance of RPS and VP is the same as
+before, i.e., not effected by the distance. RPS needs to check the visibility of each vertex
+and accesses all vertices. The efficiency of VP is guaranteed by O(n) in the worst case. In
+practice, the algorithm is very fast as we can prune the searching space when visiting tri-
+angles. The time cost of VP Range is between RPS and VP in most cases, see Fig. 20. We
+also list the precise value of time cost in Fig. 26 in Appendix.
+
+Compared with RPS and VP, the performance of VP Range deteriorates significantly
+when the distance increases. In Fig. 20a and b, the efficiency of VP Range is worse than
+RPS for the longest query distance. We explain as follows. VP Range first finds candidate
+vertices within the query range. This leads to less number of vertices for the algorithm RPS
+because objects out of the range are pruned. If the distance is small, the performance is
+much better than RPS, which is reasonable. However, when the distance becomes large,
+more obstacles are located in the query range. In the second step of VP Range, the method
+accesses each obstacle vertex to determine whether it can be pruned or not. If the number of
+vertices is large, this step is a costly procedure. The performance depends on the quantity of
+points in obstacles. For each dataset we calculate the average number of points per obstacle
+denoted by |Avg(H )| and show the result in Table 1. Houston has the largest value resulting
+in the poor performance when the query distance becomes large.
+
+8 Conclusions
+
+In this paper, we study the problem of querying visible points in a large polygon including
+many obstacles. Based on the result of polygon triangulation, we manage the obstacle space
+
+Geoinformatica
+
+by a set of triangles and build a dual graph on them. We establish an efficient algorithm to
+find the result, which is to search visible points by accessing adjacent triangles and report
+the result in a progressive way. The time and space complexities are also analyzed. The
+technique is extended to support finding visible points within a range represented by angle
+or distance. An extensive experimental study is conducted by using both real and synthetic
+datasets. The results show that our method significantly outperforms other methods in all
+settings, which is consistent with the theoretical analysis.
+
+We focus on finding visible points from obstacle vertices, which can be used to define
+the shortest path between two locations in obstacle space. The visible region for the query
+location is also related to these visible vertices. If the query location is equal to an obstacle
+vertex, we can build the connection between returned objects and the query location, repre-
+sented by a spatial line. This in fact creates edges for visibility graph. One limitation of the
+present work is we assume the space is closed. If an open space is considered, we need to
+define a boundary to make use of the proposed method. Another issue is the proposed tech-
+nique is applicable to a 2D space, but does not support the query in a 3D environment. This
+could be further considered in the future.
+
+Acknowledgment This work is supported in part by NSFC under grants 61300052, the Fundamental
+Research Funds for the Central Universities under grants NZ2013306 and Natural Science Foundation of
+Jiangsu Province of China under grants BK20130810. The first author thanks Bin Yao for helpful comments
+on the revised version of this paper.
+
+Appendix: Experimental statistics
+
+Fig. 21 Statistics for evaluation of dataset size
+
+Fig. 22 Berlin and Houston
+
+Fig. 23 California-I
+
+Fig. 24 California-II
+
+Geoinformatica
+
+Fig. 25 Time cost (sec.) for angle
+
+Fig. 26 Time cost (sec.) for visible points within a range
+
+References
+
+1. http://dna.fernuni-hagen.de/secondo.html/index.html.
+2. http://www.bbbike.de/cgi-bin/bbbike.cgi(2012.6.25)
+3. http://www.census.gov/geo/www/tiger/tgrshp2010/tgrshp2010.html(2012.6.25).
+4. http://www.chorochronos.org/?q=node/59(2013.8)
+5. Ben-Moshe B, Hall-Holt OA, Katz MJ, Mitchell JSB (2004) Computing the visibility graph of points
+
+within a polygon. In: symposium on computational geometry, pp 27–35
+
+6. Chazelle B (1982) A theorem on polygon cutting with applications.In: IEEE symposium on foundations
+
+7. De Berg M, Kreveld M, Overmars M, Schwarzkopf O (2000) Computational geometry:algorithms and
+
+8. Gao Y, Zheng B (2009) Continuous obstructed nearest neighbor queries in spatial databases.In:
+
+of computer science
+
+applications, 2nd edn. Springer, Berlin
+
+SIGMOD, pp 577–590
+
+9. Gao Y, Zheng B, Chen G, Lee WC, Lee KCK, Li Q (2009) Visible reverse k-nearest neighbor query
+
+processing in spatial databases. TKDE 21(9):1314–1327
+
+10. Gao Y, Zheng B, Lee W, Chen G (2009) Continuous visible nearest neighbor queries. In: EDBT, pp 144–
+
+11. Ghosh SK (2007) Visibility algorithms in the plane. Cambridge University Press, United Kingdom
+12. Ghosh SK, Mount DM (1991) An output-sensitive algorithm for computing visibility graphs. SIAM J
+
+155
+
+Comput 20(5):888–910
+
+13. Guibas L, Hershberger J, Leven D, Sharir M, Tarjan RE (1987) Linear-time algorithms for visibility and
+
+shortest path problems inside triangulated simple polygons. Algorithmica 2:209–233
+
+14. Held M (2001) Fist:fast industrial-strength triangulation of polygons. Algorithmica 30(4):563–596
+15. Hershberger J, Snoeyink J (1994) Computing minimum length paths of a given homotopy class. Comp
+
+Geom Theory and Appl 4:63–97
+
+Comput 28(6):2215–2256
+
+16. Hershberger J, Suri S (1999) An optimal algorithm for euclidean shortest paths in the plane. SIAM J
+
+17. Kapoor S, Maheshwari SN, Mitchell JSB (1997) An efficient algorithm for euclidean shortest paths
+
+among polygonal obstacles in the plane. Discrete Comput Geom 18:377–383
+
+18. Kazemi L, Kashani FB, Shahabi C, Jain R (2010) Efficient approximate visibility query in large dynamic
+
+environments. In: DASFAA (1), pp 202–217
+
+Geoinformatica
+
+19. Lee DT, Preparata FP (1984) Euclidean shortest paths in the presence of rectilinear barriers. Networks
+
+14(3):393–410
+
+In: ICDE, pp 637–648
+
+309–332
+
+Graphics Gems V
+
+20. Masud S, Choudhury FM, Ali ME, Nutanong S (2013) Maximum visibility queries in spatial databases.
+
+21. Mitchell JSB (1996) Shortest paths among obstacles in the plane. Internet Journal Comput Geom 6:
+
+22. Narkhede A, Manocha D (1995) Fast polygon triangulation based on Seidel’s algorithm. Academic Press,
+
+23. Nutanong S, Tanin E, Zhang R (2007) Visible nearest neighbor queries. In: DASFAA, pp 876–883
+24. Overmars MH, Welz E (1988) New methods for computing visibility graphs.In: Proceedings 4th annual
+
+ACM symposium on computational geometry, pp 164–171
+
+25. Park SH, Lee JH, Kim DH (2007) Spatial clustering based on moving distance in the presence of
+
+obstacles. In: DASFAA, pp 1024–1027
+
+26. Pocchiola M, Vegter G (1995) Minimal tangent visibility graph. Comput Geom Theor Appl 6:303–314
+27. Sharir M, Schorr A (1986) On shortest paths in polyhedral spaces. SIAM J Comput 15(1):193–215
+28. Storer JA, Reif JH (1994) Shortest paths in the plane with polygonal obstacles. J ACM 41(5):982–1012
+29. Asano T, Ghosh SK, Shermer TC (2000) Visibility in the plane.Handbook of computation geometry.
+
+30. Tung AKH, Hou J, Han J (2001) Spatial clustering in the presence of obstacles. In: ICDE, pp 359–367
+31. Xia C, Hsu D, Tung AKH (2004) A fast filter for obstructed nearest neighbor queries. In: BNCOD,
+
+Elsevier
+
+pp 203–215
+
+32. Xu J, G¨uting RH (2012) MWGen:a mini world generator. In: MDM, pp 258–267
+33. Yang B, Lu H, Jensen CS (2009) Scalable continuous range monitoring of moving objects in symbolic
+
+indoor space. In: CIKM, pp 671–680
+
+34. Yang B, Lu H, Jensen CS (2010) Probabilistic threshold k nearest neighbor queries over moving objects
+
+in symbolic indoor space. In: EDBT, pp 335–346
+
+35. Za¨ıane OR, Lee CH (2002) Clustering spatial data in the presence of obstacles: a density-based approach.
+
+In: IDEAS, pp 214–223
+
+36. Zhang J, Papadias D, Mouratidis K, Zhu M (2004) Spatial queries in the presence of obstacles. In: EDBT
+37. Zhang J, Papadias D, Mouratidis K, Zhu M (2005) Query processing in spatial databases containing
+
+obstacles. Int J Geogr Inf Sci 19(10):1091–1111
+
+Jianqiu Xu got his bachelor and master degree from Nanjing University of Aeronautics and Astronautics in
+2005 and 2008, respectively. Then, he studied the Ph.D supervised by Prof. Dr. Ralf Hartmut G¨uting between
+2008.9 and 2012.10 from FernUniversit¨at in Hagen, Germany, focusing on moving objects databases and
+spatial databases. In 2013.1, he joined Nanjing University of Aeronautics and Astronautics in China as an
+assistant professor.
+
+Geoinformatica
+
+Ralf Hartmut G ¨uting has been a full professor in Computer Science at the University of Hagen, Germany,
+since 1989. He received his Diploma and Dr. rer. nat. degrees from the University of Dortmund in 1980
+and 1983, respectively, and became a professor at that university in 1987. From 1981 until 1984 his main
+research area was Computational Geometry. After a one-year stay at the IBM Almaden Research Center
+in 1985, extensible and spatial database systems became his major research interests; more recently, also
+spatio-temporal or moving objects databases. He has been an associate editor of the ACM Transactions on
+Database Systems and an editor of the VLDB Journal and is on the Editorial Board of GeoInformatica. He
+has published two German text books on data structures and algorithms and on compilers, respectively, and
+an English text book on moving objects databases, as well as around eighty journal and conference articles.
+His group has built prototypes of extensible and spatio-temporal database systems, the Gral system and the
+SECONDO system.
+
+

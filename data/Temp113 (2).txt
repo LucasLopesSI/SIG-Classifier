@@ -1,0 +1,1480 @@
+Geoinformatica
+https://doi.org/10.1007/s10707-017-0312-3
+
+A compiler approach to map algebra: automatic
+parallelization, locality optimization, and GPU acceleration
+of raster spatial analysis
+
+Jesús Carabaño 1 & Jan Westerholm 1 &
+Tapani Sarjakoski 2
+
+Received: 29 March 2016 / Revised: 10 October 2017
+Accepted: 23 October 2017
+# Springer Science+Business Media, LLC 2017
+
+Abstract Computer architectures have evolved into parallel and heterogeneous systems with
+multi-core CPUs, many-core GPUs, and vector instructions. Meanwhile, advances in data
+collection technologies have led to a rapid increase in the spatial and temporal resolution of
+geographic data. Efficiently dealing with large volumes of geographic data demands, now
+more than ever, an effective use of modern parallel computers. However, parallel programming
+is distinctly more challenging than writing sequential scripts. Moreover, parallelism is not the
+only issue; data locality is critical, too. This work addresses the issues of data escalation and
+parallel transition using a compiler approach to map algebra. More specifically, we design and
+implement a framework that uses compiler techniques to automatically speed up raster spatial
+analysis. In this way, users simply write sequential map algebra scripts in Python, which are
+translated into a graph where optimizations are applied. Then the scripts are parallelized,
+reordered for locality, and executed on OpenCL devices such as multi-core CPUs and GPUs.
+The novelty of our approach resides in the efficient organization of the execution, which we
+achieve via compilation. Unlike interpreters, our framework reorders the raster operations to
+maximize data reuse and minimize memory movements. The reordering occurs at two
+hierarchical levels and is controlled by a scheduler and a fusion technique. This strategy
+
+* Jesús Carabaño
+jcaraban@abo.fi
+
+Jan Westerholm
+jawester@abo.fi
+
+Tapani Sarjakoski
+tapani.sarjakoski@nls.fi
+
+1
+
+Faculty of Science and Engineering, Åbo Akademi University, Vattenborgsvägen 5, 20500 Åbo,
+Finland
+
+2 Geoinformatics and Cartography, Finnish Geospatial Research Institute FGI, National Land Survey of
+
+Finland, Helsinki, Finland
+
+Geoinformatica
+
+targets data locality, which, as we show, is key to the performance of raster spatial analysis.
+The experiments report speed-ups of one to two orders of magnitude compared to traditional
+interpreters.
+
+Keywords Map algebra . Raster . Spatial analysis . Locality . Parallel . GPU
+
+1 Introduction
+
+The rapid increases in the spatio-temporal resolutions of geographic datasets have outpaced
+our capacity to analyze, visualize, and make sense of the data. At the same time, computer
+architectures have evolved from being sequential and uniform to being parallel and heteroge-
+neous. Nowadays, most computers have a multi-core central processing unit (CPU) with single
+instruction multiple data (SIMD) vector instructions and a programmable graphics processing
+unit (GPU). These parallel devices have the potential to cope with the increasing volumes of
+geographic data. However, due to their programming complexity, they are widely
+underutilized. Modelers prefer scripting languages to parallel languages because the former
+provide simple abstractions that facilitate the coding, whereas the latter introduce new
+programming problems such as load balance, synchronization, communication and parallel
+I/O.
+
+The first geospatial scripting language to include a comprehensive collection of raster
+operators was implemented by Tomlin in the 1980s, and it was based on the mathematical
+structure proposed by Tomlin and Berry [1]. This event marked the beginning of map algebra
+[2, 3], an algebraic formalism for the analysis of raster data. Many others followed, extending
+map algebra to encompass dynamic modeling [4, 5], evaluating new user interfaces [6],
+formalizing the time dimension [7, 8], or contributing in other ways [9–11]. It was the simple
+and concise structure of scripts, where operations are applied to whole maps without explicitly
+iterating over the cells, that made map algebra a popular language. Although simple, map
+algebra becomes extremely flexible when combined with general-purpose programming
+structures, such as branching, looping, and callable functions. As a result, it can be used to
+model, for instance, hydrological simulations [12], cost distance analysis [13], or even
+environmental systems [14].
+
+Granted that modelers need parallel performance, but that they prefer scripting for produc-
+tivity, then their scripts need to be enhanced with transparent parallelism. Abundant research
+has targeted the parallelization of individual spatial algorithms [15], but only a few studies
+have explored the parallelization of general-purpose solutions. The first attempt to parallelize
+map algebra was reported in [16], using the message-passing interface (MPI) and based on the
+parallel neighborhood modeling library [17]. The pRPL library [18] was written in C++, built
+upon MPI, and tested with a cellular automaton (CA) model for urban development. Its
+continuation, pRPL 2 [19], added data management, pseudo-parallel I/O, and dynamic load
+balancing features. Cheng et al. [20] proposed three general optimization methods for parallel
+CAs: parallel I/O, optimal data partitioning, and communication-compute overlapping. Wu
+et al. [21] tested map algebra on GPUs even before general-purpose GPU languages like
+CUDA and OpenCL [22] were available. The work in [23] accelerated the batch processing of
+raster spatial analysis by leveraging an in-memory cache and GPUs. With PaRGO [24], the
+authors proposed a cross-platform strategy for raster-based geocomputation in distributed
+memory, shared memory, and GPU architectures. The most recent attempt to parallelize map
+
+Geoinformatica
+
+algebra was done by Shook et al. [25], who used Python because of its widespread adoption.
+These works represent important advances in the parallelization of general-purpose solutions
+for the analysis of large raster data. Unfortunately, parallelism is not enough. Performance is
+also influenced by how far data has to travel, that is to say, by data locality [26, 27].
+
+Traditional map algebra frameworks neglect data locality because they are implemented as
+interpreters. They execute operations in order, repeatedly moving intermediate results up and
+down the memory hierarchy. Such a design was acceptable back when the execution of
+instructions was the limiting factor of performance. For example, floating-point instructions
+used to consume tens to hundreds of clock cycles. Computer architectures have evolved,
+though, and today accessing memory accounts for the major bottleneck. As a result, locality
+has become a critical concern, and this is visible in the recent literature. With pRPL 2 [19], the
+authors incorporate parallel I/O in response to the memory bottlenecks suffered by pRPL 1
+[18], but still considerably more time is spent on I/O than on computing. In the study by Cheng
+et al. [20], the bottleneck caused by loading and communicating data motivates the study of
+memory-related optimizations. Wu et al. [21] discuss how the execution of individual raster
+operations is limited by memory bandwidth for both CPUs and GPUs. The authors of [23]
+observe that transferring data from disk to CPU and to GPU ruins the performance, so they
+implemented a two-level cache to relieve the problem. The experiments of Shook et al. [25]
+point to memory bandwidth saturation as the reason behind the speed-up degradation when
+more parallel cores are utilized.
+
+While the existing literature indicates that memory constitutes a major bottleneck
+for raster spatial analysis, no map algebra implementation exists that identifies data
+locality as a key performance driver. We propose a compiler approach that reorganizes
+the execution of map algebra scripts to exploit locality. In this work, we describe a
+framework that follows such an approach and benchmark a prototype implementation
+[28]. The prototype targets multi-core CPUs and single GPUs, while it excludes multi-
+GPUs and distributed memory. It covers most
+local, focal and zonal map algebra
+operations, as well as one global operation (viewshed). The framework also applies
+spatial decomposition to deal with datasets larger than GPU and main memory. Its
+internal details are, moreover, transparent to the user, who simply writes sequential
+map algebra scripts in Python.
+
+The rest of the paper is structured as follows. Section 2 presents the compiler approach and
+the components of the framework. Section 3 details a scheduler and a fusion technique, both
+used to reorder the execution for locality. Section 4 explores the connection between locality
+and parallelism, and presents the experimental results. Section 5 concludes the paper and
+discusses possible improvements.
+
+2 A compiler approach to map algebra
+
+Traditional map algebra implementations are interpreters. They process scripts in order,
+execute statements one by one, and ignore which raster operation comes next. Interpreters
+cannot optimize beyond the scope of the operation being executed because they need to
+guarantee that the results are consistent for any subsequent operation. In the context of map
+algebra, this means that output rasters are moved to a lower level in the memory hierarchy,
+where they can reside permanently. That level can be the main memory if the rasters fit there,
+otherwise they are written to disk.
+
+a) Interpreted
+
+b) Parallel multi-threaded
+
+c) GPU  accelerated
+
+f) All optimizations
+
+Geoinformatica
+
+d) Fusion
+
+e) Scheduler
+
+Fig. 1 Interpreter approach (a/b/c), compiler approach (d/e/f), parallel optimizations (b/c), data locality optimi-
+zations (d/e), coarse-grained (b/e), fine-grained (c/d)
+
+To enable the processing of datasets larger than the main memory, rasters are
+commonly decomposed into smaller blocks. Figure 1a illustrates the interpreter ap-
+proach in such a case. The interpretation of map algebra scripts consists of a triple loop
+structure where operations, blocks, and cells are iterated in order. Despite its simplicity,
+this program structure has deep implications with respect to data and its movement. For
+every operation, input rasters are moved from disk to main memory, on a block-by-
+block basis. For every block, cells are moved from main memory to the processor
+registers and are operated on in consecutive fashion. Simultaneously,
+the resulting
+output cells are moved into new blocks residing in memory. Likewise, these blocks
+are moved down to disk, where the complete output raster resides. Once the operation
+has finished, the interpreter moves on to the next operation and repeats the scheme.
+Given that most raster operations are simple and have low arithmetic intensity, most of
+the execution time in a typical memory hierarchy (Fig. 2) is spent waiting for data to
+travel from disk, to CPU/GPU memories, to registers, and back to disk.
+
+Figure 1b shows the addition of coarse-grain parallelism through the use of multi-
+threading. Scripts are still interpreted, but blocks are processed in parallel. This brings
+immediate performance benefits since the blocks are now read, computed and written
+concurrently. However, using multiple CPU threads saturates the disk’s bandwidth and
+performance stagnates soon. On the other hand, parallelism can also be applied in a
+fine-grained fashion, for example by using GPUs for the cells loop (Fig. 1c). Unless
+other bottlenecks like the PCIe bandwidth strike first, performance will increase due
+to added parallelism. However, the GPU memory bandwidth saturates again and the
+GPU threads mostly wait idle. Although parallel, both solutions are still interpreters.
+They neglect the locality between consecutive raster operations, in which data pro-
+duced by one operation is often consumed by the next. As a result, they saturate the
+bandwidth and cannot take full advantage of the available parallel cores.
+
+Unlike interpreters, our compiler approach first gathers a global view of the whole script in
+order to know the operations and their interrelationships. With that information we reorder the
+execution at the cell and block levels. Fusion, illustrated in Fig. 1d, moves the operations loop
+to the innermost part of the execution. This has the effect that, for every cell moved up in the
+memory hierarchy, all the operations are applied at once. Consequently, the intermediate
+memory movements are avoided and the bandwidth is not saturated. Unfortunately, fusion is
+not applicable in the presence of spatial data dependencies. The scheduler, on the other hand,
+can handle some spatial dependencies in exchange for lower bandwidth savings. It moves the
+operations loop just one level down (Fig. 1e) to reorder the execution at the block level. It
+
+Geoinformatica
+
+Fig. 2 Approximated memory hierarchy of a commodity desktop computer (the bandwidth decreases in orders
+of magnitude as the distance between memory and processors increases)
+
+saves block movements between disk and memory, but it cannot prevent the movement of cells
+between memory and registers (Fig. 2).
+
+Figure 1d and e show ideal situations where all operations can be reordered by one single
+loop transformation. However, this is not always the case for real-life scripts that mix diverse
+types of map algebra operations. Figure 1f shows the complexities of the reordering problem
+for a more realistic script. For example, focal operations present small barriers (in the figure,
+shorter blue lines) to the reordering that can disable fusion, while zonal operations create larger
+barriers (longer blue lines) according to their spatial extent, which also inhibit the scheduler.
+The reordering problem is discussed in more detail in section 3. The next subsections provide
+an overview of the components of our framework.
+
+2.1 Map algebra as a python script
+
+Map algebra [2, 3] is a scripting language for geospatial analysis and modeling using
+raster data. Operations in map algebra belong to one of four classes: local, focal, zonal
+and global. All operations in a given class conform to strict spatial patterns (Fig. 3).
+Local operations access single raster cells, focal operations access bounded neighbor-
+hoods, zonal operations access all cells in their zone with associative order, and global
+operations access potentially any cell in the raster in any order. Global operations are
+further divided into radial and spread operations [3]. Radial operations access straight
+lines of cells, while spread operations access sequences of cells given by some
+
+b) Focal  
+
+d) Radial  
+
+a) Local  
+
+c) Zonal  
+
+e) Spread
+
+Fig. 3 Map algebra classes and their algorithmic patterns
+
+Geoinformatica
+
+topological criteria (e.g., the water flow direction). Our prototype implements the subset
+of local, focal, zonal and radial classes of operations, while spread operations are
+excluded from this study (e.g., flow accumulation [29], cost surface [30]).
+
+Our framework is written in C++ and interfaced through Python. Common Python
+operators are used to express local operations (e.g., +, −, *, /, ==,! =, <, >) while
+predefined functions cover the remaining focal (e.g., slope, aspect, flow direction),
+zonal (e.g., min, average) and radial functionalities (e.g., viewshed). The framework
+supports simple loops with a known number of iterations at compile time and user-
+defined functions composed of existing operators. The use of functions enables the
+practice of good software engineering principles, like code reuse and modularization.
+Moreover,
+these abstractions come with no performance cost because the compiler
+optimizations will optimize them away.
+
+Next, we present two sample scripts. Conway’s Game of Life [13] script in Listing 1
+exemplifies the use of finite loops with a known number of iterations. Cells in this script
+become dead or alive according to the population of their neighborhood in the previous
+iteration. Listing 2 computes the hillshade of a digital elevation model (DEM) following Horn’s
+formulation [31]. Based on the given azimuth and altitude of the sun, it draws a self-shadowing
+effect on top of the DEM that creates a sense of topographic relief. This script defines slope,
+aspect, and hillshade from basic raster operations for illustrative purposes. Listing 2 shows two
+alternative ways to access the neighborhood, with a convolution filter of 3 by 3 cells (lines 5 to
+8) or with individual accesses per neighbor (lines 12 to 14). Note how both Python scripts are
+devoid of parallel semantics, facilitating their easy sequential development.
+
+2.2 Dependency graph
+
+Figure 4 illustrates the components of the framework via a hypothetical example. When
+the Python script in Fig. 4a is run, the raster operations are not carried out immediately.
+Instead, a graph is created with nodes and edges representing the operations and their
+interrelationships. Nodes are tagged according to their inputs, outputs, type of operation
+and map algebra classes. Together, they consolidate the dependency graph (Fig. 4b), a
+symbolic representation of the script. Operations with side effects in the real world, like
+writing to a file, trigger the execution of the graph. If the graph accumulates many nodes
+before this happens, then many reordering opportunities will emerge from the interrela-
+tionships between the operations.
+
+The dependency graph is structured as a directed acyclic graph (DAG) in static
+single assignment (SSA) form. DAGs are common in parallel libraries [32–34], where
+the nodes represent tasks and the edges indicate data dependencies. They are used to
+the type of asynchronous and dynamic parallelism that fit best with the
+model
+heterogeneous design of modern computers [32]. The SSA form makes the dependen-
+cy chains explicit by decoupling operations from variables [35]. This facilitates and
+
+Listing 1 Life script [13] in Python
+
+Geoinformatica
+
+Listing 2 Hillshade script [31] in Python
+
+improves the compiler optimizations that will follow. The SSA DAG is the interme-
+diate representation of our compiler approach, and its presence is required to move
+beyond interpretation. Next, the framework analyzes the dependency graph and gen-
+erates bespoke parallel code with improved locality and superior performance.
+
+2.3 Simplification and fusion
+
+At this point, simplification routines are applied to the dependency graph. This results in an
+optimized version of the graph with fewer nodes but equivalent functionality. For this purpose,
+the framework applies global value numbering [36] and typical compiler techniques: arithmetic
+simplification, constant folding and propagation, copy propagation, common subexpression
+elimination and dead code elimination. Most of these techniques are applicable in Listing 2.
+For example, in line 13, arithmetic simplification discards the multiplications by zero. Constant
+folding and propagation occur in lines 33 to 36. Common subexpression elimination applies to
+lines 18/24, 19/25, and 37/38, where the function calls to hori, vert and slope are repeated for the
+same inputs. The framework sees through the abstractions and only computes these operations
+once, even when they occur within different function scopes. These simplifications are straight-
+forward, but important, as most scripts offer opportunities for these types of optimizations.
+
+Fusion is performed after simplification. As we explain in more detail in subsection 3.1,
+fusion merges consecutive raster operations into groups. Consequently, the fused operations
+are applied to the cells at once, as if the operations loop had been moved to the innermost part
+of the execution (Fig. 1d). Fusion augments the intermediate representation with a new
+structure, the grouped graph (Fig. 4c). Groups are tagged via the aggregation of inputs,
+outputs, and map algebra classes of their nodes. Although different classes can be grouped
+together, often one dominates the others. Groups also inherit the directed and acyclic depen-
+dencies. Next, the grouped graph is used to generate parallel code.
+
+2.4 Code translation with skeletons
+
+The groups are translated into parallel kernel codes that run on OpenCL devices. The
+translation stage is based on code skeletons [37–39]. Skeletons are code templates describing
+
+Geoinformatica
+
+a) Python Script
+
+b) Dependency Graph
+
+c) Grouped Graph
+
+d) Kernel Code
+
+e) Device Code
+
+f) Task Graph
+
+g) Blocks, Jobs
+
+h) Execution Order
+
+Fig. 4 Components and stages of the framework
+
+algorithmic patterns that automatize the generation of recurrent codes. We identify a parallel
+pattern for each map algebra class and for every pattern we design a skeleton. In this way,
+feeding the skeletons with the groups results in the translated kernel codes (Fig. 4d). The
+design and evaluation of the skeletons is beyond the scope of this study, although they can be
+explored in the source code repository [28].
+
+Map algebra operations display a variety of parallel patterns. Local, focal and zonal
+operations follow the map, stencil, and reduction patterns, respectively [37]. Radial operations
+display a two-dimensional scan pattern (e.g., prefix sum), in which every cell depends on the
+output value of the previous cells in the radial direction. These parallel patterns are common
+across domains and applicable to other problems aside from map algebra [40]. Global
+operations not covered in our prototype present their own parallel patterns, and their inclusion
+requires the design of new skeletons.
+
+2.5 Kernel compilation and task composition
+
+The kernel code is handed to the OpenCL compiler to generate executable device code (Fig.
+4e). OpenCL [22] can generate code for a variety of parallel devices, although we focus on
+multi-core CPUs and GPUs. The OpenCL compiler performs important routines, such as
+register allocation, instruction selection, and instruction scheduling [41]. The length of the
+groups and the design of the skeletons affect these routines, and therefore, the quality of the
+device code too. The compilation takes little time, typically less than a second. However, this
+can be problematic for very small datasets if the compilation dominates the execution time. To
+
+Geoinformatica
+
+mitigate this issue, the framework caches the device code so that the kernels are compiled just
+once, but reused as needed.
+
+A task containing the executable device code is created for each group of nodes. Tasks can
+contain specialized versions of the kernel and device codes for each type of OpenCL device.
+For instance, the GPU skeletons are specialized to exploit the on-chip scratchpad memory. The
+execution of tasks produces new raster data that is consumed by subsequent tasks or written to
+disk as the final results. When a task is finished, it notifies its dependent tasks and activates
+their execution. The aggregation of the tasks expands the intermediate representation with the
+task graph (Fig. 4f).
+
+2.6 Spatial decomposition and scheduling
+
+As the resolution of geographical datasets continues to increase, it is becoming more and more
+common that the computer’s main memory is unable to accommodate all that data at once. To
+circumvent this problem, the framework applies spatial decomposition and subdivides the
+rasters into blocks of adjacent cells. Simultaneously, tasks are also subdivided to form jobs. A
+job is a pair (task,block), and it constitutes the executable and scheduling unit (Fig. 4g). Jobs
+depend on the same input rasters as their parent task, but only for their particular block. For
+certain map algebra classes, such as focal, jobs also require their neighboring blocks. This
+occurs because focal operations access their neighboring cells, known as halos, and the
+outermost halos belong to the neighboring blocks (Fig. 5a).
+
+Jobs are standalone, executable units that can run in parallel, but they are not free of
+restrictions. To ensure correctness, the order of jobs is constrained based on the their data
+dependencies. An example can be seen in viewshed analysis [42], where the visibility of any
+target cell depends on the obstacles between the target and the observer. This constrains the
+execution of radial jobs to an outward expansion order from the observer towards the borders
+(Fig. 5b). In spite of these restrictions, typically numerous orderings exist that preserve
+correctness. The scheduler, supported by an in-memory cache, exploits this opportunity and
+reorders the jobs for better locality. Fig. 4h shows the execution order set by the scheduler, as if
+the operations loop had been moved below the blocks loop (Fig. 1e). The scheduler is
+described in more detail in subsection 3.2.
+
+a) Focal halos
+
+b) Viewshed (or other Radial op.) scheduling restrictions
+
+Fig. 5 a) Focal jobs require their neighboring blocks for the halos; b) the scheduling order of a viewshed
+operation (radial class) follows an outward expansion from the observer
+
+Geoinformatica
+
+2.7 Workers and execution
+
+The framework spawns several worker threads to handle the execution in parallel. Workers
+receive jobs from the scheduler, query the in-memory cache for data blocks, perform parallel
+I/O, issue the kernels to the OpenCL devices, and notify tasks about the completion of jobs.
+The scheduler maintains a work queue for active jobs ready to be executed. The cache brings
+the needed blocks to memory and keeps them there for future requests. The execution of jobs
+produces new blocks, which become inputs for the next jobs. The notified tasks release those
+jobs whose input dependencies have now been met. These jobs become active and they join
+the work queue. The scheduler reorders the work queue for locality, and the cycle is repeated.
+The workers act concurrently for better performance, which on the one hand enables the
+overlapping of computation and I/O, but on the other creates complex race conditions. Workers
+interacting with shared resources, like querying the work queue or searching the cache, require
+mutual exclusion. Maintaining thread-safe, yet efficient, data structures and routines is critical
+for the performance. If too much synchronization overhead adds up, the compiler approach
+becomes inefficient. There is, therefore, a tradeoff between sophisticated logic and computa-
+tional cost. For instance, meticulous caching strategies may not be advantageous if they bring
+large overhead.
+
+3 Reordering for locality
+
+Current trends in hardware architectures are leading to increasing numbers of parallel proces-
+sors. Nowadays, trillions of floating point operations per second (teraflops) are feasible using a
+single GPU processor. However, despite the increase in parallelism, processors still need data,
+and their ability to move data is improving at a much slower rate [27]. In fact, the cost of
+moving data is relatively increasing with respect to its processing, and as a result, data locality
+is becoming paramount. Unfortunately, locality cannot be exploited by making superficial
+changes to existing codes; instead, it requires a rethinking of algorithms. Keeping up with the
+increasing parallelism requires profound changes to the organization of algorithms, from
+compute-centric to data-centric [26].
+
+The parallel transition and the escalation of spatial data are shifting the performance
+bottleneck of map algebra from computation to memory. In order to run efficiently on
+modern computer architectures, a map algebra implementation needs to target locality
+first. However, traditional solutions cannot exploit locality because they lack a global
+view of the scripts. Conversely, our framework constructs an intermediate graph repre-
+sentation that enables the use of the scheduler and fusion. These techniques shorten the
+reuse distance between data producer and data consumer raster operations. As a result,
+data is more often found at a higher memory level and the cost of accessing data is
+reduced. Fusion and the scheduler present different action scopes. While the former
+targets on-chip memories (i.e., registers, caches, scratchpads), the latter addresses the rest
+of the memory hierarchy (Fig. 2).
+
+3.1 Fusion
+
+Fusion is an important code optimizations technique, which compiler theory describes as
+collapsing consecutive and dependent loops. It is called loop fusion if applied to CPUs [43],
+
+Geoinformatica
+
+kernel fusion if applied to GPUs [44], and stream fusion in functional programming languages
+[45]. A detailed study on the complexity of fusion is given by Darte [46]. Recently, works from
+different research fields have leveraged fusion in the search for locality. Examples of such
+fields are linear algebra [44], database query languages [47], functional GPU languages [48],
+machine learning [49], and array programming languages [50]. We bring fusion to map algebra
+in order to exploit the data locality arising from the relations between consecutive raster
+operations.
+
+Recall how the nodes of the dependency graph represent the application of map algebra
+operations to rasters (Fig. 4b), and how this is essentially achieved with loops over the cells
+(Fig. 1a). Therefore, if fusion consists of collapsing loops, then our fusion is equal to the
+grouping of nodes (Fig. 4c). Suppose we have two chained nodes, A and B (Fig. 6a). Fusion
+merges them into a larger unit, namely AB, thereby avoiding the temporal raster resulting from
+A and consumed by B. This simple optimization is impossible for an interpreter because it
+cannot see beyond the scope of the operation currently being executed. Additionally, fusion
+enables better machine code generation since larger blocks of code present more opportunities
+for low-level compiler optimizations [46]. On the other hand, loop-carried dependencies (i.e.,
+spatial dependencies in our context) prevent the application of fusion [43].
+
+3.1.1 Fusibility of map algebra operations
+
+We categorize fusion into two types. Pipe fusion merges operations with a producer-consumer
+relationship (Fig. 6a), while flat fusion merges operations sharing a common input (Fig. 6b).
+Pipe fusion and flat fusion can overlap (e.g., B and C in Fig. 6c), in which case pipe fusion is
+given preference. Pipe fusion saves both read and write memory operations, while flat fusion
+only saves reads, hence this priority. On the other hand, flat fusion is only limited by the
+skeletal compatibility of the operations while pipe fusion is also restricted by their spatial
+reach. Transformations that break the acyclic property of the DAG are considered invalid and
+thus preclude fusion (Fig. 6c).
+
+Table 1 lists the validity of pipe fusion and flat fusion for each pair of map algebra classes,
+that is, it lists their fusibility. These rules originate from the application of parallel program-
+ming to the map algebra patterns and may be inferred by inspection. In brief, operations with a
+narrow spatial reach (local, focal) or static order (radial) are more fusible than operations with
+an extensive spatial reach (zonal) or dynamic order (spread) (see Fig. 3). We designate fusion
+as available when it is valid and provides clear performance improvements, as unavailable
+when it breaks data dependencies or is detrimental to the performance, and as compromising
+
+a) Valid pipe fusion
+
+b) Valid flat fusion
+
+c) Invalid fusion, creates a cycle
+
+Fig. 6 a) Pipe fusion of a producer and a consumer operation; b) flat fusion of consumers sharing a common
+input; c) invalid fusion that breaks the acyclic property of the DAG
+
+Geoinformatica
+
+Table 1 Fusibility of map algebra operations (with pipe fusion the producers are in the left while the consumers
+are in the top; flat fusion has no order, thus the table is symmetric)
+
+PIPE
+
+Local
+
+Focal
+
+Zonal Radial
+
+Spread
+
+FLAT
+
+Local
+
+Focal
+
+Zonal Radial
+
+Spread
+
+Local
+Focal
+Zonal
+Radial
+Spread
+
+✓
+✓
+✖
+✓
+~
+
+~
+~
+✖
+✖
+✖
+
+✓
+✓
+✖
+✓
+~
+
+✓
+✓
+✖
+✖
+✖
+
+~
+~
+✖
+✖
+✖
+
+Local
+Focal
+Zonal
+Radial
+Spread
+
+✓
+✓
+✓
+✓
+~
+
+✓
+✓
+✓
+✓
+~
+
+✓
+✓
+✓
+✓
+~
+
+✓
+✓
+✓
+~
+✖
+
+~
+~
+~
+✖
+✖
+
+✓ Available: fusion is valid and beneficial
+✖ Unavailable: fusion is invalid or prejudicial
+~ Compromising: fusion is valid but not always favorable, depending on the devices and the operations
+
+when it is valid but presents performance tradeoffs. Note that this classification derives from
+the judgment of the authors and somewhat different rules might be possible.
+
+The architecture of the parallel devices affects the fusibility as well. For instance, global
+operations present complex dependencies that require synchronization barriers between the
+parallel threads. The GPU architecture does not allow the use of global barriers within kernels,
+and can only synchronize at a local scope, limiting the fusibility. In contrast, CPUs can handle
+synchronization and dynamism better, therefore supporting more fusions. The number of fused
+operations and the resources shared by the threads can also impose limits. For instance, large
+GPU kernels require many registers and much scratchpad memory per parallel thread.
+Exhausting these shared resources limits the occupancy of GPUs [44], thus excessive fusion
+could decrease performance.
+
+A frequent case of compromising pipe fusion is the merging of consecutive focal opera-
+tions. Figure 7 shows an example with three focal operations, each with a neighborhood of
+3 × 3 cells. Computing the central block in the 3rd operation requires having access to the
+previous central block and its halos, which in turn must access previous halos that are farther
+away. This backward propagation has the effect that subsequent pipe fusions of focal opera-
+tions always generate extensive overlappings in the outer halos. This overlap affects all blocks,
+causes redundant computation, and escalates quickly with the levels of fusion. Consequently, a
+break-even point exists, after which redundant computation outweighs the gains in data
+locality. For this reason, pipe fusing focal operations presents complex tradeoffs between
+parallelism, locality and recomputation [51].
+
+Fig. 7 Pipe fusing focal operations presents tradeoffs between locality, parallelism and recomputation [51]
+
+Geoinformatica
+
+In this study, we are not exploring the search space of fusions and their tradeoffs. Instead
+our prototype implements a greedy strategy that starts from the output nodes of the script (i.e.,
+write) and fuses nodes two by two, in bottom-up order and according to the rules in Table 1.
+While ascending the graph, the fusion routine tries to merge as many nodes as possible into the
+current group without evaluating the effects of such a decision. We do not merge operations
+when fusion creates cycles, is invalid, or is compromising. Neither do we set limits to the
+extension of groups; therefore, the fusion routine is not concerned with exhausting resources.
+This is a greedy approach that may overlook the optimal fusion strategy, although it behaves
+adequately for the scripts tested in section 4.
+
+3.2 Scheduler
+
+The scheduling technique employed in this study relates to the field of external-memory
+algorithms [52]. These algorithms use an alternative notation of computational complexity that
+is measured in I/O data movements rather than in computer operations. To reduce the
+complexity, they follow more efficient orders of execution that minimize the I/O. External-
+memory techniques have been successfully applied to spatial algorithms aimed at large raster
+datasets, for instance in drainage network analysis [53] and viewshed analysis [54]. Similarly
+to these studies, our scheduler rearranges the execution of jobs into orders that minimize
+memory movements along the memory hierarchy. It reduces transfers from disk, to host
+memory, to device memory, and vice versa (Fig. 2). To do so, the scheduler utilizes an in-
+memory cache and space-filling curves.
+
+3.2.1 In-memory cache
+
+The framework caches recently read blocks in order to avoid reloading them if requested a
+short time later. Likewise, recently computed blocks are not immediately evicted from memory
+in case of future reads. Cached temporal blocks that have already been used by all their
+dependent jobs are permanently discarded. Generally, all blocks are cached; when memory
+becomes full, the least recently used (LRU) blocks are evicted to a lower level. This caching is
+carried out concurrently with the execution of jobs and without interrupting them. Some
+thread-safe data structures are necessary, like a hashed directory of cache entries to keep track
+of the cached blocks, and a linked list of the LRU entries. Figure 8 presents a high-level view
+
+Fig. 8 In-memory cache system (the multi-core CPU is inoperative in this example)
+
+Geoinformatica
+
+of the cache. If a device is not involved in the computation, its cache remains inoperative (e.g.,
+CPU Cores in Fig. 8).
+
+In the context of map algebra, caching is particularly critical for the performance of GPU
+devices [23]. Discrete GPUs are connected through a PCI-Express bus, which has considerably
+lower bandwidth than does GPU memory (Fig. 2). If blocks are not cached, then discrete
+GPUs wait idle while data is being transferred over the PCIe, and this ruins their performance
+advantage over CPUs [21]. Even integrated GPUs, which share the physical memory with the
+host and are not connected through PCIe, benefit from caching since this helps avoid inter-
+process data copies. Most importantly, caching blocks at host level prevents costly transfers
+from disk, and both GPUs and CPUs benefit from this caching.
+
+At device level, the cache entries are allocated in a pool of OpenCL memory objects and are
+actively managed by the framework. At host level, the data is held in main memory by the
+Linux Page Cache [55]. This is mostly done automatically, albeit it is less performant than
+writing a custom host cache in C++. The cache is not inclusive, that is to say, blocks at a high
+level may not exist at a lower level. This design targets short-lived temporal blocks in GPU
+memory that are created and quickly consumed, since moving them down the PCIe would
+waste bandwidth. The cache is not exclusive either because blocks may concurrently reside at
+multiple levels. The design follows an intermediate policy that targets simplicity and efficien-
+cy. More sophisticated cache policies are possible so long as the extra logic does not incur too
+much overhead.
+
+3.2.2 Space-filling curves
+
+All active jobs in the work queue are reordered according to a space-filling curve (SFC).
+Following SFCs when accessing multidimensional data leads to a more efficient utilization of
+hierarchical memories [56], which enhances the performance of the in-memory cache. In
+particular, we employ the Z-order curve [57]. Recall how in Fig. 5b, the radial jobs followed an
+outward expansion order to meet their data dependencies. In Fig. 9a, the jobs are reordered
+using a Z-curve on a sector basis (e.g., the northeast sector from the starting point) and, while
+the Z-curve preserves correctness, it also improves the spatial locality. The Z-curve is used to
+reorder jobs in their spatial (i.e., block-level) and operational (i.e., task-level) dimensions (Fig.
+4h). This reordering is constrained by the spatial reach of the map algebra classes, and the final
+execution order looks as if the operations loop had been split by multiple barriers (Fig. 1f).
+
+a) Radial scheduling order
+
+b) Scheduling of consecutive Focal operations
+
+Fig. 9 a) Reordering of radial jobs (e.g., viewshed) with a Z-curve per sector; b) reordering of consecutive focal
+jobs (e.g., cellular automata) in their spatial and operational dimensions
+
+Geoinformatica
+
+A scenario where SFCs are remarkably beneficial occurs when chaining a series of focal
+operations, as seen in Fig. 9b. This is a common workload in cellular automata [58, 59] and
+environmental simulations [4]. This type of forward-in-time simulations creates short-lived
+temporal blocks at every time step that are immediately consumed by the next iteration. With
+SFCs, most temporal blocks in GPU memory are quickly discarded, only some are evicted to
+host memory, and few or none are written to disk. If, on the other hand, all jobs in one time
+iteration were scheduled together, as is done by interpreted map algebras, then the temporal
+blocks would suffer from long reuse distance, causing memory movements that bottleneck the
+execution.
+
+3.3 Shortcomings of locality
+
+Optimizing for locality is not always feasible. Reordering is most beneficial when scripts are
+composed of numerous and simple raster operations. If the loop in Fig. 1 only includes one
+operation, then no reordering is possible. Take for example the conversion of a DEM from feet
+into meters, which just requires one multiplication. Even scripts with abundant operations
+might benefit little from reordering, for instance, if all their operations have a large spatial
+reach, like zonals, or if they present complex dependencies, like globals. Moreover, fusion is
+already present in some raster library functions. For example, when library developers write a
+typical hillshade function, they merge by hand the slope and aspect equations into the same
+loop, manually achieving the benefits of fusion.
+
+Nonetheless, these shortcomings do not devalue our compiler approach, as most non-
+trivial scripts present many reordering opportunities. Furthermore, manual fusion is not a
+perfect solution either because it is not composable. Therefore, even a slight change to a
+manually fused hillshade function would require a full rewrite of the code. However,
+library developers cannot fuse by hand all the infinite variants of a function somebody
+might need. Consequently, modelers must resort to the elemental local and focal oper-
+ations to compose their hillshade version. However, this user-defined hillshade is not
+fused anymore and will therefore suffer from memory bottlenecks. In contrast, our
+approach is composable and efficient. In Listing 2 our hillshade function is composed
+of the elemental operations available to the modeler, and this is dynamically compiled to
+always generate efficient fused code.
+
+On the other hand, finding the optimal reordering that maximizes locality is a known NP-
+hard problem in both fusion [43] and scheduling [60]. The optimal strategy depends on the
+map algebra operations, their interrelationships and the available computer resources,
+resulting in a large search space. In this study, we did not attempt to find optimal reorderings
+and only use simple greedy approaches, namely Table 1 and Z-order. Even so, the greedy
+heuristics have attained satisfactory reorderings at little cost. The authors of [50] studied
+fusion in the context of array programming languages and found that their greedy algorithm
+could reach nearly optimal fusion strategies for a large set of scripts. This is encouraging, as
+it suggests that quick and low overhead heuristics might suffice for map algebra as well.
+
+4 Framework evaluation
+
+This section characterizes the performance of the framework. We used five scripts that
+represent common use cases in raster spatial analysis. Table 2 describes them and lists their
+
+Table 2 Tested map algebra scripts
+
+Script
+
+Description
+
+Geoinformatica
+
+Operations Type
+
+In Out
+
+W. Sum. Weighs and adds four rasters on a cell by cell basis
+Computes statistical values: mean, max, min, std.dev…
+Statistics
+Hillshade
+Generates a self-shadowing light effect on a DEM (Listing 2)
+Life (×16) Game of Life with random start and 16 iterations (Listing 1)
+Viewshed Computes the area of a DEM visible to an observer (i.e. Xdraw)
+
+7 Local
+4 Zonal, 9 Local
+2 Focal, 36 Local
+16 Focal, 64 Local
+1 R, 2 Z, 1 F, 5 L
+
+4
+1
+1
+0
+1
+
+1
+0
+1
+1
+1
+
+L = Local, F = Focal, Z = Zonal, R = Radial, In/Out = Number of input/output raster data
+
+types of operations and the number of inputs and outputs. They are composed of a distinct
+variety of map algebra operations, and thus optimizations influence them differently. With
+these scripts, we analyzed the effects of locality, revisited the case for GPUs, tested the benefits
+of caching, examined different machines, investigated the scalability of the framework, and
+compared our results to previous studies.
+
+The Weighted Summation script is an example of a strongly memory-bound workload.
+While GPUs or powerful CPUs will not help, the locality optimizations should improve its
+performance. The Statistics script requires five time less I/O movements and performs more
+operations than the previous script, but it is still memory-bound. GPUs might accelerate this
+script after the locality optimizations. The Hillshade script presents numerous transcendental
+and floating-point operations and becomes compute-bound after fusion; therefore, it should
+benefit from the use of GPUs. The Life script starts with a randomly generated raster and does
+not load any input, which increases its arithmetic intensity. The succession of focal operations
+limits fusion, but the scheduler can still find good reorderings with the Z-curve. Our frame-
+work implements the radial class similarly to the Xdraw algorithm [42, 61], which visits cells
+once and presents regular memory accesses. As a result, the Viewshed script is not computa-
+tionally very intensive, but rather memory-bound.
+
+Our principal machine was an AMD Kaveri A10-7850 k APU, which we used in all of the
+experiments. It includes a quad-core CPU and an integrated Spectre GPU. This desktop
+machine has two SSD and two HDD disks in Raid0 modes and 16 GB of main memory,
+3GB of which are reserved for Spectre. We utilized a second machine consisting of an Intel Ivy
+Bridge i7-3770 k quad-core CPU and an AMD Hawaii R9 290× discrete GPU. Our third
+machine included an Intel Haswell i7-4770 k quad-core CPU and an Nvidia K20c discrete
+GPU. The latter two machines featured similar Raid0 SSD configurations and exhibited greater
+computing power for both CPU and GPU. Although we only present results obtained from
+these particular machines, we tested others and obtained consistent results.
+
+4.1 Parallel and locality optimizations
+
+Table 3 displays the speed-ups achieved individually and collectively when using multi-
+threading, GPUs, fusion, and scheduling. These speed-ups are measured with respect to the
+sequential interpreter approach, which uses one single thread and executes operations one at a
+time (Fig. 1a). The first two optimizations represent coarse-grained parallelism at the block
+level with multi-threading, and fine-grained parallelism at the cell level with GPUs. The latter
+two optimizations exploit fine-grained locality at the cell level with fusion, and coarse-grained
+locality at the block level with the scheduler. The employed datasets each comprise one billion
+floating-point cells, occupy 4 GB, and are stored on SSD disk. The testing machine was
+
+Geoinformatica
+
+Table 3 Individual and synergistic speed-ups attained via the optimizations
+
+Optimization/
+Script
+
+Interp Par
+
+Par/
+GPU
+
+Par/
+Fus
+
+Par/Fus/
+Sch
+
+Par/GPU/
+Fus
+
+Par/GPU/
+Sch
+
+All
+Opt.
+
+W. Sum.
+Statistics
+Hillshade
+Life (×16)
+Viewshed
+Avg. Speed Up
+
+1
+1
+1
+1
+1
+–
+
+1.84 2.09
+2.00 2.67
+1.92 2.26
+2.24 3.01
+1.87 2.16
+1.97 2.42
+
+7.42
+8.00
+18.19
+6.24
+8.22
+8.88
+
+7.42
+8.00
+26.17
+15.27
+14.61
+12.82
+
+7.74
+16.00
+45.57
+11.57
+13.49
+15.45
+
+7.42
+14.22
+29.70
+38.27
+13.84
+17.54
+
+7.74
+18.29
+69.56
+81.58
+22.87
+28.37
+
+Interpreted, Parallel multi-threaded, GPU-accelerated, Fusion, Scheduler, All Opt. = Par,GPU,Fus,Sch
+CPU = Kaveri AMD A10-7850 K w/ 13 GB memory, GPU = Spectre (integrated) 3 GB, Disk = 256 GB SSD Raid0
+
+Par/
+Sch
+
+5.24
+4.27
+8.21
+8.45
+6.49
+6.32
+
+Kaveri-Spectre. The goal of our analysis was to demonstrate that locality is as important as
+parallelism for the efficient execution of map algebra scripts.
+
+The Par column achieved an average speed-up of 1.97 when using multi-threading. Using
+multiple worker threads permits the concurrent reading, processing, and writing of blocks.
+These three stages are sequential in the Interp column, and their parallel execution leads to a
+higher utilization of computer resources. This accelerates the scripts immediately, but now all
+threads interact with the slow disk. Soon, the disk’s bandwidth saturates and the speed-up
+stagnates. The Par/GPU column combines both forms of parallelism. Despite the reputation of
+GPUs, their use does not help much here because they just add more computational power to
+already memory-bound problems. In this case, the integrated Spectre GPU brings a small
+speed-up because it is exempt from PCIe transfers. However, when testing this experiment
+with the other machines, the change from Par to Par/GPU was negligible.
+
+The Par/Fus column shows the high impact of fusion. All scripts profited from this locality
+optimization, which resulted in approximately a 4× speed-up with respect to Par alone.
+Hillshade was the script that benefited the most due to its numerous local and focal operations,
+which fuse seamlessly into a single group. The Par/Sch column presents the scheduler. Note
+how the results are considerably better when exploiting locality than when using GPUs.
+Individually, the scheduler achieved smaller speed-ups than fusion, but this depends on the
+operations and their interrelationships. Moreover, the two locality optimizations overlap to
+some degree; hence, if fusion merges many operations, then the scheduler has fewer jobs to
+reorder. This is visible in the Weighted Summation and Statistics scripts, for which the Par/Fus/
+Sch column was not faster than Par/Fus.
+
+Finally, the last three columns combine the locality optimizations with GPU acceleration. In
+contrast to the Par/GPU column, these last columns indicate that the use of GPUs is indeed
+beneficial, but only after the locality optimizations. For the Par/GPU/Fus column, all but the
+Weighted Summation script show sizeable speed-ups with respect to the Par/Fus column. This
+script is strongly memory-bound even after fusion; therefore, using GPUs offers no advantage.
+The Par/GPU/Sch column reveals how the scheduler was especially beneficial for the Life
+script, where the focal operations inhibited fusion. The last column features all of the
+optimizations and achieved solid speed-ups across the five map algebra scripts, making a
+strong case for our compiler approach with respect to the sequential interpreter approach.
+
+Three points need to be made regarding the speed-up numbers. First, Table 3 leaves out
+seven possible columns where the multi-threaded parallelism was deactivated. These seven
+combinations were limited by disk bandwidth and were deemed not interesting enough for the
+analysis. Second, though our interpreter version is single-threaded, it employs compiler-
+
+Geoinformatica
+
+generated vector SIMD instructions. Since modern CPUs can perform up to 8 floating-point
+operations per vector instruction, a more conservative interpreter not utilizing SIMD instruc-
+tions would perform slower, making our speed-ups relatively higher. Third, the storage
+solution used in these tests was a Raid0 of SSD disks with approximately 3× the bandwidth
+of our HDD disks. Many studies still report results with slow HDDs, and had we done that, our
+speed-ups would have increased by a factor of 3. In conclusion, the relevant results are not the
+numbers as such, but the evidence of data locality being critical for the performance.
+
+4.2 Cache size effects on performance
+
+Figure 10 presents the performance of the scheduler for different GPU cache sizes and an
+increasing number of focal operations reordered with the Z-curve. This benchmark was
+derived from the Life script and consisted of running Listing 1 with different iteration counts
+in line 10. The speed-up was measured as the relation between deactivating and activating the
+scheduler. All optimizations other than the scheduler were activated. The raster occupied 4 GB
+and was stored on an SSD disk. Five cache sizes were tested, ranging from 256 MB to 3 GB,
+the maximum allowed by Spectre. Note that newer GPUs can have more memory, generally up
+to 16 GB, but not as much as the host.
+
+Apart from the positive speed-up numbers, the most important observation was the tradeoff
+in the number of reordered operations. Like with fusion, there is a limit to the reordering at
+block level, and going too far decreases performance. As a result, for 3 GB of cache and 32
+consecutive focal operations, it is more efficient to reorder in groups of 16 operations, rather
+than reordering the 32 operations at once. Moreover, the tradeoff varies for different cache
+sizes, which makes the search for the optimal harder. In this study we followed greedy
+strategies and did not explore tradeoffs. Therefore, the scheduler simply reorders as many
+jobs as it finds in the work queue. In Table 3, the Life script was run with 3GB of cache and 16
+iterations; therefore, those particular numbers correspond to the optimal scheduling.
+
+4.3 Machine configuration effects on performance
+
+Figure 11 benchmarks the Haswell-K20 and Ivy-Hawaii machines using their discrete
+GPUs. The Ivy machine was also tested without Hawaii (named Ivy-Ivy) to test the
+
+Fig. 10 Speed-ups for different GPU cache sizes and number of focal operations reordered with the Z-curve, as
+shown in Fig. 9b (all other optimizations than the scheduler are activated)
+
+Geoinformatica
+
+Fig. 11 Speed-ups of the alternative machine configurations with respect to the Kaveri-Spectre machine (all
+parallel and locality optimizations are activated)
+
+performance of the multi-core CPU alone. These three configurations were compared
+to the Kaveri-Spectre machine to find out whether faster CPUs/GPUs accelerate the
+execution. The data volume was 4 GB and was stored on an SSD disk. All of the
+machines had similar SSDs in Raid0. All of the optimizations were activated. The
+speed-up was measured as the relation between the execution time on Kaveri-Spectre
+and on the other machines.
+
+Starting with the Weighted Summation script, a faster CPU or GPU had virtually no
+effect. This script is strongly memory-bound and only the memory system influences
+it. The Statistics, Hillshade, and Life scripts present increasing arithmetic intensity in
+that order. This is reflected in the difference between the CPU and GPU columns,
+where the speed-up of the discrete GPUs increased, while it decreased for the Ivy
+CPU. The Viewshed script is memory-bound because it follows the Xdraw algorithm,
+and thus showed little to no improvement. Life is the most compute-bound workload.
+With this script, the Ivy-Hawaii and Haswell-K20 machines were approximately 2×
+times faster than the Kaveri-Spectre machine, which was in turn 4× times faster than
+the Ivy-Ivy machine. This makes the discrete GPUs about 8× times faster than the
+multi-threaded and vectorized CPU solution. However, this speed-up is only realisti-
+cally attainable in compute-bound workloads, and the use of faster devices will show
+no advantage when memory is the main bottleneck.
+
+Table 4 Execution times with increasing volumes of data (all optimizations are activated)
+
+Script\Size
+
+RAM Disk Drive
+
+Solid State Drive
+
+Hard Disk Drive
+
+1 MB 10 MB 100 MB 100 MB 1 GB 10 GB
+
+10 GB
+
+100 GB
+
+1 TB
+
+W. Sum.
+Statistics
+Hillshade
+Life (×4)
+Viewshed
+Avg. Increase –
+
+0.45 s 0.35 s
+0.42 s
+0.5 s
+0.45 s
+0.5 s
+0.55 s
+0.5 s
+1.3 s
+1.4 s
+0.91
+
+0.6 s
+0.5 s
+0.5 s
+1.4 s
+1.45 s
+1.54
+
+1.2 s
+0.6 s
+0.8 s
+1.4 s
+2.2 s
+1.46
+
+38 m 20s
+8 h 48 m
+13 m 23 s 2 h 33 m
+
+5.5 s
+2 s
+2.7 s
+4 s
+8.35 s 1 m 10s
+3.59
+
+56.4 s
+3 m 46 s
+1 m 28 s
+20.1 s
+27.2 s 1 m 23 s 13 m 38 s 2 h
+1 m 28 s
+39.5 s
+2 m 52 s
+3.24
+
+9.73
+
+15 m 56 s 3 h 56 m
+6 h 40 m
+29 m 20s
+12.99
+10.01
+
+32 m
+
+CPU = Kaveri A10-7850 K w/ 13 GB memory, GPU = Spectre (integrated) 3 GB, Disk = RAM, 2× SSD, 2× HDD
+
+Geoinformatica
+
+4.4 Scalability to large data volumes
+
+Table 4 shows the scalability of the framework for increasing volumes of data (from 1 MB to
+1 TB) and different storage options (RAM, SSD and HDD). In this test, all of the optimizations
+were activated. The life script was reduced to 4 iterations to save time when running the 1 TB
+workload. The execution time was measured in seconds, and at the bottom we included the
+average time increase factor when moving to larger data sizes. The average increase in the
+execution times when changing from SSD to HDD storage for a fixed data size of 10 GB was a
+factor of 3.24×, which approaches the difference in bandwidth between these two storage
+options in our Kaveri-Spectre machine. This implies that when all optimizations are active, the
+five scripts are mostly bottlenecked by disk bandwidth.
+
+Ideally, the average increase in execution times should display a steady value of 10× within
+the three groups. However, at least two types of overheads affected the results. To the left of
+Table 4, the lack of variation in the execution times was due to the OpenCL compilation
+overhead, which became the main bottleneck for small data sizes. To the right of Table 4, the
+large increase of 12.99× in the 1 TB column was due to the runtime overhead. Larger datasets
+generated more jobs and blocks for the framework to handle, which eventually impacted the
+performance of the host CPU. These results were achieved for a fixed block size of 1
+megabyte. We found that the block size influenced the execution if it exceeded reasonable
+bounds. Specifically, blocks smaller than a few kilobytes resulted in excessive runtime
+overhead, while blocks larger than a few megabytes reduce the availability of parallel jobs
+and thus decreased the reordering opportunities. It remains to be studied how to push the limits
+of these overheads further.
+
+4.5 Comparison to previous works
+
+The authors of pRPL [18] studied the parallelization of an urban CA in a cluster of 1024 CPU
+nodes [19] and in another cluster of 64 GPU nodes [59]. They obtained execution times of 77 s
+and 32 s respectively, but without including the writing of the output raster. In a previous study
+[62] we tested the same CA and dataset with our prototype and obtained execution times of
+70 s when using a desktop computer and a single discrete GPU. Moreover, their code is written
+at low-level in C++, while our script requires only 30 lines of Python code.
+
+With PaRGO [24], the slope operator took 0.15 s for a raster of approximately 100 millions
+cells, on a discrete GPU, and without including the I/O times. Our Hillshade script took 0.7 s
+to process the same number of cells in a RAM Disk. However, our script performed more
+operations than just slope and we measured wall times including the I/O, memory allocation
+and compilation. Limiting our analysis to data transfers and kernel executions, like PaRGO,
+reduced the time of our Hillshade script to 0.2 s.
+
+The last experiment in the study by Shook et al. [25] tests a hillshade algorithm with an
+80 GB raster. For this experiment they used Numba, a Python library that can compile array
+operations to efficient machine code. Numba can basically fuse local operations within Python
+functions. Shook et al. included the I/O times, and since their experiment read and wrote a total
+of 160 GB in approximately 430 s, their disk required at least 370 MB/s of bandwidth.
+Running our Hillshade script with a similarly sized dataset took 217.6 s and 664 s for the SSD
+and HDD options, respectively. Thus, we run faster and slower because of the higher and
+lower bandwidth of our disks, which again indicates that memory is the bottleneck.
+
+Geoinformatica
+
+5 Conclusions
+
+We have presented a compiler approach to map algebra. Instead of executing operations one at
+a time, like interpreters, our framework first gathers a global view of the script. This makes it
+possible to apply locality optimizations and generate bespoke parallel code for multi-core
+CPUs and GPUs. The approach provided a high level of performance and scalability for large
+datasets without renouncing the productive scripting interface in Python. Based on our results,
+we conclude that data locality is critical for the performance of a map algebra implementation
+on modern computer architectures. For instance, GPUs are only beneficial after optimizing for
+locality, otherwise they mostly wait idle.
+
+Unfortunately, optimizing for locality is not always possible. Both trivial scripts with few
+operations and complex scripts with sophisticated data dependencies present fewer optimiza-
+tion opportunities. Nonetheless, most common scripts fall in the range between these two
+extremes and benefit substantially from the compiler approach. Our empirical evaluation
+showed speed-ups from one to two orders of magnitude with respect to the traditional
+interpretation of map algebra. The results are consistent for five scripts of diverse character-
+istics running on a desktop CPU-GPU machine.
+
+Future improvements could enhance the fusion technique with better heuristics, explore the
+space of scheduling strategies or support new map algebra operations. This work targets shared
+memory architectures and can at most handle tens of cores, a single GPU, and up to several
+terabytes of data. Raising the terabyte limit requires extending the framework to multi-GPU
+and distributed memory architectures. OpenCL could also be replaced with the LLVM [63]
+compiling tool-chain. This would provide finer control of the code translation stage and help
+reduce the compilation overhead. Even without these improvements, our prototype already
+shows the great potential of the compiler approach for raster spatial analysis.
+
+Acknowledgements This work was supported by the Academy of Finland (decision numbers 259557 and
+259995).
+
+References
+
+1. Tomlin CD, Berry JK (1979) Mathematical structure for cartographic modeling in environmental analysis.
+
+In: Proc. 39th Symp. Am. Congr. Surv. Mapp. Washington DC, 269–283
+
+2. Tomlin CD (1990) Geographic Information Systems and Cartographic Modelling. Prentice Hall, New
+
+3. Tomlin CD (2013) GIS and cartographic modeling. Esri Press
+4. Wesseling CG, Karssenberg D, Burrough PA, Van Deursen WPA (1996) Integrating dynamic environmental
+models in GIS: The development of a Dynamic Modelling language. Trans GIS 1:40–48. https://doi.
+org/10.1111/j.1467-9671.1996.tb00032.x
+
+5. Takeyama M, Couclelis H (1997) Map dynamics: integrating cellular automata and GIS through Geo-
+
+Algebra. Int J Geogr Inf Sci 37–41
+
+6. Bruns HT, Egenhofer MJM (1997) User interfaces for map algebra. Urban Reg Inf Syst Assoc 9:44–54
+7. Frank AU (2005) Map algebra extended with functors for temporal data. Perspect Concept Model 1980:
+
+Jersey
+
+194–207
+
+8. Mennis J, Viger R, Tomlin CD (2005) Cubic Map Algebra Functions for Spatio-Temporal Analysis. Cartogr
+
+Geogr Inf Sci 32:17–32. https://doi.org/10.1559/1523040053270765
+
+9. Câmara G, Palomo D (2005) Towards a Generalized Map Algebra: Principles and Data Types 66–81
+10. Cerveira Cordeiro JP, Câmara G, Moura de Freitas U, Almeida F (2009) Yet Another Map Algebra.
+
+GeoInformatica 13:183–202. https://doi.org/10.1007/s10707-008-0045-4
+
+Geoinformatica
+
+11. Mennis J (2010) Multidimensional Map Algebra: Design and Implementation of a Spatio-Temporal GIS
+
+Processing Language. Trans GIS 14:1–21. https://doi.org/10.1111/j.1467-9671.2009.01179.x
+
+12. Shapiro M, Westervelt J (1992) R.MAPCALC: an Algebra for GIS and Image Processing. Champaign, Illinois
+13. Pullar D (2001) MapScript: A map algebra programming language incorporating neighborhood analysis.
+
+Geoinformatica 145–163
+
+14. Schmitz O, Karssenberg D, de Jong K, de Kok J-L, de Jong SM (2013) Map algebra and model algebra for
+integrated model building. Environ Model Softw 48:113–128. doi: https://doi.org/10.1016/j.
+envsoft.2013.06.009
+
+15. Healey R, Dowers S, Gittings B, Mineter MJ (1997) Parallel processing algorithms for GIS. CRC Press
+16. Dubrule DE, Morin PR, Sack J-R (1997) A Parallel Cartographic Modelling System: Design,
+
+Implementation, and Performance. In: Elev. Annu. Symp. Geogr. Inf. Syst. Vancouver, 16–20
+
+17. Hutchinson D, Lanthier M, Maheshwari A, Nussbaum D, Roytenberg D, Sack J-R (1996) Parallel
+neighbourhood modelling. In: Proc. fourth ACM Work. Adv. Geogr. Inf. Syst. - GIS ‘96. ACM Press,
+New York, New York, USA, pp 25–34
+
+18. Guan Q, Clarke KC (2010) A general-purpose parallel raster processing programming library test applica-
+tion using a geographic cellular automata model. Int J Geogr Inf Sci 24:695–722. https://doi.org/10.1080
+/13658810902984228
+
+19. Guan Q, Zeng W, Gong J, Yun S (2014) pRPL 2.0: Improving the Parallel Raster Processing Library. Trans
+
+GIS 18:25–52. https://doi.org/10.1111/tgis.12109
+
+20. Cheng G, Liu L, Jing N, Chen L, Xiong W (2012) General-purpose optimization methods for parallelization
+of digital terrain analysis based on cellular automata. Comput Geosci 45:57–67. https://doi.org/10.1016/j.
+cageo.2012.03.009
+
+21. Wu Y, Ge Y, Yan W, Li X (2007) Improving the performance of spatial raster analysis in GIS using GPU. In:
+
+Gong P, Liu Y (eds) Proc. SPIE 6754, Geoinformatics 2007 Geospatial Inf. Technol. Appl. 1–11
+
+22. Open Computing Language. https://www.khronos.org/opencl/
+23. Steinbach M, Hemmerling R (2012) Accelerating batch processing of spatial raster analysis using GPU.
+
+Comput Geosci 45:212–220. https://doi.org/10.1016/j.cageo.2011.11.012
+
+24. Qin C-Z, Zhan L-J, Zhu A-X, Zhou C-H (2014) A strategy for raster-based geocomputation under different
+parallel computing platforms. Int J Geogr Inf Sci 28:2127– 2144. https://doi.org/10.1080
+/13658816.2014.911300
+
+25. Shook E, Hodgson ME, Wang S, Behzad B, Soltani K, Hiscox A, Ajayakumar J (2016) Parallel carto-
+graphic modeling: a methodology for parallelizing spatial data processing. Int J Geogr Inf Sci 8816:1–22.
+https://doi.org/10.1080/13658816.2016.1172714
+
+26. Tate A, Kamil A, Dubey A, Größlinger A (2014) Programming Abstractions for Data Locality. In: PADAL
+
+Work. Program. Abstr. Data Locality. Lugano, Switzerland, 1–54
+
+27. Shalf J, Dosanjh S, Morrison J (2011) Exascale Computing Technology Challenges. In: High Perform.
+
+Comput. Comput. Sci. – VECPAR 2010. 1–25
+
+28. Carabaño J (2017) Github repository: Parallel Map Algebra. www.github.com/jcaraban/map
+29. Mäkinen V, Sarjakoski T, Oksanen J, Westerholm J (2014) Scalable uncertainty-aware drainage basin
+delineation program using digital elevation models in multi-node GPU environments. Big Data from Sp
+267–270. doi: https://doi.org/10.2788/1823
+
+30. Kovanen J, Sarjakoski T (2015) Tilewise Accumulated Cost Surface Computation with Graphics Processing
+
+Units. ACM Trans Spat Algorithms Syst 1:1–27. https://doi.org/10.1145/2803172
+
+31. Horn BKP (1981) Hill shading and the reflectance map. Proc IEEE 69:14–47. https://doi.org/10.1109
+
+/PROC.1981.11918
+
+32. Augonnet C, Thibault S, Namyst R, Wacrenier P-A (2011) StarPU: a unified platform for task scheduling on
+heterogeneous multicore architectures. Concurr Comput Pract Exp 23:187–198. https://doi.org/10.1002/cpe.1631
+33. Chi-Keung Luk, Sunpyo Hong, Hyesoon Kim (2009) Qilin: Exploiting parallelism on heterogeneous
+multiprocessors with adaptive mapping. In: Microarchitecture, 2009. MICRO-42. 42nd Annu. IEEE/
+ACM Int. Symp. 45–55
+
+34. Agullo E, Demmel J, Dongarra J, Hadri B, Kurzak J, Langou J, Ltaief H, Luszczek P, Tomov S (2009)
+Numerical linear algebra on emerging architectures: The PLASMA and MAGMA projects. J Phys Conf Ser
+180:12037. https://doi.org/10.1088/1742-6596/180/1/012037
+
+35. Cytron R, Ferrante J, Rosen BK, Wegman MN, Zadeck FK (1991) Efficiently computing static single
+assignment form and the control dependence graph. ACM Trans Program Lang Syst 13:451–490.
+https://doi.org/10.1145/115372.115320
+
+36. Click C (1995) Global code motion/global value numbering. ACM SIGPLAN Not 30:246–257. https://doi.
+
+org/10.1145/223428.207154
+
+37. González-Vélez H, Leyton M (2010) A survey of algorithmic skeleton frameworks: high-level structured
+
+parallel programming enablers. Softw Pract Exp 40:1135–1160. https://doi.org/10.1002/spe.1026
+
+Geoinformatica
+
+38. Steuwer M, Kegel P, Gorlatch S (2011) SkelCL - A Portable Skeleton Library for High-Level GPU
+Programming. In: 2011 I.E. Int. Symp. Parallel Distrib. Process. Work. Phd Forum. IEEE, 1176–1182
+39. Enmyren J, Kessler CW (2010) SkePU: A Multi-Backend Skeleton Programming Library for Multi-GPU
+Systems. In: Proc. fourth Int. Work. High-level parallel Program. Appl. - HLPP ‘10. ACM Press, New York,
+New York, USA, 5
+
+40. McCool MD, Robison AD, Reinders J (2012) Structured parallel programming: patterns for efficient
+
+computation. Elsevier
+
+41. Goodman JR, Hsu W-C (1988) Code scheduling and register allocation in large basic blocks. In: Proc. 2nd
+
+Int. Conf. Supercomput. - ICS ‘88. ACM Press, New York, New York, USA, 442–452
+
+42. Carabaño J, Sarjakoski T, Westerholm J (2015) Efficient Implementation of a Fast Viewshed Algorithm on SIMD
+Architectures. In: 2015 23rd Euromicro Int. Conf. Parallel, Distrib. Network-Based Process. IEEE, pp 199–202
+43. Kennedy K, McKinley K (1994) Maximizing loop parallelism and improving data locality via loop fusion
+
+and distribution. Lang Compil Parallel Comput 301–320. doi: https://doi.org/10.1007/3-540-57659-2_18
+
+44. Filipovič J, Madzin M, Fousek J, Matyska L (2015) Optimizing CUDA code by kernel fusion: application
+
+on BLAS. J Supercomput 71:3934–3957. https://doi.org/10.1007/s11227-015-1483-z
+
+45. Coutts D, Leshchinskiy R, Stewart D (2007) Stream Fusion. From Lists to Streams to Nothing at All. Proc
+2007 ACM SIGPLAN Int Conf Funct Program - ICFP ‘07 42:315. doi: https://doi.org/10.1145
+/1291151.1291199
+
+46. Darte A (2000) On the complexity of loop fusion. Parallel Comput 26:1175–1193. https://doi.org/10.1016
+
+/S0167-8191(00)00034-X
+
+47. Wu H, Diamos G, Cadambi S, Yalamanchili S (2012) Kernel Weaver: Automatically Fusing Database
+Primitives for Efficient GPU Computation. In: 2012 45th Annu. IEEE/ACM Int. Symp. Microarchitecture.
+IEEE, 107–118
+
+48. McDonell TL, Chakravarty MMT, Keller G, Lippmeier B (2013) Optimising purely functional GPU
+programs. In: Proc. 18th ACM SIGPLAN Int. Conf. Funct. Program. - ICFP ‘13. ACM Press, New York, 49
+49. Ashari A, Tatikonda S, Boehm M, Reinwald B, Campbell K, Keenleyside J, Sadayappan P (2015) On
+optimizing machine learning workloads via kernel fusion. In: Proc. 20th ACM SIGPLAN Symp. Princ.
+Pract. Parallel Program. - PPoPP 2015. ACM Press, New York, New York, USA, 173–182
+
+50. Kristensen MRB, Lund SAF, Blum T, Avery J (2016) Fusion of Parallel Array Operations. In: Proc. 2016
+
+Int. Conf. Parallel Archit. Compil. - PACT ‘16. ACM Press, New York, New York, USA, 71–85
+
+51. Ragan-Kelley J, Barnes C, Adams A, Paris S, Durand F, Amarasinghe S (2013) Halide: A Language and
+Compiler for Optimizing Parallelism, Locality, and Recomputation in Image Processing Pipelines. In: Proc.
+34th ACM SIGPLAN Conf. Program. Lang. Des. Implement. - PLDI ‘13. ACM Press, New York, p 519
+52. Vitter JS (2001) External memory algorithms and data structures: dealing with massive data. ACM Comput
+
+Surv 33:209–271. https://doi.org/10.1145/384192.384193
+
+53. Gomes TL, Magalhães SVG, Andrade MVA, Franklin WR, Pena GC (2015) Efficiently computing the
+drainage network on massive terrains using external memory flooding process. GeoInformatica 19:671–
+692. https://doi.org/10.1007/s10707-015-0225-y
+
+54. MVA A, SVG M, Magalhães MA, Franklin WR, Cutler BM (2011) Efficient viewshed computation on
+terrain in external memory. GeoInformatica 15:381–397. https://doi.org/10.1007/s10707-009-0100-9
+
+55. Love R (2010) Linux Kernel Development (Third Edition). Addison-Wesley
+56. Mokbel MF, Aref WG, Kamel I (2003) Analysis of Multi-Dimensional Space-Filling Curves.
+
+GeoInformatica 7:179–209. https://doi.org/10.1023/A:1025196714293
+
+57. Morton G (1966) A computer oriented geodetic data base and a new technique in file sequencing. IBM,
+
+Ottawa
+
+58. Batty M, Xie Y, Sun Z (1999) Modeling urban dynamics through GIS-based cellular automata. Comput
+
+Environ Urban Syst 23:205–233. https://doi.org/10.1016/S0198-9715(99)00015-0
+
+59. Guan Q, Shi X, Huang M, Lai C (2016) A hybrid parallel cellular automata model for urban growth
+simulation over GPU/CPU heterogeneous architectures. Int J Geogr Inf Sci 30:494–514. https://doi.
+org/10.1080/13658816.2015.1039538
+
+60. Ullman JD (1975) NP-complete scheduling problems. J Comput Syst Sci 10:384–393. https://doi.
+
+61. Franklin W, Ray C (1994) Higher isn’t necessarily better: Visibility algorithms and experiments. Adv GIS
+
+org/10.1016/S0022-0000(75)80008-0
+
+Res Sixth Int Symp Spat data Handl 2:1–22
+
+62. Carabano J, Westerholm J (2017) From Python Scripting to Parallel Spatial Modeling: Cellular Automata
+Simulations of Land Use, Hydrology and Pest Dynamics. In: 2017 25th Euromicro Int. Conf. Parallel,
+Distrib. Network-based Process. IEEE, 511–518
+
+63. Lattner C, Adve V (2004) LLVM: A compilation framework for lifelong program analysis & transforma-
+
+tion. Int Symp Code Gener Optim CGO 75–86. doi: https://doi.org/10.1109/CGO.2004.1281665
+
+Geoinformatica
+
+Jesús Carabaño is a PhD student in High Performance Computing at the Faculty of Science and Engineering at
+Åbo Akademi University, Finland. He obtained his Bachelor and Master degrees in Computing Engineering from
+University of Granada. His research interests include parallel computing, code optimization, accelerators (i.e.
+GPUs), programming languages, compilers and runtime systems. Currently he applies High Performance
+Computing to Geographical Information systems.
+
+Jan Westerholm is a professor in high performance computing with industrial applications at the Faculty of
+Science and Engineering at Åbo Akademi University. He received his master’s degree from Helsinki University
+of Technology and his PhD in physics from Princeton University. His research areas include parallel computing,
+code optimization and accelerator programming with applications in stochastic optimization, computational
+physics, biology and geographical information systems.
+
+Geoinformatica
+
+Tapani Sarjakoski works currently as a professor at the Finnish Geospatial Research Institute, leading the
+Department of Geoinformatics and Cartography. He also serves as an Adjunct Professor in geoinformatics at the
+University of Helsinki’s Faculty of Science, Department of Geosciences and Geography, and as an Adjunct
+Professor in photogrammetry, particularly focusing in matters related to process techniques for mapping, at the
+Aalto University Department of Real Estate, Planning and Geoinformatics. His current research interests include
+high-performance computing applications for geoinformatics and their linkage to location-based services.
+
+

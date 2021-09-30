@@ -1,0 +1,1197 @@
+Geoinformatica (2017) 21:549–572
+DOI 10.1007/s10707-017-0302-5
+
+Efficient maximal reverse skyline query processing
+
+Farnoush Banaei-Kashani1 · Parisa Ghaemi2 ·
+Bahman Movaqar3 · Seyed Jalal Kazemitabar2
+
+Received: 18 April 2016 / Revised: 12 April 2017 / Accepted: 19 May 2017 /
+Published online: 6 June 2017
+© Springer Science+Business Media New York 2017
+
+Abstract Given a set S of sites and a set O of objects in a metric space, the Optimal Loca-
+tion (OL) problem is about computing a location in the space where introducing a new site
+(e.g., a retail store) maximizes the number of the objects (e.g., customers) that would choose
+the new site as their “preferred” site among all sites. However, the existing solutions for the
+optimal location problem assume that there is only one criterion to determine the preferred
+site for each object, whereas with numerous real-world applications multiple criteria are
+used as preference measures. For example, while a single criterion solution might consider
+the metric distance between the customers and the retail store as the preference measure, a
+multi-criteria solution might consider the annual membership cost as well as the distance to
+the retail store to find an optimal location. In this paper, for the first time we develop an effi-
+cient and exact solution for the so-called Multi-Criteria Optimal Location (MCOL) problem
+that can scale with large datasets. Toward that end, first we formalize the MCOL problem
+as maximal reverse skyline query (MaxRSKY). Given a set of sites and a set of objects in a
+d-dimensional space, MaxRSKY query returns a location in the space where if a new site s
+is introduced, the size of the (bichromatic) reverse skyline set of s is maximal. To the best
+of our knowledge, this paper is the first to define and study MaxRSKY query. Accordingly,
+we propose a filter-based solution, termed EF-MaxRSKY, that effectively prunes the search
+
+(cid:2) Farnoush Banaei-Kashani
+
+farnoush.banaei-kashani@ucdenver.edu
+
+Parisa Ghaemi
+ghaemi@usc.edu
+
+Bahman Movaqar
+Bahman@BahmanM.com
+
+Seyed Jalal Kazemitabar
+kazemita@usc.edu
+
+1 University of Colorado Denver, Denver, CO 80112, USA
+
+2 University of Southern California, Los Angeles, CA 90089, USA
+
+3 University of Ahvaz, Ahvaz, Iran
+
+550
+
+Geoinformatica (2017) 21:549–572
+
+space for efficient identification of the optimal location. Our extensive empirical analysis
+with both real and synthetic datasets show that EF-MaxRSKY is invariably efficient in com-
+puting answers for MaxRSKY queries with large datasets containing thousands of sites and
+objects.
+
+Keywords Maximal reverse skyline · Multi-criteria optimal location
+
+1 Introduction
+
+The problem of “optimal location” is a common problem with many applications in spatial
+decision support systems and marketing tools. With this problem, given the sets S of sites
+and O of objects in a metric space, one must compute the optimal location where introduc-
+ing a new site maximizes the number of the objects that would choose the new site as their
+preferred site among all sites. For instance, a city planner must solve an optimal location
+problem to answer questions such as “where is the optimal location to open a new public
+library such that the number of patrons in the proximity of the new library (i.e., the patrons
+that would perhaps prefer the new library as their nearest library among all libraries) is
+maximized?”. A location here refers to a point in the metric multidimensional space.
+
+An important limitation of the existing solutions for the optimal location problem is due
+to a common simplifying assumption that there is only one criterion to determine the pre-
+ferred site for each object, i.e., the metric distance between objects and sites. In other words,
+the preferred site for an object is always assumed to be the closest site to the object. How-
+ever, there are numerous real-world applications with which one needs to consider multiple
+criteria (possibly including the distance) to choose the most preferred site for each object.
+The extension of the optimal location problem which allows for using multiple criteria in
+selecting the preferred site for each object is termed Multi-Criteria Optimal Location (or
+MCOL, for short).
+
+For an instance of the MCOL problem, consider the following market analysis appli-
+cation. In order to decide on the ideal specifications of its next product to be released, a
+laptop manufacturer wants to identify the most preferred / desired combination of laptop
+specifications in the market. For example, the current most preferred combination of lap-
+top specifications can be <5lb, 8GB, 2.3GHz, 14in>, where the numbers stand for weight,
+memory capacity, CPU speed, and display size of laptop, respectively. One can formulate
+this problem as an MCOL problem, where each site represents an existing laptop product in
+the market with known specifications, and each object represents a buyer in the market with
+known preferences on the specifications of his/her desired laptop (the preferences of the
+buyers can be obtained, for example, by collecting and compiling their web search queries).
+In this case, laptop specifications (i.e., weight, memory capacity, CPU speed, and display
+size) are the criteria that objects (buyers) use to determine their preferred site (laptop).
+Accordingly, by solving this MCOL problem, the manufacturer can identify the specifica-
+tions of a new laptop product (i.e., the new site which is optimally located) such that the
+number of potential buyers is maximized. Similarly, a cell phone company can identify the
+features (e.g., the monthly voice service allowance in minutes, text service allowance in
+number of text messages, and data service allowance in GB) of a new cell phone plan that
+would attract the largest number of potential subscribers with different usage statistics.
+
+While the MCOL problem is previously studied in the operations research community,
+the existing solutions for this problem are not only approximate solutions without any guar-
+anteed error bound, but also more importantly, unscalable solutions that can merely apply to
+
+Geoinformatica (2017) 21:549–572
+
+551
+
+very small site and object datasets (Section 2.1 reviews such solutions); hence inapplicable
+to real-world applications. In this paper, for the first time we focus on developing an effi-
+cient and exact solution for MCOL that can scale with large datasets containing thousands
+of sites and objects.
+
+Toward that end, first we formalize the MCOL problem as maximal reverse skyline query
+(MaxRSKY). Given a set of sites with d dimensions and a query object o, the dynamic
+skyline set includes all sites that are not dominated by another site. A site si dominates
+another site sj with respect to o if the distance of si to o is not greater than that of sj in
+all dimensions, and is smaller in at least one dimensions. The reverse skyline set of site si
+includes all objects such as o that have si in their dynamic skyline set [7]. Given a set of
+sites and a set of objects in a d-dimensional space, the MaxRSKY query returns a location
+in the d-dimensional space where if a new site s is introduced, the size of the (bichromatic)
+reverse skyline set of s is maximal. In other words, compared to any other new site that may
+be introduced, s would be in the skyline set of a higher number of objects. To the best of
+our knowledge, this paper is the first to define and study MaxRSKY query.
+
+Second, we develop a baseline solution for MaxRSKY which derives an answer for
+the query by 1) computing the skyline set and the corresponding skyline region for every
+object (the skyline region for an object is a region where if a new site is introduced it will
+become a skyline site for the object), and 2) for each subset of the set of skyline regions
+computed for all objects, overlap all regions in the subset to identify the maximum overlap
+region in the subset (i.e., the region where the largest number of skyline regions inter-
+sect in the subset). One can observe that among all maximum overlap regions identified
+for all subsets of skyline regions, the one with largest number of overlapping regions is
+where if a new site is introduced, its reverse skyline set is maximal. We call this region the
+maximal overlap region. Our baseline solution illustrates the intrinsic computational com-
+plexity of MaxRSKY query, and shows that the dominating cost of computing an answer
+for MaxRSKY is due to the second step, i.e., maximal overlap region computation.
+
+Accordingly, in order to reduce the cost of overlap computation we propose a filter-
+based solution, termed F-MaxRSKY, which effectively reduces the search space for maximal
+overlap region computation. F-MaxRSKY achieves efficiency by 1) prioritizing maximum
+overlap computation for the subsets by considering the potential of including the maximal
+overlap region for each subset, and 2) avoiding redundant maximum overlap computation
+for the subsets that cannot possibly include the maximal overlap region. The goal of pri-
+oritization is to identify regions in the search space that have a higher potential to include
+the solution, and process them ahead of other regions. This way, many regions of the space
+will be filtered, i.e., not investigated as they lack the solution. Prioritization is done through
+assigning a score to each region. While F-MaxRSKY significantly improves the efficiency
+of MaxRSKY computation, we observe that under certain circumstances and depending on
+the dataset characteristics, F-MaxRSKY can lose effectiveness in filtering the search space,
+and hence perform less efficiently. This is because in this approach some regions are highly
+overestimated, i.e., assigned a score much higher than their actual importance. Therefore,
+to address this issue we further extend F-MaxRSKY and propose an enhanced solution,
+termed EF-MaxRSKY, that uses grid (rather than the skyline regions themselves) for sub-
+set prioritization. Consequently, EF-MaxRSKY achieves data independence. Our extensive
+empirical analysis with both real and synthetic datasets show that EF-MaxRSKY is invari-
+ably efficient in computing answers for MaxRSKY queries with large datasets containing
+thousands of sites and objects.
+
+The remainder of this paper is organized as follows. Section 2 reviews the related work.
+Section 3 formally defines the MCOL problem and formalizes this problem as MaxRSKY
+
+552
+
+Geoinformatica (2017) 21:549–572
+
+query. In Section 4, we present a baseline solution and follow in Sections 5 and 6, we present
+our proposed solutions for efficient computation of MaxRSKY query. Section 7 evaluates
+our proposed solutions via experiments. Finally, Section 8 concludes the paper and discusses
+our directions for future research.
+
+2 Related work
+
+2.1 Optimal location
+
+In this section, we review the related work under two main categories. First, we discuss the
+previous work on the problem of optimal location. Thereafter, we present a review of the
+skyline query processing literature.
+
+Among other variations of the optimal location problem, the multi-criteria optimal location
+(MCOL) a.k.a. multi-objective or multi-attribute optimal location, has been widely stud-
+ied by researchers in the operations research (OR) community [6, 10, 11, 16, 17, 19, 22].
+However, given the computational complexity of the MCOL problem most of the existing
+solutions 1) resort to the use of heuristics that can only approximate the optimal location
+without any guaranteed error bounds, and more importantly 2) fail to scale with real datasets
+that often consist of thousands of sites and objects (rather than tens of sites and objects
+usually assumed by the existing solutions).
+
+Given similar scalability and accuracy issues with the existing solutions from the OR
+community for the general family of optimal location problems, recently the database com-
+munity has shown interest in developing efficient and exact solutions for these problems.
+However, so far all proposed solutions from this community have focused on the basic
+(single-criterion) optimal location problem. In particular, Wong et al. [24] and Du et al.
+[9] formalized the basic optimal location problem as maximal reverse nearest neighbor
+(MaxRNN) query, and presented two scalable approaches to solve the problem in p-norm
+space (assuming L2-norm and L1-norm, respectively). Thereafter, Ghaemi et al. [12–14]
+and Xiao et al. [25] continued the previous studies and proposed solutions for MaxRNN
+assuming network distance. Zhou et al. [27] presented an efficient solution to solve the
+extended MaxRkNN problem, which computes the optimal location where introducing a
+new site maximizes the number of objects that consider the new site as one of their k near-
+est sites. Finally, Zhang et al. [26] target a novel spatial query and name it as an optimal
+location problem. Specifically, given a set of object types (e.g., the set of types school,
+supermarket, and bus stop) and a set of groups where each group is a set of objects (e.g.,
+group A consisting of school A, supermarket B, and bus stop A), the goal is to find a loca-
+tion (e.g., residential community A) where an aggregated cost function over all the groups
+is minimized (e.g., sum of distances to objects in group A is smaller than the sum of dis-
+tance to all other groups). While using a similar naming, the problem they addressed is
+different from the problem we discuss here. Recently, we have published a 3-page poster
+paper [2] which (merely) defines the MCOL problem in a limited context; this paper gen-
+eralizes the definition of MCOL and proposes solutions to address MCOL. To the best of
+our knowledge, we are the first to tackle the MCOL problem toward developing an effi-
+cient and exact solution that can scale with large datasets containing thousands of sites and
+objects.
+
+Geoinformatica (2017) 21:549–572
+
+553
+
+2.2 Skyline queries
+
+It was Borzsonyi et al. [3] who first introduced the concept to the database community and
+showed the need for scalable solutions to process skyline queries on large datasets. Since
+then, numerous efficient algorithms have been proposed for processing static and dynamic
+skyline queries, such as BNL [3], D&C [3], Bitmap [23], SFS [5], Index [23], NN [18], and
+BBS [21]. Among other variations of skyline query, the reverse skyline of a query object
+q returns the objects whose dynamic skyline contains q [7]. It is important to note that
+reverse skyline query and maximal reverse skyline query (MaxRSKY) are two orthogonal
+problems. While with our focus problem (i.e., MaxRSKY) we can leverage any efficient
+solution for reverse skyline computation, as we show in Section 4 our main challenge is to
+identify a location which is on the reverse skyline set of a maximal number of objects.
+
+3 Problem definition
+
+In this section, we first formally define the problem of Multi-Criteria Optimal Location
+(MCOL). Then, we formalize this problem as maximal reverse skyline query (MaxRSKY).
+
+3.1 Multi-criteria optimal location (MCOL)
+
+Suppose we have a set S of sites s(s1, s2, ..., sd ) where si is the value of the i-th attribute
+for the site s, as well as a set O of objects o(o1, o2, ..., od ) in the same d-dimensional
+space where oi indicates the preference of o on the i-th attribute within the bounded
+range [loweri, upperi]. For example, considering our laptop market analysis example from
+Section 1, each laptop is a site with four attributes, namely, weight, memory capacity, CPU
+speed, and display size. Similarly, each potential buyer is represented by an object with
+four preferences corresponding to the four aforementioned attributes. Figure 1 illustrates
+six sites/laptops s1 to s6 each characterized by two attributes, weight and memory capacity
+(for simplicity of presentation, hereafter we consider a 2-dimensional space without loss of
+
+Fig. 1 Example site and object datasets in 2-dimensional space
+
+554
+
+Geoinformatica (2017) 21:549–572
+
+generality). In the same figure, three objects/buyers o1 to o3 are shown by indicating their
+preferences on weight and memory capacity of laptops in the same 2-dimensional space.
+
+Accordingly, we define the MCOL problem as follows. Given a set S of sites with d
+attributes and a set O of objects with d preferences corresponding to the same attributes, the
+multi-criteria optimal location problem seeks a location/region (or set of locations/regions)
+in the d-dimensional space such that introducing a new site in this location maximizes the num-
+ber of objects that each considers the new site among its set of “preferred” sites. Intuitively,
+a site s is a preferred site for object o if given the preferences of o, there is no other site s(cid:2) in
+S that is more “preferred” by o as compared to s; in other words, intuitively for an object o
+we say a site s is more preferred as compared to a site s(cid:2) if considering its preferences col-
+lectively, o has no reason to choose s(cid:2) over s. For example, in Fig. 1 the set of preferred sites
+for the object o1 is {s2, s3} as these sites have a closer weight and memory value to those of
+o1 compared to any other site; note that while for o1, s2 and s3 are not preferred over each
+other, they both are preferred as compared to all other sites s1, s4, s5, and s6.
+
+3.2 Maximal reverse skyline (MaxRSKY)
+
+In this section, for the sake of self-containment we first review the formal definitions of dynamic
+skyline query and bichromatic reverse skyline query. Thereafter, we define maximal reverse
+skyline (MaxRSKY) query, which is equivalent to and formalizes the MCOL problem.
+
+Definition 1 (Dynamic skyline query) Given a set S of sites with d attributes and a query
+object o in the same d-dimensional space, the dynamic skyline query with respect to o,
+termed DSL(o), returns all sites in S that are not “dominated” by other sites with respect to
+o. We say a site s1 ∈ S dominates a site s2 ∈ S with respect to o iff 1) for all 1 ≤ i ≤ d,
+(cid:2)
+(cid:2)
+(cid:2)
+(cid:2)si
+(cid:2) <
+1
+(cid:2)
+(cid:2)
+(cid:2)sj
+2
+
+(cid:2)
+(cid:2), and 2) there exists at least one j (1 ≤ j ≤ d) such that
+
+(cid:2)
+(cid:2) ≤
+(cid:2)
+(cid:2)
+(cid:2)
+
+(cid:2)
+(cid:2)
+(cid:2)sj
+1
+
+(cid:2)
+(cid:2)si
+2
+
+− qj
+
+− qj
+
+− qi
+
+− qi
+
+For example, as shown in Fig. 2, the skyline set for the object o1 is DSL(o1) = {s2, s3}.
+6 are proxies of the sites s2 and s6 transformed to the first quarter with
+
+Note that s(cid:2)
+respect to the reference point o1, respectively.
+
+2 and s(cid:2)
+
+Definition 2 (Bichromatic reverse skyline query) Let S and O be the sets of sites and
+objects in a d-dimensional space, respectively. Given a query site s ∈ S, the bichromatic
+reverse skyline query with respect to s returns all objects o ∈ O such that s is in the dynamic
+skyline set of o, i.e., s ∈ DSL(o).
+
+For instance, in Fig. 1 the reverse skyline set of s2 is {o1}, because DSL(o1) = {s2, s3},
+
+DSL(o2) = {s1, s5}, DSL(o3) = {s6}, and therefore, s2 only belongs to DSL(o1).
+
+Definition 3 (Maximal Reverse Skyline Query (MaxRSKY)) Let S and O be the sets of
+sites and objects in a d-dimensional space, respectively. The MaxRSKY query returns a
+location in this d-dimensional space where if a new site s is introduced, the size of the
+(bichromatic) reverse skyline set of s is maximal.
+
+It is easy to observe that MaxRSKY query and MCOL problem are equivalent, because
+maximizing the reverse skyline set of the newly introduced site s equivalently maximizes
+the number of objects whose sets of preferred sites include s.
+
+Geoinformatica (2017) 21:549–572
+
+555
+
+Fig. 2 SSR region for object o1
+
+4 Baseline solution
+
+Table 1 shows the common notations used in this paper.
+
+Central to the solution for maximizing the reverse skyline is the concept of Skyline Search
+Region (SSR) [7]. The skyline search region for object o(or SSR (o)) is part of the data space
+containing points that are not dominated by any of the skyline sites of the object o. For
+instance, considering the running example in Fig. 2 with skyline points {s2, s3} for object
+o1, the skyline search region SSR(o1) is the shaded area bounded by the skyline points and
+the two axes. Note that SSR does not include the skyline points themselves since a skyline
+point does not dominate itself.
+
+Lemma 1 (See [7] for proof) For a given object point o, letDSL(o) be the set of dynamic
+skyline sites for o. Letq be a query point. If q ∈ SSR(o), theno is in reverse skyline of q.
+
+Accordingly, we propose our two-step baseline solution for maximal reverse skyline
+
+query as follows:
+
+Table 1 Common notations
+
+O :
+S :
+d :
+r :
+L(r) :
+G :
+k :
+
+Set of objects
+
+Set of sites
+
+An SSR region
+
+Set of grid cells
+
+Number of dimensions in the space
+
+List of SSRs that overlap with a region r
+
+The greatest number of SSRs overlapping with a given cell
+
+556
+
+Geoinformatica (2017) 21:549–572
+
+2.
+
+1. Compute the dynamic skyline set DSL(o) ⊂ S of sites for each object o ∈ O. Sub-
+sequently, construct the corresponding SSR for each object o ∈ O. This step produces
+|O| regions.
+Intersect the SSRs generated at the previous step to compute the maximal reverse
+skyline region. Given |O| SSRs, this step involves computing the overlap region for
+each of the 2|O| combinations of SSR regions. Among the computed overlap regions
+for all combinations of SSRs, the overlap region(s) that involves the maximum num-
+ber of SSRs constitute the maximal reverse skyline region (recall, DEFINITION 3 in
+Section 3.2).
+
+However, while correct, the proposed baseline approach suffers from two corresponding
+computational complexities that render its use impractical given the often large sizes of the
+site and object datasets:
+
+1. Given the computational complexity of computing skyline query on the one hand, and
+the large size of the object and site datasets on the other hand, computing SSR for all
+objects is costly.
+
+2. Computing the overlap region for all combinations of SSRs is exponentially time
+
+complex.
+
+One can observe that among the aforementioned complexities the latter incurs the dom-
+inating cost of computing maximal reverse skyline; in Section 7 we verify this observation
+empirically using real dataset. Therefore, in this study we focus on reducing the compu-
+tational complexity of the second step of the baseline solution, i.e., overlap computation.
+Toward this end, in Section 5 we present F-MaxRSKY, our basic filtering solution for effi-
+cient MaxRSKY computation. Thereafter, in Section 6 we discuss EF-MaxRSKY, which
+further enhances F-MaxRSKY by using gird-based filtering.
+
+5 F-MaxRSKY: basic filtering approach
+
+As we mentioned before, the basic filtering approach consists of two main components:
+Precomputation and Query Processing. In the following, we will describe each component
+in detail.
+
+5.1 Precomputation
+
+5.1.1 Skyline computation and SSR construction
+
+In the precomputation component, we first compute the skyline set of all object points and
+build their corresponding SSR regions. Accordingly, for each object o ∈ O, we compute
+the DSL(o) ∈ S. Each object o partitions the d-dimensional space into 2D orthants (cid:2)i,
+each identified by a number in the range [0, 2D-1]. For example, in Fig. 3a where D=2,
+o1 partitions the space in four orthants (quadrants (cid:2)0,..., (cid:2)3). For simplicity and without
+loss of generality, hereafter we use 2D examples. Since all orthants are symmetric and we
+are interested in the absolute distance between site points, we can transform all site points
+to (cid:2)0 and compute the skyline points in (cid:2)0. As illustrated in Fig. 3a, in order to compute
+the DSL(o1), sites s2 and s6 are transformed to (cid:2)0 (s(cid:2)
+6). The DSL(o1) includes {s(cid:2)
+2,
+s3}. Thereafter, based on the derived skyline points we build the SSR region in (cid:2)0 and
+respectively the other symmetric SSR regions in other orthants. In Fig. 3a the hatched area
+
+2, s(cid:2)
+
+Geoinformatica (2017) 21:549–572
+
+557
+
+a)
+
+c)
+
+b)
+
+d)
+
+Fig. 3 Running example SSR regions
+
+demonstrates the SSR(o1) in (cid:2)0 and the shaded area presents the SSR region in all four
+quadrants. Accordingly, the shaded regions in Fig. 3b and c present the SSR region of object
+o2 and o3, which are based on the DSL sets {s1, s5} and {s6} respectively. SSRs are built
+based on their associated DSLs. For example, in Fig. 3b, s1 dominates and thus filters out
+the subspace on its top right area. This includes any sites in that area such as s(cid:2)
+3, s4, s(cid:2)
+6
+(the interested audience may read [7] for further implementation details on calculating SSR
+from DSL). As we can see in Fig. 3b and c, SSR regions in all four quadrants are not
+symmetric since they are bounded by two axis. Figure 3d illustrates the three SSR regions
+of o1, o2, and o3 overlapped in a single view. While there is no region in the space where all
+the three SSRs overlap, there are regions where SSR2, i.e., the region for o2 overlaps with
+another region, i.e., SSR1 or SSR3. Such overlap regions are the MaxRSKY regions since
+a maximum, i.e., two, of the SSRs overlap together.
+
+2, s(cid:2)
+
+It is important to note that computing the skyline points is simply performed by an
+exhaustive dominance tests (recall, DEFINITION 1 in Section 3.2) on|S |2 pairs of site
+points. Although the cost of this method is high (quadratic), but it is negligible comparing
+to the cost of the second phase of the basic filtering approach. The time complexity of com-
+puting skyline sets and constructing the SSR regions is equal to O(|O||S|2) and O(|O|)
+respectively. Thus, the overall running time of this step is O(|O||S|2).
+
+558
+
+Geoinformatica (2017) 21:549–572
+
+5.1.2 Overlapping data structure
+
+Assuming we generate n SSR regions (n polygons) in the previous step, one should compute
+the overlap between 2n combinations of polygons. In this case, if (for example) one of the
+computational geometry techniques proposed by Dobkin et al. [8, 20] is used to compute
+the geometric intersection of n polytopes in a d-dimensional space, the total computational
+complexity would be in the order of O(2n)O(n logd−1 n + k logd−1 m), wherek is the
+number of intersecting pairs and m is the maximum number of vertices in any polytope.
+Obviously, this approach is not scalable considering a large number of polygons. Instead,
+in the basic filtering approach the main idea behind our proposed solution is to precompute
+the likelihood of containing the maximum number of overlaps for each SSR region, and
+maintain a ranking of those regions based on this likelihood from high to low. In particular,
+we compute the optimality likelihood for each SSR region by computing a “score” that
+reflects the total number of SSRs overlapping with this region. Obviously, the higher the
+score of a SSR region, the more is the chance of finding an optimal location within (or at
+least partly in) this SSR region.
+
+Motivated by this idea, for each SSR region r, we find a list of SSR regions that overlap
+with r, denoted by L(r). Accordingly, the total number of regions listed in L(r) is recorded
+as the score of region r, denoted by Sc(r). Table 2 shows the list of overlapping SSRs of
+Fig. 3d. Table 2 is called the overlap table (OT). Each row of the overlap table is called an
+entry and is in the form of (r, L(r), Sc(r)) or briefly (r, L, Sc). For simplicity, in Table 2,
+r1, r2, andr 3 represent SSR1, SSR2 and SSR3, respectively. It is important to note that
+regions r1 and r3 are not overlapping each other since they have only common intersection
+points on their boundaries, which are not included in SSR regions.
+
+Figure 4 shows the procedure we follow to populate the precomputed data structure.
+
+Below, we explain how we implement this procedure in three steps:
+
+1. Computing Dynamic Skyline Set and Constructing SSR regions: As we mentioned
+before, for each object o we first compute the dynamic skyline set of o, DSL(o). Then,
+we construct the corresponding SSR region, SSR(o), which is bounded by the derived
+skyline points and the two axes. In order to support the overlapping of SSR regions, we
+build an R-tree over all minimum bounding boxes (MBRs) of the SSRs created in this
+step. The time complexity of computing skyline sets and constructing SSR regions is
+O(|O||S|2) and O(|O|), respectively.
+
+2. Computing Pair-Wise Overlapping SSRs and Populating OT: Once DSLs and SSRs are
+generated, we populate the overlap table entries with the values described next. For
+each region entry r, we perform a range query [15] to find all SSRs that overlap with r.
+Then, we compute and store the region score Sc(r) (as described above). OT represents
+our region-optimality-likelihood list, to be used for computation of the optimal location
+(described next as presented in Fig. 5). Let β(N ) be the running time of a range query
+over dataset of size N . Since there are |O| SSRs, this step requires O(|O|)β(|O|). In
+the literature, β(N ) is theoretically bounded. Let k be the greatest result size of a range
+
+Table 2 Overlap table (OT)
+
+r
+
+r2
+r1
+r3
+
+L(r)
+
+{r1, r3}
+{r2}
+{r2}
+
+Sc(r)
+
+2
+
+1
+
+1
+
+Geoinformatica (2017) 21:549–572
+
+559
+
+Fig. 4 Precomputation for basic
+filtering approach
+
+3.
+
+query (i.e. the greatest number of SSRs that overlap a given SSR). Since a range query
+can be executed in O(k+log|O|) time [4], this step can be done in O(|O|(k+log|O|)).
+Sorting Overlap Table: Finally, we sort all entries in OT in descending order of Sc(r), to
+identify the regions with higher likelihood of optimality. This step is of O(|O|log|O|)
+complexity.
+
+The overall running time of precomputation procedure is
+
+O(|O||S|2) + O(|O|(k + log|O|)) + O(|O|log|O|)
+
+(1)
+
+5.2 Query processing
+
+In this section, we discuss how MaxRSKY query is efficiently computed by using the pre-
+computed data structure. With the query processing, we use the information recorded in the
+overlap table at the first phase to compute a score for each SSR region, which is equal to the
+total number of regions overlapping this region in a pair-wise relation. This score provides
+an over-estimate of the actual number of overlapping regions. For example, according to
+Table 2, while r2 overlaps with r1 and r3, there is no location in r2 that actually overlaps
+with both regions at the same time. In other words, the current score recorded for r2, i.e., 2,
+is an over-estimation of its actual score, i.e., 1, which is the maximum number of SSRs that
+overlap with r2 at a specific location. One should observe that a higher score for a region
+indicates higher potential of containing an optimal location. Next, through a refinement pro-
+cess we sort the regions based on their scores in descending order, and starting from the
+
+Fig. 5 MaxRSKY query processing with basic filtering approach
+
+560
+
+Geoinformatica (2017) 21:549–572
+
+regions with higher scores, we use an efficient technique to compute the actual set of over-
+lapping regions for each entry of the overlap table. It is important to note that through this
+refinement process we only have to compute the actual overlap(s) for an entry if the score
+of the region is more than the maximum value of the actual overlaps computed thus far.
+With our experiments, we observe that basic filtering only computes the actual overlaps for
+a limited subset of regions before it identifies the optimal location; hence, it provides effec-
+tive filtering of the search space for better efficiency, which is the key benefit of using OT.
+Figure 5 illustrates the procedure we follow to answer a MaxRSKY query. Below, we
+explain how we implement this procedure in more detail in three steps:
+
+Step 1 (Initializing Optimal Result Set):
+
+Suppose So is the set of all optimal regions in the
+space returned by the MaxRSKY query. An optimal set S1 ∈ So is a set of SSRs whose
+intersection corresponds to an optimal region. It can be observed that for any optimal sets
+S1, S2 ∈ So, the same number of SSRs are present in S1 and S2, i.e., |S1| = |S2|, because
+both sets possess the maximum possible number of intersecting SSRs. Also, we assume
+So has an optimal influence value denoted by Io which represents the number of SSR
+regions belonging to any set S1 ∈ So, i.e., |S1|. At this step, we initialize So to empty set
+and Io to zero. The initialization can be done in O(1).
+Step 2 (Identifying Overlap Regions for Each OT Entry):
+
+For each entry (r, L, Sc) of OT,
+
+we identify the optimal overlap regions by performing the following sub-steps:
+
+1. We compare all pairs of SSRs in L and check whether each pair are overlapping.
+If so, we compute a set Q of all intersection points between any two overlapping
+SSRs in L. Each pair checking can be done in O(|S| log |S|); according to [20], the
+problem of detecting the intersection of two simple polygons of n and m vertices
+can be determined in O((n + m) log (n + m). Also, given two simple polygons of n
+and m vertices, there would be O(nm) intersection points between the edges of the
+two polygons which can be computed in O(nm) time [20]. Therefore, computing
+the intersection points of two SSR regions requires O(|S2|) time. Since there are at
+most O(|O|2) pairs in each entry of OT, the total running time of this sub-step is
+O(|O|2(|S| log |S| + |S2|)).
+
+2. For each point q ∈ Q, we perform a point query for q to find a set S of SSRs
+covering q.1 Accordingly, we compute the influence value of S by counting the
+number of regions belonging to S. We update So and Io, if the influence value Is
+of S is larger than the current Io. Let θ (N ) be the running time of a point query
+over a dataset size N . Since there are at most O(|S|2) intersection points for one
+pair of SSRs, computing intersection points requires O(|S|2θ(|O|)). This step takes
+O(k|S|2θ(|O|)) where k is the greatest number of SSRs overlapping with a SSR (i.e.,
+the greatest size of L of an entry (r, L) in OT ). With the techniques described in [4],
+θ(|O|) = O(k + log |O|) and thus the running time of this sub-step is O(k|S|2(k +
+log |O|)).
+
+Although the aforementioned sub-step can find an optimal solution, it is ineffi-
+cient because it has to process all possible pairs of overlapping SSRs. In fact, some
+entries of OT need not to be considered and processed if there exists another entry
+whose intersection has a larger influence value (see line 3 in Fig. 5). This afore-
+mentioned technique is called influence-based pruning [24] which prunes a lot of
+
+1The term point is used as opposed to ’range’ to express that we want to find SSRs that overlap with a query
+point and not a range.
+
+Geoinformatica (2017) 21:549–572
+
+561
+
+candidate pairs with less likelihood of containing the optimal result. This impact
+improves significantly the efficiency of MaxRSKY computation.
+
+Considering that there are at most |O| entries in OT, the total running time of Step
+
+2 isO( |O|3(|S| log |S| + |S2|) + k|O||S|2(k + log |O|)).
+
+Step 3 (Finding the Maximum Influence Value): Once the computation terminates, So
+includes the set of optimal overlap region(s) with the largest value of Is as our final
+influence value Io. Region(s) found here are the MaxRSKY location(s) as defined in
+Section 3.2. Without loss of generality, we return the set of SSRs whose intersection
+region includes all such optimal regions, assuming that maximal region can be calculated
+trivially given this output. The total computational cost of the above three steps sums up
+to:
+
+O(|O|3(|S| log |S| + |S2|) + k|O||S|2(k + log |O|)) + O(|O|2(|S| log |S| + |S2|)) (2)
+
+The complexity of precomputation and query processing steps have been provided in
+Eqs. 1 and 2 respectively. Therefore, the cost of precomputation is negligible compared to
+that of query processing and the overall running time of MaxRSKY computation is the same
+as the query processing step (2).
+
+6 EF-MaxRSKY: grid-based filtering approach
+
+As we mentioned before, the basic filtering approach provides an efficient solution for
+MaxRSKY queries. However, our experimental results (see Section 7) show that with a large
+dataset this approach suffers from two main drawbacks which affects its performance:
+
+1. For each entry of OT , there is a large number of pair-wise overlapped regions which
+results in an overestimated value for the score of each entry as compared to the actual
+one.
+
+2. Due to the over-estimated value of scores, the influence-based pruning method has
+less significant impact on filtering those entries with less likelihood of containing the
+optimal region. Consequently, a large number of OT entries are processed during
+computation.
+
+The two aforementioned drawbacks happen during MaxRSKY computation since the
+entities engaged in pair-wise overlapping computation are regions with large geometric
+shape. Therefore, there is a large number of entities which have a large set of pair-wise
+overlapping regions where most of them have no impact in identifying the optimal location.
+Figure 6a illustrates this impact. In this Figure, the list of pair-wise overlapping regions with
+SSR1 is {(SSR1, SSR2), (SSR1, SSR3), (SSR1, SSR4)} whereas the actual overlapping set
+is {SSR1, SSR2,SSR4}. Accordingly, the pair (SSR1, SSR3) has no impact in identifying
+the optimal location.
+
+To avoid the aforementioned issues with the basic filtering approach, we propose the
+grid-based filtering approach. With this approach, we impose a grid over SSR regions and
+spatially subdivide them into a regular grid of squares (or generally hypercubes) of equal
+side length. By imposing the grid, SSRs are decomposed into a set of smaller entities (grid
+cells) where those entities are considered as the unit of overlapping. Therefore, in OT, entries
+are based on grid cells defined in a form of (c, L(r), Sc(c)), wherec represents a grid cell,
+L is the list of SSR regions covering partially or fully cell c and Sc(c) reflects the total num-
+ber of SSR regions overlapping with cell c. Considering the finer resolution of overlapping
+
+562
+
+Geoinformatica (2017) 21:549–572
+
+a)
+
+b)
+
+Fig. 6 An illustration of the Grid-based Filtering approach
+
+unit in grid-based filtering, the elements listed in L are closer to the actual overlapping set
+as compared to the basic filtering. As a result, the pair-wise overlaps that have no impact in
+identifying the optimal result are eliminated from computation. For instance, in Fig. 6b, for
+the three grid cells 1, 2, and 3, their corresponding lists L(1), L(2), and L(3) are computed
+as {(SSR1, SSR2, SSR4)}, {(SSR1)} and {(SSR1, SSR3)}, respectively. Also, their corre-
+sponding score values, Sc(c), are 3, 1 and 2, respectively, which have the same value as
+the actual ones. Considering the two facts that list L provides a more accurate view of the
+actual overlaps and also the fact that Sc(c) values are close to the actual ones, both over-
+lapping computation and influence-based pruning are performed in a more efficient way.
+These impacts improve significantly the performance of grid-based filtering (results to be
+discussed in Section 7).
+
+While girds are commonly used as index structures, in our approach we use grids for
+the different purpose of discretizing the space, so that each cell is our unit of overlap pro-
+cessing in its locality. The fact that cell sizes are tunable makes grids favorable over other
+alternatives.
+
+In terms of implementation, the grid-based filtering approach also consists of two main
+components, Precomputation and Query Processing, which are similar to those of the basic
+filtering approach with slight but subtle differences which we describe next.
+
+6.1 Precomputation
+
+In the precomputation phase, similar to the basic filtering we first compute the DSL(o) and
+SSR(o) of each object point o. Then, we impose a regular grid of squares, G, of equal side
+length over SSRs. We use the term|G| representing the total number of grid cells in G. The
+side length (cell size) is typically chosen so that either there are not many empty cells to
+traverse, or the expected number of regions overlapping each cell is bounded. Determining
+the best size for grid cells in grid-based filtering is empirical and is further explored in
+Section 7.6. For each grid cell c, its list of overlapping SSRs and corresponding score values
+are computed and stored in OT . Thereafter, OT is sorted based on Sc(c) values.
+
+Similar to basic filtering, the time complexity of computing skyline sets and constructing
+SSR regions is O(|O||S|2) and O(|O|) respectively. While constructing each SSR region
+r, we identify those grid cells which are covered partially or fully by region r. Once all
+
+Geoinformatica (2017) 21:549–572
+
+563
+
+(3)
+
+SSRs are constructed, we have a list of overlapping regions for each cell. Therefore, there
+is no need for a range query to compute all pair-wise overlapping regions with a given
+cell. Since, there are |G| grid cells, imposing the grid and constructing OT require O(|G|)
+time. Accordingly, sorting OT takes O(|G| log |G|). Therefore, the total running time of
+precomputation in grid-based filtering is:
+
+O(|O||S|2) + O(|G| log |G|)
+
+6.2 Query processing
+
+In this phase, all steps in MaxRSKY computation are the same as described in basic filtering
+(Section 5.2). However, as we mentioned before, the unit of overlapping are the precom-
+puted grid cells stored in OT whereas in basic filtering the unit of overlapping are SSR
+regions.
+
+Below, we describe the time complexity of query processing in grid-based filtering
+
+approach according to the three steps discussed in Section 5.2:
+
+Step 1 (Initializing Optimal Result Set): The initialization can be done in O(1).
+Step 2 (Identifying Overlap Regions for Each OT Entry):
+
+1. For each entry OT (grid
+cell c), we compute a set Q of all intersection points between cell c and any overlap-
+ping regions listed in L(r). Given a square (grid cell) and a polygon (SSR region),
+there would be four intersection points between the edges of the two polygons which
+can be computed in O(4) time. Therefore, computing the intersection points of two
+grid cells requires O(4) time. Since there are at most O(|O|) overlapping regions
+for each entry of OT, the total running time of this sub-step is O(4|O|).
+
+2. For each point q ∈ Q, we perform a point query for q to find a set S of SSRs covering
+q. Accordingly, we compute the influence value of S by counting the number of
+SSRs belonging to S. We update So and Io, if the influence value Is of S is larger
+than the current Io. Since there are at most O(4) intersection points for one pair
+and the cost of a range query is O(k + log |O|), the running time of this sub-step
+is O(4k(k + log |O|)) (Recall k is the greatest number of overlapping SSRs with a
+given cell). Considering there are at most —G— entries in OT, the total running time
+of Step 2 is:
+
+O(|G|2 + 4k|G|(k + log |O|))
+
+(4)
+
+Step 3 (Finding the Maximum Influence Value): This step can be done in O(1).
+
+The time complexity of query processing in grid-based filtering is the same as Eq. 4
+which is the dominating cost in the steps above. Considering the running time of precompu-
+tation presented in Eq. 3, the total cost of MaxRSKY computation using grid-based filtering
+is:
+
+O(|O||S|2) + O(|G|2 + 4k|G|(k + log |O|))
+We should point out that our proposed heuristic does not change the logic of computing
+the exact result (so it always returns correct result), but the way the result is computed to
+ensure efficiency.
+
+(5)
+
+7 Experimental results
+
+In this section, we present the results of our empirical study of the proposed solutions using
+real and synthetic datasets, as we find applicable.
+
+564
+
+Geoinformatica (2017) 21:549–572
+
+7.1 Cost of computing SSRs vs. cost of computing overlap among SSRs
+
+For this experiment, we used a synthetic dataset consisting of five series of 2-dimensional
+site and object points with anti-correlated distribution. The cardinality of site points in these
+five series is 1,000, 2,000, 3,000, 4,000 and 5,000, respectively and the number of corre-
+sponding objects is doubled. We applied the basic filtering approach to the aforementioned
+dataset and computed the execution time of skyline and SSR computation (C1) and the exe-
+cution time of computing the overlaps among SSRs to identify the optimal location (C2)
+separately. Figure 7 presents the results of this experiment. As illustrated in this figure, C2
+is about two orders of magnitude greater than C1. In addition, the cost of the latter compu-
+tation increases significantly with larger object and site datasets. Therefore, in this study we
+focused on reducing the computational complexity of computing the overlaps among SSRs
+and identifying the optimal location.
+
+We note that our experiments with datasets of correlated and independent distributions
+
+resulted the same behavior; hence, we refrain from reporting these redundant results here.
+
+7.2 Basic filtering approach vs. grid-based filtering approach
+
+For this experiment we used the real-world dataset (Yahoo! Autos) and extracted five series
+of data with fixed size sites (1,000 points) and various object cardinality in a range of
+[1,000, ..., 9,000]. Then, we applied both basic filtering and grid-based filtering approaches
+to the aforementioned dataset and computed their execution time. For the grid-based filter-
+ing approach we imposed a grid including 250 × 250 grid cells, each cell with a resolution
+of 2000 × 10. As illustrated in Fig. 8, grid-based filtering outperforms basic filtering by a
+factor of 22 on average. The time complexity of the two approaches (discussed in Sections 5
+and 6) verifies the aforementioned observation. The time complexity of the grid-based and
+basic filtering approaches have been presented in Eqs. 5 and 2, respectively. Therefore,
+the running time of grid-based filtering grows linearly as the number of objects increases
+whereas the running time of basic filtering is polynomially (cubic) proportional to the num-
+ber of object points. This observation verifies the fact that the basic filtering approach
+is less efficient with large datasets. On the other hand, as we explained in the preamble
+of Section 6, the grid-based approach outperforms the basic one through overcoming the
+overestimation and filtering problems present in the basic approach.
+
+Note that the execution time of grid-based filtering approach grows faster in the last
+series of data despite their linear relation with the cardinality of objects. This is because of
+the fact that the the execution time of grid-based filtering is not only proportional to |O| but
+also to k. As we mentioned before, k represents the greatest number of SSRs overlapping
+with a grid cell. Thus, the value of this factor also improves with an increase in the size of
+object datasets.
+
+Finally, it is important to note that in this experiment while computing the execution
+time of basic filtering an “Out of Memory” case happened for the last series of data. This is
+because of the fact that the larger number of objects we have, the more SSRs are constructed;
+
+Fig. 7 Cost of computing SSRs
+vs. cost of computing overlap
+among SSRs
+
+Geoinformatica (2017) 21:549–572
+
+565
+
+Fig. 8 Basic filtering vs. grid-based filtering
+
+hence, the size of L(r) and the number of intersecting points become larger which result in
+memory shortages during MaxRSKY computation.
+
+7.3 Effect of site and object distribution
+
+For this experiment, we used a synthetic dataset consisting of five series of 2-dimensional
+site and object points with fixed cardinality and different distributions. The cardinality of
+site points in these five series is 1,000, 2,000, 3,000, 4,000 and 5,000, respectively and
+the number of corresponding objects is doubled. The distribution combinations of site and
+object points are either both independent, correlated or anti-correlated. We applied the basic
+filtering and grid-based filtering approaches to the aforementioned dataset and computed
+their execution times. Figures 9 and 10 depicts the results of our experiments. We observe
+that the grid-based filtering approach is about two orders of magnitude faster than basic
+filtering on average in all distributions. We also observe that the execution time of basic fil-
+tering deteriorates rapidly with an increase in the number of object and site points. However,
+with grid-based filtering there is no significant growth in execution time (see Fig. 10 for a
+
+Fig. 9 Effect of data distribution
+
+566
+
+Geoinformatica (2017) 21:549–572
+
+Fig. 10 Performance of the grid-based filtering approach magnified
+
+magnified view). The time complexity of the two approaches (discussed in Sections 5 and
+6) explains the aforementioned observations. Since the dominating factor of time complex-
+ity of the basic filtering approach is O(|O|3|S|2) which is polynomially proportional to size
+of site set (quadratic) and polynomially proportional to size of object set (cubic); hence, its
+execution time significantly improves with a larger data set. However, the dominating factor
+of the time complexity of grid-based filtering approach is O(4|O||G|+4k|G|(k +log |O|)),
+which is proportional to the grid size |G| as well as |O|. In addition, Figs. 9 and 10 illus-
+trate that in both approaches their longest execution times occurred when datasets with
+independent distributions were used, followed by the datasets with correlated distributions
+and lastly the datasets with anti-correlated distribution. With independent distributions, both
+object and site points are uniformly distributed in the data space. Thus, for a given object
+its skyline set is scattered across the data space which results in large SSR regions. The
+larger the SSRs, the greater the time required for overlap computation and identifying the
+optimal location. However, with anti-correlated distribution, both object and site points are
+closely distributed which results in small SSRs and faster execution times for the overlap
+and MaxRSKY computation. Although the distribution of the correlated datasets used for
+the evaluation of skyline queries is clustered, but it is sparser than anti-correlated datasets.
+Therefore, size of the SSRs is larger and hence their overlap computation is computationally
+more time consuming as compared to those of the anti-correlated datasets.
+
+It is important to note that in this experiment two “Out of Memory” cases occurred for the
+last two data series while computing the execution time of basic filtering with independent
+datasets. The SSRs are large in their instances; therefore, the size of L(r) and the number
+of intersecting points are large, which result in memory shortages during the MaxRSKY
+computations.
+
+7.4 Effect of site and object cardinality
+
+In order to evaluate the effect of site and object cardinality on our proposed approaches, we
+implemented two experiments. With the first one, we considered a fixed site-dataset and
+used various object-datasets of different sizes. With the second experiment, we fixed the object-
+dataset and used various site-datasets. Below, we describe each experiment in more detail.
+
+Geoinformatica (2017) 21:549–572
+
+567
+
+Effect of object dataset For this experiment, we used a synthetic dataset consisting of five
+series of 2-dimensional object points and fixed size site points (1,000 points). The cardinal-
+ity of object points in these five series is 2,000, 3,000, 4,000, 5,000 and 6,000 respectively.
+Thinking in terms of an application, the cardinality of objects here can show the number of
+sample clients that asked about or showed interest in having variations of a specific item,
+i.e., sites, in a retail store. The retail store can collect such data through running in-store
+surveys or online reviews across a randomly selected set of clients.
+
+Both sites and objects have anti-correlated distribution. We applied the basic filtering and
+grid-based filtering approaches to the aforementioned dataset and computed their execution
+times. Figure 11 depicts the results of our experiment. This diagram shows that the execution
+time of both approaches improve with an increase in the number of object points, because
+they involve more SSRs and, hence, more overlap computation. However, the growth trend
+of execution time in basic filtering is polynomial whereas the growth trend in grid-based
+filtering is linear with respect to the number of object points. The time complexity of both
+approaches explains the aforementioned effect. The total cost of the MaxRSKY compu-
+tation using basic filtering and grid-based filtering have been presented in Eqs. 2 and 5,
+respectively. Finally, we observe that grid-based filtering outperforms basic filtering by a
+factor of 20 on average (see Fig. 11).
+
+Since both approaches behave similarly with datasets of correlated and independent
+
+distributions, those results are omitted.
+
+Effect of site dataset For this experiment, we used a synthetic dataset consisting of five
+series of 2-dimensional site points and fixed size object points (6,000 points). The cardinal-
+ity of site points in these five series is 1,000, 2,000, 3,000, 4,000 and 5,000, respectively.
+Both sites and objects have anti-correlated distributions. We applied the basic filtering and
+grid-based filtering approaches to the aforementioned dataset and computed their execu-
+tion times. Figure 12 demonstrates that the execution time of both approaches decreases
+with an increase in the number of site points since they deal with a smaller number of
+skyline points and, hence, smaller number of SSRs. We also observe that grid-based fil-
+tering outperforms basic filtering by a factor of 17 on average since as discussed earlier,
+the running time of grid-based filtering is proportional to the grid size whereas the run-
+ning time of basic filtering is polynomially proportional to the number of site and object
+points.
+
+Fig. 11 Effect of object set cardinality
+
+568
+
+Geoinformatica (2017) 21:549–572
+
+Fig. 12 Effect of site set cardinality
+
+7.5 Effect of number of data dimensions
+
+Figure 13 illustrates the results of our experiment to study the effect of the number of
+data dimensions on performance of EF-MaxRSKY. With this experiment, we applied EF-
+MaxRSKY to 2D, 3D, 4D and 5D datasets of independent, correlated, and anti-correlated
+distributions with object set cardinalities ranging from 20 to 16,000 (where site set cardi-
+nality is selected to be half of the object cardinality in each case; hence ranging from 10 to
+8000, correspondingly).
+
+The depicted graph is in log-log scale. While datasets of various distributions result
+in almost identical performance at each dimension, the performance EF-MaxRSKY expo-
+nentially improves as the number of data dimensions decreases. At 5D and object set
+cardinalities above 500, the time it takes to process the MaxRSKY queries is beyond
+reasonable and so excluded from the graph.
+
+As an example application, a mobile carrier can run a survey across a selected number
+of its subscribers to learn about their desired plan in terms of the three primary features of
+price, data usage limit, and prepaid text message count. While many real-world applications
+deal with 2D, 3D, or 4D data, one of our future directions is to extend our method to support
+data with higher dimensions (Section 8).
+
+Fig. 13 Effect of number of data dimensions
+
+Geoinformatica (2017) 21:549–572
+
+569
+
+Fig. 14 Effect of grid granularity
+
+7.6 Effect of grid cell size selection
+
+With this experiment, we studied the effect of changing the granularity of the imposed
+grid on the execution time of the grid-based filtering approach. As mentioned earlier, the
+size of the default grid was 250 × 250 with a cell size of 1 × 1. For this experiment,
+we changed the size of grid cells in the range of [0.04,..., 80] (see Fig. 14). We applied
+grid-based filtering on a dataset with 1,000 site points and 2,000 object points with anti-
+correlated distribution and computed its execution times by varying the grid cell size. As
+illustrated in Fig. 14, the execution time of grid-based filtering (the dashed curve line) fluc-
+tuates with changes in grid cell size. These fluctuations occur because the size of L(c) for
+each entry in the OT table and the number of pruned entries may vary from one grid cell
+size to another. However, the trend-line of the execution times (the solid curve) shows that
+for some grid cell values belonging to the middle of the range (e.g., the cell sizes between
+0.0625 and 0.675 in Fig. 14), the execution time is lower as compared to those of the rest
+of the range. For coarser granularities (i.e. cell size values greater than 0.675), the execu-
+tion time increases because with larger cell sizes, we are dealing with larger numbers of
+pairwise overlaps which results in higher execution time. In the worst case, when the cell
+size approaches the area of the entire data space, the performance of the grid-based filter-
+ing approach degrades to the performance of the basic filtering approach. Also, with finer
+granularities (e.g., cell sizes less than 0.05), the execution time deteriorates slightly. This
+is because of the fact that splitting up the grid beyond an optimal cell size, provides no
+more improvement in terms of the efficiency of the grid-based filtering approach, because
+larger numbers of grid cells results in larger numbers of entries in OT and higher execution
+times.
+
+8 Conclusions and future work
+
+In this study, for the first time we proposed a solution for the problem of maximal reverse
+skyline query computation. Accordingly, we proposed two approaches, basic filtering and
+grid-based filtering, for efficient computation of MaxRSKY with a focus on reducing the
+cost of overlap computation among SSRs. We verified and compared the performance of our
+
+570
+
+Geoinformatica (2017) 21:549–572
+
+proposed solutions with rigorous complexity analysis as well as an extensive experimental
+evaluation using real-world and synthetic datasets.
+
+We plan to extend our work in multiple directions. First, we want to match other cate-
+gories of applications such as online market places, as a dynamic and growing category of
+applications. For example, searching for some items through the Amazon website [1] would
+result in hundreds of thousands of offers each having more than three or four attributes.
+Thus, scaling to larger number of objects, sites, and dimensions is a requirement for pro-
+cessing the MCOL query in this category of applications. The second future direction is
+to dynamically identify a proper grid resolution in our grid-based solution as this can save
+considerable execution time. We plan to use non-uniform grids such as quadtree to tackle
+this problem. Last but not least, we would like to explore the moving object MCOL prob-
+lem, where the objects are not static over time, e.g. user interests change over time. Using
+the existing method for dynamic objects would require us to re-run the precomputation step
+upon any change in object locations.
+
+References
+
+1. Amazon. http://www.amazon.com
+2. Banaei-Kashani F, Ghaemi P, Wilson JP (2014) Maximal reverse skyline query. In: ACMGIS
+3. B¨orzs¨onyi S, Kossmann D, Stocker K (2001) The skyline operator. In: ICDE
+4. Chazelle B (1986) Filtering search: a new approach to query-answering. SIAM J Comput 15:703–724
+5. Chomicki J, Godfrey P, Gryz J, Liang D (2003) Skyline with presorting. In: ICDE
+6. Cohon JL (1978) Multiobjective programming and planning. Mathematics in science and engineering,
+
+vol 140. Acad. Press, New York
+
+7. Dellis E, Seeger B (2007) Efficient computation of reverse skyline queries. In: VLDB
+8. Dobkin DP, Kirkpatrick DG (1983) Fast detection of polyhedral intersection. Theor Comput Sci
+
+9. Du Y, Zhang D, Xia T (2005) The optimal location query. In: Proceedings of advances in spatial and
+
+27(3):241–253
+
+temporal databases
+
+10. Farahani R, Hekmatfar M (2011) Facility location: concepts, models, algorithms and case studies.
+
+Contributions to management science. Physica-Verlag, HD
+
+11. Farahani RZ, SteadieSeifi M, Asgari N (2010) Multiple criteria facility location problems: a survey.
+
+Appl Math Modell 34:1689–1709
+
+ACMGIS
+
+on spatial networks. In: ACMGIS
+
+12. Ghaemi P, Shahabi K, Wilson JP, Banaei-Kashani F (2010) Optimal network location queries. In:
+
+13. Ghaemi P, Shahabi K, Wilson JP, Banaei-Kashani F (2012) Continuous maximal reverse nearest query
+
+14. Ghaemi P, Shahabi K, Wilson JP, Banaei-Kashani F (2014) A comparative study of two approaches for
+
+supporting optimal network location queries. GeoInformatica 18:2
+
+15. Guttman A (1984) R-trees: a dynamic index structure for spatial searching, vol 14. ACM
+16. Hekmatfar M, SteadieSeifi M (2009) Multi-criteria location problem. Contributions to management
+
+science. Physica-Verlag, HD
+
+17. Hwang C, Masud A (1979) Multiple objective decision making, methods and applications: a state-of-
+
+the-art survey. Lecture notes in economics and mathematical systems. Springer-Verlag
+
+18. Kossmann D, Ramsak F, Rost S (2002) Shooting stars in the sky: an online algorithm for skyline queries.
+
+19. Larichev O, Olson DL (2001) Multiple criteria analysis in strategic siting problems. Kluwer Academic
+
+20. Mount DM (2004) Geometric intersection. In: Handbook of discrete and computational geometry,
+
+In: VLDB
+
+Publishers
+
+chapter 38, pp 857–876
+
+ACM Trans Database Syst 30:2005
+
+21. Papadias D, Fu G, Chase JM, Seeger B (2005) Progressive skyline computation in database systems.
+
+Geoinformatica (2017) 21:549–572
+
+571
+
+22. Szidarovszky F, Gershon M, Duckstein L (1986) Techniques for multiobjective decision making in
+
+systems management. Advances in industrial engineering. Elsevier
+
+23. Tan K, Eng P, Ooi BC (2001) Efficient progressive skyline computation. In: VLDB
+24. Wong RC, Ozsu MT, Yu PS, Fu AW, Liu L (2009) Efficient method for maximizing bichromatic reverse
+
+nearest neighbor. In: VLDB
+
+25. Xiao X, Yao B, Li F (2011) Optimal location queries in road network databases. In: ICDE
+26. Zhang J, Ku W-S, Sun M-T, Qin X, Lu H (2014) Multi-criteria optimal location query with overlapping
+
+voronoi diagrams. In: EDBT
+
+27. Zhou Z, Wu W, Li X, Lee M, Hsu W (2011) Maxfirst for maxbrknn. In: ICDE
+
+Farnoush Banaei-Kashani is currently an assistant professor at the Department of Computer Science and
+Engineering, College of Engineering and Applied Science, University of Colorado Denver. Previously, Dr.
+Banaei-Kashani was a research scientist at the Computer Science Department, University of Southern Cal-
+ifornia (USC), where he also earned his PhD degree in Computer Science and MS degree in Electrical
+Engineering in 2007 and 2002, respectively. Dr. Banaei-Kashani is passionate about performing fundamental
+research toward building practical, large-scale data-intensive systems, with particular interest in ”Big Data”
+data-driven decision-making systems. He has published more than 50 referred papers in the areas of spatial
+databases, trajectory data mining, NewSQL, and graph mining.
+
+Parisa Ghaemi received her BS in Computer Engineering from Amirkabir University of Technology in 1996,
+her MS in Computer Engineering from Sharif University of Technology in 1998, and her PhD in Computer
+Science from University of Southern California in 2012. Dr. Ghaemi currently focuses her research on spatial
+databases and location planning.
+
+572
+
+Geoinformatica (2017) 21:549–572
+
+Bahman Movaqar received his BS in Computer Science in 2004. Since then he has been developing softare
+solutions in various sectors. His research interests include spatial databases and programming languages.
+
+Seyed Jalal Kazemitabar is a Ph.D. candidate in computer science at the University of Southern California.
+Seyed’s research interests is focused on geospatial data stream processing and in particular, spatial query
+processing at scale.
+
+

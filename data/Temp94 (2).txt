@@ -1,0 +1,4352 @@
+Geoinformatica
+DOI 10.1007/s10707-014-0210-x
+
+Impact of data representation rules on the robustness
+of topological relation evaluation
+
+Alberto Belussi · Sara Migliorini · Mauro Negri ·
+Giuseppe Pelagatti
+
+Received: 19 June 2013 / Revised: 10 March 2014 / Accepted: 17 April 2014
+© Springer Science+Business Media New York 2014
+
+Abstract A spatial object is characterized not only by its geometric extents, but also by the
+spatial relations existing with its surrounding objects. An important kind of spatial relations
+is represented by topological relations. Many models have been defined in literature for for-
+malizing the semantics of topological relations between spatial objects in the Euclidean 2D
+and 3D space [3, 4, 7]. Nevertheless, when these relations are evaluated in available systems
+many robustness problems can arise, which are essentially related to the discrete represen-
+tations adopted by such systems. In a Spatial Data Infrastructure (SDI) the perturbations
+introduced by the exchange of data between different systems can increase the robustness
+problems.
+
+This paper deals with a set of rules for the representation of spatial datasets which allow
+to evaluate topological relations in a robust way using existing systems. These rules are
+well-known and described in literature and are based on a few basic assumptions on the sys-
+tem behavior which are fulfilled by today’s systems. The main contribution of this paper is
+to determine in detail which rules are sufficient in order to make each topological relation
+robust; it turns out that the rules depend not only on the topological relation being consid-
+ered, but also on the geometric types of the involved geometries and on the dimension of
+the space in which they are embedded, thus giving rise to a very large number of possi-
+ble combinations. The paper analyses the topological relations and a significant subset of
+the geometric types defined in the most recent version of the Simple Feature Access (SFA)
+model published by OGC, considering both a 2D and a 3D space. The extension of the work
+to the types which have been left out can be done using the same concepts and methodology.
+
+A. Belussi · S. Migliorni ((cid:2))
+Department of Computer Science University of Verona, Veron Italy
+e-mail: sara.migliorini@univr.it
+
+A. Belussi
+e-mail: alberto.belussi@univr.it
+
+M. Negri · G. Pelagatti
+Department of Electronics, Information and Bioengineering Politecnico of Milan, Milan Italy
+
+Keywords Robustness · Topological relations · Spatial data infrastructure · Discrete
+representation · Distributed systems
+
+Geoinformatica
+
+1 Introduction
+
+Topological relations are a fundamental formal tool for describing spatial properties of data
+in geographical applications: this occurs for example in schema definitions, in order to
+define spatial integrity constraints, and also in query specification, where topological rela-
+tions can be used for retrieving information of interest for the user, and in update processes
+where topological relations are used to specify data quality [16, 20].
+
+Although many abstract models have been studied in literature [3, 4, 7, 19] for defining
+the semantics of topological relations between geometric objects embedded in a Euclidean
+space, the problems arising when topological relations are evaluated on data have been
+much less explored. Topological relations have been defined by using the 9-intersection
+matrix approach [7] or other axiomatic approaches [19], while for their evaluation spe-
+cific computational geometry algorithms have been implemented in systems which work
+on data represented as vectors in a discrete space. The evaluation of topological relations
+should be robust, i.e. two different evaluations performed by the same or by different sys-
+tems on the same dataset should produce the same result; moreover, in the distributed and
+heterogeneous context of a Spatial Data Infrastructure (SDI), where datasets are exchanged
+between systems, also the evaluation of topological relations performed by different systems
+on data which has been exchanged through the network should remain identical. How-
+ever, satisfying this requirement can be difficult for several reasons discussed in the next
+subsection.
+
+1.1 Robustness problems in the evaluation of topological relations
+
+The first difficulty in obtaining a robust evaluation of topological relations is due to the
+finite numerical representation of coordinates in the vector representation. The existence
+of robustness problems in the execution of computational geometry algorithms which use
+finite numbers (e.g. floating point) for the representation of coordinates in the Euclidean
+space, instead of the real numbers theoretically required, is well known [2, 11]. For example,
+consider the 5 segments in Fig. 1.a, where the grid represents the finite 2D space. The size of
+the grid cells can be very small; for instance, with EPSG:32632 WGS84/UTM coordinates
+represented by standard FP64 numbers the grid interval is in the worst case 2−29 meters. In
+Fig. 1.a all the segment vertices are on the cell corners, but the distance between a segment
+and a vertex of another segment can be very small, much smaller than the cell size, as shown
+by the 3 vertices of segments s2, s3 and s5 with respect to segment s1. In these cases different
+systems can produce different evaluations of the topological relations between segments s2,
+s3, s5 and segment s1. In order to provide experimental evidence of this problem, we have
+moved one endpoint of segment s2 to all positions of a square of 64 × 64 grid positions
+and evaluated its topological relation with segment s1 using two spatial DBMSs: PostGIS
+[21] and Oracle Spatial [15]. Indeed, the two systems have produced different evaluations
+in many cases when the endpoint was very near to s1.
+
+The problems related to the adopted finite number representation are made even worse
+by the data perturbation occurring during the exchange of data between different systems.
+Such exchanges can introduce perturbations in geometric representation as a result of the
+conversions between different formats and precisions. For instance, the GML language [14],
+
+Geoinformatica
+
+Fig. 1 Topological relations between segments in a discrete space
+
+an OGC and ISO standard for the exchange of spatial data, adopts a decimal encoding of
+coordinates represented as character strings, and the conversion from and to the floating
+point representation adopted by most current systems can introduce perturbations. More-
+over, in order to reduce the size of datasets, the number of decimal positions in the decimal
+representation is reduced with respect to the one that would be required in order to keep the
+original precision. These perturbations can cause a modification of the topological relation
+between two segments; for example, in Fig. 1.a a small perturbation of the x coordinate of
+one vertex of s3 can transform the evaluation of the relation between s1 and s3 from disjoint
+to crosses.
+
+Finally, the robustness problem in the evaluation of topological relations is also related
+to the dimension of the geometric space (2D or 3D) embedding the objects. For example, in
+Fig. 1.a segments s1 and s4 have a macroscopic intersection in 2D, such that in this space
+every system will likely evaluate the topological relation as a crosses. Conversely, in a 3D
+space a small difference in the z-value of the position corresponding to the intersection of
+their planar projections could cause some systems to evaluate the relation as disjoint while
+others would still evaluate it as crosses. Therefore, in many cases a distinct analysis of the
+robustness of topological relations in 2D and 3D is necessary.
+
+1.2 An approach for determining the robustness rules required by topological relations
+
+In literature several robustness rules have been proposed in order to solve the mentioned
+robustness problems, and they are to some extent applied by systems. These rules refer to
+the representation of the data, not to the algorithms adopted for evaluating the relation. The
+most important one is based on the identification of common geometric primitives between
+different objects. These common primitives can be either stored once and referred to by the
+objects (topological structures [6]) or repeated identically in all objects which share them.
+This robustness rule can solve many of the mentioned problems, but not all of them. A
+complementary robustness rule, which has been suggested, for instance in [23], consists in
+ensuring that a minimum distance is kept between all geometric primitives which are not
+identical. Fig. 1.b shows a possible application of these rules to the situation of Fig. 1.a: by
+
+Geoinformatica
+
+applying the first rule, segment s1 has been broken and is now a line constituted by segments
+s11, s12 and s13; by applying the second rule, one vertex of segment s2 has been moved away
+from s1 so that their relationship is interpreted as disjoint.
+
+The primary goal of this paper is to develop an approach for identifying for each topolog-
+ical relation the set of robustness rules which are sufficient to make robust their evaluation;
+if no other kinds of rules are discovered and applied, these rules are also necessary in order
+to guarantee the robustness.
+
+As a secondary goal, this paper shows the application of this approach to a wide set of
+topological relations, trying to cover many of the most relevant situations occurring with
+data compliant with current standards. However, since the rules required by each topological
+relation depend also on the type of geometries being considered and on the space (2D or 3D)
+in which they are embedded, the analysis has been restricted to the following topological
+relations and data types:
+
+– All topological relations that can be expressed using the well known approach of Egen-
+hofer et al. [7] based on the 9-intersection matrix: the topological relations of the Simple
+Feature Access (SFA) model published by OGC [13] are a subset of them.
+The geometric types of the most recent version of the SFA, considering both a 2D and
+a 3D space, but without the collection types.
+
+–
+
+The approach can be also applied to the collection types in [13], but this would require
+much space without producing a deeper understanding. Notice that the data types of the
+most recent SFA version embed the primitives in 3D space but do not include 3D objects
+(i.e., solids).
+
+The approach presented in this paper is based on the following key points:
+
+1. Definition of a set of vector predicates: a vector predicate is an elementary predi-
+cate which can be evaluated in the discrete vector model and is necessary in order to
+implement some topological relations (Section 2).
+
+2. Definition of a set of critical vector predicates: a critical vector predicate is a vector
+
+predicate whose evaluation is non robust due to the discussed problems (Section 3.1).
+
+3. Determination of which robustness rules are necessary and sufficient for making each
+critical vector predicate robust, taking into account a reasonable formalization of the
+systems’ behavior in the considered SDI environment. Notice that the given rules are
+sufficient to guarantee robustness, because their application ensures that topological
+relations are evaluated in the same way by any implementation. Conversely, the given
+rules are necessary to guarantee robustness, because if they are not satisfied the eval-
+uation of topological relations becomes not robust, namely the execution of different
+algorithm implementations may produce different results (Section 3.2).
+
+4. Determination of which critical vector predicates are required for the evaluation of each
+
+topological relation on some geometrical types (Section 4).
+
+5. Derivation of the robustness rules required by a topological relation between two
+
+geometries from 3 and 4 (Section 4).
+
+Finally, Section 5 illustrates the results of some experiments performed in order to confirm
+the effectiveness of the proposed robustness rules.
+
+1.3 Related Work
+
+Geometric algorithms are typically described assuming an infinite precision that cannot be
+provided by the adopted computer representations. This assumption raises great difficulties
+
+Geoinformatica
+
+in implementing robust geometric algorithms. A variety of techniques have been proposed
+in recent years to overcome these issues. For instance, the Exact Geometric Computation
+model [2] provides a method for making robust the evaluation of geometric algorithms.
+This can be achieved either by computing every numeric value exactly, or by using some
+symbolic or implicit numeric representation that allows predicate values to be computed
+exactly. Exact computation is theoretically possible whenever all the numeric values are
+algebraic, which is the case for most current problems in computational geometry. This
+technique has made much progress, so that for certain problems the introduced performance
+penalty is acceptable. However, when the computation is performed on curved objects or in
+3D space the overhead is still large. For this reason, an alternative approach has been pro-
+posed which is called Controlled Perturbation (CP) [9] and belongs to the Finite-Precision
+Approximation Techniques. This method proceeds by perturbating the input slightly but in
+a controlled manner such that all predicates used by the algorithm are guaranteed to be eval-
+uated correctly with floating-point arithmetic of a given precision. The algorithms of the
+Snap Rounding family, such as the one in [11] and [10], are examples of this approach. They
+require the application of rounding algorithms that convert an arbitrary-precision arrange-
+ment of segments into a fixed-precision representation. However, even if such algorithms
+guarantee the robustness of the result, the quality of the geometric approximation in terms
+of similarity with the original arrangement can be quite low and some topological relations
+can be modified. Conversely, the aim of this paper is to define rules that can guarantee,
+when they are satisfied, that a dataset is robust w.r.t. topological relation evaluation. In case
+of rule violations, SR algorithms could be one possible mean for modifying the dataset in
+order to fulfill the rules.
+
+In the geographical field, topological data models have been defined which use a rep-
+resentation based on topology instead of on coordinates (see for instance [6, 22]). A GIS
+topology is a set of rules that models how points, lines and polygons share coincident
+geometries, for instance imposing that adjacent features will have a portion of common
+boundary. A topological data model manages spatial relationships by representing spa-
+tial objects as an underlying graph of topological primitives: nodes, faces and edges. The
+original model has been defined for representing objects in a 2D space; however, several
+extensions to the 3D space have been defined. The Formal Data Structure (FDS) [12] has
+been the first data structure to consider spatial objects as an integration of geometric and the-
+matic properties. It includes three levels: features related to thematic class, four elementary
+objects (point, line, surface, and body) and four primitives (node, arc, face, and edge). The
+model requires that elementary objects shall be disjoint and a 1 to 1 correspondence exists
+between objects and primitives. In order to overcome some difficulties of FDS in modeling
+objects with indiscernible boundary, the TEtrahedral Network (TEN) has been proposed in
+[17]. This model includes 4 primitives: tetrahedron, triangle, arc, and node, where the first
+one is a real 3D primitive. The Simplified Spatial Model (SSM) [24] has been the first topo-
+logical structure that focuses on visualization aspects of queries as 3D models. It includes
+only two primitives: nodes and faces, while an arc can be part of two faces. Finally, the
+Urban Data Model (UDM) [5] represents the geometry of a body or of a surface using planar
+convex faces, defined as sets of nodes. In [8] the author defines the concept of geomet-
+ric realm as a planar graph over a finite resolution grid. Problems of numerical robustness
+and topological correctness are solved below and within the realm layer so that spatial
+algebras defined above a realm enjoy very nice algebraic properties. Realms also interact
+with a database management system to enforce geometric consistency on object creation
+or update. All these topological representations ensure data quality and relation preserva-
+tion, but they cannot be applied in a distributed context where data is transferred among
+
+Geoinformatica
+
+different systems. On the contrary, in order to deal with a distributed context where data
+are exchanged among different systems and evaluated using different algorithm implemen-
+tations, this paper assumes that geometries are represented with a traditional discrete vector
+model and defines a set of rules for making robust existing algorithms used to evaluate
+topological relations.
+
+In [5] the authors face the problem of developing systematic, robust, correct and effi-
+cient implementation strategies and optimized evaluation methods for topological predicates
+between all combinations of the three spatial data types: point, line and polygons. In par-
+ticular, they recognize four main problems in existing algorithms: even if the plane sweep
+algorithm is the basis of any topological relation evaluation, (1) each topological predi-
+cate usually requires an own, tailored plane sweep algorithm leading to a great number of
+algorithms; moreover, (2) different outputs can be required on the basis of the considered
+predicate, and (3) each single algorithm is an ad-hoc implementation for which it is dif-
+ficult to demonstrate that it covers all cases and guarantees mutual exclusiveness among
+relations. Finally, (4) the kind of query (verification or determination) usually impacts the
+evaluation process. For solving these issues a two phases approach is proposed: in a first
+exploration phase the plane sweep algorithm is used for determining the given configura-
+tion between two spatial objects (e.g. their intersections), while in a subsequent evaluation
+phase the collected information is used to determine the existing relation.
+
+The problem of developing correct and efficient implementation techniques of topolog-
+ical predicates is also treated in [18]. The authors consider all combinations of complex
+spatial data types including two-dimensional point, line, and region objects. The solution
+consists of two phases: an exploration phase, which summarizes all intersection and meet-
+ing situations in two precisely defined topological feature vectors, and an evaluation phase,
+which determines the kind of the topological predicate. Besides this general evaluation
+method, the authors present an optimized method for predicate verification and an optimized
+method for predicate determination.
+
+The approach adopted in this paper is different from the one in [5, 18] because it does
+not propose different evaluation strategies or algorithms, but it identifies a set of rules for
+data representation whose compliance guarantees a robust evaluation of topological rela-
+tions using the existing algorithms. The reason is that in a distributed context it is convenient
+to guarantee robustness by modifying the geometry representation in a way that any algo-
+rithm implementation can produce the same evaluation, rather than rely on a modified
+implementation that cannot be available everywhere.
+
+2 Discrete vector model
+
+This section presents a discrete vector model that contains the data structures and the opera-
+tions that are usually implemented in current spatial database management systems in order
+to deal with the evaluation of topological relations. This model is used in this paper as a for-
+mal description of an implementation of a part of the Simple Feature Access (SFA) model
+of OGC [13], which is an abstract specification. The SFA model contains classes describing
+geometries of the 2D space, but with the possibility to store also the z coordinate usually
+representing the height above or below sea level (such geometry representation model is
+often called 2.5D model). Moreover, the type PolyhedralSurface is available for represent-
+ing surfaces in 3D space, as sets of polygon patches with some constraints. The complete
+type hierarchy is shown in Fig. 2. The main characteristics of these types are supposed to
+be known by the reader, please refer to [13] for more details.
+
+Geoinformatica
+
+Fig. 2 Geometric type hierarchy of the Simple Feature Access (SFA) model
+
+As explained in the introduction, we consider only the basic types of the SFA model,
+since a robustness analysis for the whole set of geometric types cannot be presented due
+to space constraints. The considered types are: Point, LineString, Polygon and Polyhedral-
+Surface, and we focus on the implementation of the tests that are necessary for evaluating
+the topological relations on geometries of these types. Moreover, we assume that: (i) in
+LineString geometries and Polygon rings successive collinear segments are not admitted
+(they can be merged in one segment); (ii) in PolyhedralSurface type adjacent coplanar
+patches are not admitted (they can be substituted by the patch obtained by merging them)
+and (iii) patches have no holes, this does not represent a significant limitation, since it is
+very difficult in a discrete space to represent collinear segments or coplanar patches, and
+holes in a surface can be generated by a set of patches without holes that together form a
+shape similar to a ring. Notice that conditions (i) and (ii) does not prevent that two different
+geometries can have collinear segments or patches, this situation is only avoided inside the
+same geometry. Finally remember that polyhedral surfaces in the SFA model are simple, i.e.
+they are surfaces with neither self-intersections nor self-tangency.
+
+2.1 Discrete Vector Model Types
+
+In the considered discrete vector model each geometry is described as a set of vertices
+embedded in a discrete space. A vertex is represented as a tuple of coordinates, namely by
+two or three real numbers encoded using a discrete approach, like the floating point model.
+In the sequel, these numbers are denoted as finite numbers. In the model definition we aim
+to identify those operations that require a computation on finite numbers, thus having a
+direct effect on the robustness of topological relation evaluation. The model is composed
+
+Geoinformatica
+
+of some basic vector types that are used to implement the considered SFA types, some
+basic predicates and operations, and some derived predicates and operations. The following
+definitions formalize the model.
+
+Definition 1 (Basic vector types)
+
+– A vertex v is a tuple of finite numbers representing a 2D or 3D coordinate: v = (x, y)
+
+or v = (x, y, z), respectively.
+Let (v1, v2) be a pair of vertices, a segment is the linear interpolation between them.
+Let (v1, . . . , vn) be a list of vertices, its linear interpolation is a ring if and only if
+v1 = vn.
+
+– A patch is a finite part of a plane whose boundary is defined by a ring.
+
+Definition 2 (SFA types) Given a geometry g belonging to basic types of the SFA model
+[13], its discrete representation DR(g) is defined as a follows (v denotes a generic vertex):
+
+If g ∈ Point then DR(g) = v.
+If g ∈ LineString then DR(g) = (v1, . . . , vn) with n > 1.
+The linear interpolation between any two consecutive vertices vi, vi+1 is a segment
+si. Therefore, its discrete representation can be simplified as follows: DR(g) =
+(s1, . . . , sm) with m = n − 1 and si = (vi, vi+1).
+If g ∈ Polygon then DR(g) = ((v1,1, . . . , v1,n1 ), . . . , (vk,1, . . . , vk,nk )) with ni > 2 and
+k > 0, where each list of vertices is a ring: the first one represents the outer boundary,
+while the other ones represent the inner boundaries (i.e. possible holes). Notice that
+since a Polygon can be defined only in a 2D space, all boundary rings are coplanar.
+Using the ring definition, the discrete representation of g ∈ Polygon can be simplified
+as follows: DR(g) = (r1, . . . , rk) with k > 0, where each ri = (vi,1, . . . , vi,ni ) is a
+ring.
+If g ∈ PolyhedralSurface then DR(g) = ((v1,1, . . . , v1,n1 ), . . . , (vk,1, . . . , vk,nk )) with
+ni > 2 and k > 0, where each list of vertices is a ring representing a polygon without
+holes.
+Using the patch definition, the discrete representation of a PolyhedralSurface can be
+simplified as DR(g) = (p1, . . . , pk) with k > 0 and where each pi is a planar patch
+defined by the ring (vi,1, . . . , vi,ni ).
+
+–
+–
+
+–
+–
+
+–
+
+–
+
+Definition 2 considers only the basic types of the SFA model, in accordance with what
+previously stated. For a formal definition of all SFA type properties and of the other SFA
+types deriving as specialization of the GeometryCollection class, please refer to [13].
+
+In Definition 3 a set of basic operations and predicates is defined for analyzing the imple-
+mentation of the topological relation evaluation in a discrete vector space. Indeed, each of
+them identifies a type of processing on finite numbers that is required in many cases.
+
+Definition 3 (Basic vector predicates and operations) The signature of each operation has
+the syntax: (cid:3)ret type(cid:4)(cid:3)geom(cid:4).(cid:3)op name(cid:4)((cid:3)par type(cid:4)(cid:3)par name(cid:4)).
+Operations
+
+–
+
+–
+–
+
+dist : vertex × vertex → real, v1.dist(v2) returns the Euclidean distance between two
+vertices v1 and v2.
+start : segment → vertex, s.start() returns the start point of the segment s.
+end : segment → vertex, s.end() returns the end point of the segment s.
+
+Geoinformatica
+
+–
+
+ray : segment × P (segment) → integer, s.ray(S) returns the number of segments of S
+that the semi-straight line starting from s.start () and passing through s.end() intersects
+(excluding the possible intersection at s.start ()).
+
+– ∪ : segment × · · · × segment → segment, s1 ∪ · · · ∪ sn joins n overlapping (or touching)
+segments that lie on the same straight line, if the segments are disjoint or do not lie
+on the same straight line, it returns the empty geometry.1 Given two set of segments
+Si = {si1, . . . , sin} and Sj = {sj 1, . . . , sj m}, the compact notation Si ∪ Sj can be used
+to denote the join of its contained segments: Si ∪ Sj = si1 ∪ · · · ∪ sin ∪ sj 1 ∪ sj m.
+bnd : patch → P (segment), p.bnd() returns the set of segments defining the boundary
+of the patch p.
+
+–
+
+Predicates
+
+–
+
+–
+
+–
+
+–
+
+–
+
+–
+
+eq : vertex × vertex → boolean, v.eq(v0) tests the equality between two vertexes; two
+vertices are equal only if they are bitwise identical.
+cnt : segment × vertex → boolean, s.cnt(v) tests the containment between a vertex v
+and the interior of a segment s: v ⊂ I (s).
+int : segment × segment → boolean, s1.int(s2) tests the intersection between the inte-
+riors of two segments: dim(I (s1) ∩ I (s2)) = 0. If the intersection has dimension 1, it
+returns false.
+cnt : patch × vertex → boolean, p.cnt(v) tests the inclusion between a vertex v and the
+interior of a patch p: v ∈ I (p).
+int : patch × segment → boolean, p.int(s) tests the intersection between the interior of
+a patch p and the interior of a segment s: dim(I (s) ∩ I (p)) = 0. If the intersection has
+dimension 1, it returns false.
+int : patch × patch → boolean, p1.int(p2) tests the intersection between the interior
+of two patches: dim(I (p1) ∩ I (p2)) = 1. If the intersection has dimension 2, it returns
+false.
+
+Notice that, the set of basic predicates is very small and does not contain all the elemen-
+tary predicates that one could expect. For example, there is no test of boundary intersection
+between two segments. Indeed, the boundary intersection between two segments can be
+obtained by comparing for equality the vertices of their boundaries using other three
+basic operations/predicates: s.start (), s.end() and v.eq(v0). In a similar way, many other
+expected operations can be derived from these basic ones.
+
+Since in many cases during topological relation evaluation the same expressions have
+to be reused, the most common repeated expressions are introduced below as derived
+operations and predicates. Some expressions do not identify an exact algorithm for their
+evaluation, but they identify the need for some basic operations and predicates, thus requir-
+ing a specific type of processing. For example, the test of segment overlapping s.ov(s0)
+requires to test the containment of a vertex in a segment and can avoid the test of segment
+intersection.
+
+Definition 4 (Derived vector predicates and operations)
+Operations and predicates on vertices
+Semantics of operations and predicates is shown in Table 11 of Appendix A. In the sequel
+the list of operations and predicates is presented (v, vi, vi,j represent a vertex). Notice that,
+
+1This operation is applied to segments produced as intermediate result of other operations and cannot be
+applied to segments of a LineString that are not collinear by definition.
+
+Geoinformatica
+
+for evaluating topological relations only the test of equality between two vertices will be
+required (see Section 2.2), since also the belong-to relation, the intersection computation,
+and the test of not empty intersection between two sets of vertices can be derived from it.
+
+–
+
+set : vertex × P (vertex) → boolean, v.bel(V ) tests if a vertex v belongs to a set of
+vertices V = {v1, . . . , vn}.
+
+– ∩ : P (vertex) × P (vertex) → P (vertex), {v1,1, . . . , v1,n} ∩ {v2,1, . . . , v2,m} returns
+
+the common vertices between {v1,1, . . . , v1,n} and {v2,1, . . . , v2,m}.
+
+Operations and predicates on segments
+Semantics of operations and predicates is shown in Table 12 of Appendix A. In the sequel
+the list of operations and predicates is presented (s, si are segments). Notice that, for evaluat-
+ing topological relations only the test of equality between two vertices and the containment
+of a vertex in a segment will be required (see Section 2.2), since also the equality relation
+and the topological relations: in, overlaps and disjoint between two segments can be derived
+from them.
+
+bnd : segment → P (vertex), s.bnd() returns the boundary of a segment s.
+eq : segment × segment → boolean, s1.eq(s2) tests the equality between two segments
+s1 and s2.
+bel : segment × P (segment) → boolean, s.bel(S) tests if the segment s belongs to the
+set of segments S = {s1, . . . , sn}.
+in : segment × segment → boolean, s1.in(s2) tests the inclusion between two segments:
+s1 ⊂ s2.
+ov : segment × segment → boolean, s1.ov(s2) tests the intersection between two seg-
+ments that requires they share a portion of line, but excludes inclusion or equality (i.e.
+dim(I (s1) ∩ I (s2) = 1).
+dj : segment × segment → boolean, s1.dj(s2) tests of interior disjointness between two
+segments (I (s1) ∩ I (s2) = ∅).
+diff
+between a segment s and a set of segments S that overlap s.
+
+: segment × P (segment) → P (segment), s.diff(S) computes the difference
+
+Operations and predicates on patches
+Semantics of operations and predicates is shown in Table 13 of Appendix A. Notice that, for
+evaluating topological relations the necessary tests on patches are: containment and overlap-
+ping of a segment in a patch, and relations overlaps, disjoint, in and equals between patches.
+Moreover, for specifying the containment of a segment in a patch in particular cases, an
+additional operation is introduced, called p.bndov(s), that returns the set of boundary seg-
+ments of a patch p that overlap or are contained in a segment s. Finally, we remark that for
+evaluating the overlaps relation between a patch and a segment the predicate p.cnt (s) is not
+necessary. In the sequel p, pi represent a patch:
+
+ver : patch → P (vertex), p.ver() returns the patch vertices.
+cntint : patch × segment → boolean, p.cntint(s) tests the inclusion between a segment
+s and a patch interior (I (s) ⊂ I (p)).
+cnt : patch × segment → boolean, p.cnt(s) tests the inclusion between a segment s and
+a patch p (s ⊂ p).
+ov : patch × segment → boolean, p.ov(s) tests the overlapping between a segment
+interior and a patch interior (dim(I (s) ∩ I (p)) = 1 ∧ ¬(I (s) ⊂ I (p)).
+
+–
+–
+
+–
+
+–
+
+–
+
+–
+
+–
+
+–
+–
+
+–
+
+–
+
+Geoinformatica
+
+–
+
+–
+
+–
+
+–
+
+–
+
+–
+
+dj : patch × segment → boolean, p.dj(s) is a test of disjointness between a segment
+interior and a patch interior (I (s) ∩ I (p) = ∅).
+eq : patch × patch → boolean, p1.eq(p2) tests the equality between two patches p1
+and p2.
+int2 : patch × patch → boolean, p1.int2(p2) is a test of interior intersection of
+dimension 2 between two patches interior (dim(I (p1) ∩ I (p2)) = 2).
+in : patch × patch → boolean, p1.in(p2) tests the inclusion between two patches
+(p1 ⊂ p2).
+dj : patch × patch → boolean, p1.dj(p2) is a test of interior disjointness between two
+patches (I (p1) ∩ I (p2) = ∅).
+ov : patch × patch → boolean, p1.ov(p2) is a test of interior overlapping between two
+patches (dim(I (p1) ∩ I (p2)) = 2 ∧ ¬(I (p1) ⊂ I (p2)) ∧ ¬(I (p2) ⊂ I (p1))).
+
+In order to simplify as much as possible the specification of the evaluation tests for topo-
+logical relations, which are illustrated in Section 2.2, some additional derived operations
+and predicates are presented in Table 14 of Appendix A, that apply to geometries of types:
+LineString, Polygon and PolyhedralSurface.
+
+2.2 Testing topological relations in the discrete vector model
+
+This paper considers all topological relations that can be expressed using the well known
+approach of Egenhofer et al. [7] based the 9-intersection matrix. The topological relations
+of the SFA model are a subset of them.
+
+The 9-intersection matrix is defined by using the concepts of interior (internal part),
+boundary and exterior (external part) of a geometric object. Given a geometric object
+a of the abstract type Geometry and the operations: a.PS() returning the point set rep-
+resented by a, a.boundary(), returning the geometric object representing the boundary
+of a (or the emptyGeometry if a has an empty boundary), the following point sets are
+defined:
+
+1.
+
+2.
+3.
+
+interior of a, denoted as I (a): it is the point set a.PS() \ a.boundary().PS(). Namely,
+it is the set of object points that do not belong to its boundary.
+boundary of a, denoted as B(a): it is the point set a.boundary().PS().
+exterior of a, denoted as E(a): it is the point set a.space() \ a.PS(). Namely, it is the
+set of points from the space embedding a that do not belong to the object itself.
+
+Definition 5 (Topological relation) Given two geometric objects a and b of any geomet-
+ric type, the definition of a topological relation is given, using the combinatorial topology
+approach and the Dimensionally Extended 9-Intersection Model (DE-9IM) [4], by assigning
+the following matrix:
+⎡
+
+⎤
+
+R(a, b) =
+
+⎣
+
+dim(I (a) ∩ I (b)) dim(I (a) ∩ B(b)) dim(I (a) ∩ E(b))
+dim(B(a) ∩ I (b)) dim(B(a) ∩ B(b)) dim(B(a) ∩ E(b))
+dim(E(a) ∩ I (b)) dim(E(a) ∩ B(b)) dim(E(a) ∩ E(b))
+
+⎦
+
+(1)
+
+where the possible values are {F, 0, 1, 2, T , ∗} with the meaning F : empty set, 0: point, 1:
+curve, 2: surface, *: any, T : 0,1,2.
+
+In the sequel, we show how each cell of the 9-intersection matrix can be evalu-
+ated in the discrete vector model presented above. Given the discrete representation
+
+Geoinformatica
+
+DR(g1), DR(g2) of two geometries g1, g2, the content of each cell can be computed
+by evaluating a given logical expression which contains some of the vector operations
+and predicates previously presented and has DR(g1), DR(g2) as parameters. The logi-
+cal expressions are obtained by considering for each cell all the possible combinations
+of geometry types that are admissible. Since this matrix can be used for the definition
+of any topological relation, the obtained set of expressions is sufficient for evaluating
+any topological relation defined by means of a 9-intersection matrix. This approach is
+similar to the one applied in [18], but is extended to the 3D space types of the SFA
+specification.
+
+Proposition 1 (Evaluation of matrix cells using vector predicates) Given two geometries
+a and b, the following tables show for each combination of types the cells of the matrix
+that have to be evaluated: one table regards the 2D space, the other one the 3D space.
+In the table the following symbols are used: T (F ) indicates that the cell for the con-
+sidered combination of types (type(a)/type(b)) is always true (false), while Tab(x) means
+that Table x of Appendix B shows the logical expression that implements in the discrete
+model the test required for evaluating the cell. Finally, if the cell can be evaluated consid-
+ering the test specified for another cell ci,j of the matrix Mt1,t2 , this cell is specified by the
+symbol ct1,t2
+i,j .
+
+2D
+
+Point (PT)
+
+LineString (LN)
+
+Polygon (PL)
+
+PT MPP
+
+(cid:6)
+
+(cid:7)
+
+MPL
+(cid:6)
+
+MPG
+⎡
+
+(cid:7)
+
+Tab(15) F ¬c1,1
+F
+¬c1,1
+
+F F
+F T
+
+LN MLP = M T
+PL
+
+Tab(15) Tab(19) Tab(23)
+F
+T
+MLL
+⎡
+
+F
+e1(∗)
+
+F
+T
+
+⎣
+
+Tab(18) Tab(19) Tab(24)
+Tab(16) cPP
+1,1
+Tab(24) e2(∗)
+
+e2(∗)
+T
+
+⎤
+
+⎦
+
+PL MGP = M T
+PG
+
+MGL = M T
+LG
+
+⎣
+
+Tab(15) cPL
+F
+T
+
+1,1 Tab(23)
+F
+F
+T
+T
+
+MLG
+⎡
+
+⎣
+
+MGG⎡
+
+Tab(19) cLL
+1,1 Tab(24)
+1,1 e3(∗)
+cPG
+cPL
+1,1
+cLL
+1,3 T
+T
+
+⎢
+⎣
+
+Tab(21) cGL
+1,1 Tab(25)
+cLG
+1,1 cLG
+cLL
+1,3
+1,1
+Tab(25) cGL
+1,3 T
+
+⎤
+
+⎦
+
+⎤
+
+⎦
+
+⎤
+
+⎥
+⎦
+
+(*) e1: if ln.bnd() (cid:12)= ∅ then T else F ; e2: if ln.bnd() = ∅ then F else cPL
+1,3;
+e3: if ln.bnd() = ∅ then F else cPG
+1,3.
+
+3D Point (PT)
+
+LineString (LN)
+
+PolyhedralSurface (PS)
+
+PS MSP
+
+⎡
+
+⎣
+
+⎤
+
+MSL
+⎡
+
+MSL
+⎡
+
+⎤
+
+Tab(15) F T
+cLP
+F T
+1,1
+Tab(20) F T
+
+⎦
+
+⎣
+
+Tab(22) cSP
+1,1
+cLL
+cLP
+1,1
+1,1
+Tab(25) e1(∗) T
+(*) e1: if ln.bnd() = ∅ then F else cSP
+3,1.
+
+T
+cLL
+1,3
+
+⎢
+⎣
+
+⎦
+
+Tab(23) cSL
+1,1 Tab(24)
+cSL
+1,1 cSL
+cLL
+3,1
+1,1
+Tab(25) cSL
+3,1 T
+
+⎤
+
+⎥
+⎦
+
+Proof The completeness proof of the above tables and of the cases illustrated in
+Appendix B is presented in [1].
+
+Geoinformatica
+
+3 Robustness of vector predicates
+
+The discrete representation of geometries may produce many unexpected problems during
+query evaluation and quality tests, due to the two main problems highlighted in the intro-
+duction: numerical weakness of algorithms implementation and data perturbation induced
+by transfer. Section 3.1 formalizes such problems and defines a set of assumptions about the
+considered environment, then Section 3.2 analyses the robustness of the vector predicates
+used in the evaluation of topological relations.
+
+3.1 Assumptions on systems and implementations
+
+Let us consider two systems, denoted here as S (source) and D (destination), which
+exchange spatial data and evaluate topological relations on such exchanged data. During
+the transfer a transformation may occur on each vertex; let vS be a vertex in S and vD the
+same vertex in D, the transformation from vS to vD is captured by a mapping f (), such that
+vD = f (vS).
+
+The behavior of current systems displays a set of problems with respect to robustness.
+In the sequel these problems are listed and for each one some minimal assumptions on the
+system behavior are stated. They are considered as necessary preconditions in order to build
+robustness rules.
+
+Problem 1 (Numerical weakness in algorithms implementation) An aspect that introduces
+ambiguity in the evaluation of topological relations is the necessity of implementing a
+system of linear equations in order to evaluate some elementary geometric tests. These
+tests are used in all implementations of the basic vector predicates. They are ambiguous
+due to the finite precision of the discrete geometric representation and of the algorithms
+implementation in current GIS systems.
+
+In particular, the following tests might lead to ambiguous results, when performed on
+
+different systems.
+
+Problem 2 (Vertex-Vertex equality/disjunction) If the two vertices are close to each other,
+different systems may return different results.
+
+Problem 3 (Vertex-Segment relative position) If the distance between a vertex v and a
+segment s is very small, then different systems may return different results The relative
+position between an (oriented) segment and a close vertex in a 2D/3D space can be: (i) the
+segment contains the vertex; (ii) the segment is on the left of the vertex; (iii) the segment is
+on the right of the vertex. Left and right refers to the unique plane that contains both s and
+v. For example, s can contain v and f (s) might be on the left of f (v) or s can be on the
+right of v and f (s) on the left of f (v).
+
+Problem 4 (Segment-Segment intersection/disjunction in 3D) In some cases different
+systems return different results if the two segments are close to each other.
+
+Segment-segment intersection in 2D is not an independent elementary problem, since it
+
+can be reduced to Problem 3, as it will be shown in Section 3.2.
+
+Problem 5 (Vertex-Patch relative position) If the distance between a vertex v and a patch
+p is very small, then different systems can return different results. The relative position
+
+Geoinformatica
+
+between a vertex and an (oriented) patch in the 3D space can be: (i) the patch contains the
+vertex; (ii) the patch is above the vertex; (iii) the patch is below the vertex.
+
+Problem 6 (Vertex-Vertex distance computation) Computing the distance between two
+vertices in different systems can return different results.
+
+In order to achieve the robustness in these elementary tests, the following assumptions
+are introduced. In particular, Assumption 1 is important to preserve vertex identity, and
+Assumption 3 is important to preserve the disjunction of geometries.
+
+Assumption 1 (Equality preservation in data exchange) The mapping f () representing the
+exchange of geometries between a source system S and a destination system D is a function,
+namely: ∀v1, v2 ∈ V(v1.eq(v2) =⇒ f (v1).eq(f (v2))) where V is the set of vertices in the
+source system S.
+
+Assumption 2 (Bounded error in distance computation) Given two vertices transferred
+from system S to system D, the evaluation of their relative distance in the two systems
+can be not equal, but the difference is less then a threshold T: ∀v1, v2 ∈ V(| v1dist(v2) −
+f (v1).dist(f (v2)) |< T ).
+
+Assumption 3 (Minimum distance for preserving relative positions) In the transfer of
+geometries from system S to system D, it is possible to determine a threshold distance TD
+(TD >> T ) such that the following conditions hold, where V is the set of vertices, S is the
+set of segments and P is the set of patches in the source system S.
+
+Assumption 4 (Vertex-Vertex minimum distance) ∀v ∈ V (∀v1 ∈ V (v.dist(v1) > TD +
+T =⇒ (¬v.eq(v1) =⇒ ¬f (v).eq(f (v1))).
+
+Assumption 5 (Vertex-Segment minimum distance) ∀v ∈ V (∀s ∈ S (v.dist (s) > TD +
+T =⇒ ((s is on the left of v) ∧ (f (s) is on the left of f (v)) ∨ (s is on the right of v) ∧
+(f (v) is on the right of f (v)))))
+
+Assumption 6 (Segment-Segment 3D minimum distance) ∀s
+S3D(s.dist(s1) > TD + T =⇒ (¬s.int(s1) =⇒ ¬f (s).int(f (s1))).
+
+∈ S3D (∀s1
+
+∈
+
+Assumption 7 (Vertex-Patch minimum distance) ∀v ∈ V (∀p ∈ P (v.dist(p) >
+TD + T
+(p is below v)
+∧ (f (p) is below f (v))))).
+
+=⇒ ((p is above v)
+
+(f (p) is above f (v))
+
+∧
+
+∨
+
+The requirement TD >> T is necessary because the uncertainty in the distance
+computation T would make Assumption 3 useless. Notice that with the precision lev-
+els provided by current systems, TD is significantly smaller than the average error in
+the coordinate representation with respect to real positions of points (spatial accuracy):
+TD << Absolute-Positional-Error. Moreover, the value for TD can be chosen by applying
+the following considerations: (i) TD only depends on the precision in coordinate represen-
+tation; (ii) this precision in the floating point representation depends on the magnitude of
+the numbers to be represented: the higher is the magnitude, the lower is the precision, the
+higher will be TD. For example, considering the worse case in EPSG:32632 WGS84/UTM
+coordinates which implies a precision around 10−9 meters, the value of TD should be
+
+Geoinformatica
+
+significantly greater than 10−9, so that also the numerical weakness of distance evaluation
+can be adsorbed. Finally, notice that as shown in Section 1.1 in real datasets it is not correct
+to assume that TD is the minimum distance among the represented vertices, segments and
+patches, if this property has not been explicitly implemented.
+
+The second problem that can impact the robustness of elementary tests is due to the
+perturbation that a dataset can suffer in a transfer process from one system to another one.
+
+Problem 7 (Perturbation in data exchange) The data transfer between two systems S and
+D may cause a perturbation that slightly modifies the discrete representation of geometries.
+
+In order to deal with this problem, the following minimal assumption is stated.
+
+Assumption 8 (Boundedness of perturbation in data exchange) The perturbation intro-
+duced in a vertex representation by the mapping f () has an upper bound, called PB
+(Perturbation upper bound). In other words, given a vertex v, the distance between v and
+f (v) is always less than PB: ∀v ∈ V (v.dist (f (v)) < PB).
+
+If a sequence of n data transfers is considered instead of a single one,
+
+then it
+is also assumed that the combined effect of all perturbations cannot diverge: ∀v ∈
+VS(v.dist(fn(. . . (f1(v)))) < PB). Otherwise, after each perturbation the robustness rules
+that will be presented in next section will guarantee the preservation of the elementary
+tests, but the perturbed dataset will possibly not satisfy the robustness rules any more, thus
+requiring a procedure for restoring robustness before another perturbation is applied.
+
+3.2 Robustness evaluation of vector predicates
+
+The implementation of topological relations on the discrete vector model makes use of a
+set of predicates, which include in their definition the elementary operations described in
+Section 2. For the reasons highlighted above, some of these predicates can return differ-
+ent results in different systems, and are called here critical vector predicates. This section
+introduces the set of critical vector predicates that are used in the evaluation of topological
+relations and defines a set of rules for making them robust.
+
+Given the problems on systems and implementations described in Section 3.1, the vector
+predicates, introduced by Definition 3 of Section 2, can be proved to be critical with respect
+to robustness, since their evaluation on the same data can change when data are transferred
+from one system to another one.
+
+Proposition 2 (Lack of robustness in basic predicates and operations) Given the systems
+and implementation problems described in Section 3.1, the predicates of Definition 3 are all
+not robust, and hence are called critical vector predicates. Among the operations presented
+in Definition 3, only the following two operations are not robust: v.dist (v0) and s.ray(S).
+
+Proof The lack of robustness of v.eq(v0), s.cnt (v) and p.cnt (v) is a direct consequence
+of Problem 2, 3 and 5, respectively. Relatively to s.int (s0), in 3D it is a direct consequence
+of Problem 4; while in 2D, it is not robust since it can be reduced to a combination of
+elementary operations which are not robust. In particular, if two segments s1 and s2 intersect
+each other in 2D then the relative positions of the end points of s1 w.r.t. s2 are opposite (i.e.,
+one is on the left of s2, the other one is on the right). These relative positions are subject to
+Problem 3 and thus s.int (s0) is not robust also in 2D.
+
+Geoinformatica
+
+Similarly, p.int (s) is not robust since it can be reduced to a combination of elementary
+operations that are not robust. In particular, since p.int (s) requires that the intersection
+dimension is zero, then p and s have to be not coplanar and the possible relative positions
+of s w.r.t. p are those ones shown in Fig. 3a, b and c, which are subject to Problem 3, 4 and
+5, respectively. A similar reasoning is true also for p.int (p0) by considering the boundary
+segments of one patch w.r.t. the other one. The lack of robustness of the operation v.dist (v0)
+is a direct consequence of Problem 6. Finally the operation s.ray(S) is not robust due to
+the Problem 4, because the variation in segment intersection detection produces a different
+intersection count and thus a different result of the s.ray(S) operation.
+
+3.2.1 Robustness rules for basic critical predicates
+
+This section introduces a set of rules that, applied on the datasets in the source system
+S, make non ambiguous the evaluation of the critical vector predicates identified in Defi-
+nition 3. These rules are classified into two categories: Identity Rules (IR) and minimum
+Distance Rules (DR). The following IR are used to ensure the robustness of topological
+relation evaluation and are based on Assumption 1.
+
+Rule 1 (IR1: Vertex-Segment) For each vertex v that has to lie in a segment s = (v1, v2),
+a new vertex vh bitwise identical to v has to be introduced in the s representation splitting
+it into two new segments s1 = (v1, vh) and s2 = (vh, v2) [8]. Therefore, after the rule IR1
+has been applied, the following condition is always true: ∀v ∈ S(∀s ∈ S(¬s.cnt(v))).
+
+Notice that, in a discrete vector model after splitting a segment s the resulting segments
+s1 and s2 are usually not collinear due to the involved approximations, except for some
+statistically rare cases. Since the presence of collinear segments complicates some predi-
+cate definitions and in general requires to transform all tests between two segments into
+tests between a segment and a set of segments without really affecting the contribution,
+in this paper the vector model does not consider the presence of collinear segments in the
+representation of a geometry.
+
+Rule 2 (IR2: Segment-Segment) All intersections between two segments s1 and s2 have to
+be represented by splitting them through the insertion of a new common vertex, which has
+to be represented only once or by means of several identical instances, namely instances
+that have bitwise identical coordinates. Therefore, after the rule IR2 has been applied, the
+following condition is true: ∀s1 ∈ S(∀s2 ∈ S(¬s1.eq(s2) =⇒ ¬s1.int(s2))).
+
+Rule 3 (IR3: Vertex-Patch) All vertex-patch intersections must be represented by a vertex
+v contained in the patch definition. Therefore, the patch representation has to be split in two
+
+Fig. 3 Critical situations for vector predicates.
+
+Geoinformatica
+
+and the vertex v has to be inserted as a new start/end point of a new segment composing
+one of the patch boundaries. Therefore, after the rule IR3 has been applied, the following
+condition is true: ∀v ∈ S(∀p ∈ S(¬p.cnt(v))).
+
+These rules are not sufficient alone to guarantee the robustness for all critical predi-
+cates. In particular, in order to solve the situation highlighted in Problem 1-4 and given
+Assumption 4 and 3, the following other rules are introduced.
+
+Rule 4 (DR0: Vertex-Vertex) For all pairs of vertices v1 and v2 of S, the distance between
+them is either zero or is greater than a Minimum Granted Distance (MGD): ∀v1 ∈ S(∀v2 ∈
+S(v1.dist(v2) = 0 ∨ v1.dist(v2) > MGD)).
+
+Rule 5 (DR1: Vertex-Segment) For all vertices v and for all segments s of S, the distance
+between them is either zero or is greater than MGD: ∀v ∈ S(∀s ∈ S(s.dist(v) = 0 ∨
+s.dist(v) > MGD)).
+
+Rule 6 (DR2: Segment-Segment) For all pairs of distinct segments s1 and s2 of S, the
+distance between them is either zero or is greater than MGD: ∀s1 ∈ S(∀s2 ∈ S(s1.dist(s2) =
+0 ∨ s2.dist(s2) > MGD)).
+
+Rule 7 (DR3: Vertex-Patch) For all vertices v (representing isolated points or segment end
+points) and for all patches p of S, the distance between them is either zero or is greater than
+MGD: ∀v ∈ S(∀p ∈ S(p.dist(v) = 0 ∨ p.dist(v) > MGD)).
+
+Considering Assumption 2, 3 and 8, MGD should be always be always greater than
+2 × PB + TD + T, since we need to guarantee a distance TD + T between two geometries
+even if each of them moves towards the other by PB.
+
+Notice that in 2D space DR2 is implied by DR1 and that the minimum granted distance
+
+between patches and segments is implied by DR2 and DR3.
+
+Theorem 1 (Robustness of critical vector predicates) Given Assumption 1, 3 and 4 the ne-
+cessary and sufficient rules to be applied on dastasets in the source system (S) in order to
+guarantee the robustness evaluation of the critical vector predicates in the destination sys-
+tem (D) are those shown in Table 1. Notice that for the mentioned assumptions, when IR1,
+IR2 and IR3 are applied on S, predicates s.cnt(v), s1.int(s2) and p.cnt(v) are always false.
+
+Proof v1.eq(v2) Considering the first row, DR0 is a sufficient condition for the robustness
+of v1.eq(v2). If v1.eq(v2) is true in S, then Assumption 1 preserves the truth of the predicate;
+while, if v1.eq(v2) is false, then given Assumption 1 and Assumption 4, DR0 guarantees that
+
+Table 1 Robustness conditions for critical vector predicates
+
+Predicate
+
+v1.eq(v2)
+s.cnt(v)
+s1.int(s2)
+p.cnt(v)
+
+p.int(s)
+p1.int(p2)
+
+in 2D space
+
+DR0
+
+IR1 + DR1
+
+IR1 + DR1
+
+IR1 + DR1
+
+NA
+
+NA
+
+in 3D space
+
+DR0
+
+IR1 + DR1
+
+IR1 + IR2 + DR2
+
+IR1 + IR3 + DR3
+
+IR1 + IR2 + IR3 + DR2 + DR3
+
+IR1 + IR2 + IR3 + DR2 + DR3
+
+Geoinformatica
+
+two distinct vertices remain distinct. Regarding the necessity of DR0, observe that without
+it a false v1.eq(v2) can become true after a perturbation due to data transfer.
+
+s.cnt(v) Considering the second row, IR1+DR1 are sufficient conditions for the robust-
+ness of s.cnt(v). If s.cnt(v) is true, IR1 has not been applied correctly, hence after its
+application this case cannot occur. Conversely, if s.cnt(v) is false, then either v is an end
+point of s or v is disjoint from s. In the first case, given Assumption 1, IR1 is sufficient for
+preserving in data transfer the identity between a vertex and a segment end point, which pre-
+serves the falsity of f (s).cnt(f (v)) avoiding the vertex to move into the segment interior.
+In the second case, given Assumption 8 and Assumption 5, DR1 is sufficient for preserving
+the spatial disjunction among a vertex and a segment interior, which preserves the falsity of
+f (s).cnt(f (v)). Regarding the necessity of IR1 (DR1), observe that without IR1 (DR1) the
+first (second) case described above cannot be robust.
+
+s1.int(s2) Considering the third row, in 2D DR1 is sufficient to preserve s1.int(s2), if two
+segments intersect, then the relative position of one segment end point with respect to the
+other one is opposite (i.e., one end point is on the left, and the other one on the right of the
+other segment); hence, given Assumption 8 and Assumption 5, after a data transfer DR1 pre-
+serves the relative position of vertices with respect to segments and s1.int(s2) is preserved.
+The same reasoning applies for two disjoint but very close segments. In addition, IR1 is
+applied so that, given Assumption 1, it avoids that a s1.cnt(s2.start()) (or any of the other
+possible containment between s1 interior and s2 end points) becomes a f (s1).int(f (s2)).
+In 3D IR2 is also introduced in order to avoid that two crossing segments become disjoint,
+and DR2 is introduced in place of DR1 since, given Assumption 6, it preserves the spatial
+disjunction of segments, avoiding that two disjoint segments become interior crossing seg-
+ments. Regarding the necessity of DR1 in 2D, observe that without it, due to Problem 3, the
+relative positions of one segment end points with respect to the other segment can change
+converting two crossing segments in two disjoint segments or vice versa; finally, without
+IR1 a s1.cnt(s2.start()) (or other similar situations) can be transformed after data transfer
+into a f (s1).int(f (s2)).
+
+p.cnt(v) Considering the fourth row, in 2D if p.cnt(v) is true then the relative position
+of v with respect to a segment of p boundary has to be preserved; DR1 is sufficient to
+preserve this condition, since, given Assumption 8 and Assumption 5, after a data transfer
+DR1 preserves the relative position of vertices with respect to segments. In addition, IR1 is
+applied so that, given Assumption 1, it avoids that, given a segment s of p boundary such
+that v.eq(s.start ()) (or v.eq(s.end())) becomes a f (p).cnt(f (v)). Finally, if p.dj(v), then
+given Assumption 8 and Assumption 5, DR1 is sufficient for preserving the relative position
+between a vertex and the segment of p boundary. Regarding the necessity of DR1 in 2D
+we can observe that without DR1, due to Problem 3, the relative positions of a vertex with
+respect to a segment of a patch boundary can change moving the vertex inside or outside
+the patch; finally, without IR1 a v.eq(s.start()) (or v.eq(s.end())) can be transformed after
+data transfer into a f (p).cnt(f (v)).
+
+In 3D, IR1+IR3+DR3 are sufficient conditions for the robustness of p.cnt(v). In partic-
+ular, if p.cnt(v) is true, then IR3 has not been applied correctly, hence after its application
+this case cannot occur. Conversely, if p.cnt(v) is false then either v is an end point of some
+segments of p boundary (indeed, IR1 excludes that v lies in the interior of some boundary
+segments) or v is disjoint from p. In the first case, given Assumption 1, IR3 is sufficient
+for preserving in data transfer the identity between a vertex and a segment end point, which
+preserves the falsity of f (p).cnt(f (v)) avoiding the vertex to move into the patch interior.
+In the second case, given Assumption 8 and Assumption 6, DR3 is sufficient for preserving
+
+Geoinformatica
+
+the spatial disjunction among a vertex and a patch interior, which preserves the falsity of
+f (p).cnt(f (v)). In addition, IR1 is introduced so that, it avoids a vertex v to be contained
+in one segment of the patch boundary; moreover, when v is equal to an internal vertex of
+the patch, given Assumption 1, it avoids that f (p).cnt(f (v)) becomes true. Regarding the
+necessity of IR3, observe that without it the first case described above cannot be robust. The
+necessity of DR3 is justified by the second case; finally IR1 is necessary in order to avoid
+that, due to Problem 3, an internal vertex of the patch moves inside it.
+
+p.int(s) Considering the fifth row, in 3D IR1+IR2+IR3+DR2+DR3 are sufficient condi-
+tions for the robustness of p.int(s). If p.int(s) is true, then the relative position of the end
+points of s with respect to the patch p is opposite (i.e., one end point is above, and the other
+one below the patch); hence, given Assumption 8 and Assumption 7, after a data exchange
+DR3 preserves the relative position of vertices with respect to patches and p.int(s) is thus
+preserved. Conversely, if p.int(s) is false, then the following cases are possible: (i) s is dis-
+joint from p, or (ii) s interacts with segments of p boundary (sp). In the first case, given
+Assumption 6 and Assumption 7, IR3+DR3+DR2 preserve disjointness, avoiding that an
+end point v of s, such that p.cnt(v), crosses the p border (IR3); or an end point of s changes
+its relative position w.r.t. p (DR3), or s changes its relative position w.r.t. a segment of p
+boundary (DR2). In the second case, if s.int(sp) is true then, given Problem 4, a perturba-
+tion might transform it into a f (p).int(f (s)); IR2 avoids the possibility of having this case.
+Finally, IR1 avoids the possibility of having that sp.cnt(s.start()) (or sp.cnt(s.end())) is
+true, thus the last possible case is that sp.start().equal(s.start()) (or any other combination
+of start/end points) and this is preserved by IR1 and Assumption 1. Regarding the necessity
+of the conditions, observe that without each of the listed rules, one of the above described
+cases cannot be robust.
+
+p1.int(p2) The proof for the sixth row is very similar to the previous one, since the
+preservation of patch intersections requires the preservation of intersection between patch
+boundary segments and patch interiors. The only case that has to be considered in addition is
+the situation in which two patches are intersecting without requiring the intersection of any
+patch boundary segments with other patch interior (see Fig. 4), in this case the preservation
+of segments intersection is sufficient, and hence IR2 is required.
+
+Before stating robustness rules for critical vector operations, let us remark that in this
+context the required robustness for the operation v.dist (v0) is not that the distance between
+two vertices is kept unmodified, but it is sufficient that: given two vertices v1 and v2 such
+that v1.dist (v2) > 0, then f (v1).dist (f (v2)) > 0.
+
+Fig. 4 Example of intersecting
+patches without any interior and
+boundary intersections.
+
+Geoinformatica
+
+Theorem 2 (Robustness of critical vector operations) Given Assumption 1-8, the necessary
+and sufficient rules to be applied on datasets in the source system S in order to guarantee the
+robustness of the critical vector operations evaluation on target system D are the following
+ones: (i) for v.dist (v0) DR0 is required (ii) for s.ray(S0) DR1 is required.
+
+Proof v.dist(v0) If DR0 is satisfied, then, given Assumption 3, a distance v1.dist (v2) > 0
+cannot become equal to zero in D. Vice-versa, if the distance v1.dist (v2) > 0 becomes zero
+in D then DR0 is violated, thus DR0 is also a necessary condition.
+
+s.ray(S) Consider that this predicate is used to verify if a point (s.start ()) is inside or
+outside a ring (S0), thus the alteration of the number of intersections between the ray and
+the segments of S0 far from s.start () can only occur when two segments of S0 produce a
+shape similar to a cusp so that in S system the cusp intersects the ray and in D system it
+does not (or vice versa). Hence, the count is decreased (or increased) of two, which does
+not change the inside/outside evaluation. Therefore, the only problem regards what happens
+very near to s.start (), however, if DR1 guarantees the robustness of the relative position of
+a vertex and a segment, then DR1 is sufficient to ensure the robustness of s.ray(S0). The
+need comes directly from the fact that the only alteration of the s.ray(S0) result can occur
+when s.start () crosses one segment of S0, which violates DR1.
+
+3.2.2 Robustness Rules for Derived Critical Predicates
+
+A derived critical predicate is a predicate which can be expressed in terms of other pred-
+icates, at least one of which is critical. A derived critical predicate becomes robust if and
+only if its constituent predicates become robust. Among all possible derived predicates, here
+are considered the ones that are useful for the implementation of the topological relation
+evaluations, which have been presented in Definition 4. In this section the conditions for
+guaranteeing their robust evaluation are shown.
+
+Lemma 1 (Robustness of derived critical vector predicates) Under the hypothesis of Theo-
+rem 1 and Theorem 2, the derived vector predicates of Definition 4 become robust with the
+application of the rules shown in Table 2 (second and third column for 2D and 3D space,
+respectively).
+
+Proof The derived vector predicates listed in the first column are defined in terms of basic
+predicates listed in the fourth column (see Definition 3); hence according to Theorem 1 and
+Theorem 2, the sufficient and necessary rules for guaranteeing their robustness derive from
+the union of the rules that guarantee the robustness of the basic predicates that define them.
+
+4 Robustness of topological relations evaluation
+
+The previous section discussed the robustness of vector predicates and operations. The
+obtained results are applied in this section for deriving the robustness of topological rela-
+tions. Remember that, if no rules are introduced on discrete geometries representation,
+vector predicates are all not robust.
+
+The results are presented by showing, for each possible pair of geometric types, a
+robustness matrix which specifies in each cell the required rules for guaranteeing a robust
+evaluation. In particular, the necessary robustness rules are identified by means of a set of
+
+Geoinformatica
+
+v.bel(V), V1 ∩ V2
+V1 ∩ V2 (cid:12)= ∅, s.eq(s0),
+s.bel(S), ln1.eq(ln2)
+pg1.eq(pg2)
+p.eq(p0), ps1.eq(ps2)
+s.ov(s0)
+s.in(s0)
+s.dj(s0)
+p.ov(s)
+
+p.cnt(s), p.ov(p0),
+p.in(p0), p.int2(p0)
+p.dj(s)
+
+p1.dj(p2)
+
+Table 2 Robustness conditions for derived critical vector predicates. Terms DR10 (DR20) means that DR0
+is implied by DR1 (DR2), and DR21 that DR1 is implied by DR2
+
+Derived Predicate
+
+in 2D space
+
+in 3D space
+
+Basic Predicates
+
+DR0
+
+DR0
+
+–
+
+IR1 + DR1
+IR1 + DR10
+IR1 + DR10
+IR1 + DR10
+
+IR1 + DR10
+
+IR1 + DR10
+
+IR1 + DR10
+
+DR0
+
+–
+
+DR0
+
+IR1 + DR1
+IR1 + DR10
+IR1 + IR2 + DR20,1
+IR1 + IR2 + IR3 +
+DR20,1 + DR3
+IR1 + IR2 + IR3 +
+DR20,1 + DR3
+IR1 + IR2 + IR3 +
+DR20,1 + DR3
+IR1 + IR2 + IR3 +
+DR20,1 + DR3
+
+v.eq(v0)
+v.eq(v0)
+v.eq(v0)
+s.cnt(v)
+v.eq(v0), s.cnt(v)
+v.eq(v0), s.cnt(v), s.int(s0)
+v.eq(v0), s.cnt(v), s.int(s0),
+p.cnt(v),
+v.eq(v0), s.cnt(v), s.int(s0),
+s.ray(S), p.cnt(v)
+v.eq(v0), s.cnt(v), s.int(s0),
+s.ray(S), p.cnt(v), p.int(s)
+v.eq(v0), s.cnt(v), s.int(s0),
+s.ray(S), p.cnt(v), p.int(p0)
+
+predefined robustness levels, that are defined below. Basically, greater level number means
+an increasing number of robustness rules to be applied.
+
+Definition 6 (Robustness levels) Considering the results shown in Theorem 1 and
+Lemma 1, the following robustness levels are introduced level R: no additional rules are nec-
+essary to guarantee robustness; level 0: DR0 is required; level 1: IR1 and DR1 are required;
+level 2: IR1, IR2 and DR2 are required; level 3: IR1, IR3 and DR3 are required; level 4:
+IR1, IR2, IR3, DR2 and DR3 are required.
+
+The following theorems present the robustness matrix for each combination of geometric
+types in 2D and 3D space, respectively. Notice that different cells and different combina-
+tions of types require different robustness rules. Moreover, the embedding space has also an
+impact on this analysis. In the tables each matrix cell contains a 4-tuple (L0L1L2LT ) rep-
+resenting the robustness level that is required to implement the test dim(f (A) ∩ f (B)) = x,
+where x ∈ {0, 1, 2, T }. In the 4-tuples the symbol F in position i is used to indicate that the
+intersection producing the dimension i is always false.
+
+Theorem 3 (2D Robustness matrices) Table 3 shows the robustness matrices for all the
+possible combinations of geometric types in 2D space.
+
+Proof The presented robustness matrices have been obtained by considering the expres-
+sions presented in Proposition 1 for intersection evaluation in each matrix cell and the results
+of Theorem 1, Theorem 2 and Lemma 1. In particular, for each combination of types a
+matrix has been computed, and for each matrix cell the corresponding vector expression has
+been analyzed and the critical basic or derived vector predicates contained in it have been
+identified, then according to Theorem 1, Theorem 2 and Lemma 1 the maximum level of
+robustness required by the identified critical predicates has been computed.
+
+Geoinformatica
+
+Table 3 Robustness matrices in 2D space
+
+2D
+
+Point (PT)
+
+LineString (LN)
+
+Polygon (PL)
+
+(0F F 0) F (0F F 0)
+
+(1F F 1) (0F F 0) (1F F 1)
+
+(1F F 1) (1F F 1) (1F F 1)
+
+F
+
+T
+
+F
+
+(RF F R)
+
+F
+
+T
+
+F
+
+T
+
+F
+
+T
+
+(0F F 0) F (RF F R)
+
+(1F F 1) (0F F 0) (1F F 1)
+
+(1F F 1) (1F F 1) (F 1F 1)
+
+(11F 1) (1F F 1) (F 1F 1)
+
+(F 1F 1)
+
+(11F 1)
+
+(F 1F 1)
+
+PT
+
+(pt, pt)
+⎡
+
+LN
+
+PL
+
+⎢
+⎣
+
+⎢
+⎣
+
+⎢
+⎣
+
+F
+
+F
+
+F
+
+(0F F 0) F
+T
+(ln, pt) = (pt, ln)T
+⎡
+(1F F 1) F
+
+T
+
+(1F F 1) F
+
+T
+(pg, pt) = (pt, pg)T
+⎡
+⎤
+(1F F 1) F T
+
+⎥
+⎦
+
+(1F F 1) F T
+
+(1F F 1) F T
+
+⎤
+
+⎥
+⎦
+
+⎤
+
+⎥
+⎦
+
+(pt, ln)
+⎡
+
+(ln, ln)
+⎡
+
+⎢
+⎣
+
+⎢
+⎣
+
+⎢
+⎣
+
+(F 1F 1) (1F F 1)
+(pg, ln) = (ln, pg)T
+⎡
+(F 1F 1) (1F F 1)
+
+T
+
+(RF F R)
+
+T
+
+(pg, pg)
+⎡
+
+(F F 11) (F 1F 1) (F F 11)
+
+(11F 1) (1F F 1) (F 1F 1)
+
+(F 1F 1) (11F 1) (F 1F 1)
+
+(F 1F 1) (F 1F 1)
+
+(F 1F 1) (F 1F 1)
+
+T
+
+T
+
+T
+
+T
+
+⎤
+
+⎥
+⎦
+
+⎤
+
+⎥
+⎦
+
+⎤
+
+⎥
+⎦
+
+(pt, pg)
+⎡
+
+F
+
+T
+
+(ln, pg)
+⎡
+
+⎢
+⎣
+
+⎢
+⎣
+
+⎢
+⎣
+
+⎤
+
+⎥
+⎦
+
+⎤
+
+⎥
+⎦
+
+⎤
+
+⎥
+⎦
+
+Theorem 4 (3D Robustness Matrices) Table 4 shows the robustness matrices for all the
+possible combinations of geometric types in 3D space.
+
+Proof See proof of Theorem 3.
+
+As an example of the application of these results to some topological relations of SFA
+model we consider here the disjoint and touch relations, which can be defined using the
+9-IM matrix as shown in the following definition.
+
+Definition 7 (Disjoint and touches relations of SFA) The formal definition of each relation
+is presented below together with the specification of the corresponding set of 9-intersection
+matrices. Notice that the set of matrices can change with respect to the considered geometric
+types. In particular, the following notation is used pt denotes a point, c denotes a curve, s
+denotes a surface, while a, b are generic geometries.
+
+– DJ: a.disjoint(b) ≡
+
+def a.PS() ∩ b.PS() = ∅
+
+Rdj (pt, pt) = [F F T F F F T F T ]
+Rdj (pt, c/s) = [F F T F F F T ∗ T ]
+Rdj (c/s, pt) = Rdj (pt, c/s)T
+Rdj (c/s, c/s) = [F F T F F ∗ T ∗ T ]
+
+– TC: a.touch(b) ≡
+
+def (I (a) ∩ I (b) = ∅) ∧ (a.PS() ∩ b.PS() (cid:12)= ∅)
+
+Rtc(pt, c/s) = [F T F F F F T T T ]
+Rtc(c/s, pt) = Rtc(pt, c/s)T
+Rtc(c, s) = [F ∗ ∗ ∗ T ∗ T ∗ T ] ∪ [F T ∗ ∗ ∗ ∗ T ∗ T ] ∪ [F ∗ ∗ T ∗ ∗ T ∗ T ]2
+Rtc(s, c) = Rtc(c, s)T
+Rtc(c, c) = [F ∗ T ∗ T ∗ T ∗ T ] ∪ [F ∗ T T ∗ ∗ T ∗ T ] ∪ [F T T ∗ ∗ ∗ T ∗ T ]
+Rtc(s, s) = [F ∗ T ∗ T ∗ T ∗ T ] ∪ [F ∗ T T ∗ ∗ T ∗ T ]1 ∪ [F T T ∗ ∗ ∗ T ∗ T ]2
+
+2only in 3D spaces
+
+3D
+
+Point (PT)
+
+LineString (LN)
+
+PolyhedralSurface (PS)
+
+Geoinformatica
+
+Table 4 Robusness matrices in 3D space.
+
+PT
+
+(pt, pt)
+⎡
+
+F
+
+F
+
+F
+
+(0F F 0) F
+T
+(ln, pt) = (pt, ln)T
+⎡
+(1F F 1) F
+
+T
+
+(1F F 1) F
+T
+(ps, pt) = (pt, ps)T
+⎡
+T
+(3F F 3) F
+
+⎢
+⎣
+
+⎢
+⎣
+
+⎢
+⎣
+
+LN
+
+PS
+
+⎤
+
+⎥
+⎦
+
+⎤
+
+⎥
+⎦
+
+⎤
+
+⎥
+⎦
+
+(pt, ln)
+⎡
+
+(ln, ln)
+⎡
+
+⎢
+⎣
+
+⎢
+⎣
+
+⎢
+⎣
+
+(0F F 0) F (0F F 0)
+
+(1F F 1) (0F F 0) (1F F 1)
+
+(3F F 3) (1F F 1) (3F F 3)
+
+F
+
+T
+
+F
+
+(RF F R)
+
+F
+
+T
+
+F
+
+T
+
+F
+
+(RF F R)
+
+F
+
+T
+
+(0F F 0) F (RF F R)
+
+(1F F 1) (0F F 0) (1F F 1)
+
+(3F F 3) (1F F 1) (3F F 3)
+
+(21F 2) (1F F 1) (F 2F 2)
+
+(44F 4)
+
+(21F 2) (F 4F 4)
+
+(F 2F 2) (1F F 1)
+(ps, ln) = (ln, ps)T
+⎡
+(44F 4) (3F F 3)
+
+T
+
+(F 2F 2)
+
+T
+
+(4444)
+
+(44F 4) (F F 44)
+
+(1F F 1) F (RF F R)
+
+(21F 1) (1F F 1) (F 2F 2)
+
+(44F 4)
+
+(21F 2) (F 4F 4)
+
+(3F F 3) F
+
+T
+
+(F 4F 4) (3F F 3)
+
+(F F 44) (F 4F 4)
+
+T
+
+⎤
+
+⎥
+⎦
+
+⎤
+
+⎥
+⎦
+
+⎤
+
+⎥
+⎦
+
+(pt, ps)
+⎡
+
+(ln, ps)
+⎡
+
+⎢
+⎣
+
+⎢
+⎣
+
+⎢
+⎣
+
+(ps, ps)
+⎡
+
+T
+
+T
+
+T
+
+⎤
+
+⎥
+⎦
+
+⎤
+
+⎥
+⎦
+
+⎤
+
+⎥
+⎦
+
+Table 5 and Table 6 show the minimum and maximum level of robustness for all the
+intersection tests required by disjoint in 2D and 3D, respectively. Notice that, as expected,
+the required robustness level changes according to the considered combination of geo-
+metric types, e.g. a.DJ (b) has robustness level (0, 0) for the combination (pt, ln) in 2D,
+while has (1, 1) for the combination (ln, pg) in the same space; and also according to
+the embedding space, e.g. ln.DJ (ln) has robustness level (0, 1) in 2D, while has (1, 2)
+in 3D.
+
+Each table cell contains for a pair of geometric types t1, t2:
+
+–
+
+The 9-intersection matrix of the relation using the following notation: (i) the matrix
+cells that must be considered for testing the relation (necessary cells) are underlined;
+
+Table 5 a.DJ(b) in 2D. The notation f (cx,y ) means that the cell is a derived cell and its test can be avoided
+since it is implied by the test of cx,y
+
+2D
+
+Point (PT)
+
+LineString (LN)
+
+Polygon (PL)
+
+PT
+
+Rdj(pt, pt)=[FFT FFT TFT]
+⎡
+
+⎤
+
+Rdj(pt, ln)=[FFT FFF T*T]
+⎡
+
+⎤
+
+Rdj(pt, pg)= [FFT FFF TTT]
+⎡
+
+⎤
+
+⎢
+⎣
+
+0
+
+F f (c1,1)
+F
+f (c1,1) F
+
+F
+
+F
+
+T
+
+⎥
+⎦
+
+⎢
+⎣
+
+1 0 f (c1,1, c1,2)
+F F
+T ∗
+
+F
+
+T
+
+⎥
+⎦
+
+1 1 f (c1,1, c1,2)
+F F
+
+F
+
+⎢
+⎣
+
+⎥
+⎦
+
+T T
+
+T
+
+Robust. level = [0,0]
+Rdj(ln, pt) = Rdj(pt, ln)T
+
+LN
+
+Robust. level = [0,1]
+Rdj(ln, ln) =[FFT FF* T*T]
+⎡
+
+⎤
+
+Robust. level = [1,1]
+Rdj(ln, pg) = [FFT FF* TTT]
+⎡
+
+⎤
+
+⎢
+⎣
+
+1
+
+1 f (c1,1)
+∗
+1
+0
+f (c1,1) ∗
+
+T
+
+⎥
+⎦
+
+Robust. level = [0,1]
+Rdj(pg, pt) = Rdj(pt, pg)T
+
+Robust. level = [0,1]
+Rdj(pg, ln) = Rdj(ln, pg)T
+
+PL
+
+⎢
+⎣
+
+1
+
+1
+
+1
+
+1
+T f (c1,2)
+
+f (c1,1, c1,2)
+∗
+
+⎥
+⎦
+
+T
+
+Robust. level = [1,1]
+Rdj(pg, pg) =[FFT FFT TTT]
+⎡
+
+⎤
+
+⎢
+⎣
+
+f (c1,1) f (c1,1)
+f (c1,1)
+T
+
+1
+f (c1,1)
+f (c1,1) f (c1,1)
+Robust. level = [1,1]
+
+1
+
+⎥
+⎦
+
+Robust. level = [1,1]
+
+Robust. level = [1,1]
+
+Geoinformatica
+
+Rdj(pt, ps)= [FFT FFF T*T]
+⎡
+
+⎤
+
+⎢
+⎣
+
+3 1 f (c1,1, c1,2)
+F F
+T ∗
+
+F
+
+T
+
+⎥
+⎦
+
+Robust. level = [1,4]
+Rdj(ps, ps) =[FFT FF* T*T]
+⎡
+4 f (c1,1)
+∗
+2
+4
+f (c1,1) ∗
+
+⎢
+⎣
+
+⎥
+⎦
+
+⎤
+
+T
+
+4
+
+Table 6 a.DJ(b) in 3D. The notation f (cx,y ) means that the cell is a derived cell and its test can be avoided
+since it is implied by the test of cx,y .
+
+3D
+
+PT
+
+Point (PT)
+
+Same as 2D
+
+Same as 2D
+
+LineString (LN)
+
+PolyhedralSurface (PS)
+
+Robust. level = [0,0]
+
+LN
+
+Same as 2D
+
+Robust. level = [0,1]
+Rdj(ln, ln) =[FFT FF* T*T]
+⎡
+
+⎤
+
+Robust. level = [1,3]
+Rdj(ln, ps) =[FFT FF* TTT]
+⎡
+
+⎤
+
+⎢
+⎣
+
+2
+
+1 f (c1,1)
+∗
+1
+0
+f (c1,1) ∗
+
+T
+
+⎥
+⎦
+
+⎢
+⎣
+
+4 2 f (c1,1)
+3 1
+T ∗
+
+T
+
+∗
+
+⎥
+⎦
+
+Robust. level = [0,1]
+Rdj(ps, pt) = Rdj(pt, ps)T
+
+Robust. level = [1,2]
+Rdj(ps, ln) = Rdj(ln, ps)T
+
+PS
+
+Robust. level = [1,3]
+
+Robust. level = [1,4]
+
+Robust. level = [2,4]
+
+(ii) the cells in bold are not to be considered, since their value is fixed for the considered
+geometric types; (iii) finally, the cells in italics are functions of the necessary ones
+(derived cells).
+The 9-intersection matrix of the relation showing in each necessary cell its robustness
+level, and for each derived cell the cells from which they depend.
+The robustness level of the relation is described by specifying the minimum and
+maximum level of robustness of the tests regarding necessary cells.
+
+–
+
+–
+
+As a further example, Appendix C considers the robustness behavior the relation
+Touches. In particular, Table 26 and Table 27 show the minimum and maximum level of
+robustness required for all intersection tests.
+
+In the following section topological relations in (IN), contains (CT), equals (EQ),
+overlap (OV), and cross (CR) are used in addition to the DJ and TC, in order to discuss
+the presented experiments. The assumed semantics for these relations is the one presented
+in [13].
+
+5 Experimental results
+
+This section describes the results of some experiments performed with the aim to con-
+firm the effectiveness of the robustness rules defined in Section 3.2. In particular, we want
+to show that different rules are required according to: (i) the considered topological rela-
+tion, (ii) the types of the geometries and (iii) the space in which geometries are embedded.
+Each experiment evaluates the topological relations existing between the geometries of two
+datasets having EPSG:32632 WGS84/UTM Zone 32N coordinates; the considered cases
+are: (i) Points and LineStrings in 2D; (ii) Polygons and Polygons in 2D; (iii) LineStrings and
+LineStrings in 3D; (iv) Points and PolyhedralSurfaces in 3D.
+
+Geoinformatica
+
+In all experiments, first the topological relations among each pair of datasets have been
+computed without any manipulation. Then, the coordinates of the geometries have been
+rounded using a grid of different granularities ranging from 10−6 to 10−1, in order to sim-
+ulate a data perturbation, and the relations have been evaluated again. Only the results
+regarding DJ and TC are reported since only these two relations have been analyzed in the
+previous section.
+
+The experiment results are reported in tables which show the number of relation changes
+and the number of violations of the robustness rules which are required according to the
+theorems of the previous sections. Remember that the DRx violations are always computed
+on the original geometries with an increasing value of MGD. In all tables the number of
+rules violations are always greater than the number of relation changes; this is in accordance
+with the fact that a relation change always requires a rule violation and not vice versa, since
+a lack in robustness does not necessarily imply a relation change. When available, we have
+used in the experiments real datasets produced by different providers, since the production
+processes might have had an impact on dataset robustness.
+
+Points and LineStrings in 2D
+
+The following four datasets containing Points and LineStrings in 2D space, produced by
+
+different subjects, have been considered:
+
+– Road Elements (REnorth) and Road Junctions (RJnorth) of a town of Northen Italy:
+
+containing 3851 and 2856 geometries, respectively.
+
+– Road Elements (REcent ) and Road Junctions (RJcent ) of a village in Central Italy:
+
+containing 7458 and 2401 geometries, respectively.
+
+The computed relations are: DJ, TC and IN. Remember that the DJ relation on types
+(pt,ln) in 2D space has a robustness level 1 (see Table 5), which requires that IR1 and
+DR1 rules are satisfied by robust datasets; the TC relation in the same case has a robust-
+ness level 0 (see Table 26 in Appendix C), thus only DR0 has to be satisfied for obtaining
+robustness.
+
+The results of the experiments are shown in Table 7, where the number of changes for
+TC and DJ relations after data perturbations of different sizes are reported (we consider
+both the gained and the lost TC/DJ relations). The results regard both the north and cent
+datasets and also the violations of the DR0 and DR1 rules in both datasets are shown in the
+last columns. There are no violations of IR1 in both datasets.
+
+The results of this experiment are consistent with the assumptions and the robustness
+
+rules presented in the previous section, since:
+
+–
+
+–
+
+–
+
+no TC relations are lost after perturbations: this is consistent with Assumption 1 that
+preserving coordinate equality preserves existing TC relations between Points and
+LineStrings;
+some new TC relations have been produced in this experiment for perturbations of size
+10−2 and 10−1 and some DR0 violations are detected: this is consistent with Theorem
+3 and Definition 7, since DR0 is required by the robustness rule of TC to avoid that a
+different relation becomes a TC relation;
+no IR1 violations are observed in both datasets, no new DJ relations are generated by
+perturbations, while many of them are lost due to DR0 and DR1 violations: this is
+consistent with Theorem 3 and Definition 7.
+
+Geoinformatica
+
+Table 7 Number of relation changes between pairs of geometries computed by the query REx (cid:2)(cid:3)Q RJx
+(where Q = RE.MBR ∩ RJ.MBR (cid:12)= ∅). The cardinality of the result is 8651 (6596) pairs for x=north
+(x=cent). First column contains the simulated perturbation P B, in the next columns the number of changes
+w.r.t. no rounded datasets regarding relation TC and relation DJ are reported and the last two columns report
+violations of DR0 and DR1 considering MGD = 2 × P B. For DR0 in brackets the number of violations
+between a junction and a point of a road element boundary are reported
+
+# TC changes
+IN → TC
+
+# DJ changes
+DJ → TC
+
+DJ → IN
+
+DR0
+
+# violations of rules
+
+(DR0 boundary)
+
+PB
+
+north
+
+cent
+
+north
+
+cent
+
+north
+
+cent
+
+north
+
+north
+
+cent
+
+10−6
+10−5
+10−4
+10−3
+10−2
+10−1
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+1
+
+2
+
+16
+
+48
+
+76
+
+2255
+
+2089
+
+2282
+
+3
+
+3
+
+3
+
+5
+
+8
+
+15
+
+0
+
+1
+
+0
+
+2
+
+2
+
+4
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+42(42)
+
+55(55)
+
+330(330)
+
+2297(2291)
+
+2301(2293)
+
+2346(2312)
+
+DR1
+
+54
+
+112
+
+693
+
+2339
+
+2344
+
+2382
+
+3
+
+3
+
+5
+
+6
+
+16
+
+40
+
+cent
+
+3(3)
+
+3(3)
+
+5(5)
+
+5(5)
+
+14(14)
+
+37(35)
+
+Further observations on this experiment are: (i) more relation changes are observed on the
+north than on the cent datasets, and accordingly the number of violations of DR0 and DR1
+is higher for north than cent datasets. (ii) Since this experiment regards points and vertices
+of LineStrings, each violation of DR0 always produces at least one violation of DR1. Indeed,
+the number of observed DR1 violations is higher than the number of DR0 violations.
+Polygons in 2D
+The following four datasets containing polygons have been considered:
+
+– Road Areas (RAnorth) and Vehicular Areas (VAnorth) of a town of Northen Italy:
+
+containing 2955 and 5860 geometries respectively.
+
+– Road Areas (RAcent ) and Vehicular Areas (VAcent ) of a village in Central Italy:
+
+containing 436 and 1769 geometries, respectively.
+
+The same process described before has been performed also on these datasets. The com-
+puted relations are: DJ, TC, OV, CT and IN. Remember that we focus on the DJ and TC
+relations, which on types (pg, pg) in 2D space have both a robustness level 1 (see Table 5
+and Table 26 in Appendix C), which requires that IR1 and DR1 have to be satisfied by
+robust datasets. The results of this experiment are reported in Table 8, where columns are
+organized as described in the previous experiment, but in this case only the violations of
+DR1 are reported. Moreover, there are 68 violations of IR1 in the north datasets and no
+violation in the cent datasets, which are not shown in the table since identity rules do not
+depend on the considered MGD.
+
+The results are consistent with the system assumptions and robustness rules presented in
+
+the previous sections, in particular:
+
+–
+
+–
+
+The changes of TC into OV relations in the north datasets indicate a lack of robustness
+that has been detected by the violations of IR1 and DR1 rules, that were required by
+TC relation according to Theorem 3 and Definition 7.
+The great number of changes of DJ into TC or OV relations in the north datasets again
+indicates a lack of robustness that is certified by the high number of DR1 violations,
+indeed DR1 is required for DJ robustness according to Theorem 3 and Definition 7.
+
+Geoinformatica
+
+Table 8 Number of relation changes between pairs of geometries computed by the query RAx (cid:2)(cid:3)Q VAx
+(where Q = RA.MBR ∩ VA.MBR (cid:12)= ∅). The cardinality of the result is 20667 (5885) pairs for x=north
+(x=cent). Columns are organized as in Table 7. The last two columns report violations of DR1 considering
+MGD = 2 × PB.
+
+# TC changes
+TC → OV
+
+# DJ changes
+DJ → TC
+
+DJ → OV
+
+OV → DJ
+
+of DR1
+
+# violations
+
+P B
+
+north
+
+cent
+
+cent
+
+north
+
+cent
+
+north
+
+cent
+
+north
+
+cent
+
+north
+
+cent
+
+OV → TC
+CT → TC
+north
+
+4361
+5484
+5552
+5555
+5529
+5545
+
+0
+0
+0
+0
+1
+2
+
+10−6
+10−5
+10−4
+10−3
+10−2
+10−1
+
+139
+111
+114
+119
+101
+99
+
+0
+0
+0
+0
+0
+1
+
+2346
+2639
+2663
+2658
+2634
+2632
+
+0
+0
+0
+0
+0
+0
+
+81
+32
+22
+25
+32
+29
+
+0
+0
+0
+0
+0
+0
+
+32
+4
+5
+2
+6
+1
+
+0
+0
+0
+0
+0
+0
+
+358200
+359066
+359844
+363126
+366124
+391114
+
+0
+0
+8
+16
+2340
+12518
+
+–
+
+–
+
+The significant number of DR1 violations in cent datasets for a perturbation of 10−1
+does not produce changes in DJ relations, which means that although cent datasets are
+not robust no change in TC or DJ relations occurs (in the experiments we registered
+some changes of OV relations).
+The only case of TC change in cent dataset for a perturbation of 10−1 is due to a
+violation of DR1, that after the perturbation has not modified the touching segments
+but has produced a cross of a polygon boundary by another vertex, thus transforming
+the TC in an OV relation.
+
+– As in the previous experiment, the DJ relation changes more frequently than the TC re-
+lation and changes are more frequent in the north than in the cent datasets. Accordingly
+to this behavior, the number of DR1 violations is higher in north than cent datasets.
+
+LineStrings in 3D
+In order to test the rules also in the 3D space, we have considered the datasets of road
+elements, which contain 3D LineStrings, and we have computed the relations among them
+in 3D. The computed relations are: DJ, TC and CR. The DJ and TC relations on types (ln, ln)
+in 3D space have both a robustness level 2 (see Table 6 and Table 27 in Appendix C), thus IR1,
+IR2 and DR2 have to be satisfied for obtaining robustness. Results are reported in Table 9,
+where columns are organized as described in the previous experiment, but in this case only
+the violations of DR2 are reported. There are no violations of IR1 and IR2 in both datasets.
+The results are consistent with the system assumptions and robustness rules presented in
+
+the previous sections, in particular:
+
+–
+
+In 3D space both DJ and TC relations change only with perturbations greater than 10−4
+for cent and 10−3 for north datasets. As highlighted in previous experiments, also in
+this case we observe a greater robustness of existing TC relations w.r.t. existing DJ
+relation in both datasets.
+
+– Also the number of DR2 violations is consistent, according to Theorem 4 and Definition
+7, with the observed relation changes and shows that north and cent datasets are robust
+for DJ and TC relations in case of perturbations of 10−4 and 10−3, respectively.
+
+Points and Polyhedral Surfaces in 3D
+Finally, a test on some synthetic datasets has been performed in order to test the robustness
+rules between points and polyhedral surfaces in the 3D space. Datasets of two cardinalities
+
+Table 9 Number of relation changes between pairs of geometries computed by the query REx (cid:2)(cid:3)Q REx
+(where Q = RE.MBR ∩ RE.MBR (cid:12)= ∅). The cardinality of the result is 9612 (12632) pairs for x = north
+(x = cent). Columns are organized as in Table 7. The last two columns report violations of DR2 considering
+MGD = 2 × P B.
+
+# TC changes
+TC → DJ
+north
+
+cent
+
+TC → CR
+north
+
+cent
+
+# DJ changes
+DJ → TC
+north
+
+cent
+
+# violations of
+
+DJ → CR
+north
+
+cent
+
+DR2
+
+north
+
+P B
+
+10−6
+10−5
+10−4
+10−3
+10−2
+10−1
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+442
+
+725
+
+0
+
+0
+
+4
+
+10
+
+13
+
+13
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+0
+
+Geoinformatica
+
+cent
+
+4
+
+6
+
+26
+
+28
+
+38
+
+74
+
+0
+
+0
+
+0
+
+376
+
+1322
+
+2202
+
+have been considered: 5000 and 10000. The computed relations are: DJ, TC and IN. The DJ
+and TC relations on types (pt, ps) in 3D space have a robustness level 3 (see Table 6) and
+robustness level 1 (see Table 27 in Appendix C), respectively; thus IR1 and DR1 have to be
+satisfied for obtaining robustness of TC relation and IR1, IR3 and DR3 for robustness of DJ
+relation. Results are reported in Table 10, where columns are organized as described in the
+previous experiment, but in this case the results regard both the 5K and the 10K datasets
+and also the violations of DR1 and DR3 in both datasets are shown in the last columns.
+There are 531 (1108) violations of IR1 and 246 (548) violation of IR3 in 5K (10K) datasets.
+The results of this experiment are consistent with the system assumptions and robustness
+
+rules presented in the previous sections, since:
+
+•
+
+some changes of existing TC relations occurred and, according to Theorem 4 and Def-
+inition 7, in this case they are consequences of the detected IR1 violations; indeed,
+a higher number of IR1 violations w.r.t the number of TC relation changes was
+produced;
+
+Table 10 Number of relation changes between pairs of geometries computed by the query Pointsx (cid:2)(cid:3)Q
+PSurfacex (where Q = Point.geometry ∩ PSurface.MBR (cid:12)= ∅) and x represents the dataset cardinality
+(x ∈ {5000, 10000}). The cardinality of the result is 6826741 (27497550) pairs for x = 5000 (x = 10000).
+Columns are organized as in Table 7. The last two columns report violations of DR3 (DR1) considering
+MGD = 2 × PB.
+
+# TC changes
+TC → DJ
+
+# DJ changes
+DJ → TC
+
+DJ → IN
+
+IN → DJ
+
+of DR3
+
+# violations
+
+(DR1)
+
+P B
+
+5K 10K
+
+5K 10K
+
+5K 10K
+
+5K 10K
+
+5K
+
+10K
+
+TC → IN
+IN → TC
+5K 10K
+
+5
+
+6
+
+2
+
+7
+
+6
+
+11
+
+23
+
+20
+
+22
+
+9
+
+16
+
+17
+
+10−6
+10−5
+10−4
+10−3
+10−2
+10−1
+
+342
+
+371
+
+313
+
+384
+
+357
+
+339
+
+725
+
+714
+
+703
+
+676
+
+692
+
+754
+
+280
+
+279
+
+273
+
+265
+
+286
+
+260
+
+521
+
+478
+
+466
+
+505
+
+490
+
+495
+
+16
+
+24
+
+10
+
+19
+
+11
+
+17
+
+45
+
+32
+
+43
+
+35
+
+38
+
+38
+
+235
+
+230
+
+238
+
+237
+
+238
+
+231
+
+520
+
+509
+
+518
+
+522
+
+519
+
+518
+
+0(302)
+
+0(302)
+
+3(302)
+
+1(608)
+
+1(608)
+
+8(608)
+
+15(302)
+
+72(608)
+
+182(302)
+
+753(608)
+
+1708(302)
+
+7141(608)
+
+Geoinformatica
+
+•
+
+for similar reasons, the new DJ relations produced by a change of IN relations are
+consequences of the detected IR3 violations and all changes of existing DJ relations are
+due to DR1 and DR3 violations.
+
+As final test we considered five pairs of datasets containing randomly generated points
+and polyhedral surfaces in the 3D space (each dataset having 1000 geometries). Such
+datasets had been prepared so that IR1 and IR3 rules were always satisfied and DR1 and
+DR3 rules were satisfied up to a perturbation of 10−1; we computed the relations between
+points and surfaces, resulting in 1667 TC relations and 1058 DJ relations (only the pairs
+with intersecting MBR were considered in the queries). Then, we simulated perturbations
+from 10−6 to 10−1 and recomputed the relations between points and surfaces on rounded
+geometries. No relation change was observed after any perturbation in any pair of datasets.
+Overall, the experiment results highlight that different datasets have different behaviours
+to robustness in topological relation evaluation. In particular, datasets
+with respect
+(cid:3)REnorth, RJnorth(cid:4) and (cid:3)RAnorth, VAnorth(cid:4) showed a bad behaviour,
+i.e. many relations
+changed after perturbation, while (cid:3)REcent, RJcent(cid:4) and (cid:3)RAcent, VAcent(cid:4) showed a more robust
+behaviour, indeed even after heavy perturbations only a few relations changed. Notice that
+the higher robustness of cent datasets with respect to north ones is not visible during the
+common display and navigation operations. Finally, we observe that in the 3D space the
+synthetic datasets violate robustness rules even if they are randomly generated (only IR1
+violations were somehow injected in the datasets), showing that the proposed rules are not
+trivially satisfied by a spatial dataset.
+
+6 Conclusion and future work
+
+Evaluating topological relations in distributed environments with many datasets and many
+systems that interoperate, such as an SDI, can be a tough task to perform. One reason of
+this situation regards the quality of datasets, indeed when the quality of the processed data
+is low, different results can be obtained in different systems regarding the computation of
+topological relations among geometries. This issue is usually called robustness and the goal
+of this paper is to guarantee the robust evaluation of topological relations among different
+systems. In particular, the considered context has been illustrated by means of (i) a reference
+vector model for representing geometries of the Simple Feature Access model extended to
+the 3D space (i.e. including polyhedral surfaces); (ii) a set of basic predicates on vector
+geometries, that can be critical with respect in system evaluations; (iii) a set of problem
+definitions and assumptions on systems behaviour.
+
+Given such context, the following results have been formally derived: (i) a set of expres-
+sions for testing the conditions of the 9-intersection matrix cells [7] in terms of vector pre-
+dicates; (ii) a set of rules that guarantee the robustness of evaluation for the basic critical
+predicates; (iii) a set of rules that guarantees the robustness evaluation of topological relation
+defined with the 9-intersection matrix, with respect to the embedding space (2D or 3D) and
+involved geometric types. Finally, the results of some experiments on real datasets have also
+been presented, in order to show the effectiveness of the proposed approach in characteriz-
+ing the robustness of spatial datasets with respect to topological relation evaluations.
+
+Future work includes the definition of algorithms for rectifying geometries in spatial
+datasets in order to (i) preserve as much as possible the existing topological relations and (ii)
+satisfy the proposed rules for guaranteeing robustness in topological relations evaluation.
+Moreover, the study will be extended to 3D volume type.
+
+Geoinformatica
+
+Appendix A: Derived vector predicates and operations
+
+This section presents the semantics of derived vector predicates and derived operations
+introduced in Section 2.1.
+
+Table 11 Expressions for derived operations and predicates regarding vertices. In the table symbols v,
+v1, . . . , vn denote a vertex, while V , V1, V2 are sets of vertices.
+
+Signature
+
+Derivation expression
+
+boolean v.bel(V )
+set(vertex) V1 ∩ V2
+boolean V1 ∩ V2 (cid:12)= ∅
+
+v.eq(v1) ∨ · · · ∨ v.eq(vn)
+{v | ∃v1 ∈ V1 : v.eq(v1) ∧ ∃v2 ∈ V2 : v.eq(v2)}
+∃v1 ∈ V1(∃v2 ∈ V2(v1.eq(v2)))
+
+Dependency
+
+v.eq(v0)
+v.eq(v0)
+v.eq(v0)
+
+Table 12 Expressions for derived operations and predicates regarding segments. In the table symbols s,
+s0, s1, . . . , sn denote a segment, while S is a set of segments.
+
+Signature
+
+Derivation expression
+
+set(vertex) s.bnd()
+boolean s1.eq(s2)
+
+boolean s.bel(S)
+boolean s1.in(s2)
+
+boolean s1.ov(s2)
+
+boolean s1.dj(s2)
+
+set(segments)
+s.diff(S)
+
+{s.start(), s.end()}
+(s1.start().eq(s2.start()) ∧ s1.end().eq(s2.end())) ∨
+(s1.start().eq(s2.end()) ∧ s1.end().eq(s2.start()))
+∃si ∈ S(s.eq(si ))
+(s1.start().eq(s2.start()) ∧ s2.cnt(s1.end())) ∨
+(s1.start().eq(s2.end()) ∧ s2.cnt(s1.end())) ∨
+(s1.end().eq(s2.start()) ∧ s2.cnt(s1.start())) ∨
+(s1.start().eq(s2.end()) ∧ s2.cnt(s1.end())) ∨
+(s2.cnt(s1.start()) ∧ s2.cnt(s1.end()))
+(s1.cnt(s2.start()) ∧ s2.cnt(s1.end())) ∨
+(s1.cnt(s2.start()) ∧ s2.cnt(s1.start())) ∨
+(s1.cnt(s2.end()) ∧ s2.cnt(s1.end())) ∨
+(s1.cnt(s2.end()) ∧ s2.cnt(s1.start()))
+¬s1.int(s2) ∧ ¬s1.ov(s2)∧
+¬s1.in(s2) ∧ ¬s1.eq(s2) ∧ ¬s2.in(s1)
+s.diff(S) = {si | si .in(s) ∧ ∀sj ∈ S(si .dj(sj ))} ∧
+S ∪ s.diff(S) = S ∪ {s}
+
+Dependency
+
+s.start(), s.end()
+v.eq(v0)
+
+v.eq(v0)
+v.eq(v0), s.cnt(v)
+s.start(), s.end()
+
+s.cnt(v)
+s.start (), s.end()
+
+v.eq(v0), s.cnt(v)
+s.int(s0)
+v.eq(v0), s.cnt(v)
+s.int(s)
+
+Notice that the operation s.diff(S) produces a result only if the set S contains some seg-
+ments that overlap s, otherwise the result is always the empty geometry, since the second
+condition is not satisfied.
+
+Fig. 5 Examples of possible
+cases that make true the predicate
+p.cnt(s). Notice that segments sA
+and sB do not satisfy the
+predicate p.cntint (), while all the
+other segments do.
+
+Table 13 Expressions for derived operations and predicates regarding patches. In the table symbols p, pi
+denote patches, s, si denote a segment, S is a set of segments, while v, vi denote a vertex.
+
+Signature
+
+set(vertex) p.ver()
+boolean p.cntint(s)
+
+Derivation expression
+(cid:10)
+
+s∈p.bnd() s.bnd()
+
+∀v ∈ s.bnd()(p.cnt(v) ∨
+
+Geoinformatica
+
+set(segments)
+p.bndov(s)
+
+boolean p.cnt(s)
+
+boolean p.ov(s)
+
+(∃v ∈ s.bnd()(p.cnt(v) ∨ v.bel(p.ver()) ∨
+
+∃si ∈ p.bnd()(si .cnt(v) ∨
+v.bel(si .bnd()))) ∧
+∀sp ∈ p.bnd()(¬s.int(sp) ∧ ¬s.ov(sp)) ∧
+(s.ray(p.bnd()) mod 2) = 1
+{sp | sp ∈ p.bnd() ∧ (sp.ov(s) ∨ sp.in(s))}
+
+p.cntint(s) ∨ ∃sp ∈ p.bnd()(sp.ov(s)) ∧
+∀sj ∈ (s.diff(p.bndov(s)))(p.cntint(sj ))
+
+∃sp ∈ p.bnd()(sp.cnt(v))) ∧
+
+(∃s1 ∈ p.bnd()(s1.int(s)) ∨
+∃vi ∈ p.ver()(s.cnt(vi ) ∧
+
+¬∃s2 ∈ p.bnd()(vi .bel(s2.bnd()) ∧
+(s2.ov(s) ∨ s2.in(s))))))
+
+∨ (∃s1 ∈ p.bnd()(s1.int(s)) ∧
+
+∃s2 ∈ p.bnd()(¬s2.eq(s1) ∧ s2.int(s)))
+
+∨ (∃vi ∈ p.ver()(s.cnt(vi )) ∧
+
+¬∃s2 ∈ p.bnd()(vi .bel(s2.bnd()) ∧
+
+(s2.ov(s) ∨ s2.in(s))) ∧
+∃vj ∈ p.ver()(¬vi .eq(vj ) ∧ s.cnt(vj ) ∧
+¬∃s2 ∈ p.bnd()(vj .bel(s2.bnd()) ∧
+
+(s2.ov(s) ∧ s2.in(s)))))
+
+Dependency
+
+p.bnd(), s.start(), s.end()
+
+s.start(), s.end()
+
+s.cnt(v), p.cnt(v)
+s.int(s0), s.ray(S)
+v.eq(v0)
+
+p.bnd(), s.start (),
+
+s.end(), s.cnt(v),
+v.eq(v0)
+p.bnd(), p.cnt(v),
+
+s.start(), s.end(),
+s.cnt(v), s.int(s0),
+s.ray(S), v.eq(v0)
+p.bnd(), p.cnt(v),
+
+s.start(), s.end(),
+s.int(s0), s.cnt(v),
+v.eq(v0)
+
+boolean p.dj(s)
+
+¬p.int(s) ∧ ¬p.cnt(s) ∧ ¬p.ov(s)
+
+boolean p1.eq(p2)
+
+boolean p1.int2(p2)
+
+∀s1 ∈ p1.bnd()(∃s2 ∈ p2.bnd()(s1.eq(s2))) ∧
+∀s2 ∈ p2.bnd()(∃s1 ∈ p1.bnd()(s2.eq(s1)))
+(∃si ∈ p1.bnd()(p2.cnt(si ) ∨ p2.ov(si )) ∧
+∃sj ∈ p1.bnd()(¬sj .eq(si ) ∧
+
+(p2.cnt(sj ) ∨ p2.ov(sj ))))
+∨ (∃si ∈ p2.bnd()(p1.cnt(si ) ∨ p1.ov(si )) ∧
+∃sj ∈ p2.bnd()(¬sj .eq(si ) ∧
+
+(p1.cnt(sj ) ∨ p1.ov(sj ))))
+
+p.int(s), p.bnd()
+
+p.cnt(v), s.ray(S),
+
+s.start(), s.end(),
+s.int(s0), s.cnt(v),
+v.eq(v0)
+p.bnd(), v.eq(v0)
+
+the same as
+
+p.cnt(s)
+
+Table 13
+
+(continued)
+
+Signature
+
+Derivation expression
+
+boolean p1.in(p2)
+
+(∀s1 ∈ p1.bnd()(p2.cnt(s1) ∨
+
+boolean p1.dj(p2)
+
+boolean p1.ov(p2)
+
+∃s2 ∈ p2.bnd()(s1.eq(s2) ∨ s1.in(s2))))
+
+∧ ¬p1.eq(p2)
+¬p1.int(p2) ∧ ¬p1.int2(p2) ∧ ¬p1.eq(p2)
+
+p1.int2(p2) ∧ ¬p1.in(p2) ∧ ¬p2.in(p1)
+∧ ¬p1.eq(p2)
+
+Geoinformatica
+
+Dependency
+
+the same as
+
+p.cnt(s)
+
+the same as
+p.cnt(s)+ p1.int(p2)
+the same as
+
+p.cnt(s)
+
+Table 14 Expressions for derived operations and predicates regarding linestrings (line), polygons (poly) and
+polyhedral surfaces (psur). In the table the following notation is used: DR(line) = ln = {s1, . . . , sk} (k > 0),
+} (l > 1) and DR(psur) = ps = {p1, . . . , pm}
+DR(poly) = pg = {ring1, . . . , ringl
+(m > 0), where si is a segment, pati is a patch, and pi is a polygon.
+
+} = {pat1, . . . , patl
+
+Signature
+
+Derivation expression
+
+vertex ln.start()
+
+vertex ln.end()
+
+set(vertex) ln.bnd()
+
+set(vertex) ln.intVer()
+boolean ln1.eq(ln2)
+
+linestring pg.extBnd()
+
+set(linestring) pg.intBnd()
+
+set(linestring) pg.bnd()
+
+patch pg.extPat()
+
+set(patch) pg.intPat()
+boolean pg1.eq(pg2)
+
+set(segment) ps.bnd()
+
+set(segment) ps.intSeg()
+
+set(segment) ps.intVer()
+
+boolean ps1.in(ps2)
+boolean ps1.eq(ps2)
+
+if ¬s1.start.eq(sk.end()) then s1.start() else ∅
+if ¬s1.start.eq(sk.end()) then sk.end() else ∅
+if ¬s1.start.eq(sk.end()) then {s1.start(), sk.end()} else ∅
+{si .start() | si ∈ ln} \ ln.bnd()
+∀s1 ∈ ln1(∃s2 ∈ ln2(s1.eq(s2))) ∧
+∀s2 ∈ ln2(∃s1 ∈ ln1(s2.eq(s1)))
+
+} else ∅
+
+ring1
+if |pg| > 1 then {ring2, . . . , ringl
+{pg.extBnd()} ∪ pg.intBnd()
+pat1
+{pat2, . . . , patl
+}
+pg1.extBnd().eq(pg2.extBnd()) ∧
+∀ln1 ∈ pg1.intBnd()(∃ln2 ∈ pg2.intBnd()(ln1.eq(ln2))) ∧
+∀ln2 ∈ pg2.intBnd()(∃ln1 ∈ pg1.intBnd()(ln1.eq(ln2)))
+{s | ∃!p ∈ ps(s.bel(p.bnd()))}
+{s | ∃p ∈ ps(s.bel(p.bnd()) ∧ ¬s.bel(ps.bnd()))}
+{v | ∃p ∈ ps(∃s ∈ p.bnd()(v.bel(s.bnd()))) ∧
+¬∃s(cid:18) ∈ ps.bnd()(v.bel(s(cid:18).bnd())))}
+
+∀pi ∈ ps1(∃pj ∈ ps2(pi .eq(pj ))
+ps1.in(ps2) ∧ ps2.in(ps1)
+
+Appendix B: Proof tables
+
+This section reports the proof tables for Proposition 1. The following notation is used inside
+such tables: pn, ln, pg, and ps represent the discrete representation in the vector model of
+point, linestring, polygon and polyhedral surface, respectively. Similarly, v, s, and p denotes
+a vertex, segment, and patch, respectively.
+
+Geoinformatica
+
+Table 15 Proof Interior-Interior Intersection (pt/∗)
+
+Testing conditions
+
+Scene
+
+Table 16 Proof Interior-Interior intersection (ln/pg)
+
+Testing conditions
+
+Scene
+
+pt1.eq(pt2)
+
+∃s ∈ ln(s.cnt(pt)) ∨
+pt.bel(ln.intVer())
+pg.extP at ().cnt (pt)∧
+¬∃p ∈ pt.intPat()(p.cnt(pt)
+∨ pt.bel(p.ver())
+∨ ∃s ∈ p.bnd()(s.cnt(pt)))
+∃p ∈ ps(p.cnt(pt) ∨
+pt.bel(ps.intVer()) ∨
+∃s ∈ ps.intSeg()(s.cnt(pt)))
+
+∃s ∈ ln(∃v ∈ s.bnd()(pg.extPat().cnt(v)∧
+¬∃p ∈ pg.intPat()(p.cnt(v)∨
+
+∃s1 ∈ p.bnd(s1.cnt(v)) ∨ v.bel(p. ver()))
+
+∃s ∈ ln(∃ln1 ∈ pg.bnd()(
+∃s1 ∈ ln1(s.int(s1))))
+
+∃s ∈ ln(pg.extPat().cnt(s)
+¬∃p ∈ pg.intPat()(p.cnt(s)))
+
+Case
+
+(pt1/pt2)
+dim=0/T
+
+(pt/ln)
+
+dim=0/T
+(pt/pg)
+
+dim=0/T
+
+(pt/ps)
+
+dim=0/T
+
+Case
+
+ln/pg
+
+dim=1/T
+
+Case
+
+ps1/ps2
+dim=T
+
+Table 17 Proof Interior-Interior intersection (ps/ps) dim=T – (only in 3D space).
+
+Necessary conditions
+
+Scene
+
+∃p1 ∈ ps1(∃p2 ∈ ps2(p1.eq(p2) ∨ p1.int2(p2)))
+
+Table 22
+
+∃s ∈ ps1.intSeg()(∃p ∈ ps2(
+p.ov(s) ∨ p.cnt(s)))∨
+∃s ∈ ps2.intSeg()(∃p ∈ ps1(
+p.ov(s) ∨ p.cnt(s)))
+∃s1 ∈ ps1.intSeg()(∃s2 ∈ ps2.intSeg()(
+s1.ov(s2) ∨ s1.int(s2) ∨ s2.in(s1) ∨ s1.eq(s2)∨
+s1.int(s2)))
+∃v ∈ ps1.intVer()(∃p ∈ ps2(p.cnt(v)∨
+∃s ∈ p.bnd()(s.cnt(v))))∨
+∃v ∈ ps2.intVer()(∃p ∈ ps1(p.cnt(v)∨
+∃s ∈ p.bnd()(s.cnt(v))))
+∃v1 ∈ ps1.intVer()(∃v2 ∈ ps2.intVer()(
+v1.eq(v2)))
+
+Table 22
+
+Table 22
+
+Table 22
+
+Table 22
+
+Table 18 Proof Interior-Interior Intersection (ln/ln) Notice that testing conditions are presented on several
+rows: each row describes a disjunct which is a conjuction of a necessary condition and an additional one
+(usually the last one is used to take into account the dimension requirement)
+
+Case
+
+Necessary conditions
+
+Additional conditions
+
+Scene
+
+Geoinformatica
+
+ln1/ln2
+dim=0
+
+ln1.intVer()∩
+ln2.intVer() (cid:12)= ∅
+
+∀s1 ∈ ln1(∀s2 ∈ ln2(
+s1.int(s2) ∨ s1.dj(s2)))
+
+∃v ∈ ln1.intVer()(
+∃s ∈ ln2(s.cnt(v))) ∨
+∃v ∈ ln2.intVer()(
+∃s ∈ ln1(s.cnt(v)))
+
+∀s1 ∈ ln1(∀s2 ∈ ln2(
+s1.int(s2) ∨ s1.dj(s2)))
+
+∃s1 ∈ ln1(∃s2 ∈ ln2
+(s1.in(s2)))
+
+∀s1 ∈ ln1(∀s2 ∈ ln2(
+s1.int(s2) ∨ s1.dj(s2)))
+
+ln1/ln2
+dim=1
+
+∃s1 ∈ ln1(∃s2 ∈ ln2
+(s1.eq(s2) ∨ s1.in(s2)∨
+s2.in(s1) ∨ s1.ov(s2)))
+
+ln1/ln2
+dim=T
+
+ln1.IntVer()∩
+ln2.IntVer() (cid:12)= ∅
+
+∃v ∈ ln1.intVer()(
+∃s ∈ ln2(s.cnt(v)))∨
+∃v ∈ ln2.intVer()(
+∃s ∈ ln1(s.cnt(v)))
+
+∃s1 ∈ ln1(∃s2 ∈ ln2
+(s1.eq(s2) ∨ s1.in(s2)∨
+s2.in(s1) ∨ s1.int(s2)∨
+s1.ov(s2)))
+
+the same scenes of the
+
+3rd and 4th row.
+
+Table 19 Proof Interior-Boundary intersection (pt/ln) and (ln/ln) –
+
+Case
+
+Testing conditions
+
+Scene
+
+pt/ln
+
+dim=0/T
+
+ln1/ln2
+dim=0/T
+
+pt.bel(ln.bnd())
+
+∃v ∈ ln2.bnd()(v.bel(ln1.intVer())∨
+∃s ∈ ln1(s.cnt(v)))
+
+Table 20 Proof Interior-Interior Intersection (ln/ps) – (only in 3D space)
+
+Case
+
+Necessary conditions
+
+Additional conditions
+
+Scene
+
+Geoinformatica
+
+ln/ps
+
+dim = 0
+
+∀s ∈ ln(∀p ∈ ps
+(p.int(s) ∨ p.dj(s)))∧
+∀s ∈ ln(∀s1 ∈ ps.intSeg()
+(s.dj(s1) ∨ s.int(s1)))
+
+∀s ∈ ln(∀p ∈ ps
+(p.int(s) ∨ p.dj(s)))∧
+∀s ∈ ln(∀s1 ∈ ps.intSeg()
+(s.dj(s1) ∨ s.int(s1)))∧
+
+∃s ∈ ln(∃p ∈ ps(
+p.int(s))∨
+∃s1 ∈ ps.intSeg()(
+s.int(s1))∨
+∃v1 ∈ ps.intVer()(
+s.cnt(v1)))
+∃v ∈ ln.intVer()(
+∃p ∈ ps(p.cnt(v))∨
+∃s1 ∈ ps.intSeg()(
+s1.cnt(v))∨
+∃v1 ∈ ps.intVer()(
+v.eq(v1)))
+
+∃s ∈ ln(∃p ∈ ps(
+p.cnt(s) ∨ p.ov(s))∨
+∃s1 ∈ ps.intSeg()(
+s.ov(s1) ∨ s1.in(s)∨
+s.eq(s1)))
+∃s ∈ ln(∃p ∈ ps(¬p.dj(s))∨
+∃s1 ∈ ps.intSeg()(
+s.ov(s1) ∨ s.in(s1)∨
+s1.in(s) ∨ s.eq(s1) ∨ s.int(s1))∨
+∃v1 ∈ ps.intVer()(s.cnt(v1)))
+∃v ∈ ln.intVer()(
+∃p ∈ ps(p.cnt(v))∨
+∃s1 ∈ ps.intSeg()(
+s1.cnt(v))∨
+∃v1 ∈ ps.intVer()(
+v.eq(v1)))
+
+ln/ps
+
+dim = 1
+
+ln/ps
+
+dim=T
+
+Case
+
+pg1/pg2
+dim=2/T
+
+Table 21 Proof Interior-Interior Intersection (pg1/pg2 ) – (only in 2D space)
+
+Testing conditions
+
+Scene
+
+pg1.extPat().eq(pg2.exPat())
+
+∃s ∈ pg1.bnd()((pg2.extP at ().ov(s)∨
+
+pg2.extP at ().cnt(s))∧
+
+¬∃p ∈ pg2.intPat()(p.cnt(s)))∨
+∃s ∈ pg2.bnd()((pg1.extP at ().ov(s)∨
+
+pg1.extP at ().cnt(s))∧
+
+¬∃p ∈ pg1.intPat()(p.cnt(s)))
+
+Geoinformatica
+
+Table 22 Proof Interior-Interior intersection (ps1/ps2) dim=0/1/2 – (only in 3D space).
+
+Case
+
+Necessary
+
+conditions
+
+Additional
+
+conditions
+
+Scene
+
+ps1/ps2
+dim=0
+
+∃v ∈ ps1.intVer()(
+v.bel(ps2.intVer()))
+
+∀p1 ∈ ps1(∀p2 ∈ ps2(
+p1.dj(p2)))
+
+∃v ∈ ps1.intVer()(
+∃p ∈ ps2(p.cnt(v)∨
+∃s ∈ p.bnd()(s.cnt(v))))∨
+∃v ∈ ps2.intVer()(
+∃p ∈ ps1(p.cnt(v)∨
+∃s ∈ p.bnd()(s.cnt(v))))
+
+∃s1 ∈ ps1.intSeg()(
+
+∃s2 ∈ ps2.intSeg()(
+s1.int(s2)))
+
+∀p1 ∈ ps1(∀p2 ∈ ps2(
+p1.dj(p2)))
+
+∀p1 ∈ ps1(∀p2 ∈ ps2(
+p1.dj(p2)))
+
+ps1/ps2
+dim=1
+
+∃p1 ∈ ps1(∃p2 ∈ ps2(
+p1.int(p2)))
+
+∀p1 ∈ ps1(∀p2 ∈ ps2(
+p1.dj(p2) ∨ p1.int(p2)
+
+∃s ∈ ps1.intSeg()(
+∃p ∈ ps2(p.cnt(s)∨
+p.ov(s)))∨
+∃s ∈ ps2.intSeg()(
+∃p ∈ ps1(p.cnt(s)∨
+p.ov(s)))
+
+∃s1 ∈ ps1.intSeg()(
+∃s2 ∈ ps2.intSeg()(
+s1.ov(s2) ∨ s1.in(s2)∨
+s1.eq(s2)))
+
+∀p1 ∈ ps1(∀p2 ∈ ps2(
+p1.dj(p2) ∨ p1.int(p2)
+
+∀p1 ∈ ps1(∀p2 ∈ ps2(
+p1.dj(p2) ∨ p1.int(p2)
+
+ps1/ps2
+dim=2
+
+∃p1 ∈ ps1(∃p2 ∈ ps2(
+p1.eq(p2) ∨ p1.int2(p2)))
+
+Geoinformatica
+
+Table 23 Proof Interior-Exterior intersection (pt/ln), (pt/pg) and (pt/ps)
+
+Testing conditions
+
+Scene
+
+Case
+
+pt/ln
+
+dim=0/T
+
+pt/pg
+
+dim=0/T
+
+pt/ps
+
+dim=0/T
+
+Case
+
+ln1/ln2
+dim=1/T
+
+ln/pg
+
+dim=1/T
+
+ln/ps
+
+dim=1/T
+
+∀v ∈ ln.bnd()(¬pt.eq(v))∧
+∀vi ∈ ln.intVer()(¬pt.eq(vi ))
+∀s ∈ ln(¬s.cnt(v))
+(¬pg.extPat().cnt(pt)∧
+∃p ∈ pg.intPat()(p.cnt(pt)))∧
+∀ln ∈ pg.bnd()(∀s ∈ ln(¬s.cnt(pt)∧
+∀v ∈ s.bnd()(¬pt.eq(v)))
+
+∀p ∈ ps(¬p.cnt (pt))∧
+∀s ∈ ps.bnd()(¬s.cnt(pt)∧
+∀v ∈ s.bnd()(¬pt.eq(v)))
+
+∃s1 ∈ ln1(∀s2 ∈ ln2(s1.dj(s2)∨
+
+s1.int(s2) ∨ s1.ov(s2) ∨ s2.in(s1)))
+
+∃s ∈ ln(¬pg.extPat().cnt(s))∨
+∃s ∈ ln(∃p ∈ pg.intPat()(p.cnt(s)))∨
+∃ln ∈ pg.bnd()(∃s1 ∈ ln(s.int(s1)))
+
+∃s ∈ ln(∀p ∈ ps(
+
+p.int(s) ∨ p.dj(s) ∨ p.ov(s))∧
+¬∃s2 ∈ ps.intSeg()(s.in(s2) ∨ s.eq(s2)))
+
+Table 24 Proof Interior-Exterior intersection (ln/ln), (ln/pg) and (ln/ps)
+
+Additional conditions
+
+Scene
+
+Table 25 Proof Interior-Exterior intersection (pg/pg) and (ps/ps)– Case C.3.11 and C.3.16.
+
+Case
+
+Additional conditions
+
+Scene
+
+pg1/pg2
+
+dim=2/T
+
+∃s ∈ pg1.extPat().bnd()(
+(¬pg2.extPat().cnt(s)∨
+(pg2.extPat().cnt(s)∧
+∃p ∈ pg2.intPat()(p.ov(s) ∨ p.cnt(s)))))
+
+ps1/ps2
+
+dim=2/T
+
+∃p1 ∈ ps1(∀p2 ∈ ps2(p1.dj(p2)∨
+
+p1.ov(p2) ∨ p1.int(p2)))
+
+Geoinformatica
+
+Appendix C: Robustness levels of the relation Touches
+
+This section analyses the robustness behaviour of the relation Touches. Tables 26 and 27
+shows the minimum and maximum level of robustness required for all intersection tests.
+The notation f (cxy) means that the cell is a derived cell and its test can be avoided since it
+is implied by the test of cxy. The term RobLev stands for robustness level.
+
+Table 26 Analysis of the robustness behavior of a.TC(b) in 2D
+
+Point (PT)
+
+LineString (LS)
+
+Polygon (PL)
+
+Rtc(pt, ln)= [FTF FFF TTT]
+⎡
+⎤
+0
+
+f (c1,2)
+F
+
+⎢
+⎣
+
+T
+
+f (c1,2)
+F
+
+⎥
+⎦
+
+F
+f (c1,2)
+
+T
+
+RobLev = [0,0]
+
+Rtc(pt, pg)= [FTF FFF TTT]
+⎡
+
+⎤
+
+f (c1,2) 1 f (c1,2)
+F
+
+F
+
+F
+
+⎥
+⎦
+
+⎢
+⎣
+
+T
+
+T
+
+T
+
+RobLev = [1,1]
+
+2D
+
+PT
+
+LS
+
+NA
+
+Rtc(ln, pt) =
+Rtc(pt, ln)T
+
+⎤
+
+Rtc(ln, ln) = [F*T *T* T*T]
+⎡
+∗ f (c1,1)
+1
+∗
+∗
+0
+f (c1,1) ∗
+
+⎢
+⎣
+
+⎥
+⎦
+
+T
+
+⎤
+
+⎢
+⎣
+
+Rtc(ln, ln) = [FTT *** T*T]
+⎡
+1 f (c1,1)
+1
+∗
+∗
+∗
+f (c1,1) ∗
+RobLev = [0,1]
+
+⎥
+⎦
+
+T
+
+RobLev = [0,0]
+
+PL
+
+Rtc(pg, pt) =
+Rtc(pt, pg)T
+
+Rtc(pg, ln) = Rtc(ln, pg)T
+
+Rtc(ln, pg) = [F** FT* T*T]
+⎡
+
+⎤
+
+Rtc(ln, lp) = [FT*F *** T*T]
+⎡
+
+⎤
+
+⎥
+⎦
+
+⎥
+⎦
+
+⎢
+⎣
+
+1
+
+∗ ∗
+f (c1,1) 1 ∗
+∗ T
+
+T
+
+1
+
+⎢
+⎣
+
+1 ∗
+f (c1,1) ∗ ∗
+∗ T
+RobLev = [1,1]
+
+T
+
+Rtc(pg, pg) = [FFT FTT TTT]
+
+⎡
+
+⎢
+⎣
+
+1
+f (c1,1)
+f (c1,1) f (c1,1)
+
+f (c1,1) f (c1,1)
+f (c1,1)
+T
+
+1
+
+⎤
+
+⎥
+⎦
+
+RobLev = [1,1]
+
+RobLev = [1,1]
+
+RobLev = [1,1]
+
+Table 27 Analysis of the robustness behavior of a.TC(b) in 3D
+
+Point (PT)
+
+LineString (LS)
+
+Polyhedral Surface (PS)
+
+Same as 2D
+
+RobLev = [0,0]
+
+Same as 2D
+
+RobLev = [1,1]
+
+Geoinformatica
+
+3D
+
+PT
+
+NA
+
+LS
+
+SAme as 2D
+
+Rtc(ln, ln) = [FT * T*T*T]
+⎡
+
+⎤
+
+⎢
+⎣
+
+∗ f (c1,1)
+2
+∗
+∗
+0
+f (c1,1) ∗
+
+T
+
+⎥
+⎦
+
+⎤
+
+Rtc(ln, ln) = [FTT *** T*T]
+⎡
+1 f (c1,1)
+2
+∗
+∗
+∗
+f (c1,1) ∗
+
+⎥
+⎦
+
+⎢
+⎣
+
+T
+
+RobLev = [0,0]
+
+RobLev = [0,2]
+
+RobLev = [1,4]
+
+PS
+
+Rtc(ps, pt) =
+Rtc(pt, ps)T
+
+Rtc(ps, ln) = Rdj(ln, ps)T
+
+Rtc(ln, ps) = [F** *T* T*T]
+⎡
+
+⎤
+
+Rtc(ln, ps) = [FT *** T*T]
+⎡
+
+⎤
+
+⎢
+⎣
+
+4 ∗ ∗
+∗ 1 ∗
+T ∗ T
+
+⎢
+⎣
+
+⎡
+
+⎢
+⎣
+
+4 2 ∗
+∗ ∗ ∗
+T ∗ T
+4 ∗ ∗
+3 ∗ ∗
+T ∗ T
+
+⎥
+⎦
+
+⎥
+⎦
+
+⎤
+
+⎥
+⎦
+
+⎤
+
+Rtc(ps, ps) = [F*T *T* T*T]
+⎡
+∗ f (c1,1)
+4
+∗
+∗
+2
+f (c1,1) ∗
+
+⎢
+⎣
+
+⎥
+⎦
+
+T
+
+4
+
+⎤
+
+Rtc(ps, ps) = [F*T T** T*T]
+⎡
+∗ f (c1,1)
+∗
+∗
+4
+f (c1,1) ∗
+
+⎢
+⎣
+
+⎥
+⎦
+
+T
+
+⎤
+
+⎢
+⎣
+
+Rtc(ps, ps) = [FTT *** T*T]
+⎡
+4 f (c1,1)
+4
+∗
+∗
+∗
+f (c1,1) ∗
+RobLev = [2,4]
+
+⎥
+⎦
+
+T
+
+RobLev = [1,1]
+
+RobLev = [2,4]
+
+Geoinformatica
+
+References
+
+1. Belussi A, Migliorini S, Negri M, Pelagatti G (2013) Evaluation of Topological Relations in a Discrete
+
+Vector Model. Tech. Rep. RR 91/2013, Department of Computer Science. University of Verona
+
+2. Chen L (2001) Exact Geometric Computation: Theory and Applications. Ph.D. thesis, New York
+
+3. Clementini E, Di Felice P (1995) A comparison of methods for representing topological relationships.
+
+University, Department of Computer Science
+
+Inf Sci Appl 3(3):149–178
+
+4. Clementini E, Felice PD (1993) A small set of formal topological relationships suitable for end-
+user interaction Proceedings of the Third International Symposium on Advances in Spatial Databases.
+Springer, pp 277–295
+
+5. Coors V (2003) 3d-gis in networking environments. Comput Environ Urban Syst 27(4):345–357
+6. Egenhofer MJ, Frank AU, Jackson JP (1990) A topological data model for spatial databases. Proceedings
+of the 1st Symposium on Design and Implementation of Large Spatial Databases (SSD ’90), pp. 271–286
+7. Egenhofer MJ, Franzosa R (1991) Point-set topological spatial relations. Int J Geogr Inf Syst 5(2):161–
+
+174
+
+8. G¨uting RH, Schneider M (1993) Realms: a foundation for spatial data types in database systems. Int.
+
+Symp. on Advances in Spatial Databases, vol. 692, pp. 14–35
+
+9. Halperin D. (2010) Controlled perturbation for certified geometric computing with fixed-precision arith-
+metic Proceedings of the Third International Congress Conference on Mathematical Software, ICMS’10.
+Springer, pp 92–95
+
+10. Halperin D, Packer E (2002) Iterated snap rounding. Comput Geom Theory Appl 23(2):209–225
+11. Hobby J (1999) Practical segment intersection with finite precision output. Comp. Geometry Theory and
+
+App 13, Comp. Geometry Th. and App
+
+12. Molenaar M (1990) A formal data structure for 3D vector maps. Proceedings of EGIS90, p. 770781
+13. OGC OpenGIS Implementation Standard for Geographic Information – Simple Feature Access – Part 1:
+
+Common Architecture (2011). Version 1.2.1.
+
+14. Open Geospatial Consortium (2012) OGC Geography Markup Language (GML) – Extended Schema
+
+and Encoding Rules, version 3.3.0. url=https://portal.opengeospatial.org/files/?artifact id=46568
+
+15. Oracle Oracle Spatial User’s Guide and Reference 10g Release 2 (10.2) (2006)., url=http://docs.oracle.
+
+com/cd/B19306 01/appdev.102/b14255.pdf
+
+16. Pelagatti G, Negri M, Belussi A, Migliorini S (2009) From the conceptual design of spatial con-
+straints to their implementation in real systems Proceedings of the 17th ACM SIGSPATIAL International
+Conference on Advances in Geographic Information Systems. ACM, New York, NY, pp 448–451
+
+17. Pilouk M (1996) Integrated modelling for 3D GIS. Ph.D. thesis. ITC. The Netherlands
+18. Praing R, Schneider M (2008) Efficient implementation techniques for topological predicates on
+
+complex spatial objects. Geoinformatica 12(3):313–356
+
+19. Randell DA, Cui Z, Cohn A (1992) A spatial logic based on regions and connection. Proceedings of the
+Third International Conference on Principles of Knowledge Representation and Reasoning (KR’92), pp.
+165–176. Morgan Kaufmann
+
+20. Rodr´ıguez MA, Brisaboa N, Meza J, Luaces MR (2010) Measuring consistency with respect to topologi-
+cal dependency constraints Proceedings of the 18th SIGSPATIAL International Conference on Advances
+in Geographic Information Systems, GIS ’10. ACM, New York, NY, pp 182–191
+
+21. The Open Source Geospatial Foundation PostGIS 2.1 Manual (2013)., url=http://postgis.net/stuff/
+
+postgis-2.1.pdf
+
+705
+
+22. Theobald DM (2001) Topology revisited: representing spatial relations. Int J Geogr Inf Sci 15(8):689–
+
+23. Thompson RJ, van Oosterom P (2006) Interchange of spatial data-inhibiting factors. Proceeding of the
+
+9th AGILE International Conference on Geographic Information Science
+
+24. Zlatanova S (2000) 3D GIS for Urban Development. Ph.D. thesis. ITC – Faculty of Geo-Information
+
+Science and Earth Observation. The Netherlands
+
+Geoinformatica
+
+Alberto Belussi received the Master degree in electronic engineering from the Politecnico di Milano in
+1992 and the PhD degree in computer engineering from the same university in 1996. Since 1998 he has
+been working at University of Verona (Italy), where from 2004 he is Associate Professor. His main research
+interests include: conceptual modeling of spatial databases, geographical information systems, spatial data
+integration and spatial query optimization.
+
+Sara Migliorini received the Master degree in Computer Science from the Universit degli Studi di Verona
+in 2007 and the PhD degree in computer science from the same university in 2012. From 2012 she is a post-
+doc research associate at Universit degli Studi di Verona. Her main research interests include: geographic
+information systems, scientific workflow systems and collaborative and distributed architectures.
+
+Geoinformatica
+
+Mauro Negri received the Degree in Electronics Engineering from the Politecnico di Milano (Italy) in 1979.
+He has been a Research Assistant at the University of Brescia from 1986 to 1991. Since 1992 he is an Asso-
+ciate Professor of Computer Science at the Electrical and Information Department (D.E.I.) of the Politecnico
+di Milano. His currently research interests include conceptual modelling of spatial data, spatial database
+design,GIS, geospatial interoperability architectures for the Public Administrations. He is author of several
+articles on international journals and conference proceedings. He has been a member of WG1 of the Inte-
+saGIS project and he has actively participated to the design of the conceptual model and of the conceptual
+schema of the “National core” database of the Italian Spatial Data Infrastructure, published by CNIPA (Italian
+National Authority for Informatics in the Public Administration)in 2006. He is a member of some projects
+on spatial interoperability and topographic databases of regional and national government.
+
+Giuseppe Pelagatti has received the doctoral degree in Electronic Engineering in 1973. Since 1986 he is
+Full Professor of Computer Science at Politecnico of Milan (Italy). His main research interests are focused
+on Distributed Database, Database and Information Systems Design, Object-Oriented Database Systems and
+Geographical Information Systems (GIS).
+
+

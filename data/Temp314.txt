@@ -1,0 +1,1220 @@
+International Journal of Geographical Information Science, 2013
+Vol. 27, No. 6, 1190–1209, http://dx.doi.org/10.1080/13658816.2012.743663
+
+LOST-Tree: a spatio-temporal structure for efﬁcient sensor data
+loading in a sensor web browser
+
+Chih-Yuan Huang and Steve H.L. Liang*
+
+Geomatics Engineering, University of Calgary, Calgary, AB, Canada
+
+(Received 3 May 2012; ﬁnal version received 13 October 2012)
+
+We present LOST-Tree, a new spatio-temporal structure to manage sensor data loading
+and caching in a sensor web browser. In the same way that the World Wide Web needs a
+web browser to load and display web pages, the World-Wide Sensor Web needs a sensor
+web browser to access distributed and heterogeneous sensor networks. However, most
+existing sensor web browsers are just mashups of sensor locations and base maps that do
+not consider the scalability issues regarding transmitting large amounts of sensor read-
+ings over the Internet. While caching is an effective solution for alleviating the latency
+and bandwidth problems, a method for efﬁciently loading sensor data1 from sensor web
+servers is currently missing. Therefore, we present LOST-Tree as a sensor data loading
+component that also manages the client-side cache on a sensor web browser. By apply-
+ing LOST-Tree, redundant transmissions are avoided, enabling efﬁcient loading with
+cached sensor data. We demonstrate that LOST-Tree is lightweight and scalable, in
+terms of sensor data volume. We implemented LOST-Tree in the GeoCENS sensor web
+browser for evaluation with a real sensor web dataset.
+
+Keywords: cache; sensor data management; spatio-temporal indexing; World-Wide
+Sensor Web; Internet GIS; Web GIS
+
+Introduction
+
+1.
+The World-Wide Sensor Web (Liang et al. 2005) is increasingly attracting interest for a
+wide range of applications, including large-scale monitoring of the environment (Hart
+and Martinez 2006), roadways (Hsieh 2004), and animal habitats (Mainwaring et al.
+2002). Ranging from video camera networks that monitor real-time trafﬁc to matchbox-
+sized wireless sensor networks embedded in the environment to monitor habitats, a sensor
+web generates tremendous volumes of sensor data streams, enabling scientists to observe
+phenomena that have previously been unobservable.
+
+In order to enable the capability for accessing and controlling sensors via the World
+Wide Web (WWW), the Open Geospatial Consortium (OGC) established Sensor Web
+Enablement (SWE) as a group of speciﬁcations related to sensors, sensor data models,
+and sensor web services (Botts et al. 2007). Among the SWE speciﬁcations, the Sensor
+Observation Service (SOS) deﬁnes a web service interface for accessing sensor observa-
+tions in a standard way (OGC 2007). In the same way that the WWW needs a web browser
+to load and display web pages from web servers, the World-Wide Sensor Web needs a
+coherent front end to access distributed and heterogeneous sensor networks. However,
+
+*Corresponding author. Email: steve.liang@ucalgary.ca
+
+© 2013 Taylor & Francis
+
+International Journal of Geographical Information Science
+
+1191
+
+sensor data are spatio-temporal in nature, and the number of sensor observations can be
+extremely large. Efﬁciently transmitting large amounts of sensor data over the WWW is a
+major challenge (Nath et al. 2006).
+
+A client/server data transmission strategy for efﬁciently loading spatio-temporal data is
+required. There have been some server-side optimization approaches that provide mashups
+of base maps and sensor locations. Since this type of application serves as an intermediary
+between users and the sensor data they host, we term them sensor data portals.
+
+Figure 1 shows screen captures of some existing sensor data portals. Since these por-
+tals have full knowledge about the data they host (e.g., sensor locations and sampling
+
+Figure 1. Existing sensor data portals:
+(b)
+SciScope (http://www.sciscope.org/); (c) National Data Buoy Centre (http://www.ndbc.noaa.gov/);
+(d) SensorMap (http://atom.research.microsoft.com/sensewebv3/sensormap/); and (e) Sensorpedia
+(http://www.sensorpedia.com/).
+
+(a) EarthScope (http://www.earthscope.org/);
+
+1192
+
+C.-Y. Huang and S.H.L. Liang
+
+times), they can pre-generate indices or utilize spatio-temporal distributions of sensor data
+to optimize transmission. For example, Ahmad and Nath (2008) proposed COLR-Tree to
+aggregate and sample sensor data to reduce data size before transmission. Some sensor data
+portals, for example, Groundwater Information Network (GIN),2 present a map of sensor
+locations at small scale and actual sensor observations at large scale to limit the number
+of sensor observations being transmitted in each request. However, a critical drawback of
+these sensor data portals is that they can only present the sensor data of which they have
+some prior knowledge. As a result, these portals are ad hoc, static maps of sensors.
+
+We argue that these server-side optimization approaches are very difﬁcult to scale up
+or to be ﬂexible, considering that it is very challenging for a single portal to index every
+sensor in the world. Therefore, instead of a server-side approach, we propose a pure client-
+side approach to load sensor data efﬁciently without prior knowledge of sensor data. As a
+result, our approach enables a client-side application to load sensor data independently;
+and, we have termed this kind of application a sensor web browser.
+
+One of the major use cases is that users can use a sensor web browser to access any
+sensor web services (e.g., the SOSs) that are technically interoperable with the sensor web
+browser. However, unlike sensor data portals, sensor web browsers only have knowledge
+about the sensor data they have retrieved but not the ‘empty space’ between the sensor
+data in the spatio-temporal domain. Therefore, a sensor web browser that only records the
+retrieved data cannot recognize whether the ‘empty space’ between data is truly empty
+(i.e., the space was loaded before but has no data) or not-yet-loaded (i.e., the space may or
+may not contain data). The only way for that sensor web browser to make sure is to request
+data in the ‘empty space’ from sensor web services, which may consequently become an
+endless loop for the space that is truly empty and generate many redundant transmissions
+between clients and servers.
+
+Unlike server-side approaches that reduce data size in transmission, our approach
+applies a client-side cache to avoid redundant transmissions and optimize Internet band-
+width utilization. For example, today’s earth browser systems (e.g., Google Earth; Craglia
+et al. 2008) use a Quadtree-based tiling scheme to index and manage the cached image
+tiles at different levels of detail. Before sending requests to servers, these systems check
+the local cache ﬁrst. In the case of a cache hit, no request needs to be sent. Otherwise (in
+the case of a cache miss), the request is sent, and the returned image tiles are then inserted
+into the local cache for future use.
+
+The same tiling and caching method cannot, however, be directly applied to a sen-
+sor web browser for two major reasons. First, sensor data are spatio-temporal in nature;
+therefore, compared to static map images, there is an additional temporal dimension to con-
+sider. Second, sensor data may be distributed sparsely in space and even more sparsely in
+time (e.g., transient sensors or sensors with different sampling frequencies). Many spatio-
+temporal requests3 for sensor data have server responses without any sensor data (i.e.,
+empty hits). In order to prevent redundant empty hits, not only do the responses (i.e., sen-
+sor data) need to be stored and managed in a cache as a data management component,
+but the requests also need to be stored and managed in a separate cache as a data loading
+component.
+
+The spatio-temporal data management component has long been investigated to efﬁ-
+ciently query spatio-temporal data in databases (see Mokbel et al. (2003) for an overview).
+On the other hand, there are few studies on the data loading component for spatio-temporal
+requests. We argue the major reason is that an independent client-side application retrieving
+spatio-temporal data was not common. Most client-side applications were highly coupled
+with the server-side. However, as we are witnessing a technological shift from highly
+coupled and proprietary web applications to interoperable web APIs, an independent and
+
+International Journal of Geographical Information Science
+
+1193
+
+interoperable client-side application like a sensor web browser becomes necessary to visu-
+alize spatio-temporal data. As a result, this work focuses on developing a data loading
+component for a sensor web browser in order to avoid unnecessary transmissions and
+consequently attain efﬁcient sensor data loading with a local cache.
+
+This article presents LOST-Tree, which stands for loading spatio-temporal tree. LOST-
+Tree manages sensor web browser requests and acts as a data loading layer between a sensor
+web browser and servers. LOST-Tree uses two key ideas to solve the aforementioned chal-
+lenges. First, LOST-Tree applies predeﬁned hierarchical spatial and temporal frameworks,
+so that both the spatial and temporal extents of requests can be indexed for loading man-
+agement. Since the frameworks are predeﬁned, LOST-Tree can simply compare spatial and
+temporal indices between requests to ﬁlter out redundant transmission. Also, because the
+frameworks are hierarchical, LOST-Tree can aggregate several indices to attain a smaller
+tree size, which consequently results in a smaller memory footprint and query latency.
+
+Second, LOST-Tree uses only the spatio-temporal extent of requests to determine a
+cache hit or miss. By separating the data loading and data management components, any
+data management method can be applied while LOST-Tree handles the data loading. For
+instance, this work simply uses R-Tree (Guttman 1984) and B-Tree (Bayer and McCreight
+1972) to manage sensor data in the local cache. Moreover, since LOST-Tree only manages
+the spatio-temporal extents of requests, LOST-Tree does not grow with the spatio-temporal
+density of sensor data, which also allows LOST-Tree to have a small memory footprint and
+query latency.
+
+We implemented LOST-Tree as a data loading component in the sensor web browser of
+the Geospatial Cyberinfrastructure for Environmental Sensing (GeoCENS) project, which
+has been publicly available4 for over a year. The preliminary idea of LOST-Tree was ﬁrst
+presented as a system prototype demonstration at a demo booth of the 12th Symposium on
+Spatial and Temporal Databases (SSTD) (Huang et al. 2011). A short paper (1428 words)
+was also presented at the conference in order to help explain the live demonstration to
+visitors. However, the SSTD demo paper describes only LOST-Tree superﬁcially and does
+not provide details. On the other hand, this journal paper was written to fully communicate
+LOST-Tree, in which we provide complete background introduction, algorithms, critical
+analyses, and comprehensive evaluation.
+
+In summary, this article makes the following contributions.
+
+(1) We present LOST-Tree, a data loading component that determines whether or not
+a spatio-temporal request has been sent previously. LOST-Tree can signiﬁcantly
+improve Internet bandwidth usage by ﬁltering out redundant requests. As a result,
+LOST-Tree enables a client-side application to efﬁciently load sensor data.
+
+(2) We incorporate predeﬁned hierarchical spatial and temporal frameworks to index
+and manage spatio-temporal requests. We demonstrated how to determine a cache
+hit/miss with spatial and temporal indices and how to aggregate them for storage
+and computation efﬁciency.
+
+(3) To address the issue of empty hits, we manage spatio-temporal requests in LOST-
+Tree. By decoupling data loading and management, we show that LOST-Tree is
+scalable in terms of the sensor data volume. This decoupling allows LOST-Tree to
+work with any data management method.
+
+(4) We evaluated LOST-Tree implementation with a real sensor web service. Our eval-
+uation results demonstrated that, with LOST-Tree and the local cache, we can attain
+sensor data loading of, on an average, 300 times faster, up to a 100% reduction
+of unnecessary transmissions, a small tree size (less than 164 Kbytes during our
+evaluation), and a low latency on determining a cache hit/miss.
+
+1194
+
+C.-Y. Huang and S.H.L. Liang
+
+This article is organized as follows. Section 2 discusses concepts, ideas, and other research
+related to LOST-tree. In Section 3, we present all the operations and algorithms of LOST-
+Tree and how these operations reduce redundant transmissions. Section 4 presents a
+comprehensive evaluation of LOST-Tree, along with recommendations for different conﬁg-
+uration parameters for different possible scenarios. Finally, Section 5 discusses conclusions
+and future work.
+
+2. Related works
+
+To date, there have been few investigations on the construction of an efﬁcient spatio-
+temporal data loading mechanism for sensor web browsers. Many tree structures have been
+extended for supporting temporal query on R-Tree (Guttman 1984) or Quadtree (Finkel
+and Bentley 1974), including RT-Tree (Xu et al. 1990), 3D R-Tree (Theodoridis et al.
+1996), MRA-Tree (Lazaridis and Mehrotra 2001), aRB-Tree (Papadias et al. 2002), SB-
+Tree (Yang and Widom 2003), MV3R-Tree (Tao and Papadias 2001), and linear Quadtree
+(Tzouramanis et al. 1998). However, these structures were all originally developed for
+data management rather than for data loading. ArchRock (Woo 2006), IrisNet (Gibbons
+et al. 2003), and GSN (Aberer et al. 2006) studied sharing sensor data over the Internet.
+These three works did not focus on the construction of a sensor web browser; therefore, no
+efﬁcient data loading mechanism was discussed.
+
+One of the most related works is implemented by an organization called 52◦ North.
+They provide an online platform called SensorWeb Client,5 which allows users to access
+data from OGC SOSs, visualize sensors on a map, and retrieve timeseries data after select-
+ing sensors. However, although their client is also a sensor web browser, they do not employ
+any loading management mechanism. They use a naïve data loading approach, that is, the
+client reloads data whenever the view of the map is changed.
+
+The other works similar to this article were presented by Nath et al. (2006) and Ahmad
+and Nath (2008). They presented an architecture for a sensor data portal (i.e., SensorMap)
+and proposed COLR-Tree to address challenges of sensor data loading and management
+on the portal side. Although COLR-Tree is designed for a sensor data portal other than a
+sensor web browser, it is still important to analyze its strategy on the sensor data loading.
+COLR-Tree uses slot-cache and sampling mechanisms to reduce transmission load. The
+slot-cache technique appends slots on each R-Tree node, with each slot representing a
+certain time period for sensor data aggregation. When a user sends spatio-temporal requests
+for sensor data, COLR-Tree checks whether the number of cached sensors is larger than a
+predeﬁned number. If yes, the portal returns cached data; otherwise, COLR-Tree uniformly
+loads additional sensors to fulﬁll the predeﬁned number.
+
+We argue that COLR-Tree has two major issues. First, COLR-Tree couples data load-
+ing and data management. This means that the data loading component needs to traverse
+through an index tree of the cached sensor readings (hence the data management part),
+in order to decide whether or not to send out requests. As the data volume on the
+World-Wide Sensor Web can be enormous, the tree size grows, subsequently becoming
+inefﬁcient. In order to prevent growth of the data management tree, COLR-Tree aggre-
+gates and samples sensors’ raw readings, which we believe causes the second issue of
+COLR-Tree; users, especially scientists, desire raw readings to develop their models and
+applications. A sensor web client that provides aggregated readings is not suitable for many
+applications.
+
+As a result, we recommend that the data loading and management be decoupled in
+sensor web browsers, so that the transmission load can be reduced but raw sensor readings
+
+International Journal of Geographical Information Science
+
+1195
+
+Figure 2. A cache facilitated loading workﬂow with the data loading and management components
+separated.
+
+can be provided. This suggestion motivates our solution, which is using LOST-Tree to
+manage data loading and a client-side cache to manage the cached sensor readings.
+
+Figure 2 depicts a typical data loading workﬂow with separated data loading and man-
+agement components. The data loading component manages historical requests. When a
+user makes a request, the data loading component is responsible for determining whether
+or not the request has previously been sent. If yes, the request is forwarded to data man-
+agement component to retrieve the cached data corresponding to the request. If the request
+has not been sent before, the data loading component gets data from server(s), forwards
+the data to the data management component and returns data to the user. LOST-Tree is our
+solution: an efﬁcient data loading component that loads spatio-temporal data in a sensor
+web browser application.
+
+3. LOST-Tree
+LOST-Tree manages requests in a sensor web browser. A typical request, R, from a sensor
+web browser to a sensor web server can be deﬁned by three parameters: Rbbox, which is
+the minimum bounding box of the request’s spatial extent; Rt_period, which is the request’s
+temporal extent deﬁned by a start time, t1, and an end time, t2; and, ﬁnally Robs, which is
+the observed phenomenon of interest (e.g., air temperature). In fact, we can further deﬁne
+the combination of Rbbox and Rt_period as a spatio-temporal cube, RSTCube. Thus, request
+R and its corresponding server response can be deﬁned as follows: R (RSTCube, Robs):
+{o1, o2, . . . , oi}, where oi is an observation collected by a sensor that fulﬁlls request R.
+
+LOST-Tree is a data loading layer between a sensor web browser and servers. Its overall
+objective is the prevention of sending unnecessary requests to sensor web servers. When
+our sensor web browser sends request R through LOST-Tree, it consists of four steps:
+(1) decompose, (2) ﬁlter, (3) update, and (4) aggregate (Figure 3).
+
+3.1. Decompose step
+The purpose of the decompose step is the conversion of an ad hoc RSTCube into one or many
+non-overlapping LOST-Tree-based requests: LTSTCubes (i.e., LOST-Tree spatio-temporal
+cubes). The decomposition is based on two predeﬁned hierarchical spatial and temporal
+frameworks. In this article, we implemented LOST-Tree with a Quadtree-based tile system
+(Figure 4, Gaede and Gunther 1998) as the spatial framework and the Gregorian calendar
+as the temporal framework.
+
+We used an LTSTCube key, which is the combination of a quadkey, q, and
+in formats of YYYY, YYYYMM, YYYYMMDD, or
+
+a calendar string, gc (e.g.,
+
+1196
+
+C.-Y. Huang and S.H.L. Liang
+
+Figure 3. LOST-Tree workﬂow.
+
+Figure 4. Quadtree-based tile system.
+
+YYYYMMDDHHMMSS), to represent an LTSTCube, where q represents a bounding
+box and gc represents a time period (e.g., gc ‘20100930’ represents the entire day on
+30 September 2010). One important characteristic in both q and gc is that they are hierar-
+chical in nature, which means that the lengths of q and gc represent their levels of detail.
+This also allows us to simply use a preﬁx matching method to identify whether LTSTCube A
+⊆ LTSTCube B. For example, given LTSTCube_A (qA, gcA) and LTSTCube_B (qB, gcB), LTSTCube_A
+⊆ LTSTCube_B, if and only if qA starts with qB and gcA starts with gcB. As a result, we can
+easily manage LTSTCubes in a client’s local cache by manipulating the LTSTCube key.
+
+3.2. Filter step
+The objective of the ﬁlter step is the ﬁltering out of the requests that corresponding
+responses have previously loaded. We use LTCCubes (i.e., LOST-Tree cached cubes) to
+
+International Journal of Geographical Information Science
+
+1197
+
+Algorithm 1. The ﬁlter step.
+
+Function Filter(LTSTCubes, LTCCubes): FilteredLTSTCubes
+
+IF LTSTCube is contained by LTCCube THEN
+
+ELSE IF LTSTCube contains LTCCube THEN
+
+previously_loaded ← true
+BREAK
+
+previously_loaded ← false
+FOREACH LTCCube ∈ LTCCubes
+
+1: FilteredLTSTCubes = {}
+2: FOREACH LTSTCube ∈ LTSTCubes
+3:
+4:
+5:
+6:
+7:
+8:
+9:
+10:
+11:
+12:
+13:
+14:
+END IF
+15: END FOREACH
+16: RETURN FilteredLTSTCubes
+
+END IF
+
+END FOREACH
+IF NOT previously_loaded THEN
+
+LTSTCube ← LTSTCube –LTCCubes
+
+FilteredLTSTCubes ← FilteredLTSTCubes ∪ LTSTCube
+
+represent previously loaded LTSTCubes, and Algorithm 1 describes the ﬁltering process. The
+determination of the containing relationship between LTSTCubes and LTCCubes (lines 5 and
+8) is done by preﬁx matching of the LTSTCube key (i.e., q and gc). In line 9 of Algorithm 1,
+if LTSTCube covers LTCCube, LTSTCube ‘decomposes’ itself and removes the portion covered
+by LTCCube. For instance, if q of LTSTCube is ‘01’ and q of LTCCube is ‘0110’ (assuming the
+same gc), the FilteredLTSTCubes have q equal to ‘010’, ‘0111’, ‘0112’, ‘0113’, ‘012’, and
+‘013’. In this way, LOST-Tree can ﬁlter out redundant requests.
+
+In reality, however, there is a trade-off between reducing redundant transmissions and
+keeping the number of requests small. This trade-off comes from the limitation of proto-
+cols or implementations. Take OGC Sensor Observation Service (SOS) as an example: a
+GetObservation request can only have one bounding box as the spatial extent, so that the
+number of requests is the number of unique q in FilteredLTSTCubes. For instance, the exam-
+ple in Figure 3 will need three requests, if q1, q2, and q3 are not connected. Although OGC
+SOS allows multiple time periods as the temporal extent in one request, most implementa-
+tions only support one time period per request. For these SOS implementations, the number
+of requests becomes the number of unconnected spatio-temporal cubes, e.g., the example in
+Figure 3 will need four requests because those FilteredLTSTCubes are not connected to each
+other and cannot be aggregated. As a result, the ﬁltering out of redundant transmissions
+may generate a large number of requests, which consequently reduces loading efﬁciency
+and causes issues in handling a large amount of connections.
+
+In order to address this challenge, we provide a mechanism for LOST-Tree to control
+the trade-off between the number of requests and redundant transmissions. As mentioned,
+in order to ﬁlter out LTCCube from LTSTCube, LTSTCube is decomposed to the same q and gc
+levels of LTCCube. Usually, the larger level difference between LTSTCube and LTCCube, the
+more FilteredLTSTCubes that are generated, consequently increasing the number of requests.
+We, therefore, allow users to conﬁgure two variables, Lq and Lgc, to specify the lowest
+q and gc levels to which LTSTCube can be decomposed. For example, if Lq is 5, the lowest
+q level of FilteredLTSTCubes is equal to or smaller than 5. If Lgc is an hour, the lowest gc
+level of FilteredLTSTCubes is equal to or larger than hour (i.e., year, month, day, and hour).
+
+1198
+
+C.-Y. Huang and S.H.L. Liang
+
+Although this approach may request data that have been previously loaded (i.e., redundant
+transmissions), the number of requests can be dramatically decreased. We show how this
+mechanism affects LOST-Tree performance in the evaluation section.
+
+3.3. Update step
+The aim of this step is the updating of LTCCubes, in order to reﬂect the request history.
+Once the client receives responses from servers, LOST-Tree then inserts the correspond-
+ing LTSTCubes into LTCCubes. This operation is very important in the context of a sensor
+web. Since sensor observations may distribute sparsely in space and time, server responses
+may contain no sensor data (i.e., empty hits). While caching responses (like today’s earth
+browsers) cannot avoid empty-hit requests, LOST-Tree is unique, because it can avoid
+these redundant transmissions by remembering the spatio-temporal extents of successful
+requests. Therefore, we designed LOST-Tree to insert the corresponding LTSTCubes into
+LTCCubes for the complete history of requests (i.e., LTSTCubes). As a result, LOST-Tree can
+avoid redundant requests.
+
+3.4. Aggregate step
+This step is intended to minimize the memory footprint of LTCCubes with the hierarchical
+characteristic of the spatial and temporal frameworks in LOST-Tree. When all sub-LTCCubes
+(e.g., the eight small green cubes in Figure 3) of an LTCCube (e.g., the two large green
+cubes in Figure 3) are loaded, we can replace all the sub-LTCCubes with just one LTCCube.
+Therefore, after the update step inserting the loaded LTSTCubes into LTCCubes, LOST-Tree
+ﬁrst identiﬁes those ‘aggregatable’ LTCCubes and aggregates them into one LTCCube. In this
+way, LOST-Tree can have a smaller number of LTCCubes, consequently allowing better query
+performance in the ﬁltering step. In addition, since LOST-Tree only maintains a quad-
+key (q) and calendar string (gc) for each LTCCube, the tree size is small enough to ﬁt into
+memory for efﬁcient processing.
+
+3.5. Removal operation
+In addition to the above four steps, LOST-Tree also has an operation to remove LTCCubes.
+Some sensor data providers need time to collect and calibrate data for quality assurance;
+therefore, data can become outdated and historical when they become available online.
+However, before these historical data become available online, clients who request the
+LTSTCubes covering these data may get empty-hit responses and mark these LTSTCubes as
+loaded in LOST-Tree. As a result, in order to reload these LTSTCubes, clients need an
+operation to remove spatio-temporal cubes from LTCCubes.
+
+The removal operation is shown in Algorithm 2, where LTRCubes represents the decom-
+posed spatio-temporal cubes to be removed. Similar to line 9 in Algorithm 1, the
+‘(LTCCube – LTRCubes)’ in line 5 of Algorithm 2 means that the LTCCube decomposes itself
+and removes the portion covered by LTRCube. Although Algorithms 1 and 2 are similar in a
+way, the conceptual meanings of their outputs are different. Algorithm 1 returns the spatio-
+temporal cubes to be requested, while Algorithm 2 returns the spatio-temporal cubes that
+have been loaded.
+
+International Journal of Geographical Information Science
+
+1199
+
+Algorithm 2. The remove function.
+
+Function Remove(LTRCubes, LTCCubes): LTCCubes
+
+IF LTRCube is contained by LTCCube THEN
+
+LTCCubes ← LTCCubes – LTCCube
+LTCCubes ← LTCCubes + (LTCCube – LTRCube)
+BREAK
+
+ELSE IF LTRCube contains LTCCube THEN
+
+LTCCubes ← LTCCubes – LTCCube
+
+FOREACH LTCCube ∈ LTCCubes
+
+1: FOREACH LTRCube ∈ LTRCubes
+2:
+3:
+4:
+5:
+6:
+7:
+8:
+9:
+10:
+11: END FOREACH
+12: RETURN LTCCubes
+
+END FOREACH
+
+END IF
+
+4. Experimental evaluation
+
+We evaluated the performance of our LOST-Tree implementation from three perspectives.
+First, in order to demonstrate the efﬁciency of the data loading, we compared the end-to-
+end latencies of the loading sensor data with and without the proposed LOST-Tree scheme.
+Second, in order to show that LOST-Tree is lightweight and scalable, in terms of the number
+of LTCCubes, we present the change of LOST-Tree size on spatial, temporal, and spatio-
+temporal aggregations. Third, in order to demonstrate that LOST-Tree can effectively and
+efﬁciently ﬁlter out LTCCubes from LTSTCubes while keeping the number of requests small,
+we analyzed the LOST-Tree performance (including latency of ﬁltering, ﬁlter efﬁciency,
+and number of requests) on different Lq and Lgc, and combinations of Lq and Lgc. By doing
+this, we aimed to provide a comprehensive analysis on LOST-Tree behavior.
+
+For the last two evaluations, we simulated three testing environments: (1) a ﬁxed tem-
+poral component, only changing the spatial component, that is, spatial aggregation and Lg;
+(2) a ﬁxed spatial component, only changing the temporal component, that is, temporal
+aggregation and Lgc; and, (3) changing both the spatial and temporal components.
+
+We implemented the proposed scheme in the GeoCENS sensor web browser, a client-
+side application using the virtual globe of NASA World Wind as the platform. The
+evaluations were performed on a desktop class machine, which runs an Intel Core2 Quad
+Q8200 @ 2.33 GHz, 3 GB RAM, Western Digital WD5000AAKS, and ATI Radeon HD
+3450.
+
+4.1. Data loading efﬁciency
+In this section, we present the analysis of the data loading efﬁciency between the proposed
+scheme and a naïve solution. The naïve solution means that the client does not store loaded
+data in the local cache and needs to load data from the server. We compare the end-to-
+end latencies of the loading data from OGC SOS. The end-to-end latency includes the
+latency of the retrieving sensor data (from a cache or server) and the latency of creating
+icons to display. The server was located in the same local network with the testing machine
+and hosted data from the US National Oceanic and Atmospheric Administration, which
+contains 2412 sensors collecting observations every hour.
+
+Figure 5 shows the evaluation results. The end-to-end latencies were on a different order
+of magnitude. Without the proposed scheme, the sensor data had to be transmitted from
+
+1200
+
+C.-Y. Huang and S.H.L. Liang
+
+× 104
+
+No cache
+Cache
+
+)
+s
+m
+
+(
+ 
+y
+c
+n
+e
+t
+n
+a
+l
+ 
+d
+n
+e
+-
+o
+t
+-
+d
+n
+E
+
+15
+
+10
+
+5
+
+0
+
+Figure 5. End-to-end latencies.
+
+× 104
+
+the server through the network. With LOST-Tree and a local cache, the previously loaded
+sensor data could be retrieved from a local disk, which is much faster than transmitting
+data over the network. While the network is relatively unstable and results in large latency
+differences between each transmission, data loading from the disk has a relatively similar
+latency between each transmission.
+
+Although the latency difference between loading data from a disk and a server is
+already well known, LOST-Tree was the major component enabling such a spatio-temporal
+data cache in a sensor web browser. The latency of loading data from a disk is mainly
+related to the data management method. As LOST-Tree is ﬂexible and can work with any
+data management method, we simply used an R-Tree and a B-Tree to manage the sen-
+sor data in this evaluation. As a result, the regression lines in Figure 5 indicate that the
+proposed scheme could load sensor data 300 times faster than the naïve solution.
+
+4.2. LOST-Tree size
+
+For storage and computation efﬁciency, keeping the tree size small is very important, so
+that it can ﬁt in memory. With the predeﬁned hierarchal spatial and temporal frameworks in
+LOST-Tree, we can aggregate multiple LTCCubes into one LTCCube to reduce the LOST-Tree
+size. In this section, we ﬁrst show the aggregation behavior of Quadtree and the Gregorian
+calendar separately by assigning a simulated loading sequence. We then present the
+integrated spatio-temporal aggregation behavior with a randomly chosen loading sequence.
+First, in order to show the spatial aggregation behavior, we loaded LTSTCubes with the
+same gc and all q in the fourth level. We used the Z-order sequence (Morton 1966) as the
+simulated loading sequence. Z-order is a space-ﬁlling curve that can map multidimensional
+data into one dimension. The Z-order sequence in fourth level of Quadtree is shown in
+Figure 6. In this case, the spatial aggregation was performed at every 4m × n loading,
+where m, n ∈ N+, and m also represents how many aggregations will be triggered. For
+example, if m is equal to 2 and n is equal to 1, an aggregation from the fourth level to the
+third level (the light-gray portion in Figure 6) is performed ﬁrst; and, this aggregated node
+is then aggregated with the other three Quadtree nodes on the third level (the dark-gray
+portion in Figure 6). Figure 7 depicts the behavior of the LOST-Tree size reduction with a
+Z-order loading sequence.
+
+Second, in order to show the temporal aggregation behavior, we sequentially loaded
+every hour for a one-year period with the same q. In this scenario, LOST-Tree performed
+temporal aggregation in the following three cases: (1) after loading the last hour in a day,
+
+International Journal of Geographical Information Science
+
+1201
+
+Figure 6. The Z-order in fourth level of quadtree.
+
+Figure 7. LOST-Tree spatial aggregation behavior.
+
+Figure 8. LOST-Tree temporal aggregation behavior.
+
+(2) after loading the last day in a month, and (3) after loading the last month in a year.
+While temporal aggregation combined 60 (seconds, minutes), 24 (hours), 28 or 29 or 30 or
+31 (days), and 12 (months) LTCCubes into 1 (an aggregated minute, hour, day, month, year)
+LTCCube, Figure 8 depicts the behavior of the LOST-Tree size reduction in this loading
+sequence.
+
+1202
+
+C.-Y. Huang and S.H.L. Liang
+
+Figure 9. LOST-Tree spatio-temporal aggregation behavior.
+
+Third, in order to show the integrated spatio-temporal aggregation behavior, we loaded
+LTSTCubes, the q of which is in level four and the gc of which is a day of 1 year, in a random
+sequence. As shown in Figure 9, the LOST-Tree size dropped whenever spatial or temporal
+aggregation was performed. Once the whole globe and year had been loaded, LOST-Tree
+became very small (2.7 Kbytes).
+
+To sum up this section, spatial and temporal aggregation allows the size of LOST-Tree
+to be small (from 0.3 Kbytes to 163.8 Kbytes), which can be ﬁt into memory for storage and
+computational efﬁciency. This evaluation also demonstrates that LOST-Tree is scalable, in
+terms of the number of LTCCubes.
+
+4.3. LOST-Tree performance
+
+In this section, we evaluate LOST-Tree’s performance. As mentioned in the methodology
+section, in order to control the trade-off between reducing the unnecessary transmissions
+and keeping the number of requests small, users can use Lq and Lgc to specify the low-
+est q and gc levels to which LTSTCubes can be decomposed. Since Lq and Lgc may affect
+the computational load in the ﬁltering process, we analyzed the LOST-Tree performance
+in different settings of Lq and Lgc. We used three metrics to evaluate LOST-Tree’s perfor-
+mance, namely the query latency (i.e., latency of the ﬁltering process), ﬁlter efﬁciency (i.e.,
+percentage of the unloaded portion in the FilteredLTSTCubes, where the larger, the better),
+and number of requests (i.e., number of FilteredLTSTCubes, where the smaller, the better).
+
+We had two objectives relevant to this section. First, we wanted to demonstrate that
+LOST-Tree can completely ﬁlter out LTCCubes that have higher levels of q and gc than Lq and
+Lgc. Therefore, we ﬁrst simulated LTCCubes with different levels of q and gc. We then exam-
+ined the LOST-Tree performance when using different Lq and Lgc to ﬁlter out LTCCubes.
+Second, in order to propose a reasonable setting of Lq and Lgc for a sensor web browser
+application, we ﬁrst simulated more realistic LTCCubes based on our knowledge about user
+loading behavior on a sensor web browser. We then analyzed LOST-Tree’s performances
+with different combinations of Lq and Lgc.
+
+In general, we have three evaluations in this section. The ﬁrst evaluation (Section 4.3.1)
+analyzed how different Lq affect the LOST-Tree performance when ﬁltering out LTCCubes
+on different levels of q. The second evaluation (Section 4.3.2) showed the LOST-Tree per-
+formance using different Lgc to ﬁlter out LTCCubes on different levels of gc. Finally, the
+third evaluation (Section 4.3.3) demonstrated the expected LOST-Tree performance in a
+real-world application with different combinations of Lq and Lgc.
+
+International Journal of Geographical Information Science
+
+1203
+
+Table 1. Settings of simulated scenarios.
+
+Settings
+
+Lq
+
+Lgc
+
+Evaluations
+
+Lq
+
+Lgc
+
+q
+
+gc
+
+1–8
+
+Year
+
+Randomly
+
+Fixed
+
+1
+
+Year–hour
+
+Fixed
+
+Combinations
+of Lq and
+Lgc
+
+1–8
+
+Year–hour
+
+Randomly
+
+picked from
+levels 2 to 8 in
+quadtree
+
+picked from
+levels 2 to 8 in
+quadtree
+
+Randomly picked from
+levels of month to
+hour in the
+Gregorian calendar
+Randomly picked from
+levels of month to
+hour in the
+Gregorian calendar
+
+Number of
+a
+LTCCubes
+
+1, 33% × n,
+66% × n,
+n – 1
+
+1, 33% × n,
+66% × n,
+n – 1
+
+1, 50, 150b
+
+Note: an is the total number of cubes in the level of q in quadtree and the level of gc in the Gregorian calendar.
+bIf n is smaller than the assigned number of LTCCubes, skip the scenario.
+
+Table 1 shows the simulated scenarios for the above three evaluations. Based on our
+experience with the development of the GeoCENS sensor web browser, we have noticed
+that, in reality, q usually occurs on the second to eighth levels of Quadtree (mostly on the
+second to ﬁfth levels), and gc usually happens on the month to hour level of the Gregorian
+calendar (mostly on the day level). Therefore, we simulated LTCCubes with q and gc from
+these levels.
+
+In the ﬁrst two evaluations, since we wanted to show that LOST-Tree can completely
+ﬁlter out any number of LTCCubes whose levels of q and gc are higher than Lq and Lgc, we
+evaluated with four greatly different numbers for LTCCubes (i.e., 1, 33% × n, 66% × n, and
+n – 1 cubes, where n is the total number of cubes on the assigned q and gc levels). However,
+as we observed in the GeoCENS sensor web browser, the number of LTCCubes is, in reality,
+usually small. Thus, the results in the ﬁrst two evaluations may have been affected by the
+large number of simulated LTCCubes.
+
+In the third evaluation, in order to show the expected LOST-Tree performance in the
+real world, we simulated numbers of LTCCubes that are close to reality (i.e., 1, 50, and
+150 cubes). To reduce the inﬂuence of outliers, we repeated these evaluations 10 times
+and took the average values as the ﬁnal results.
+
+4.3.1. LOST-Tree performance on different Lq
+Figure 10a–c depicts the LOST-Tree performance on different Lq and levels of q, and
+Figure 10d–f shows the average LOST-Tree performance across simulated scenarios.
+As shown in Figure 10b, LOST-Tree can completely ﬁlter out the LTCCubes whose q is
+smaller than or equal to Lq. Although a large number of LTCCubes seldom occur in real-
+ity, we simulated large numbers of LTCCubes to demonstrate that LOST-Tree can ﬁlter out
+LTCCubes under any scenario. Therefore, ﬁltering out the large number of LTCCubes results
+in increases in the query latency and the number of requests. For example, in the case of
+Lq equal to 8, the average query latency jumped from less than 100 milliseconds to more
+than 800 milliseconds (Figure 10d), while more than 2500 requests, on an average, were
+generated (Figure 10f).
+
+1204
+
+C.-Y. Huang and S.H.L. Liang
+
+Figure 10. LOST-Tree performance on different Lq: (a) query latencies for different levels of q; (b)
+ﬁlter efﬁciencies for different levels of q; (c) number of requests for different levels of q; (d) average
+query latencies; (e) average ﬁlter efﬁciencies; and (f) average number of requests.
+
+To sum up, when considering all the possible scenarios, we would like to make a the-
+oretical suggestion to conﬁgure Lq as 6, in order to avoid large query latency and a large
+number of requests while attaining a ﬁlter efﬁciency of near 90%.
+
+4.3.2. LOST-Tree performance on different Lgc
+Figure 11a–c depicts the LOST-Tree performance on different Lgc and levels of gc in
+LTCCubes, while Figure 11d–f shows the average LOST-Tree performance across scenarios.
+As shown in Figure 11b, LOST-Tree can completely ﬁlter out LTCCubes that have a gc that is
+smaller than or equal to Lgc. As previously mentioned, although a large number of LTCCubes
+seldom occur in reality, we simulated large numbers of LTCCubes to demonstrate that LOST-
+Tree can ﬁlter out LTCCubes under any scenario. As a result, ﬁltering out the large number
+of LTCCubes results in increases in the query latency and number of requests. For example,
+in the case of conﬁguring Lgc as an hour, the average latency grew to 185 milliseconds
+(Figure 11d) and 343 requests were generated (Figure 11f).
+
+To sum up, when considering all the possible scenarios, we would like to make a theo-
+retical suggestion to conﬁgure Lq as the day level, in order to avoid large query latency and
+a large number of requests, while attaining a ﬁlter efﬁciency of near 90%.
+
+International Journal of Geographical Information Science
+
+1205
+
+Figure 11. LOST-Tree performance on different Lgc: (a) query latencies for different levels of q; (b)
+ﬁlter efﬁciencies for different levels of q; (c) number of requests for different levels of q; (d) average
+query latencies; (e) average ﬁlter efﬁciencies; and (f) average number of requests.
+
+4.3.3. LOST-Tree performance on different combinations of Lq and Lgc
+The previous two evaluations focused on showing the LOST-Tree performance on different
+Lq and Lgc in any possible scenario (i.e., from small to large numbers of LTCCubes). In this
+evaluation, we aimed to demonstrate the expected LOST-Tree performance in the real
+world with a more realistic scenario (as shown in Table 1). We examined LOST-Tree per-
+formance with different combinations of Lq and Lgc to show a comprehensive evaluation.
+The evaluation results are shown in Figure 12 and Tables 2–4.
+
+From the evaluation results, we have the following ﬁndings. First, in the case of a more
+realistic scenario, LOST-Tree can efﬁciently ﬁlter out LTCCubes in less than 5 milliseconds
+(Figure 12a and Table 2). Second, as shown in Figure 12b and Table 3, LOST-Tree can
+eliminate all unnecessary requests when Lq and Lgc are equal to or larger than the smallest
+q and gc of LTCCubes (i.e., level 8 and the hour level, respectively, in this evaluation).
+
+Third, by using Lq and Lgc, LOST-Tree can control the trade-off between the ﬁlter efﬁ-
+ciency and the number of requests for various kinds of sensor web servers (Figure 12b
+and c and Tables 3 and 4). For instance, if a server allows multiple spatial and temporal
+extents in one request, users can conﬁgure large Lq and Lgc to ﬁlter out all unnecessary
+transmissions. However, if a server allows only one spatio-temporal cube per request, users
+can (1) still try to ﬁlter out all unnecessary transmissions as long as the number of LTCCubes
+is small (e.g., as in our evaluation result, 65 requests are still manageable), or (2) modify
+Lq and Lgc to trade ﬁlter efﬁciency for a smaller number of requests.
+
+1206
+
+C.-Y. Huang and S.H.L. Liang
+
+Figure 12. LOST-Tree performance on different combinations of Lq and Lgc: (a) query latencies;
+(b) ﬁlter efﬁciencies; and (c) number of requests.
+
+Table 2. Query latencies with different combinations of Lq and Lgc (unit: millisecond).
+
+Lgc
+
+Year
+Month
+Day
+Hour
+
+1
+
+0.11
+1.03
+2.99
+3.36
+
+2
+
+0.11
+1.25
+3.10
+3.47
+
+3
+
+0.12
+1.15
+3.08
+3.49
+
+Lq
+
+4
+
+0.12
+1.12
+3.07
+3.48
+
+5
+
+0.12
+1.14
+3.21
+3.54
+
+6
+
+0.12
+1.15
+3.14
+3.62
+
+7
+
+0.12
+1.18
+3.18
+3.66
+
+8
+
+0.12
+1.18
+3.18
+3.84
+
+Table 3. Filter efﬁciencies with different combinations of Lq and Lgc.
+
+Lgc
+
+Year
+Month
+Day
+Hour
+
+1
+
+2.4
+3.1
+4.7
+6.3
+
+2
+
+2.3
+6.7
+13.0
+19.3
+
+3
+
+2.3
+11.2
+22.4
+33.5
+
+Lq (%)
+
+5
+
+2.3
+20.7
+41.3
+61.8
+
+4
+
+2.3
+16.0
+31.8
+47.6
+
+6
+
+2.3
+25.4
+50.7
+75.9
+
+7
+
+2.3
+29.9
+59.6
+89.3
+
+8
+
+2.3
+33.4
+66.7
+100.0
+
+5. Conclusions and future work
+We have presented LOST-Tree, a sensor data loading component in a sensor web browser
+that ﬁlters out redundant requests for efﬁcient data loading. LOST-Tree attains scalable
+
+International Journal of Geographical Information Science
+
+1207
+
+Table 4. Number of requests with different combinations of Lq and Lgc.
+
+Lq
+
+Lgc
+
+Year
+Month
+Day
+Hour
+
+1
+
+3.0
+6.4
+41.4
+44.0
+
+2
+
+3.0
+14.4
+51.7
+54.3
+
+3
+
+3.0
+21.4
+59.0
+61.7
+
+4
+
+3.0
+23.9
+61.2
+64.0
+
+5
+
+3.0
+24.3
+61.8
+64.5
+
+6
+
+3.0
+24.4
+62.1
+64.6
+
+7
+
+3.0
+24.4
+62.1
+64.6
+
+8
+
+3.0
+24.5
+62.0
+64.6
+
+and efﬁcient query processing and addresses the empty-hit issue through two mechanisms.
+First, LOST-Tree applies predeﬁned hierarchical spatial and temporal frameworks to index
+requests. Second, LOST-Tree only manages requests instead of responses, which allows it
+to become scalable regarding the number of sensor observations.
+
+Our evaluations show that LOST-Tree is lightweight and scalable, in terms of the num-
+ber of sensor observations and the number of requests. It is also efﬁcient in data loading and
+the ﬁltering processing and is able to effectively ﬁlter out a signiﬁcant amount of redundant
+requests. LOST-Tree was implemented in the GeoCENS sensor web browser (Liang et al.
+2010), which has been accessible by the public since 2010.
+
+One future direction of this work is the automatic and adaptive conﬁguration of LOST-
+Tree for the best performance with different cache scenarios or sensor web services. The
+other research direction in data loading in a sensor web browser is having an intermediary
+providing information about sensor data services, such as the sensor sampling rate and
+geographical density. A sensor web browser can then apply this information in order to
+maximize the utilization of each request.
+
+Acknowledgments
+The authors thank CANARIE, Cybera, Alberta Innovates Technology Futures, and Microsoft
+Research for their supports on this project.
+
+Notes
+1. By sensor data, we mean the observations collected by sensors, where each observation includes
+at least a sampling location, a sampling time, a phenomenon identiﬁer, and a measurement value.
+They can be time series collected by stationary in situ sensors, or a collection of single readings
+collected by transient sensors.
+http://analysis.gw-info.net/gin/public.aspx
+
+2.
+3. By spatio-temporal requests in sensor web browsers, we mean requests with a spatial extent
+(e.g., bounding box) and a temporal extent (e.g., time period). Spatio-temporal requests are
+typical requests from a sensor web client to a sensor web server.
+
+4. GeoCENS sensor web browser (desktop client): http://dev.geocens.ca/gswclient
+5. The 52◦ North SensorWeb Client: http://sensorweb.demo.52north.org/ThinSweClient2.0/
+
+Client.html
+
+References
+Aberer, K., Hauswirth, M., and Salehi, A., 2006. A middleware for fast and ﬂexible sensor net-
+work deployment. In: N.T. Nguyen, G. Sik Jo Inha, R.J. Howlett and L.C. Jain (Eds.), 32nd
+International conference on Very Large Data Bases (VLDB), 1199–1202. Berlin/Heidelberg:
+Springer.
+
+1208
+
+C.-Y. Huang and S.H.L. Liang
+
+Ahmad, Y. and Nath, S., 2008. COLR-Tree: communication-efﬁcient spatio-temporal indexing for
+a sensor data web portal. In IEEE International Conference on Data Engineering (ICDE, April
+2008), Cancún, Mexico.
+
+Bayer, R. and McCreight, E., 1972. Organization and maintenance of large ordered indexes. Acta
+
+Informatica, 1 (3), 173–189.
+
+Botts, M., et al., 2007. OGC Sensor Web Enablement: overview and high level architecture (OGC
+
+07-165). Open Geospatial Consortium white paper, 28 December 2007.
+
+Craglia, M., et al., 2008. Next-generation digital earth. International Journal of Spatial Data
+
+Infrastructures Research, 3, 146–167.
+
+Finkel, R. and Bentley, J.L., 1974. Quad trees: A data structure for retrieval on composite keys. Acta
+
+Gaede, V. and Gunther, O., 1998. Multidimensional access methods. Journal of ACM Computing
+
+Gibbons, P.B., et al., 2003. Irisnet: an architecture for a World Wide Sensor Web. IEEE Pervasive
+
+Informatica, 4 (1), 1–9.
+
+Surveys, 30 (2), 170–231.
+
+Computing, 2 (4), 22–33.
+
+Guttman, A., 1984. R-Tree: a dynamic index structure for spatial searching. In: B. Yormark (Ed.),
+ACM’s Special Interest Group on Management of Data (SIGMOD), Proceedings of Annual
+Meeting, 18–21 June, Boston, MA. 47–57. ACM Press.
+
+Hart, J.K. and Martinez, K., 2006. Environmental sensor networks: a revolution in the earth system
+
+science? Earth Science Reviews, 78, 177–191.
+
+Hsieh, T.T., 2004. Using sensor networks for highway and trafﬁc applications. IEEE Potentials, 23
+
+(2), 13–16.
+
+Huang, C.Y., Rezel, R., and Liang, S., 2011. Efﬁcient spatio-temporal sensor data loading for a
+sensor web browser (demo paper). In: International Symposium on Spatio-Temporal Databases
+2011 (SSTD 2011), 24–26 August, Minneapolis, MN, USA.
+
+Lazaridis, I. and Mehrotra, S., 2001. Progressive approximate aggregate queries with a multi-
+
+resolution tree structure. In: SIGMOD.
+
+Liang, S., et al., 2010. GeoCENS: Geospatial Cyberinfrastructure for Environmental Sensing. In:
+Sixth international conference on geographic information science, Zurich, Switzerland, 14–17
+September 2010.
+
+Liang, S.H.L., Croitoru, A., and Tao, C.V., 2005. A distributed geospatial infrastructure for sensor
+
+web. Computers and Geosciences, 31 (2), 221–231.
+
+Mainwaring, A., et al., 2002. Wireless sensor networks for habitat monitoring. In: 2002 ACM
+international workshop on wireless sensor networks and applications Atlanta, United States,
+2002.
+
+Mokbel, M.F., Ghanem, T.M., and Aref, W.G., 2003. Spatio-temporal access methods. IEEE Data
+
+Morton, G.M., 1966, A computer oriented geodetic data base; and a new technique in ﬁle sequencing.
+
+Engineering Bulletin, 26 (2), 40–49.
+
+Technical Report. Ottawa, ON: IBM Ltd.
+
+Nath, S., Liu, J., and Zhao, F., 2006. Challenges in building a portal for sensors world-wide. In:
+First workshop on world-sensor-web: mobile device centric sensory networks and applications,
+Boulder, CO, October 2006. New York: ACM.
+
+Open Geospatial Consortium, 2007, Sensor Observation Service [online]. Available from: http://
+
+www.opengeospatial.org/standards/sos [Accessed 30 September 2010].
+
+Papadias, D., et al., 2002. Indexing spatio-temporal data warehouse. In: Proceedings of IEEE
+International Conference on Data Engineering (ICDE), 26 February–1 March, San Jose,
+California.
+
+Tao, Y. and Papadias, D., 2001. MV3R-Tree: a spatio-temporal access method for timestamp and
+interval queries. In: P.M.G. Apers, P. Atzeni, S. Ceri, S. Paraboschi, K. Ramamohanarao and
+R.T. Snodgrass (Eds.), 27th international conference on very large data bases, 431–440. Morgan
+Kaufmann.
+
+Theodoridis, Y., Vazirgiannis, M., and Sellis, T., 1996. Spatio-temporal indexing for large multimedia
+applications. In: Proceedings of the IEEE conference on multimedia computing and systems,
+7–11 June, Florence, Italy.
+
+Tzouramanis, T., Vassilakopoulos, M., and Manolopoulos, Y., 1998. Overlapping linear quadtrees:
+a spatio-temporal access method. In: R. Laurini, K. Makki and N. Pissinou (Eds.), The 6th
+ACM international symposium on advances in geographic information systems, Washington, DC,
+United States, 1998, 1–7. ACM Press.
+
+International Journal of Geographical Information Science
+
+1209
+
+Woo, A., 2006. Demo abstract: a new embedded web services approach to wireless sensor networks.
+In: Proceedings of the fourth ACM SenSys conference, Boulder, CO, United States, November
+2006. New York: ACM, 347.
+
+Xu, X., Han, J., and Lu, W., 1990. RT-Tree: an improved R-Tree indexing structure for temporal
+spatial databases. In: K.E. Brassel and H. Kishimoto (Eds.), Proceedings of the international
+symposium on spatial data handling, 1040–1049. Columbus, Ohio: International Geographical
+Union IGU, The Ohio State University.
+
+Yang, J. and Widom, J., 2003. Incremental computation and maintenance of temporal aggregates.
+
+VLDB Journal, 12, 3.
+
+

@@ -1,0 +1,1278 @@
+G   E   O   M   A   T   I   C   A
+
+                    ENRICHED GEOMETRIC SIMPLIFICATION 
+                    OF LINEAR FEATURES
+
+Rajesh Tamilmani and Emmanuel Stefanakis
+Department of Geodesy and Geomatics Engineering, University of New Brunswick
+
+Polyline geometries are used to represent linear features, such as roads, rivers and pipelines on maps.
+The generalization process results in a polyline that represents the feature either at a different resolution or
+different scale from the original geometries. In addition, the simplification process may result in losing the
+geometric properties associated with the intermediate points on the original geometries. These intermediate
+points can contain attributes or characteristics depending on the application domain. For example, points on
+the road network can contain information about accumulated length of the road, positional velocity, speed
+limit or accumulated gas consumption. This paper involves implementing the SELF (Semantically Enriched
+Line simpliFication) data structure to preserve the length attributes associated with individual points on actual
+linear features [Stefanakis 2015]. The number of points to be stored in the SELF structure is optimized by
+applying  alternative  compression  techniques.  The  data  structure  has  been  implemented  in  PostgreSQL  9.4
+[2014]  with  PostGIS [2016]  extension  using  PL/pgSQL  to  support  static  and  non-functional  polylines.
+Extended experimental work has been carried out to better understand the impact of simplification on both
+synthetic and real (natural and artificial) linear features such as rivers and pipelines. The efficiency of SELF
+structure with regard to geo metric property preservation has been tested at various levels of simplification.
+
+On  utilise  des  géométries  de  type  polyligne  pour  représenter  des  entités  linéaires,  par  exemple  des
+routes, des rivières et des pipelines sur des cartes. Le processus de généralisation donne lieu à une polyligne
+qui représente l’entité à une résolution différente ou à une échelle différente de la géométrie originale. De
+plus, le processus de simplification peut donner lieu à une perte des propriétés géométriques associées aux
+points intermédiaires sur la géométrie originale. Ces points intermédiaires peuvent contenir des attributs ou
+des caractéristiques dépendamment du domaine d’application. Par exemple, des points sur le réseau routier
+peuvent contenir de l’information au sujet de la longueur cumulée de la route, de la vélocité positionnelle,
+de la limite de vitesse ou de la consommation d’essence cumulée. Le présent article décrit la mise en œuvre
+de  la  structure  de  données  SELF  (Semantically  Enriched  Line  simpliFication  ou  simplification  linéaire
+enrichie par la sémantique) pour préserver les attributs de longueur associés aux points individuels sur les
+entités linéaires réelles [Stefanakis 2015]. Le nombre de points à stocker dans la structure SELF est optimisé
+en  appliquant  d’autres  techniques  de  compression.  La  structure  de  données  a  été  mise  en  œuvre  dans
+PostgreSQL  9.4 [2014] avec  l’extension  PostGIS [2016] utilisant  PL/pgSQL  pour  appuyer  les  polylignes
+sta tiques et non fonctionnelles. Un travail expérimental additionnel a été effectué afin de mieux comprendre
+l’impact  de  la  simplification  tant  des  entités  linéaires  synthétiques  que  réelles  (naturelles  et  artificielles)
+telles que des riv ières et des pipelines. L’efficience de la structure SELF en ce qui a trait à la préservation
+des propriétés géométriques a été vérifiée à divers niveaux de simplification.
+
+1. Introduction 
+
+Multi-Scale  maps  provide  a  method  of
+abstracting the Earth’s geographic features using
+different lev els of detail at multiple scales. While
+this  concept  has  existed  for  hundreds  of  years,
+multi-scale  representation  in  geographical  infor-
+mation  system  (GIS)  applications  solely  depend
+on  the  cartographic  generalization  methods.
+Generalization  is  the  process  of  simplifying  the
+
+level of graphical details which can be presented
+at a particular map scale. The most common and
+fundamental generalization process is simplifica-
+tion,  which  removes  the  high-density  vertices
+from the linear features (e.g. rivers, pipelines and
+roads) based on a given criterion. The process of
+simplifying aides in reducing the com plexity and
+redundancy in a dataset. 
+
+Rajesh 
+Tamilmani
+rtamilma@unb.ca
+
+Emmanuel
+Stefanakis
+estef@unb.ca
+
+                                                                                              dx.doi.org/10.5623/cig2017-101
+
+GEOMATICA  Vol. 71, No.1, 2017, pp. 3 to 19
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.G   E   O   M   A   T   I   C   A
+
+The  Douglas-Peucker  algorithm  is  extensively  used  for
+simplifying lines and provides a simplified version of an origi-
+nal line by controlling the offset while minimizing the distor-
+tion. The simplified version is formed only by retaining a subset
+of the vertices and results in a considerable reduction in length
+of the line based on threshold parameter provided by the user
+[Douglas et al. 1973]. As  a  result,  the  accumulated  length  at
+each point on the original line is not preserved in the simpli-
+fied  line.  The  detailed  study  on  Douglas-Peucker  algorithm
+demonstrates that it is the most visually effective line simpli-
+fication algorithm [Wu et al. 2003]. In Figure 1, only the first
+and last points of original line are retained in the simplified
+line.  The  Douglas-Peucker  algorithm  also  retains  some
+inter mediate points depending on the threshold distance.
+
+This  paper  presents  an  implementation  of  the  SELF
+(Semantically  Enriched  Line  simpliFication)  data  structure
+for  static  linear  features  that  preserves  the  length  attribute
+associated  with  individual  locations  of  original  lines,  espe-
+cially  for  the  accumulated  length  on  original  lines.  This
+attribute is associated to the simplified line as an array of val-
+ues corresponding to multiple locations along the simplified
+line. The SELF structure can store any semantic annotations
+associated  with  individual  locations  or  segments  of  the
+orig i nal line [Stefanakis 2015]. 
+
+The  purpose  of  this  research  is  to  retain  the  geometric
+(length) attribute associated with individual locations of original
+lines. This has been accomplished by associating the accumu-
+lated  length  values  to  the  simplified  segment  as  an  array  of
+val ues corresponding to multiple locations along the simplified
+segment [Stefanakis 2015]. The research objectives are:
+
+1. To implement the SELF structure to support static
+and non-functional polylines and to test with both
+synthetic and real world features. 
+
+2. To compare the interpolated distance values using
+SELF structure at different levels of simplification.
+
+This  paper  is  organized  as  follows.  Section  2  provides  a
+lit erature review about cartographic generalization and intro-
+duces  the  SELF  data  structure  for  linear  features.  Section  3
+de scribes the steps followed to implement the SELF structure.
+Section 4 presents PostGIS functionalities and explanations of
+the  experiment  with  various  real  world  features.  Section  5
+
+summarizes the contribution of this paper and introduces future
+developments  for  the  SELF  data  structure  with  respect  to
+dynamic lines and testing with various application domains.
+
+2.  Literature Review 
+
+2.1 Cartographic Generalization
+
+Generalization is an important concept in cartography that
+aims  at  simplifying  the  level  of  details  on  a  map  at  different
+scales  [Weibel 1996]. While  there  are  considerable  techniques
+in  generalization,  such  as  selection,  combination,  smoothing,
+enhancement  and simplification, the fundamental and common
+generalization  process 
+is  simplification.
+Sim  plification of linear features has acquired a continuous growth
+of research over the years by cartographers [Cromley 1991; Weibel
+1997; Robinson et al. 2005].
+
+in  cartography 
+
+The  Douglas-Peucker  line  simplification  algorithm,  an
+improved  classic,  was  introduced  to  address  the  problem  of
+topological inconsistency between original and simplified 2D
+polylines.  The  algorithm  avoids  the  self-intersections  on  the
+simplified  version  [Wu  et  al.  2003].  Line  simplification  algo-
+rithms have been studied in a streaming environment where the
+amount  of  storage  is  limited,  so  that  all  the  points  cannot  be
+stored [Abam 2010].
+
+Richter  et  al. [2012]  introduced  the  concept  of  semantic
+tra jectory  compression,  which  allows  for  compression  of  tra-
+jectory  data  while  permitting  minimal  and  acceptable  loss  in
+the  information  associated  with  the  individual  points  on  the
+tra jectory. This information depends on the application domain
+and the nature of the trajectory. The algorithm they proposed
+enables a user to determine the reference point and all possible
+movement change descriptions from that point.
+
+Various  techniques  have  been  proposed  to  enforce  the
+topological constraints while simplifying a polyline [Shahriari
+and Tao 2002; Tienaah et al. 2015; QiuLei et al. 2016]. According
+to Shahriari and Tao [2002], no simplifying algorithm exists that
+calculates the threshold values based on the desired accuracy
+level. The authors propose adaptive tolerance  line simplifica-
+tion  in  which  the  user  supplies  the  target  level  for  desired
+
+Figure 1: Comparison of original (solid orange) and the simplified (blue dashed) version.
+
+4
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.G   E   O   M   A   T   I   C   A
+
+Figure 2: A functional line simplified into a straight-line segment. Point K’ as a projection of vertex K will be assigned with the
+accumulated length of the original line from one end point to vertex K.
+
+accu racy  and  the  simplification  tolerance  value  is  calculated
+accordingly.  Recently,  series  of  attempts  have  been  made  to
+enrich the content of linear features to address the problem of
+annotating trajectories with semantic data. [Alvares et al. 2007;
+Yan et al. 2011; Richter et al. 2012; Parent et al. 2013]. 
+
+SELF  data  structure  has  been  introduced  by  Stefanakis
+[2015] to enrich the simplified line to convey semantics associ-
+ated with the original version. The author categorized the lines
+as functional or non-functional based on their relation between
+the originals and simplified lines (Figure 2). Further, the author
+provided  an  algorithm  for  decomposing  non-functional  lines
+into a finite number of functions. 
+
+2.2 SELF (Semantically Enriched Line
+simpliFication)
+
+SELF is a data structure that preserves the attributes of the
+original line or any semantic annotations associated with individ-
+ual locations or segments of that line [Spaccapietra et al. 2008] into
+the generalized version. SELF has many variations depending on
+how rich the semantics attached to the simplified line are.
+
+The basic variant of SELF attaches the original line length
+(e.g.  kilometric  travel  distance)  to  the  simplified  line.  In  this
+variant, a line with end points 1 (start), n (end), and total length
+(dn) will be represented by a simplified line defined as follows
+[Stefanakis 2015]:
+
+[x1, y1, xn, yn, dn] (SELF variant: basic)
+
+An  advanced  variant  for  function  lines  will  also  tag  the
+accumulated  length  per  vertex  along  the  line.  Hence,  each
+ver tex K of the original line will orthogonally be projected on
+the simplified line (Figure 2) and the footprint point K’ will be
+assigned the accumulated length dk from point 1 (start) to ver-
+tex K along the original line. If dk’ is the Euclidean distance of
+point K’ from end point 1, the simplified line will be represented
+as follows [Stefanakis 2015]:
+
+[x1, y1, xn, yn, dn, ARRAY {(dk’, dk); k=2, …, n-1}] 
+(SELF variant: advanced-function)
+
+3. Methodology 
+
+A  Polyline  can  be  represented  as  a  sequence  of  points
+{p1,  p2 …. pn}, where pi is a vertex on the polyline and n
+is the number of points on the polyline. The simplified line,
+using  Douglas-Peucker  algorithm  with  the  user  defined
+threshold, always has the number of vertices as is less than
+or equal to the number of vertices on the original line.
+
+The  goal  of  the  SELF  structure  is  to  retain  the
+accu mu lated length at each point on the original line, along
+with  the  accumulated  length  of  the  corresponding  point  on
+the simplified line in the SELF structure. 
+The algorithm is divided into six steps:
+
+1. Finding  the  orthogonally  projected  vertex  on
+the simplified line for each point on the original
+line.
+Identifying  the  category  of  the  original  line.
+The categories are static functional lines, static
+non-functional lines [Stefanakis 2015].
+
+2.
+
+3. Calculating  the  accumulated  length  at  each
+inter mediate point on the original line and cor-
+responding projected point on the simplified line.
+4. Remove  the  individual  segment  based  on  the
+seg ment  compression  threshold  and  the  points
+based on the point compression threshold.
+Identifying and managing special cases.   
+5.
+6. Computation of the accumulated length on the
+original line at any point on the simplified line.
+
+3.1 Orthogonal Projection 
+of the Point on the 
+Simplified Line
+
+The algorithm runs ST_SIMPLIFY (geometry, threshold)
+method  in  Postgres  which  operates  based  on  the  Douglas-
+Peucker algorithm. Each point on the original line is projected
+vertically on the simplified line.
+
+5
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.G   E   O   M   A   T   I   C   A
+
+In  Figure  3,  the  coordinate  of  point  “C,”  which  is  the
+per pendicular projection of point “D” on the line “AB,” can be
+computed  by Algorithm 1.  Figure  4  illustrates  the  orthogonal
+projection of all the points on the original line.
+
+3.2 Identifying the Line Type
+
+In the case of a functional line, each point on the simpli-
+fied line corresponds to a single point on the original line. On
+the other hand, a point on the simplified line may correspond
+
+to multiple points on the original line and these types of lines
+belong  to  a  non-functional  category.  The  SELF  method
+pro poses  the  decomposition  of  non-function  into  a  set  of
+functions  [Stefanakis 2015].  In  Figure  5,  point  “B”  on  the
+sim plified  line  corresponds  to  points  “B1”  and  “B2.”
+Similarly, points “C1” and “C2” on the original line are pro-
+jected  to  the  same  Point  “C”  on  the  simplified  line.
+Therefore, the original line should be decomposed into three
+parts: {1…C1}, {C1….A1}, {A1…n} as shown in  Figure 6
+by Algorithm 2.
+
+Figure 3: Point ‘D’ is vertically projected on the line ‘AB.’
+
+Algorithm 1: Finding the orthogonal projection of the point on the simplified line (Figure 3).
+
+Input:
+
+Output:
+
+Steps:
+
+1.    Starting Point of the simplified line (A)
+2.    Ending Point of the simplified line (B)
+3.    Point on the original line to be projected on the simplified line (D)
+
+1.    Orthogonally projected point on the simplified line returned as geometry type
+
+1.    Retrieve the X and Y coordinate of the three input points
+2.    Calculate the displacement (dAB) = (X (B) – X (A)) 2 + (Y (B) – Y (A)) 2;
+3.    Find the Unit point (u_p) = ((X (D)-X (A)) *(X (B) – X (A)) + (Y (D) – Y (A)) *(Y (B) – Y (A)) )/dAB;
+4.    Finally, the X and Y coordinate of Point ‘C’ can be obtained by,
+       X(C) = X (A) + (u_p * (X (B) – X (A)));
+       Y(C) = Y (A) + (u_p * (Y (B) – Y (A)));
+
+Figure 4: Illustrates the orthogonal projection of the point on the simplified line where the starting and the ending points of
+both simplified and original versions are the same.
+
+6
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.G   E   O   M   A   T   I   C   A
+
+Figure 5: A
+non-function
+line  simplified
+into a straight-
+line  segment.
+
+Figure 6: Result
+of decomposing
+the non-function
+into three 
+functions.
+
+Algorithm 2: Decomposing the Non-functional line into functions.
+
+Input:
+
+Output:
+
+Steps:
+
+1.    Geometry of the non-functional line to be decomposed 
+2.    Threshold value for running Douglas-Peucker(DP) algorithm
+
+1.    Functional lines as an array
+
+1.    Define array of geometry to store the functional lines (A)
+2.    Create a new function(F1) to store the points
+3.    Store the starting point of the non-functional line in F1
+4.    Run the DP algorithm for getting the simplified line geometry
+5.    FOR EACH point ‘P’ on the original line (P excludes the ending point of a line)
+                  1.    Find the orthogonally projected point ‘P’ on the simplified line (P’)
+                  2.    Find the orthogonal projection of the point P+1 (P1’)
+                  3.    Calculate the accumulated length at the point P’(L1), P1’(L2) on the simplified line
+                  4.    If L2 > L1 then
+                                        i.     Add the point P+1 to F1
+
+                                               ii.    Create a line geometry using the points in F1
+                                               iii.   Add the created line to the array A
+                                               iv.   Create a new function (F2) 
+                                               v.     Add the point P+1 to F2
+                         5.    ELSE
+                                               i.     Add the point P+1 to F1 
+                         6.    END
+       6.    END  
+        7.    RETURN the array A
+
+7
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.G   E   O   M   A   T   I   C   A
+
+3.3 Calculating the Accumulated 
+Length at Each Point
+
+Advanced variance for SELF structure tags the accumulated
+length per vertex along the line. As shown in the Figure 7, each
+point  on  the  original  line  is  projected  orthogonally  on  the
+sim plified line. For each vertex on the original line, the corre-
+sponding point on simplified is annotated with the accumulated
+length  until  the  (n-1)th point  on  the  original  line.  The  entire
+SELF structure is represented as follows:
+
+order to diminish the volume, two compression methods can be
+applied:  (a)  point  level  (b)  segment  level. These  methods  are
+described in the following sections.
+
+3.4.1 Point Level
+
+If the ratio between the original length connecting three
+inter mediate  points  and  the  simplified  length  of  the  corre-
+sponding projected points on the simplified line is less than
+the given threshold, then the accumulated length at the middle
+point is not stored (Figure 8). 
+
+[ POINT (0,0), POINT (10,0), 11.6, {(1,1.4), (2,2.4), (3,3.8),
+(4,4.8), (5,6.2), (6,7.2), (7,8.2), (8,9.6), (9,10.6) } ]
+
+(cid:2)(cid:3)(cid:4)(cid:5)(cid:6)(cid:7)(cid:8)(cid:9)(cid:10)(cid:9)(cid:8)(cid:7)(cid:11)(cid:3)(cid:12)(cid:13)(cid:14)(cid:9)(cid:15)(cid:15)(cid:4)(cid:3)(cid:5)(cid:7)(cid:14)(cid:16)(cid:6)(cid:4)(cid:3) =
+
+3.4 Compression Levels
+
+(cid:17)(cid:9)(cid:5)(cid:18)(cid:6)(cid:19)(cid:7)(cid:3)(cid:20)(cid:7)(cid:21)(cid:22)(cid:23)(cid:17)(cid:9)(cid:5)(cid:18)(cid:6)(cid:19)(cid:7)(cid:3)(cid:20)(cid:7)(cid:21)
+
+(cid:22)
+(cid:24)
+(cid:24)
+
+(cid:2)(cid:24)(cid:25)(cid:25)(cid:26)
+
+(cid:17)(cid:9)(cid:5)(cid:18)(cid:6)(cid:19)(cid:7)(cid:3)(cid:20)(cid:7)(cid:21)(cid:22)
+
+SELF structure generates a large volume of data which is
+proportional  to  the  number  of  vertices  in  the  original  line.  In
+
+If three points form a straight line (collinear points), then
+
+the middle point is not stored.
+
+Figure 7: A table summarizing the length measures of a simple line of 11 vertices.
+
+Figure 8: Consecutive points A, B and C are projected on the simplified line.
+
+8
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.G   E   O   M   A   T   I   C   A
+
+In Figure 9 the accumulated length at Point B is not stored
+
+as the Points A, B, and C form the straight line:
+
+if the ratio between original length of the segment (LAB) and
+simplified length (L’AB) of the segment is within the thresh-
+old, then all the points belonging to that segment are ignored.
+
+[ POINT (0,0), POINT (10,0), 11.6, {(1,1.4), (2,2.4),
+
+(3,3.8), (4,4.8), (5,6.2), (7,8.2), (8,9.6) } ]
+
+(cid:2)(cid:3)(cid:4)(cid:5)(cid:3)(cid:6)(cid:7)(cid:8)(cid:9)(cid:3)(cid:10)(cid:3)(cid:9)(cid:8)(cid:11)(cid:12)(cid:5)(cid:13)(cid:14)(cid:3)(cid:15)(cid:15)(cid:16)(cid:12)(cid:6)(cid:8)(cid:14)(cid:17)(cid:7)(cid:16)(cid:12) =
+
+3.4.2 Segment Level
+
+In  case  of  multiple  straight  lines  forming  the  simplified
+line, the segment level threshold can be applied. In Figure 10,
+
+(cid:18)(cid:14)(cid:16)(cid:4)(cid:16)(cid:6)(cid:17)(cid:9)(cid:8)(cid:19)(cid:3)(cid:6)(cid:4)(cid:7)(cid:20)(cid:8)(cid:12)(cid:21)(cid:8)(cid:22)(cid:23)(cid:8)(cid:24)(cid:8)(cid:2)(cid:16)(cid:5)(cid:13)(cid:9)(cid:16)(cid:21)(cid:16)(cid:3)(cid:25)(cid:8)(cid:19)(cid:3)(cid:6)(cid:4)(cid:7)(cid:20)(cid:8)(cid:12)(cid:21)(cid:8)(cid:22)(cid:26)
+(cid:18)(cid:14)(cid:16)(cid:4)(cid:16)(cid:6)(cid:17)(cid:9)(cid:8)(cid:19)(cid:3)(cid:6)(cid:4)(cid:7)(cid:20)(cid:8)(cid:12)(cid:21)(cid:8)(cid:22)(cid:26)
+
+(cid:2)(cid:27)(cid:28)(cid:28)(cid:29)
+
+Figure 9: Points A, B and C are forming the straight line.
+
+Figure 10: The simplified line has three segments AB, BC and CD.
+
+9
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.G   E   O   M   A   T   I   C   A
+
+Figure 11: The simplified line has three segments AB, BC and CD.
+
+Algorithm 3: Building the SELF structure.
+
+Input:
+
+Output:
+
+Steps:
+
+1.    Line geometry to be simplified 
+2.    Threshold value for running Douglas-Peucker (DP) algorithm
+3.    Segment level compression threshold value (ST)
+4.    Point level compression threshold value (PT)
+
+1.    SELF advanced structure
+
+1.    Define the object of SELF structure (SELF)
+2.    Add the starting point, ending point and the actual length of original line to SELF
+3.    Define the two-dimensional array for storing the accumulated length (AL)
+4.    Run DP algorithm for getting the simplified line geometry
+5.    Find the number of segment in the simplified line
+6.    FOR EACH segment(S) in the simplified line
+                  a.     IF segment level compression ratio > ST THEN
+                                    1.    FOR EACH point ‘P’ on the Segment S (P excludes the starting and last two points on the 
+
+                                                      original line)
+
+                                                      1.    IF point level compression ratio at point P > PT THEN
+                                                      2.    Find the orthogonally projected point on the simplified line (P’)
+                                                      3.    Calculate the accumulate length at the point P(Lp) on the original line
+                                                      4.    IF P’ IS NOT ON THE SIMPLIFIED LINE THEN
+                                                                        a.     Accumulated length at the point P’(Lp’) = 0 or Length of the original 
+                                                                                      line (decided based on either P’ is close to Starting point or ending point)
+                                                             5.    ELSE
+                                                                               a.     Calculate the accumulated length at the point P’(Lp’) on the simplified line
+                                                             6.    END 
+                                                             7.    Add Lp, Lp’ to the array AL
+                                                             8.    END
+                                           2.    END 
+                         b.    END
+       7.    END  
+       8.    Add the accumulated length array to SELF
+       9.    RETURN the SELF structure (SELF)
+
+10
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.G   E   O   M   A   T   I   C   A
+
+3.5 Special Cases
+
+Not all parts of the original line may always be bounded by
+the area defined by the perpendicular lines to the end points of
+the simplified line. In Figure 11, the Points A, B, C, D, E, F and
+G do not fall within the region of the sim plified line. 
+
+In this case, the starting Point 1 is assigned with the Points A,
+B, and C as an array of intervals and the end point n is assigned
+with the points D, E, F and G.
+
+3.6 Computation of the Accumulated
+Length on the Original Line at Any Point
+on the Simplified Line
+
+The SELF structure built using Algorithm 3 can be used to
+compute  the  accumulated  length  on  the  original  line  at  any
+point  on  the  simplified  line.  In  Figure  12,  the  accumulated
+length at P can be calculated by applying a linear interpolation
+
+on the segment defined by the projection of vertices (6, 1) and
+(7, 1) on the simplified line. Algorithm 4 is used for computing
+the length at P.
+
+4. Implementation
+
+The  data 
+
+implemented 
+
+in
+structure  has  been 
+PostgreSQL 9.4 using PL/pgSQL. The spatial extension POST-
+GIS  2.3  has  been installed  in  PostgreSQL  9.4  (PostgreSQL,
+PostGIS). The implemented algorithm takes a single linear fea-
+ture and per forms Douglas-Peucker line simplification, which is
+available in PostGIS (ST_SIMPLIFY). The simplified version is
+then associated with the SELF data structure and the com pressed
+structure based on user-defined segment level threshold and the
+point level threshold. The user can select any point on the simpli-
+fied  line  to  retrieve  the  original  accu mulated  distance.  The
+exper i ments were performed on pipeline and river network data.
+
+Algorithm 4: Computation of the accumulated length on the original line at any point of the simplified line.
+
+Figure 12: P’ (6.5, 0) is the orthogonal projection of P (6.5, 1).
+
+Input:
+
+Output:
+
+Steps:
+
+1.    Geometry of the simplified line 
+2.    SELF structure of the simplified line
+3.    Point on the simplified line (P’)
+
+1.    Computed length at P (P is the point projected at P’)
+
+1.    Find the distance between starting point and point P’ (dp’)
+2.    FOR EACH pair (dk’,dk) IN THE SELF array
+3.    IF dk’ > dp’
+                  i.     Retrieve the pairs (dk’,dk) and (dk-1’,dk-1) 
+                  ii.    Use linear interpolation within the retrieved pairs to compute the accumulated length dp
+4.    END
+5.    RETURN dp
+
+11
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.G   E   O   M   A   T   I   C   A
+
+4.1 PostGIS Extension
+
+4.2 SELF Functions
+
+Table  1  summarizes  the  built-in  functions  available  with
+PostGIS extension that were utilized for developing the SELF
+data  structure.  For  each  function,  the  input  and  output  para-
+m e tres are also listed in the table.
+
+Using PL/pgSQL—procedural language for PostgreSQL— 
+the  SELF  structure  algorithms  were  added  as  new  (user
+defined)  functions.  Eight  new  functions  were  implemented.
+The example statement for calling each user defined function is
+shown in Table 2 along with the output. The functions are exe-
+cuted on two different linear geometries, “testroad” (Figure 12)
+and “nfroad” (Figure 6), where “geom” is the geometry column
+in the corresponding PostGIS Table 1.
+
+Table 1: Built-in PostGIS functions used in developing algorithms (Source: http://Www.Postgis.Net/Docs/).
+
+ST_NPoints — Return the number of points (vertexes) in a geom etry.
+
+Line GEOMETRY
+
+FUNCTION
+
+INPUT
+
+OUTPUT
+
+ST_PointN — Return the Nth point in the Line geometry.
+
+ST_Length — Returns the 2D length of the geometry in meters
+
+GEOMETRY of a
+line string, integer n
+GEOMETRY
+
+ST_StartPoint — Returns the first point of a LINESTRING geom etry as a POINT.
+
+Line GEOMETRY
+
+ST_EndPoint — Returns the last point of a LINESTRING geom e try as a POINT.
+
+Line GEOMETRY
+
+Point GEOMETRY
+
+ST_X — Return the X coordinate of the point
+
+ST_Y — Return the Y coordinate of the point
+
+ST_Distance — For geometry type Returns the 2D Cartesian distance between
+two geometries in projected units (based on spatial ref).
+
+GEOMETRY g1,
+GEOMETRY g2
+
+ST_AsText — Return the Well-Known Text (WKT) representation of the
+geometry/geography without SRID metadata.
+ST_Simplify — Returns a "simplified" version of the given geometry using the
+Douglas-Peucker algorithm.
+
+Point GEOMETRY
+
+FLOAT
+
+Point GEOMETRY
+
+FLOAT
+
+FLOAT
+
+GEOMETRY
+
+TEXT
+
+GEOMETRY,
+THRESHOLD
+
+SIMPLIFIED
+GEOMETRY
+
+ST_MakeLine — Creates a Line string from array of points
+
+GEOMETRY array
+
+GEOMETRY
+
+number of points in a
+geometry as INTEGER
+
+Nth point in a single line
+string as GEOMETRY
+2D Cartesian length of
+the geometry as FLOAT
+Line GEOMETRY
+
+Table 2: User-defined functions and example statements for calling the functions.
+
+FUNCTION
+
+INPUT
+
+OUTPUT
+
+SELF_PP_POINT — Returns orthogonal projection of a point
+on the simplified line.
+
+Starting Point, Ending Point,
+Point to be projected 
+
+Point GEOMETRY
+
+Select ST_ASTEXT(SELF_PP_POINT(ST_MakePoint(0,0), ST_MakePoint(10,0),ST_MakePoint(5,1))); 
+
+SELF_SLP_DIFF — Function for finding the slope difference
+between three consecutive points. This function is used to
+dis card the middle point of three consecutive points which form
+the straight line. Returns the array of slope difference values
+for each point on the line (excludes starting and ending point).
+
+Output: POINT(5 0)
+
+line geometry
+
+Array of numbers 
+0 – Three points from straight line 
+> 0 – Positive slope between three
+points 
+< 0 – Negative slope between
+three points
+
+“testroad” contains 11 points. Excluding the starting and ending points the output array contains the slope difference for the 9 intermediate points.
+
+SELF_ACC_LEN — Function to calculate the accumulated
+length at each point on the line
+
+line geometry
+
+Array of numerical values
+
+Select SELF_SLP_DIFF(geom) from testroad; 
+
+Output: {-100,100,-100,-100,100,0,-100,100,0} 
+
+Select SELF_ACC_LEN(geom) from testroad; 
+
+Output: {1.41,2.4,3.8,4.8,6.2,7.2,8.2,9.6,10.6,11.6}
+
+12
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.G   E   O   M   A   T   I   C   A
+
+SELF_CHK_PT — Function to check whether the pro-jected
+point is on the simplified line or NOT.
+
+Starting Point, Ending Point,
+Point to be projected
+
+Returns the number based on the
+following criteria: 
+0 – On the line 
+1 – Close to end point 
+2 – Close to Starting point
+
+Select SELF_CHK_PT(ST_MAKEPOINT(0,0),ST_MAKEPOINT(10,0),ST_MAKEPOINT(5,0)); 
+
+SELF_ADV_CB — To build the SELF structure
+
+Advanced SELF Structure
+
+Output: 0
+
+line geometry, Douglas Peucker
+threshold, Segment Level com-
+pression ratio, Point level com-
+pression ratio
+
+Select SELF_ADV_CB(geom,1000.0,0.0,0.0) from testroad; 
+
+Output: [ POINT (0,0), POINT (10,0), 11.6, {(1,1.4), (2,2.4), (3,3.8), (4,4.8), (5,6.2), (6,7.2), (7,8.2), (8,9.6), (9,10.6)} ]
+
+SELF_ADV_ASTEXT — To display the SELF structure in user
+understandable format
+
+SELF structure
+
+Text explaining the SELF structure
+
+Select SELF_ADV_ASTEXT(SELF_ADV_CB(geom,500.0,10.0,0.0)) from testroad; 
+
+Output: SPOINT(0 0) -- EPOINT(10 0) – Actual Length: 11.657 – Accumulated Distance: 
+
+","1.000,1.414","2.000,2.414","3.000,3.828","4.000,4.828","5.000,6.243","7.000,8.243","8.000,9.657”
+
+SELF_NS — Decomposing the Non-functional lines into set of
+function lines
+
+line geometry
+
+Array of functional geometries
+
+Select ST_ASTEXT(UNNEST(SELF_NS(geom))) from nfroad; 
+
+Output: "LINESTRING(0 0,1 1,2 1,3 0,4 0,5 1)" 
+"LINESTRING(5 1,4 2,3 2)"
+"LINESTRING(3 2,4 3,5 3,6 2,7 1,8 0,9 0,10 0)"
+
+SELF_BUILD — Builds the SELF structure and returns the
+simplified geometry with SELF structure stored in the attribute
+table
+
+line geometry, Douglas Peucker
+threshold, Segment Level
+com pression ratio, Point level
+compression ratio
+
+Simplified geometry with SELF
+structure stored in its attribute
+table
+
+Select SELF_BUILD(geom,1000.0,0.0,0.0) from testroad; 
+
+Output: Simplified geometry with SELF structure stored in the attribute table
+
+SELF_ITP_DIST_ML — To interpolate the distance using
+SELF structure
+
+Simplified line geometry, SELF
+structure, point 
+
+Array of interpolated distances
+
+Select SELF_ITP_DIST_ML(ST_SIMPLIFY(geom,500.0),SELF_ADV_CB(geom,500.0,0.0,0.0),ST_MAKEPOINT(4,0)) from nfroad; 
+
+Output: {4.828,7.657,10.071}
+
+Table 3: Length and the number of points available in the selected data.
+
+FEATURE NAME
+
+LENGTH (in metres)
+
+TOTAL NUMBER OF VERTICES
+
+NORTH TAY RIVER
+
+WAASIS STREAM
+
+SOUTH BRANCH RUSAGONIS
+
+MNP MONCTON LATERAL
+
+MNP UTOPIA LATERAL
+
+4.3 Experimental Data
+
+14723.185
+
+9026.166
+
+19853.897
+
+12271.853
+
+8381.864
+
+To  demonstrate  the  effectiveness  of  the  SELF  structure  in
+interpolating the distance, experimentation is done on five differ-
+ent linear features with different values for segment level and point
+level  compression.  Three  river  streams,  which  are  part  of  the
+“North Tay River,” the “Waasis Stream” and the “South Branch
+Rusagonis Stream,” as well as two pipelines, which are part of the
+“MNP Moncton Lateral” and the “MNP Utopia lateral,” have been
+
+440
+
+305
+
+461
+
+250
+
+570
+
+chosen. In order for the set of features to be representative of a
+wide range of topological characteristics, it was decided to select
+a set of linear features with different number of vertices (Table 3). 
+The data has been downloaded from GeoNB (collaborative
+project of the Government of New Brunswick) website [GeoNB
+Data Catalogue 2014]. Figures 13 to 17 show the original and sim-
+plified  versions  (DP  threshold  500.0 m)  of  river  streams  and
+pipelines, where the total number of points on the original line is
+mentioned in the figure captions. 
+
+13
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.G   E   O   M   A   T   I   C   A
+
+Figure 16:
+Mnp
+Moncton
+Lateral
+(250
+points).         
+
+Figure 13:
+North Tay
+River (440
+points).
+
+Figure 14:
+Waasis
+Stream
+(304
+points). 
+
+Figure 15:
+SB
+Rusagonis
+Stream
+(461
+points).
+
+Figure 17:
+Mnp
+Utopia
+Lateral
+(570
+points).
+
+14
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.G   E   O   M   A   T   I   C   A
+
+4.4 Experiments
+
+The  SELF  structure  has  been  built  on  the  original  line
+shown  in  Figure  18  with  Douglas-Peucker  threshold  500.0 m
+and both the segment and point level threshold values as 0. The
+original distance at each point on the simplified line is listed in
+Figure 19. 
+
+In  Figure 18,  projections  of  points  A,  B  and  C  are  not
+falling on the simplified line. Thus, the accumulated lengths at
+the points A, B and C are stored along with the starting point of
+the simplified line because they are close to point 1. Similarly,
+the ending point ‘n’ consists of the accumulated length at points
+M, N, O, P and Q, where the projection of points N, O, P and
+Q do not fall on the simplified line (Table 4).
+
+Figure 18: Original and simplified version (500 M Dp threshold) of a sample line.
+
+Figure 19: A table summarizing accumulated length at each vertices of original and simplified line shown in Figure 13.
+
+Table 4: Interpolated distance at each point clicked on the simplified line.
+
+POINT CLICKED ON 
+THE SIMPLIFIED LINE
+
+INTERPOLATED 
+DISTANCE
+
+0.0
+
+1.4
+
+2.4 
+
+3.8
+
+1
+
+D’
+
+E’
+
+F’
+
+G’
+
+H’
+
+I’
+
+J’
+
+K’
+
+L’
+
+M’
+
+n
+
+7.9
+
+8.95
+
+10.3
+
+11.3
+
+12.8
+
+13.8
+
+14.8
+
+16.1
+
+17.1
+
+20.0
+
+29.6
+
+20.0
+
+21.4
+
+24.0
+
+25.4
+
+26.4 
+
+15
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.G   E   O   M   A   T   I   C   A
+
+Figure 20: Simplified line with 5 segments AB, BC, CD,
+DE and EF.
+
+Figure 21: Sample point 1.
+
+Figure 22: Sample point 2.
+
+Figure 23: Sample point 3.
+
+Figure 24: Sample point 4.
+
+16
+
+Figure 25: Sample point 5.
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.G   E   O   M   A   T   I   C   A
+
+The original line shown in Figure 20 contains 496 points.
+Some of the points and their orthogonal projection are shown
+in Figures 21 to 25. 
+
+Sample point 1 (Figure 21) and sample point 2 (Figure 22)
+correspond  to  a  point  on  the  original  line.  Sample  points  3
+(Figure 23), 4 (Figure 24), and 5 (Figure 25) correspond to 5,
+3, 3 points on the original line, accordingly. Table 5 lists the
+interpolated distance at all 5 sample points at different values
+of  segment  level  compression.  At  40.0%  (i.e.  ratio  between
+original  length  and  simplified  length  of  the  segment  <  40.0)
+segment compression level, all the points are lost. Where “NO
+
+CHANGE” occurs, the length is interpolated correctly. 
+
+There are three possibilities while running Algorithm 4 to
+compute  the  accumulated  length  on  the  original  line  at  any
+point of the simplified line from SELF structure. Depending on
+the outcome, the error in interpolation is classified as follows:
+
+1.
+
+2.
+
+3.
+
+Interpolated distance is greater than original 
+accumulated length — Negative error
+Interpolated distance is less than original 
+accumulated length — Positive error
+Interpolated distance is equal to original 
+accumulated length — Zero error
+
+Table 5: Interpolated distance at different values for segment level compression threshold.
+
+Figure 26: Error in interpolated distance vs segment level
+compression values.
+
+Figure 27: Error in interpolated distance vs point level
+compression values.
+
+17
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.G   E   O   M   A   T   I   C   A
+
+Similarly, the distance at all 496 points is interpolated by
+Algorithm 4. Figures 26 and 27 compares the maximum (posi-
+tive error), minimum (negative error) and standard deviation in
+the interpolated distance at various levels of compression. 
+
+Segment  level  compression  produces  higher  positive  and
+negative  error  than  point  level  compression  (Figures  26  and
+27).  As  a  consequence  of  segment  level  compression,  the
+entirety  of  segments  (continuous  points)  which  have  the  seg-
+ment level compression ratio within the user-defined threshold
+are eliminated. This leads to error in interpolation for the points
+which  belong  to  the  eliminated  segment,  whereas  point  level
+compression discards only certain points which are within the
+point level threshold.
+
+The distance interpolation algorithm (Algorithm 4) has been
+run with different levels of compression on these datasets (Table 6). 
+It  can  be  seen  from  Figure  28  that  the  percentage  error
+increases  when  the  level  of  compression  is  increased.
+Noticeably,  average  error  for  “North  Tay  River”  suddenly
+
+increases after 7% of point level compression. The cause is due
+to  an  increase  in  compression  level  that  will  discard  more
+points  from  SELF  structure  (Figure  29),  though  this  number
+would change due to the different topological complexity of the
+datasets.  Consequently,  the  level  of  compression  can  be
+decid ed based on the application and the required accuracy in
+distance interpolation. 
+
+5.  Conclusion 
+
+involved 
+
+This  paper 
+
+implementing 
+
+the  SELF
+(Semantically  Enriched  Line  simpliFication)  data  structure  to
+preserve the geometric characteristics associated to the actual
+linear  features.  Currently,  the  data  structure  has  been  imple-
+mented  in  PostgreSQL  9.4  with  PostGIS  extension  using
+PL/pgSQL  to  support  static  and  non-functional  polylines  and
+tested with both synthetic and real world features. 
+
+Table 6: Average error in distance interpolation using self-structure.
+
+Figure 28: Average error in interpolated distance vs
+point level compression values.
+
+Figure 29: % of compression vs point level compression values.
+
+18
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.G   E   O   M   A   T   I   C   A
+
+The algorithm applies two kinds of compression: point level
+and  segment  level.  The  segment  level  compression  eliminates
+entire  segments  (continuous  points)  which  has  the  segment
+level  compression  ratio  within  the  user-defined  threshold,
+while  point  level  compression  discards  only  certain  points
+which  are  within  the  point  level  threshold.  However,  the
+results of the experiments indicate that the different topolog-
+ical  com plexity  of  the  datasets  play  a  major  role  in  distance
+inter po lation error.
+
+Future  work  includes  the  implementation  of  the  SELF
+structure extension to support spatio temporal lines. This will
+result in an enriched library of PL/pgSQL function to support
+the simplification of both static and dynamic lines.
+
+Recoding  this  library  to  other  programming  languages
+(such as Python) so that it can be embedded into other commer-
+cial  or  open  source  GIS  software  packages  is  another  future
+goal.  Lastly,  special  attention  will  be  given  in  developing  a
+framework  to  facilitate  the  adoption  of  the  SELF  structure  in
+various  application  domains  with  need  for  semantically
+enhanced  multiscale  representation  of  linear  features.  One
+application can be retaining the accumulated length of the road,
+positional  velocity,  speed  limit  or  accumulated  gas  consump-
+tion in the road network. In a hydrographic network, the river
+depth or width can be expressed using the SELF structure. 
+
+Acknowledgements
+
+This  research  has  received  funding  from  the  Natural
+Sciences  and  Engineering  Research  Council  of  Canada
+(NSERC), Discovery Grants Program.
+
+The  authors  wish  to  thank  the  anonymous  reviewers  and
+
+the editor for their valuable comments. 
+
+References
+
+Abam, M.A., et al. 2010. Streaming algorithms for line simplification.
+Discrete  and  Computational  Geometry.  43(3):  497–515.
+doi:10.1007/s00454-008-9132-4
+
+Alvares,  L.O.,  et  al.  2007.  A  model  for  enriching  trajectories  with
+semantic  geographical  information.  In:  The  Proceedings  of  the
+15th annual ACM international symposium on advances in geo-
+graphic information systems, 7–9 November, Seattle, WA. Article
+No. 22.
+
+Cromley,  R.G.  1991.  Hierarchical  methods  of  line  simplification.
+Cartography  and  Geographic  Information  Science.  18(2):  125–
+131. doi:10.1559/152304091783805563
+
+Douglas, D.H., and T.K. Peucker. 1973. Algorithms for the reduction
+of the number of points required to represent a digitized line or its
+caricature.  The  Canadian  Cartographer.  10(2):  112–122.
+doi:10.3138/FM57-6770-U75U-7727
+
+GeoNB  Data  Calalogue.  March  11,  2014.  New  Brunswick,  Canada
+from
+
+[cited 
+http://www.snb.ca/geonb1/e/DC/catalogue-E.asp 
+
+Retreived 
+
+February 
+
+2017]. 
+
+6, 
+
+Parent,  C.,  et  al.  2013.  Semantic  trajectories  modeling  and  analysis.
+doi:
+
+45(4):  Article 
+
+ACM  Computing 
+http://dx.doi.org/10.1145/2501654.2501656
+
+Surveys. 
+
+42. 
+
+PostGIS  2.3.4dev  Manual,  SVN  Revision  (15479).  September  26,
+2016. Chapter 8. PostGIS Project [cited February 5, 2017]. Retrieved
+from http://postgis.net/docs/reference.html# Management_ Functions
+PostgreSQL  9.4.11  Documentation.  December  18,  2014.  Chapter  40,
+PL/pgSQL—SQL  Procedural  Language.  PostgreSQL  [cited
+February 5, 2017]. Retrieved from https://www.postgresql.org/
+docs/9.4/static/plpgsql.html
+
+Richter, K.F., F. Schmid and P. Laube. 2012. Semantic trajectory com-
+pression: representing urban movement in a nutshell. Journal of
+Spatial Information Science. 4: 3–30.
+
+Robinson,  A.H.,  J.L.  Morrison,  P.C.  Muehrcke,  A.J.  Kimerling  and
+S.C.  Guptill.  1995.  Elements  of  Cartography,  6th  Edition.
+Toronto: Wiley.  
+
+Shahriari,  N.,  and V. Tao.  2002.  Minimizing  positional  errors  in  line
+simplification  using  adaptive  tolerance  values.  Symposium  on
+Geospatial Theory, Processing and Application. 4(3): 213–223.
+
+Spaccapietra, S., et al. 2008. A conceptual view on trajectories. Data
+and  knowledge  engineering.  65(1):  126–146.  Retrieved  from
+http://www.sciencedirect.com/science/article/pii/S0169023X07002078
+Stefanakis, E. 2015. SELF: Semantically enriched Line simpliFication.
+International  Journal  of  Geographical  Information  Science.
+29(10): 1826–1844. doi: 10.1080/13658816.2015.1053092
+Tienaah, T., E. Stefanakis and D. Coleman. 2015. Contextual Douglas-
+
+Peucker simplification. Geomatica. 69(3): 327–338. 
+
+Weibel, R. 1996. A typology of constraints to line simplification. In:
+Proceedings  of  7th International  Symposium  on  Spatial  Data
+Handling, 12–16 August, Delft. IGU: 533–546.
+
+Weibel, R. 1997. Generalization of spatial data: principles and selected
+algorithms. In: M. Kreveld, et al., Eds. Algorithmic Foundations
+of Geographic Information Systems. Berlin: Springer: 99–152.
+Wu, S.-T. and M.R. Gonzales Marquez. 2003. Proceedings of the XVI
+Brazilian  Symposium  on  Computer  Graphics  and  Image
+Processing  (SIBGRAPI’03).  1530-1834/03  doi:10.1109/SIB-
+GRA.2003.1240992 
+
+Yan, Z., et al. 2011. SeMiTri: a framework for semantic annotation of
+heterogeneous  trajectories.  In:  The  Proceedings  of  the  14th
+International  Conference  on  Extending  Database  Technology
+(EDBT 2011), New York: ACM: 259–270.
+
+MS rec’d 17/03/02
+Revised MS rec’d 17/05/19
+
+Authors
+
+Rajesh  Tamilmani,  MScEng,  is  a  Graduate  Research
+Assistant  at  the  Department  of  Geodesy  and  Geomatics
+Engineering at the University of New Brunswick. Home Page:
+https://www.linkedin.com/in/rajesh-tamilmani-0a964576
+
+Emmanuel Stefanakis, PhD, PEng, is an Associate Professor
+of  Geographic  Information  Systems  and  Science  and  the
+Director of Graduate Studies in the Department of Geodesy and
+Geomatics  Engineering  at  the  University  of  New  Brunswick.
+Home Page: http://www2.unb.ca/~estef/ q
+
+19
+
+Geomatica 2017.71:3-19.Downloaded from www.nrcresearchpress.com by Santa Barbara (UCSB) on 10/21/19. For personal use only.

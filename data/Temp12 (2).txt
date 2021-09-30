@@ -1,0 +1,1725 @@
+Geoinformatica
+DOI 10.1007/s10707-014-0215-5
+
+On reverse-k-nearest-neighbor joins
+
+Tobias Emrich · Hans-Peter Kriegel · Peer Kr¨oger ·
+Johannes Niedermayer · Matthias Renz · Andreas Z ¨ufle
+
+Received: 15 January 2014 / Revised: 3 July 2014 / Accepted: 11 August 2014
+© Springer Science+Business Media New York 2014
+
+Abstract A reverse k-nearest neighbour (RkNN) query determines the objects from a
+database that have the query as one of their k-nearest neighbors. Processing such a query
+has received plenty of attention in research. However, the effect of running multiple RkNN
+queries at once (join) or within a short time interval (bulk/group query) has only received
+little attention so far. In this paper, we analyze different types of RkNN joins and provide a
+classification of existing RkNN join algorithms. We discuss possible solutions for solving
+the non-trivial variants of the problem in vector spaces, including self and mutual pruning
+strategies. Further, we generalize the developed algorithms to general metric spaces. During
+an extensive performance analysis we provide evaluation results showing the IO and CPU
+performance of the compared algorithms for a wide range of different setups and suggest
+appropriate query algorithms for specific scenarios.
+
+Keywords Reverse nearest neighbor queries · RkNN join · Spatial databases
+
+T. Emrich · H.-P. Kriegel · P. Kr¨oger · J. Niedermayer ((cid:2)) · M. Renz · A. Z¨ufle
+Institute for Informatics, Ludwig-Maximilians-Universit¨at M¨unchen, M¨unchen, Germany
+e-mail: niedermayer@dbs.ifi.lmu.de
+
+T. Emrich
+e-mail: emrich@dbs.ifi.lmu.de
+
+H.-P. Kriegel
+e-mail: kriegel@dbs.ifi.lmu.de
+
+P. Kr¨oger
+e-mail: kroeger@dbs.ifi.lmu.de
+
+M. Renz
+e-mail: renz@dbs.ifi.lmu.de
+
+A. Zuefle
+e-mail: zuefle@dbs.ifi.lmu.de
+
+Geoinformatica
+
+1 Introduction
+
+A Reverse k-Nearest Neighbor (RkNN) query retrieves all objects from a multidimensional
+database having a given query object as one of their k nearest neighbors. Various algorithms
+for efficient RkNN query processing have been studied under different conditions due to
+the query’s relevance in a wide variety of domains — applications include among others
+decision support, profile-based marketing and similarity updates in spatial and multimedia
+databases.
+
+An important problem in database environments that has not received much attention so
+far is the scenario where the query does not consist of a single point but instead of a whole
+set of points, for each of which an RkNN query has to be performed. This setting is often
+referred to as group query, bulk query or simply join of two sets R and S. This problem fre-
+quently arises in the strategic decision making process of companies that supply products
+to clients which are typically shops (cf. Fig. 1). Consider a supplier (e.g. supplying video
+stores) that has a set of products R (e.g. videos each described by a given set of features like
+genre, length, etc.). Each client (e.g. video store) also has a portfolio S (e.g. a set of videos)
+which typically include different groups of products (videos) satisfying different prefer-
+ences and, thus, different groups of customers. In order to judge which products should be
+offered by the supplier to a given client, the supplier needs information about which objects
+in R fit to the characteristics of the client’s portfolio S and/or would be a good supplement
+to extend this portfolio. From the supplier’s point of view it is particularily important to
+know about the data characteristics. Thus, many companies rely on the following process
+in order to recommend updates for their clients: First, for each product s in S the kNNs are
+computed. Second, for each product r in R, it is examined whether or not r is amongst the
+kNN of which product s. In other words, for each r, an RkNN query in S is launched. If r
+has a lot of RkNNs in S, this indicates that r fits well to a corresponding group within the
+data distribution of s (although this usually needs additional inspection). If r has no RkNNs
+in S, r obviously does not fit well. In addition, if many products ri have the same s as their
+RkNN and s is so far an outlier in S, the products ri may be a good addition to extend the
+portfolio (probably depending on the current success of s).
+
+Analogously, RkNN joins can also be employed for solving inverse queries [1] where the
+task is to find for a given set of query objects the set of database objects, having all (/most)
+query objects in their kNN set. Furthermore, the RkNN join operation plays a key role in
+updating patterns derived by almost all data mining algorithms that rely on kNN information
+
+Fig. 1 Application of RkNN join between two sets of products R and S for product (set) recommendation
+
+Geoinformatica
+
+after changes to the database, e.g. shared-neighbor clustering [2, 3] and kNN-based outlier
+detection [4, 5]. For instance, an RkNN join can be used to efficiently update a DBSCAN
+[6] clustering result when a new batch of database objects is inserted into the database:
+the RkNN join operation can be used to find the set of influenced database objects, that
+is, the set of database objects which may potentially turn from noise objects into density-
+reachable-objects, or which may turn into core-objects.
+
+For evaluating single RkNN queries, two groups of algorithms have evolved over time.
+Self pruning approaches (e.g. [7–9]) have to perform costly precomputations in order to
+materialize kNN-spheres for all database objects. These kNN-spheres are used for pruning
+candidates during query execution. In contrast, mutual pruning approaches (e.g. [10–12])
+do not perform any precomputations. This results in more flexibility in terms of updates and
+the choice of k because materialized results need not to be updated each time the database
+changes. Furthermore, in contrast to self pruning approaches, mutual pruning approaches do
+not require the parameter k to be known prior to index generation. However, mutual pruning
+introduces costly refinement of candidates, resulting in higher overall cost.
+
+Recently, we developed a mutual pruning approach for RkNN join processing in a
+short paper [13], and a self pruning approach for the RkNN join [14]. In these papers we
+provided a formal overview over variants of the RkNN join, showing that the monochro-
+matic RkNN join addressed in our publications is a non-trivial instance of the RkNN join
+problem (see Section 2). We further provided algorithms for solving the monochromatic
+RkNN join with both the mutual (see Section 5, [13]) and the self pruning paradigm (see
+Section 6, [14]). Finally, we evaluated the developed algorithms extensively (see Section 8).
+This invited journal version extends both of these publications, providing additional material
+to the interested reader:
+
+–
+
+In Section 4 We provide an extensive classification of existing RkNN join algorithms
+into our classification and show that theses algorithms solve the bichromatic case.
+– Both of our algorithms [13, 14] are extended to metric spaces in Section 7 in order to
+
+allow to process a larger variety of data sets.
+
+– New experiments are added in Section 8.
+
+In this section, we recap the definition of RkNN queries and formally define the RkNN join
+and important variants.
+
+2 Problem definition
+
+2.1 Background
+
+Given a finite multidimensional data set S ⊂ Rd (si ∈ Rd ) and a query point r ∈ Rd , a
+k-nearest neighbor (kNN) query returns the k nearest neighbors of r in S:
+
+kNN(r, S) =
+
+s ∈ S : |{s(cid:4) ∈ S : dist (s(cid:4), r) < dist (s, r)}| < k
+
+(cid:2)
+
+(cid:3)
+
+A monochromatic RkNN query, where r and s ∈ S have the same type, can be defined by
+employing the kNN query:
+
+RkNN(r, S) = {s ∈ S|r ∈ (k + 1)NN(s, S ∪ {r})}
+Thus, an RkNN query returns all points si ∈ S that would have r as one of its nearest neigh-
+bors. In Fig. 2a an R2NN query is shown. Arrows denote a subset of the 2NN relationships
+between points from S. Since r1 is closer to s2 than its 2NN s1, the result set of an R2NN
+
+Geoinformatica
+
+Fig. 2 Monochromatic R2NN query a, monochromatic R1NN Join b
+
+query with query point r1 is {s2}. s3 is not a result of the query since its 2NN s2 is closer than
+r1. Note that the RkNN query is not symmetric, i.e. the kNN result kNN(r1, S) (cid:6)= RkNN(r1,
+S), because the 2NNs of r1 are s2 and s3. Therefore the result of an RkNN(r1, S) query
+cannot be directly inferred from the result of a kNN query kNN(r1, S).
+
+Although similar, the bichromatic RkNN query is slightly different. In this case, two sets
+R and S are given. The goal is to compute all points in S for which a query point r ∈ R is
+one of the k closest points from R [15]:
+
+BRkNN(r, R, S) = {s ∈ S|r ∈ kNN(s, R)}
+
+Both variants of RkNN queries vary in the data set on which the kNN-query is performed:
+for an RkNN query the kNN-query is (with some modifications) performed on S, whereas
+for a BRkNN-query it is performed on R.
+
+2.2 The RkNN join
+
+In this paper, we address the problem of RkNN joins. Given two sets R and S, the goal of a
+monochromatic RkNN join is to compute, for each point r ∈ R its monochromatic RkNNs
+in S.
+
+Definition 1 (Monochromatic RkNN join [13]) Given finite sets S ⊂ Rd and R ⊂ Rd ,
+the monochromatic RkNN join R MRkNN(cid:2)(cid:3) S returns a set of pairs containing for each r ∈ R its
+RkNN from S:R MRkNN(cid:2)(cid:3) S = {(r, s)|r ∈ R ∧ s ∈ S ∧ s ∈ RkNN(r, S)}
+
+An example for k = 1 can be found in Fig. 2b. The result for both objects from R in this
+example is R1NN(r1) = R1NN(r2) = {s2}, i.e. R MRkNN(cid:2)(cid:3) S = {(r1, s2), (r2, s2)}. Note that the
+elements r1 and r2 from R do not influence each other, i.e., r1 cannot be a result object of
+r2 and vice versa. This follows directly from the definition of the MRkNN join. A variant
+of the RkNN join is the bichromatic join R BRkNN(cid:2)(cid:3) S where for all r ∈ R a bichromatic RkNN
+query is performed:
+
+Definition 2 (Bichromatic RkNN join) Given two finite sets S ⊂ Rd and R ⊂ Rd , the
+bichromatic RkNN join R BRkNN(cid:2)(cid:3) S returns a set of pairs containing for each r ∈ R its BRkNN
+from S:R BRkNN(cid:2)(cid:3) S = {(r, s)|r ∈ R ∧ s ∈ S ∧ s ∈ BRkNN(r, R, S)}
+
+A BRkNN join can be expressed with a kNN join. Based on the definition of the BRkNN
+
+query, the BRkNN join can be converted:
+
+R BRkNN(cid:2)(cid:3) S = {(r, s)|r ∈ R ∧ s ∈ S ∧ r ∈ kNN(s, R)}
+
+Geoinformatica
+
+The kNN join can be defined as:
+
+kNN
+(cid:2)(cid:3) R = {(s, r)|s ∈ S ∧ r ∈ R ∧ r ∈ kNN(s, R)}
+
+S
+
+⇔ R BRkNN(cid:2)(cid:3) S = S
+
+kNN
+(cid:2)(cid:3) R
+
+Hence, a BRkNN join can be performed by reusing the techniques from kNN research,
+such as [16, 17]. Furthermore, this problem has already been addressed in [18] and [19]. In
+Section 4 we will closely examine these publications.
+
+Last but not least let us analyze the special case where R = S. The monochromatic
+
+RkNN-self-join can be defined as follows:
+
+Definition 3 (Monochromatic RkNN Self Join) Given a finite set S ⊂ Rd , the monochro-
+matic RkNN self join is defined as S MRkNN(cid:2)(cid:3) S.
+
+Performing a monochromatic RkNN-self-join is trivial, since it is possible to perform a
+
+self-kNN-join on S:
+
+S MRkNN(cid:2)(cid:3) S = {(r, s)|r ∈ S ∧ s ∈ S ∧ r ∈ (k + 1)NN(s, S ∪ {r})}
+= {(r, s)|r ∈ S ∧ s ∈ S ∧ r ∈ kNN(s, S)}
+The resulting pairs (r, s) of the kNN-join just have to be inverted to produce the result of
+the RkNN join. Notice that with a self RkNN join, a query point always returns itself as one
+of its RkNNs.
+
+In summary, we observe that the monochromatic RkNN join where R (cid:6)= S cannot be
+matched to existing well-addressed problems. Therefore, we will address the processing of
+this problem in this paper.
+
+3 Related work
+
+The problem of performing multiple RkNN queries at a time, i.e., a RkNN join, has hardly
+been addressed. The authors of [18] deal with incremental bichromatic RkNN joins as a
+by-product of incremental kNN joins, aiming at maintaining a result set over time instead
+of performing bulk evaluation of large sets. Since it does not address the problem of a
+monochromatic join, it solves a different problem, a problem similar to [19].
+
+Contrary to RkNN joins, the problem of efficiently supporting RkNN queries has been
+studied extensively in the past years. Existing approaches for Euclidean RkNN search can be
+classified as self pruning approaches or mutual pruning approaches. Since these approaches
+are the foundations of RkNN join processing, we review them in the following.
+
+Self pruning approaches like the RNN-Tree [7] and the RdNN-Tree [8] are usually
+designed on top of a hierarchically organized tree-like index structure. They try to conserva-
+tively or exactly estimate the kNN distance of each index entry e. If this estimate is smaller
+than the distance of e to the query q, then e can be pruned. Thereby, self pruning approaches
+do not usually consider other entries (database points or index nodes) in order to estimate
+the kNN distance of an entry e, but simply pre-compute kNN distances of database points
+and propagate these distances to higher level index nodes. The major limitation of these
+approaches is that the pre-computation and update (in case of database changes) of kNN
+distances is time consuming, the storage of these distances wastes memory and, thus, these
+methods are usually limited to one specific or very few values of k. Approaches like [9, 20]
+
+Geoinformatica
+
+try to overcome these limitations by using approximations of kNN distances but this in turn
+yields an additional refinement overhead during query processing – or only approximate
+results.
+
+Mutual pruning approaches such as [10–12, 21] use other points to prune a given index
+entry e. The most well-known approach called TPL is presented in [12]. It uses any hierar-
+chical tree-based index structure such as an R-Tree to compute a nearest neighbor ranking
+of the query point q. The key idea is to iteratively construct Voronoi hyper-planes around
+q w.r.t. to the points from the ranking. Points and index entries that are beyond k Voronoi
+hyper-planes w.r.t. q can be pruned and do not have to be considered for Voronoi construc-
+tion anymore. Such RkNN query approaches can generally be applied to a join setting,
+however without additional adaptions they scale linear in the query set R. We will show this
+behavior in the experimental section of this paper exemplarily with the TPL algorithm.
+
+A combination of self- and mutual pruning is presented in [22]. It obtains conservative
+and progressive distance approximations between a query point and arbitrarily approxi-
+mated regions of a metric index structure. A further specialization of this approach to
+Euclidean data is proposed in [23] exploiting geometric properties to achieve a higher
+pruning power.
+
+Beside solutions for Euclidean data, solutions for general metric spaces (e.g. [9, 20]).
+Typically, metric approaches are less efficient than the approaches tailored for Euclidean
+data because they cannot make use of the Euclidean geometry.
+
+Furthermore, there exist approximate solutions for the RkNN query problem that aim at
+
+reducing the query execution time at the cost of accuracy (e.g. [11, 24]).
+
+4 Differentiation to existing work
+
+To the best of our knowledge there exist two other publications mentioning the problem of
+RkNN joins, however without classification of join variants and without providing solutions
+to monochromatic RkNN joins. For the sake of completeness, we hereby theoretically eval-
+uate the two existing publications and convert their definitions of the RkNN join problem
+to our classification.
+
+4.1 Bichcromatic RkNN joins as a by-product of incremental kNN queries
+
+The authors of [18] aim at computing high-dimensional kNN joins, providing incremental
+updates to the user. As a by-product however, the authors provide means of performing
+RkNN joins on the database. They define the RkNN join as follows: R
+
+[18]
+(cid:2)(cid:3) S =
+
+{(q, RkNN(q))|q ∈ S ∧ RkNN(q) ⊂ R ∧ {∀p ∈ RkNN(q) : p ∈ R ∧ q ∈ kNN(p)}}
+
+We first split the result set RkNN(q) into the elements RkNN(q)i of the corresponding
+set. This allows to simplify the above formula:
+
+[18]
+(cid:2)(cid:3) S = {(q, RkNN(q)i)|q ∈ S ∧ RkNN(q)i ∈ R ∧ q ∈ kNN(RkNN(q)i)}}
+
+R
+
+Substituting q = s, RkNN(q)i = r leads to:
+
+[18]
+(cid:2)(cid:3) S = {(s, r)|s ∈ S ∧ r ∈ R ∧ s ∈ kNN(r)}
+
+R
+
+Geoinformatica
+
+As the query result s relates to the set S, we can bring kNN(r) to our notation kNN(r, S),
+leading to
+
+[18]
+(cid:2)(cid:3) S = {(s, r)|s ∈ S ∧ r ∈ R ∧ s ∈ kNN(r, S)}
+
+R
+
+which relates to our definition of the bichromatic RkNN join by simply swapping the sets
+R and S:
+
+[18]
+(cid:2)(cid:3) S = {(r, s)|r ∈ R ∧ s ∈ S ∧ r ∈ kNN(s, R)} = R BRkNN(cid:2)(cid:3) S
+
+R
+
+4.2 The RkNN join from Venkateswaran
+
+Another definition of the RkNN join has been provided in [19]. He defines the RkNN join
+as
+
+[19]
+(cid:2)(cid:3) S = {U |U ⊆ S ∧ ∀u ∈ U : ∃v ∈ R : dist (v, u) ≤ dist (v, t)∀t ∈ S}
+
+R
+
+By splitting the set U into single objects, we get
+
+[19]
+(cid:2)(cid:3) S = {u|u ∈ S ∧ ∃v ∈ R : dist (v, u) ≤ dist (v, t)∀t ∈ S}
+
+R
+
+We also add v to the resulting values and remove the ∃-quantifier (it is already implicitly
+contained in the definition of the join set), getting tuples
+
+[19]
+(cid:2)(cid:3) S = {(u, v)|u ∈ S ∧ v ∈ R ∧ ∀t ∈ S : dist (v, u) ≤ dist (v, t)}
+
+R
+
+Substitution (u = s, v = r) yields:
+[19]
+(cid:2)(cid:3) S = {(s, r)|s ∈ S ∧ r ∈ R ∧ ∀t ∈ S : dist (r, s) ≤ dist (r, t)}
+
+R
+
+The last factor is simply a nearest neighbor query, yielding
+
+[19]
+(cid:2)(cid:3) S = {(s, r)|s ∈ S ∧ r ∈ R ∧ s ∈ 1NN(r, S)}
+
+R
+
+Therefore, a generalization of this definition to kNN (which has already been done in [19])
+and swapping the semantic of R and S yields our definition of the bichromatic RkNN join:
+
+[19]
+(cid:2)(cid:3) S = {(r, s)|r ∈ R ∧ s ∈ S ∧ r ∈ kNN(s, R)} = R BRkNN(cid:2)(cid:3) S
+
+R
+
+4.3 Bichromatic RkNN queries
+
+Although bichromatic RkNN queries are by definition not an RkNN join, we would like to
+investigate a simple solution to solve this problem due to its algorithmic structure which is
+similar to our self-pruning approach proposed in Section 6. The solution has been proposed
+in [7]. To solve a bichromatic RkNN query BRkNN(r, R, S), it is possible to materialize
+the kNN-spheres of every point s ∈ S over all points r ∈ R, i.e. compute the nearest
+neighbors of points s in set R. As a second step, we would have to report the points s that
+have r as one of their nearest neighbors by checking if r is contained in the kNN sphere of s.
+Although the algorithmic structure of this approach is similar to our self-pruning approach,
+the semantic is different. First, for the bichromatic RkNN query, the kNN join is performed
+between the sets S and R. For our RkNN join, the kNN join is basically a self-join. Second,
+to compute the actual result, the bichromatic RkNN query employs a simple point inclusion
+test of r over the computed kNN spheres. In contrast, we have to perform a varying range
+join, see Section 6.
+
+Geoinformatica
+
+5 The mutual pruning algorithm
+
+Mutual pruning approaches such as TPL [12] are state-of-the-art solutions for single RkNN
+queries. In this paper we aim at analyzing whether this assumption still holds for an RkNN
+join setting. Therefore, in this section, we propose an algorithm for processing RkNN joins
+based on a strategy similar to TPL; we call this solution the mutual pruning approach or
+the UL approach, as it is based on Update Lists. We assume that both sets R and S are
+indexed by an aggregated hierarchical tree-like access structure such as the aR∗-tree [25].
+An aR∗-Tree is equivalent to an R∗-Tree but stores an additional integer value (often called
+weight) within each entry, corresponding to the number of objects contained in the subtree.
+The indexes are denoted by R and S, respectively.
+
+5.1 General idea
+
+The proposed algorithm is based on a solution for Ranking-RkNN queries, initially sug-
+gested in [26]. Unlike TPL, which can only use leaf entries (points) to prune other leaf
+entries and intermediate entries (MBRs), the technique of [26] further permits to use inter-
+mediate entries for pruning, thus, allowing to prune entries while traversing the tree, without
+having to wait for k leaf entries to be refined first. The algorithm of [26] uses the MAXDIST-
+MINDIST-approach as a simple method for mutual pruning using rectangles. This approach
+exploits that, for three rectangles R, A, B, it holds that A must be closer to R than B, if
+maxDist (A, R) < minDist (B, R). The algorithm that we use in this work, will augment
+the algorithm of [26] by replacing the MAXDIST-MINDIST-approach by the spatial prun-
+ing approach proposed in [27] which is known to be more selective. In the following, the
+base algorithm of [26], enhanced by [27] will be extended to process joins.
+
+The mutual pruning approach introduced in this section is based on an idea which is often
+used for efficient spatial join processing: Both indexes R and S are traversed in parallel,
+result candidates for points r ∈ R of the outer set are collected and for each point r ∈ R
+irrelevant subtrees of the inner index S are pruned; we will evaluate if this approach is also
+useful for RkNN joins during performance analysis. Thus, at some point of traversing both
+trees, we will need to identify pairs of entries (eR ∈ R, eS ∈ S) for which we can already
+decide, that for any pair of points (r ∈ eR, s ∈ eS) it must/must not hold that s is a RkNN
+of r. To make this decision without accessing the exact positions of children of eR and eS,
+we will use the concept of spatial domination ([27]): If an entry eR is (spatially) dominated
+by at least k entries in S with respect to eS, then no point in eS can possibly have any point
+of eR as one of its k nearest neighbors. Due to the spatial extend of MBRs, this decision is
+not always definite. We have to distinct several cases, as illustrated in Fig. 3. The subfigures
+visualize two pages eR and eS
+0 , and one of the additional pages eS
+3 . The striped areas
+in the picture denote the set of points on which a closer decision can definitely be made. This
+means, no matter which points from the rectangle eR and eS
+0 are chosen, the point from eR
+(eS
+0 ) is always closer to the point in the striped area than the point from eS
+0 (eR). Therefore,
+in the first case (a), eS
+1 . In the second case (b), eR
+is definitely closer to eS
+2 . In the third case (c), in all of the four subcases, no
+decision can be made.
+
+0 is definitely closer to eS
+0 is to eS
+2 than eS
+
+1 than eR is to eS
+
+2 , eS
+
+1 , eS
+
+More formally, in the first case, we can decide that an entry is (spatially) dominated
+0 with respect
+
+by another entry. For example, in Fig. 3a, entry eR is dominated by entry eS
+
+Geoinformatica
+
+Fig. 3 Mutual pruning on directory entries
+
+(cid:4)
+s0 ∈ eS
+0
+
+(cid:5)
+
+, r ∈ eR
+
+, s1 ∈ eS
+1
+
+1 , since for all possible triples of points
+
+to entry eS
+it holds that
+s0 must be closer to s1 than r is to s1. This domination relation can be used to prune eS
+1 :
+If the number of objects contained in eS
+0 is at least k, then we can safely conclude that
+1 , and, thus, eS
+at least k objects must be closer to any point in eS
+1 and all its child entries
+can be pruned. To efficiently decide if an entry eS
+0 dominates an entry eR with respect
+to an entry eS
+1 (all entries can be points or rectangles), we utilize the decision criterion
+(cid:4)
+eS
+Dom
+proposed in [27] which prevents us from doing a costly materialization
+0
+of the pruning regions like the striped areas in Fig. 3. Materialization here means the exact
+computation of the polygonal areas that allow pruning a page.
+
+, eR, eS
+1
+
+(cid:5)
+
+.
+
+(cid:5)
+
+(cid:4)
+
+(cid:5)
+
+(cid:5)
+
+, eS
+3
+
+and Dom
+
+, s2 ∈ eS
+2
+
+pruned by another entry. In Fig. 3c, consider entry eS
+(cid:4)
+(cid:5)
+s0 ∈ eS
+0
+we cannot prune eS
+entries, as eS
+evaluating the aforementioned criterion Dom
+
+In the second case, we can decide that neither an entry, nor its children can possibly be
+2 . It holds that for any triple of points
+, r ∈ eR
+, that r is closer to s2 than s0 is to s2. Although, in this case,
+2 , we can safely avoid further domination tests of children of the tested
+0 and its children will never prune eS
+2 . We can efficiently perform this test by
+(cid:4)
+eR, eS
+(cid:4)
+0
+eS
+0
+
+eR, eS
+do not
+0
+hold for any entry eS
+3 may be closer to some
+points eS
+0 than some points in eR, while other points may not. Thus, we have to refine
+at least some of the entries eS
+3 or eR. The reason for the inability to make a decision
+here, is that the pruning region between two rectangles is not a single line, but a whole
+region (called tube here, cf. Fig. 3). For objects that fall into the tube, no decision can be
+made.
+
+3 in Fig. 3c. In this case, some points in eS
+
+Finally, in the third case, both predicates Dom
+
+, eS
+2
+, eR, eS
+3
+
+At any time of the execution of the algorithm only one entry eR of the outer set is con-
+sidered. For eR, we minimize the number of domination checks that have to be performed.
+Therefore, we keep track of pairs of entries in S, for which case three holds, because only
+in this case, refinement of entries may allow to prune further result pairs. This is achieved
+by managing, for each entry eS ∈ S, two lists eS.update1 ⊂ S and eS.update2 ⊂ S:
+List eS.update1 contains the set of entries with respect to which eS may dominate eR but
+does not dominate eR for sure. Essentially, any entry in eS.update1 may be pruned if eS is
+refined. List eS.update2 contains the set of entries, which may dominate eR with respect
+to eS, but which do not dominate eR for sure. Thus, eS.update2 contains the set of entries,
+whose children may potentially cause eS to be pruned.
+
+0 , eS
+
+Geoinformatica
+
+5.2 The algorithm j oinEntry
+
+In order to implement these ideas, we use the recursive function shown in Algorithm 1,
+j oinEntry(EntryeR, QueueQS) . It receives an entry eR ∈ R that represents the cur-
+rently processed entry from the index of the outer set R, which can be a point, a leaf node
+containing several points, or an intermediate node. QS represents a set of entries from S
+
+Geoinformatica
+
+sorted decreasingly in the number |eS.update1| of objects that an entry eS ∈ S is able
+to prune. The reason is that resolving nodes with a large update1 list potentially allows
+pruning many other nodes.
+
+is updated for each entry eS
+
+In each call of j oinEntry(), a lower bound of the number of objects dominating eR
+i ∈ QS. This lower bound is denoted as
+i , it holds that the domination count ≥ k, then
+i > can be safely pruned. Note that using the notion of domination count,
+j , for which the domination
+i .update2 can be interpreted
+i . In Line 4
+i ) for each
+i ) holds, then the domination count of eS
+i
+
+with respect to eS
+i
+domination count. Clearly, if for any entry eS
+the pair < eR, eS
+the list eS
+count of eS
+as the list of entries whose refinement may increase the domination count of eS
+of Algorithm 1, the domination count of eS
+j , eR, eS
+i .update2. If Dom(eS
+entry eS
+
+i .update1 can be interpreted as the list of entries eS
+i . The list eS
+j may be increased by refinement of eS
+
+i is updated by calling Dom(eS
+j , eR, eS
+
+j in the list eS
+
+Geoinformatica
+
+j is removed from the list of eS
+
+i . If that is not the case, then eS
+
+is increased by the number of objects in eS
+j . The number of leaf entries is stored in each
+j does not dominate eR w.r.t. eS
+intermediate entry of the index. Otherwise, i.e., if eS
+i , we
+check if it is still possible that any point in eS
+j dominates points in eR with respect to any
+i .update2, and eS
+point in eS
+i
+is removed from the list of entries eS
+j .update1 (Lines 9-10). If these checks have increased
+the domination count of eS
+i to k or more, we can safely prune eS
+in Line 15 and remove all
+i
+its references from the update1 lists of other entries; this is achieved by the delete function.
+i ∈ QS, we start our refine-
+ment round in Line 20. Here, we have to decide which entry to refine. We can refine the
+outer entry eR, or we can refine some, or all entries in the queue of inner entries QS. A
+heuristics that has shown good results in practice, is to try to keep, at each stage of the algo-
+rithm, both inner and outer entries at about the same volume. Using this heuristics, we first
+refine all inner entries eS
+i ∈ QS which have a larger volume than the outer entry eR in line
+24. The corresponding algorithm is introduced in the next section.
+
+Now that we have updated domination count values of all eS
+
+After refining entries eS
+
+i , we next check in Line 25 if both inner entry eS
+
+i and outer entry
+eR currently considered are both point entries. If that is the case, clearly, neither entry can
+be further refined, and we perform a kNN query using eS
+i as query object to decide whether
+eR is a kNN of eS
+i which
+could neither be pruned nor returned as a result, are stored in a new queue QS
+C. This queue
+is then used to refine the outer entry eR: For each child of eR, the algorithm j oinEntry is
+called recursively, using QS
+
+i as a result. Finally, all entries eS
+
+i , and, if so, return the pair eR, eS
+
+C as inner queue.
+
+5.3 Refinement: the resolve-routine
+
+i dominates eR w.r.t. eS
+
+Our algorithm for refinement of an inner entry eS is shown in Algorithm 2 and works as
+follows: We first consider the set of entries eS.update1 of other inner entries eS
+j whose
+domination count may be increased by children eS
+i of eS. For each of these entries, we
+first remove eS from its list eS
+j .update2, since eS will be replaced by its children later on.
+Although eS does not dominate eR w.r.t. eS
+j , the children of eS may do. Thus, for each child
+eS
+i of eS, we now test if eS
+j in Line 6 of Algorithm 2. If this is the
+case, then the domination count of eS
+j is incremented according to the number of objects in
+i .1 Otherwise, we check if it is possible for eS
+eS
+j , and, if that is the
+i
+j is added to the list eS
+case, then eS
+i .update1 of entries which eS
+i may affect, and eS
+i is added
+to the list eS
+j .update2 of entries which may affect eS
+j . Now that we have checked which
+objects the children eS
+i of eS may affect, we next check which other entries may affect a
+child eS
+i . Thus, we check the list eS.update2 of entries which may affect the domination
+count of eS. For each such entry eS
+j dominates eR w.r.t.
+is adjusted accordingly. Otherwise, if eS
+i . If that is the case, the domination count of eS
+eS
+j
+i
+can possibly dominate eR w.r.t. eS
+j to the list of entries eS
+i , then we add eS
+i .update2, and we
+add eS
+j .update1. Finally, all child entries of eS are returned, except those child
+entries, for which their corresponding domination count already reaches k.
+
+j and for each child eS
+
+to dominate eR w.r.t. eS
+
+i , we check if eS
+
+i to the list eS
+
+1The check, whether the new domination count of eS
+
+j exceeds k will be performed in Line 21 of Algorithm 1
+
+Geoinformatica
+
+6 A self pruning approach
+
+6.1 General idea
+
+We also developed a self pruning approach that does not rely on materialized informa-
+tion as existing self pruning techniques but computes kNN distances on the fly (therefore
+it will also be referred to as the kNN approach); the idea is based on the research results
+from [7]. For single RkNN queries, such a self pruning approach obviously suffers from
+this overhead. However, intuitively, these on the fly computations may amortize for a large
+number of queries, i.e., a large outer set R (and we will see in the experiments that the
+break even point is surprisingly small). Thus, the idea of the following solution provides
+a dedicated algorithm to perform an RkNN join using the techniques of self pruning. In
+the following, we still assume that R and S are aR∗-tree representations of R and S,
+respectively. Let us first decompose the definition of the RkNN join into smaller pieces
+(see Algorithm 3). The RkNN query returns all pairs of points (r ∈ R, s ∈ S) such
+that r is located in the kNN-spheres of s. Therefore, as a first step we simply compute
+the kNN-spheres of all points in S. This can be done by performing a self-(k+1)NN-
+join on S (see Line 3).2 Then, for each of the resulting kNN-spheres, the set of points
+in R that is enclosed by this sphere has to be returned (see Line 5). This can be done
+by performing an (cid:2)-range query for each kNN-sphere on the set R. Note that the later
+query does not correspond to an (cid:2)-range-join, since the kNN-spheres of each s ∈ S will
+usually have different radii. Rather, a “varying-range-join” needs to be applied. This intro-
+duces some interesting possibilities of optimization when pruning subtrees in R. We will
+address this problem in Section 6.3. To summarize, an RkNN join can be performed by
+combining a self-(k+1)NN-join of S with a varying-range-join, a generalization of the
+(cid:2)-range-join. In the following, we will refine the algorithm sketch described in Algo-
+rithm 3. For this purpose, we now describe algorithms for computing the kNN-join and the
+varying-range-join.
+
+2Each point will have itself in its kNN set, thus we need a k + 1NN-join to find the kNNs of each point in S.
+
+Geoinformatica
+
+6.2 Implementing the self-kNN-join
+
+A variety of researchers addressed the problem of efficiently computing the result of a kNN-
+Join. In our implementation we decided to evaluate two different approaches. One of them
+is a sequential second-order nested-loop join, that does not directly facilitate the structure of
+the underlying index, however it exploits the spatial proximity of points in leaf nodes of the
+tree. The other one is a hierarchical join that fully utilizes the index to reduce the number of
+unnecessary comparisons. Both of them shall be introduced in this section. In Section 8 we
+will also investigate which of the suggested algorithms fits best for specific data sets. For
+the sake of clarity, we assume to have two virtual copies Sl and Sr of S in the following.
+An entry from Sl is denoted by eS
+l and an entry from Sr as eS
+r .
+
+6.2.1 Sequential self-kNN-join
+
+For the sequential self-kNN-join we implemented a cache-aware nested-block loop join that
+takes the specific properties of the self-join, and the spatial proximity of values in the leaf
+nodes of a tree-structured index into account. It is based on the implementation in the ELKI-
+framework [28]. The algorithm basically takes a leaf from the index S, performs a self-join
+within the same leaf first in order to initialize its maximum kNNDist (MaxKNNDisttemp)
+as its pruning distance. The pruning distance is used to prune whole leaf pages later on
+without processing the points contained in them. Then it sequentially accesses all leaf nodes
+of the index and joins them with the currently processed node. This version is not only easy
+to implement, it also enables to return partial results at each time where a page eS
+l has been
+processed such that memory can be freed after directly performing a varying-range-join on
+the partial result.
+
+For each leaf node eS
+l
+
+from Sl, the algorithm proceeds as follows. First, a sequen-
+tial self-kNN-join of eS
+is performed in order to initialize the MaxKNNDisttemp() of
+l
+eS
+l . The kNN-join basically collects for each point in p ∈ eS
+the k points from eS
+r
+l
+that are closest to p. Note that the actual kNN’s are not relevant, just the distances
+of current kNN-candidates have to be tracked and hence the memory consumption can
+be reduced significantly compared to traditional kNN join processing. In a second step,
+each leaf eS
+l of Sr is traversed in arbitrary, but deterministic, order. The page
+r
+r , eS
+l ) > MaxKNNDisttemp(eS
+eS
+r can be pruned if MI NDI ST (eS
+l ). If the page can-
+not be pruned, each point from eS
+is joined with each point from eS
+r . After joining the
+l
+contained points, the pruning distance MaxKNNDisttemp(eS
+l ) is updated when neces-
+sary. After finishing the join of eS
+l , the kNN-distances of points in this page can be
+returned as a partial result. The join of the following leaf node eS
+l(cid:4) of Sl is again joined
+with itself first, however the join of remaining nodes is performed in opposite order. The
+intention of this proceeding is that some nodes from the last traversal are still stored in
+the page cache such that they do not have to be reloaded, reducing the number of page
+accesses.
+
+(cid:6)= eS
+
+6.2.2 Hierarchical self-kNN-join
+
+The hierarchical kNN-Join is based on the best-first kNN search algorithm from [17],
+however with some minor adaptions to fit the special properties of our setting, a self-
+kNN-join. Actually, this join is only semi-hierarchical since it does not join two trees but
+rather joins each leaf from one tree with another tree, yielding an asymptotic complexity of
+
+Geoinformatica
+
+O(|S| log(|S|)) for a self join in contrast to O(|S|2) for the sequential self-join described
+in the section before. In contrast to a fully hierarchical approach this algorithm enables the
+possibility to return partial results each time a page eS
+l has been processed; we will exploit
+this property when processing the varying-range-join.
+
+For each leaf node eS
+l
+
+that overlap eS
+r from the priority queue and checks if MI NDI ST (eS
+
+taken from Sl, the tree Sr is traversed starting with the root node
+in best-first order according to the MI NDI ST of the current group and the currently pro-
+cessed sub-tree. For this purpose, the root entry of Sr is inserted into a priority queue. The
+priority queue is ordered by increasing MI NDI ST to eS
+l . MI NDI ST between two over-
+lapping entries is always zero, however a bigger overlap is usually better than a smaller
+one since this can reduce the MaxKNNDisttemp of the currently processed page more
+effectively. Therefore eS
+r more than other pages are preferred. The algo-
+l
+rithm pops the first entry eS
+l ) ≤
+MaxKNNDisttemp. Entries with MI NDI ST (eS
+l ) > MaxKNNDisttemp are pruned
+as in the sequential approach. If an entry cannot be pruned, the corresponding node has to
+be accessed. If the node is an intermediate node, all its children that cannot be pruned are
+inserted into the priority queue, i.e., the page is resolved. If the node is a leaf node, the page
+is joined. Joining is similar to the proceeding of the sequential join, however it employs
+some additional improvements from [17]: points ri ∈ eS
+l , ri) >
+kNNDisttemp(eS
+l ) and all points li ∈ eS
+r ) can
+be pruned during an initial scan of the processed pages. This preprocessing reduces the
+quadratic cost of comparing all entries from one node with all entries from the other node.
+After finishing the join MaxKNNDisttemp is updated when necessary.
+
+l with NNDist (li ) < MI NDI ST (li, eS
+
+r with MI NDI ST (eS
+
+r , eS
+
+r , eS
+
+6.3 Implementing the varying-range-join
+
+A trivial solution for performing a varying-range-join would be to sequentially search the
+set R for each s ∈ S to find {r ∈ R|dist (r, s) < kNNDist (s)}. This operation returns the
+subset of R that would contain s as one of its RkNN-results. As a first improvement, the
+tree structure of R can be exploited to reduce the asymptotic complexity to a logarithmic
+one by performing a depth-first traversal: Only nodes eR of R that intersect the kNN-sphere
+of s need to be considered, i.e., subtrees with MI NDI ST (eR, s) > kNNDist (s)) can
+be pruned. For reducing the number of disc accesses, e.g. if a slow HDD is used instead
+of a fast SSD, it would be a good idea to traverse R less often with a larger subset of S.
+Since both self-kNN-join algorithms join pages eS of objects, partial results show spatial
+proximity. This spatial proximity can be used to prune subtrees from R that cannot contain
+result candidates for any point in eS, greatly speeding up the range query. This technique
+can even be extended. The straightforward approach for computing an RkNN join-result
+would be to materialize all kNN-spheres first and then perform a range query for each of
+the spheres on R. However, in order to keep the memory consumption for storing kNN-
+spheres low, a readily kNN-joined page can be directly range-joined with R such that the
+corresponding kNN-spheres of the page do not have to be stored further.
+
+This varying-range-join is implemented in form of a depth-first index traversal. It
+receives a set eS containing points from S in combination with their kNN-distances and
+R. The algorithm first checks each child of the root node of R whether or not it has to be
+accessed, i.e., if this page could contain a varying-range-join result of any point in eS. If the
+child has to be accessed, it proceeds in a depth-first order, accessing its children and testing
+them recursively. The pseudo code is depicted in Algorithm 4. Checking if any child from
+eR might have a point from eS as an RkNN is evaluated in the function PossibleCandidate
+
+Geoinformatica
+
+1 ). Checking can be achieved in two ways, by employing the Minkowski sum, or by
+
+(eS, eR
+laying an MBR around all kNN-spheres contained in eS:
+– Use the Minkowski sum MS(eS), following the idea of [8]: This method checks
+kNNDist (s) to
+the points in eS and can be evaluated by checking whether
+
+whether the MBR of eR has a distance of more than max
+s∈eS
+
+the MBR of
+MI NDI ST (MBR(eR
+1
+
+), MBR(eS)) is less than or equal to max
+s∈eS
+
+kNNDist (s)
+
+– Build a bounding box around all kNN-spheres, following [7]: Let CMBR(eS) =
+) (cid:6)= ∅.
+
+1 has to be evaluated if CMBR(eS) ∩ MBR(eR
+
+kNNSphere(s)). eR
+
+1
+
+MBR( ∪
+s∈eS
+
+The MBR CMBR(eS) can be calculated as (0 ≤ i ≤ d):
+
+CMBR(eS).mini = min
+pj ∈eS
+CMBR(eS).maxi = max
+pj ∈eS
+
+{pj [i] − kNNDist (pj )}
+
+{pj [i] + kNNDist (pj )}
+
+While the first check is quite simple to perform and for traditional range-joins even very
+restrictive, the second approach is usually better when the diameter of kNN-spheres differs.
+An example for both bounding boxes is shown in Fig. 4a. However, note that none of the
+checks is the best solution for all scenarios. There exist special cases where the Minkowski
+sum fits the contained spheres tighter than CMBR(eS). For example if |eS| = 1, the volume
+covered by a Minkowski sum is smaller than CMBR(eS) (cf. Fig. 4b). More general, the
+
+Fig. 4 Comparison of MS(eS ) and CMBR(eS ) in an a average, b worst, and c best case
+
+Geoinformatica
+
+worst case for CMBR(eS) happens if at each face of MBR(eS) there is a point p with
+s∈eS
+maxkNNDist (s). In this case there is MS(eS) ⊂ CMBR(eS) and hence
+kNNDist (p) =
+the Minkovski sum shows higher pruning power. The best case (Fig. 4c) happens if for each
+point p ∈ eS there is kNNSphere(p) \ MBR(eS) = ∅, i.e., points with large kNN-spheres
+are close to the center of MBR(eS). In this scenario, CMBR(eS) performs better than the
+Minkowski sum approach.
+
+7 Extension to metric spaces
+
+In this section we show how to extend the theoretical results from the previous sections to
+general metric spaces. A metric space can be defined as a tuple (X, d) with X a domain
+and d : X × X → R (the distance function) a symmetric, non-negative function that fulfills
+the triangle inequality. The Euclidean vector space can be seen as a special instance of a
+metric space. However, metric spaces also include more complex domains such as text, gene
+sequences or graphs. The corresponding distance function could be defined for example as
+the edit distance between texts or gene sequences. With the domain being defined as the
+nodes of a large graph, a different distance function could be the distance between nodes in
+a graph. If the domain is assumed to be a set of graphs, a useful distance function would be
+the graph edit distance.
+
+As a vector space that we addressed in the remainder of this paper offers some additional
+properties to general metric spaces, pruning in a vector space is usually more efficient.
+Exemplarily, the TPL algorithm uses the perpendicular bisector between two points in space
+for pruning that only exists under the L2 norm. Therefore, in the following we will gener-
+alize the results from this paper and discuss how RkNN joins can be performed in general
+metric spaces.
+
+In the following we again assume that the data sets R and S are indexed by some index
+structure however in this section a metric index structure such as the M-tree [29]. An M-tree
+is a balanced tree that can be dynamically updated. Inner nodes contain entries e storing
+an anchor object (or routing object) e.a, a covering radius e.r and a pointer e.c to the cor-
+responding node that contains the childen entries. All children and their descendents have
+a distance of at most e.r to the parents’ routing object P (e). Furthermore, a routing entry
+contains a field e.p denoting the distance to the routing objects’ parent. Although e.p could
+be computed during query processing, it is stored in the entries as distance calculations in
+metric spaces can be costly. The actual data objects of an M-tree are referenced via data
+entries in the leaf nodes; these entries store the actual object value, an object id and a field
+e.p which is defined in the same way as for the inner entries.
+
+As a consequence of the information stored in the index structure, pruning irrelevant
+subtrees of an M-tree can be achieved by interpreting an entries diameter and the stored
+anchor object. For this purpose we can employ the (general) MI NDI ST (e1, e2) between
+two entries in the tree that assumes two data elements to be as close to each other as possible;
+these distance bounds follow directly from [29]:
+
+MI NDI ST (e1, e2) = max(d(e1.a, e2.a) − e1.r − e2.r, 0)
+
+Similarly, we can define the MAXDI ST (e1, e2) that assumes two data elements to be as
+far away of each other as possible by:
+
+MAXDI ST (e1, e2) = d(e1.a, e2.a) + e1.r + e2.r
+
+Geoinformatica
+
+In the case where e1 (e2) becomes a data object, the corresponding radius e1.r (e2.r)
+becomes zero. However, unfortunately these distance approximations make it necessary
+that every distance between two entries has to be computed, even if this is not necessary.
+Therefore, assuming that the distance between the parents of a node are already known (and
+therefore cached), the number of distance calculations can be reduced [29]:
+
+MI NDI ST (cid:4)(e1, e2) = max(d(P (e1), P (e2)) − e1.p − e2.p − e2.r − e2.r, 0)
+In this case, the distance between the parents is known such that for this MI NDI ST ,
+distance computations can be avoided, however at the cost of accuracy and space. For a
+rough estimate of the MAXDI ST we have:
+
+MAXDI ST (cid:4)(e1, e2) = d(P (e1), P (e2)) + e1.p + e2.p + e2.r + e2.r
+
+7.1 Adaptions of the update list approach
+
+The algorithm based on update lists (Section 5) employs the spatial pruning from [27] that
+has been specifically designed for vector spaces under Lp norms and therefore cannot be
+used for general metric spaces. Therefore, the decision criterion has to be replaced by the
+weaker MAXDI ST -MI NDI ST -criterion [27]:
+
+Dom(A, B, R) := MAXDI ST (A, R) < MI NDI ST (B, R)
+
+The domination criterion can be extended by first evaluating based on MI NDI ST (cid:4) and
+MAXDI ST (cid:4) with cached distances to improve search speed for the cost of memory con-
+sumption. The MAXDI ST -MI NDI ST approach can also be used with vectorial data
+[26], for example in R-trees, however, it shows a lower pruning power in vector spaces [27].
+Furthermore, if vectorial data is stored in index structures with spherical representations,
+special spatial pruning criterions on spheres can be employed, such as [30].
+
+The heuristic for deciding whether to resolve pages from R or from S must also be
+adapted, as general metric spaces do not have any notion of volume. Therefore, instead of
+employing the volume, the diameter e.d could be used to come to a resolvement decision:
+Employing an M-tree in a vector space would create spheres around anchor points. For these
+spheres, a volume can be provided. In order to decide about the refinement of a node, we
+would have to check whether V ol(e1) > V ol(e2). As the volume in spheres only depends
+on the diameter, this decision is equivalent to V ol(e1.d) > V ol(e2.d).
+
+7.2 Adaptions of the kNN-based approach
+
+The kNN-join based approaches can be adapted in a similar fashion. Let us first consider
+the first phase of the algorithm, the kNN join. Both kNN variants used throughout the paper
+can be used in the general metric case without major modifications; just the MI NDI ST
+and MAXDI ST functions have to be modified. Again, for both of the used join algorithms
+the cached MAXDI ST (cid:4) and MI NDI ST (cid:4) can be used.
+
+For the second phase, the varying-range join, we have to find the surrounding sphere of
+the kNN spheres of a data page eS. The diameter of the surrounding sphere can be simply
+computed as
+
+MS(eS) = eS.d + max
+s∈eS
+
+{kNNDist (sS )}
+
+This solution conforms to the Minkowski sum approach from Section 6. In order to realize
+the CMBR approach, we would have to find a new center point for the surrounding sphere,
+
+which is prohibitively expensive. The query processing for the varyin range join can also be
+sped up by employing the cached versions of distance estimates.
+
+Geoinformatica
+
+8 Experiments
+
+We evaluate the mutual pruning approach (referred to as UL due to its use of update lists),
+and the self pruning variants (kNN∗) in comparison to the single RkNN query processor
+TPL in an RkNN join setting within the Java-based KDD-framework ELKI [28]. As perfor-
+mance indicators we chose the CPU time and the number of page accesses. Note that we did
+not evaluate existing mutual-pruning techniques such as [8] since these are only applicable
+if the value of k is fixed over all performed RkNN queries.
+
+It should be noted that, for estimating the CPU time of a particular algorithm, we mea-
+sured the thread time of the corresponding Java thread and performed dry runs before
+executing the actual simulations in order to keep the impact of garbage collection and Just-
+In-Time compilation on the results low. A test run was aborted if it lasted at least 20 times
+longer than executing a self pruning based RkNN join with the same set of variables. For
+measuring the number of page accesses, we assumed that a given number of pages fit into
+a dedicated cache. If a page has to be accessed but is not contained in the page cache, it
+has to be reloaded. If the cache is already full and a new page has to be loaded, an old
+page is kicked out in LRU manner. The page cache only manages data pages from sec-
+ondary storage, remaining data structures have to be stored in main memory. In order to
+avoid everything being stored in memory, we employed a restrictive approach, assuming
+that only node- and entry-IDs can be stored in main memory. Therefore, each time informa-
+tion about an entry, e.g. an MBR or a data point, has to be accessed, the corresponding data
+page has to be reloaded into the cache. We chose this restrictive strategy because all algo-
+rithms employ different methods on processing data. While a sequential kNN-join processes
+only two data pages at once, mutual pruning based approaches like TPL and UL process
+the whole tree at a time by facilitating lists of entries, e.g. the TPL entry heap. These data
+structures are principally unbounded, such that storing whole entries in memory could lead
+to a situation where the whole tree can be accessed without reloading any page from disk.
+This would bound the number of page accesses to the tree size, which is unrealistic in large
+database environments. We set the cache size to fit about 5 % of all nodes in the default
+setting.
+
+We chose the underlying synthetic data sets from R and S to be normally distributed
+with equivalent mean and a standard deviation of 0.15. We set the default size of R to
+|R| = 0.01|S|, since the performance of TPL degenerates with increasing |R|. For each of
+the analyzed algorithms we used exactly the same data set given a specific set of input vari-
+ables in order to reduce skewed results. As an index structure for querying we employed an
+aggregated R*-tree (aR*-Tree [25]). During performance analysis, we analyzed the impact
+of k, the number of data points in R and S, the dimensionality d, the overlap o between
+the data sets R and S, the page size p and the cache size c on the performance of the
+evaluated algorithms keeping all but one variable at a fixed default value while varying a
+single independent variable. Input values for each of the analyzed independent variables can
+be found in Table 1. Furthermore, we investigated empirically for which sizes of the sets
+R and S TPL and kNN∗-algorithms show equivalent performance. This experiment is of
+great practical relevance since it gives hints on which specific algorithm to use in a specific
+setting.
+
+Table 1 Values for the evaluated
+independent variables
+
+Variable
+
+Values
+
+Geoinformatica
+
+5, 10, 100, 500, 1000
+
+2, 4, 6, 8, 10
+
+10, 100, 1000, 10000, 20000, 40000
+
+points
+
+10, 1000, 10000, 20000, 40000, 80000
+
+0.0, 0.2, 0.4
+
+512, 1024, 2048, 4096, 8192
+
+4096, 16364, 32768, 65536, 131072
+
+Unit
+
+points
+
+dimensions
+
+points
+|μS − μR|
+
+bytes
+
+bytes
+
+|R|
+
+|S|
+
+k
+
+d
+
+o
+
+p
+
+c
+
+Default values are denoted in
+bold
+
+TPL was implemented as suggested in [12], however we did not incorporate the clipping
+step since this technique increased the computational cost of the algorithm in preliminary
+experiments and had only a marginal effect on the page accesses (especially when d > 2).
+Instead we implemented the decision criterion from [27].
+
+Concerning the nomenclature of the algorithms we use the following notation. UL is the
+mutual pruning based algorithm from [13]. The additional subscript S (Single) means that
+every single point of R was queried on its own. With ULG (Group), a whole set of points, a
+leaf page, was queried at once. ULP (Parallel) traversed both indexes for R and S in parallel.
+
+For the kNN algorithms we employ a similar nomenclature kNNABC:
+
+– A ∈ {H, S} denotes whether a hierarchical or sequential nearest neighbor join is
+
+used(compare Section 6).
+
+– B ∈ {S, G}: S denotes whether the whole kNN join is processed first and then each
+resulting kNN sphere is used to perform a single range query on R. G (group) denotes
+that after the kNNs of a single page from S is computed, the corresponding page is used
+to perform a varying-range-query on the tree of R. The second method can be employed
+to keep the number of intermediate results low and avoid swapping these intermediate
+results to disk. Furthermore both methods vary in the algorithm used for the range-join,
+i.e., whether each point is queried separately or groups of points are queried together.
+– C ∈ {C, M} indicates how the MBR is computed when performing a group range-join
+
+(C: CMBR, M: Minkovski sum, compare Section 6).
+
+Note that, in order to avoid clutter, if a group of algorithms (i.e. the different UL variants,
+the different hierarchical kNN variants or the different sequential kNN variants) had similar
+performance, we replaced them by a representative solution from this group. The complete
+plots can be found in [13, 14].
+
+8.1 Experiments on synthetic data
+
+Varying k In a first series of experiments, we varied the parameter k. While the execution
+time of the self pruning based kNN∗ increases moderately with k, the remaining mutual
+pruning approaches become already unusable with low values for k (cf. Fig. 5a). The run-
+time of TPL increases considerably fast. The reason for this is that not only the number of
+result candidates but also the number of objects which are necessary in order to confirm
+(or prune) these candidates increase superlinear in k. For the UL approaches, the runtime
+behaviour is similar. The main problem with this family of algorithms is their use of update
+lists. Each time a page is resolved, the corresponding update lists have to be partially recom-
+puted. This leads to an increase of cost with larger k since on the one hand side, more pages
+
+Geoinformatica
+
+Fig. 5 Performance (CPU time), synthetic dataset. Time is measured in seconds
+
+have to be resolved, and on the other hand the length of the update lists of an entry increases
+and therefore more distance calculations are necessary.
+
+The runtime behaviour of all kNN-based algorithms increases more moderate with
+increasing k. The performance of the hierarchical join is more stable w.r.t. different val-
+ues of k, on the one hand side because the hierarchical version of the join can prune whole
+subtrees on the index level, and on the other hand because the hierarchical join employs
+further optimizations when joining leaf pages. Furthermore, note that the effect of perform-
+ing a single/group varying-range join and using different MBRs is quite small. The more
+sophisticated approach kNN HGC is indeed the best one, however the difference in execu-
+tion time compared to the simpler solutions kNN HGM and kNN HS is quite low because
+in this setting |R| is too small.
+
+Concerning the number of page accesses, the picture is quite similar (cf. Fig. 6a). TPL
+and UL show a worse performance than the kNN-based solutions. However, interestingly
+the curves of the sequential and hierarchical kNN-join intersect if k becomes rather large,
+making the sequential join a better choice. This shows that with large values of k the pruning
+
+Geoinformatica
+
+Fig. 6 Performance (page acesses), synthetic dataset
+
+of whole subtrees of the index-based approach fails such that the overhead for traversing
+the index nodes of the tree cannot be justified any more.
+
+Varying the dimensionality (d) Taking a look at the performance of the different algorithms
+with varying dimensionality offers other interesting results. Note that the scale of these
+graphs is logarithmic (cf. Figs. 5b and 6b). The UL approaches scale worse than the other
+approaches, because the pruning power of index-level pruning decreases with increasing
+dimensionality. However, with a dimensionality of 2 and 3, the UL approaches perform
+better than TPL concerning the execution time of the algorithms. Beginning with a dimen-
+sionality of 4, the UL approaches scale worse than TPL because the pruning power of
+index-level pruning decreases with increasing dimensionality. With increasing d, the num-
+ber of entries in an update list increases superlinearly. Therefore, much more entries have
+to be checked each time an intermediate node is resolved, leading to a significant drop in
+performance. Note that ULG and ULP perform very similar to ULS, which is an interesting
+observation, since for kNN joins parallel tree traversals usually show a higher gain in per-
+formance than in an RkNN setting. TPL and the hierarchical join variants scale similarly,
+
+Geoinformatica
+
+however, in this specific setting, the TPL based join performs by over a magnitude worse
+than the hierarchical join. Comparing sequential and hierarchical join, the performance of
+the index used by the hierarchical join degenerates with higher dimensionality, such that
+the sequential join is able to outperform all remaining approaches if the number of dimen-
+sions becomes higher than 6. This behaviour is most likely well explained by the “curse of
+dimensionality” and the degradation of spatial index structures in high dimensions.
+
+The results in terms of the number of Disk accesses look very similar, therefore they
+shall not be further investigated. However note that the UL approaches show much better
+performance in terms of the number of disk accesses if the dimensionality is low. Therefore,
+we recommend to use UL for spatial applications (i.e. 2D data).
+
+Varying the size of R (|R|) Varying |R| shows a negative effect on the mutual pruning
+approaches TPL and UL (cf Fig. 5c). Especially TPL and ULS scale linearly with |R|, as
+increasing |R| simply increases the number of RkNN queries. Although the execution time
+of the join-based algorithms grows with |R| as well, this increase is moderate. Note that
+with a larger |R| the difference between the different range-join algorithms becomes more
+obvious. If |R| is very large, the CMBR method become by about 30 % better than the more
+simple Minkowsky MBRs. Furthermore, the epsilon-range-join where each kNN-sphere is
+queried on its own is outperformed by its group-based counterparts. Recall that we set the
+default size of R to |R| = 100. In this case even linearily scanning R for a kNN-sphere from
+S would not lead to a significant loss in performance. However, if |R| becomes larger, the
+logarithmic performance of a hierarchical join becomes visible, and pruning subtrees earlier
+can further speed up the query such that the choice of an MBR falls clearly on the CMBRs.
+Taking a look at the number of disk accesses (illustrated in Fig. 6c) shows that performing
+an epsilon-range query for each kNN-sphere from S is not a good idea if R becomes large. In
+this scenario, many of the pages from R have to be reloaded during each of the |S| queries,
+putting high load on the secondary storage. However, if neighboured values are queried in
+groups as done in the HGM and HGC algorithms, the cache can be used more efficiently
+even though these approaches mutually load R and S into the cache.
+
+Varying the size of S (|S|) Next we analyzed the effect of different values for |S| regard-
+ing the CPU time (cf Fig. 5d). Again, the hierarchical join variants perform best, followed
+directly by the sequential join. On the other hand, the UL variants perform worst. How-
+ever, the UL variant that queries a single point from R during each iteration performs best
+since this enables highest pruning power. Most importantly the shape of the TPL algorithm
+looks totally different. It increases faster than the curve of the kNN-join variants first, but
+then intersects them for higher values of |S|, indicating the different asymptotic complexity
+of the different algorithms. Not taking into account the epsilon-range join, the asymptotic
+complexity of the sequential join is O(|S|2) while the complexity of the hierarchical join
+is about O(|S| log(|S|)) which is in accordance to the empirical results. To the best of our
+knowledge the theoretical runtime complexity of the TPL algorithm has not been analyzed
+so far, however the structure of the algorithm suggests a logarithmic complexity for a single
+query point. For the number of disk accesses the picture is similar which can be observed in
+Fig. 6d. However the break even point is shifted towards larger values of |S|.
+
+Thinking further, the point of intersection between TPL and the kNN-join variants is
+determined by the size of R since a new value in R introduces a new TPL-query – which
+is expensive – but only a single more point as a possible range-query result for the kNN
+algorithms – which is cheap. Specifically given a fixed set |S|, there exists a set Re for
+which TPL and the hierarchical join algorithms show similar performance. In a practical
+
+Geoinformatica
+
+Fig. 7 Given a set S of size |S|, the left figure visualizes the size of set Re for which TPL and the kNN-
+based joins have the same computational performance on our test sets R and S (note that this might vary with
+other datasets). The right figure visualizes the results for varying cache size. Note the logarithmic scale on
+the y-Axis
+
+setting the size of |Re| for a given set |S| is of great value, since this knowledge can be used
+to decide whether to use TPL or a kNN join for performing the query. Therefore we ran an
+additional experiment showing the size of Re for a given size of |S| where both algorithms
+have an equal runtime. The results can be found in Fig. 7. Due to the quadratic complexity
+of the sequential join, the size of Re increases superlinear with the size of S. In contrast
+the size of Re increases sublinear for the hierarchical kNN-join, suggesting this algorithm
+for large databases. Given a database with 1 million points, for the hierarchical join there
+is Re ≈ 0.0007|S| and for the sequential join Re ≈ 0.003|S|. Thus as a rule of thumb it is
+strongly recommendable to use a self pruning based approach if |R| > 0.01 · |S|.
+
+Varying the overlap between R and S (o) Until now we assumed that the normally dis-
+tributed sets of values R and S overlap completely, i.e. both sets have the same mean. This
+assumption is quite intuitive for example if we assume that R and S are drawn from the
+same distribution. In this experiment however, we aim at analyzing what happens if R and
+S are taken from different distributions. We do so by varying the mean of R and S, i.e. by
+decreasing the overlap of the two sets (o = mean(R) − mean(S)). First of all, the runtime
+performance of the join-based algorithms stays pretty much constant (cf Fig. 5e). Although
+this might seem counter-intuitive in the beginning, recall that the kNN-join is only per-
+formed on the set S. Therefore the distance between R and S does not affect this cost of the
+RkNN join. Furthermore, the set R is small in our setting, hence the cost for the varying-
+range-join can be neglected. However only this varying-range-join is affected by a different
+overlap between R and S. All remaining variants can take severe profit from lower overlap
+between the sets R and S. All of them employ pruning to avoid descending into subtrees
+that do not have to be taken into account to answer the query. If the overlap decreases, sub-
+trees can be pruned earlier (because the MINDIST between a subtree and the query point
+increases), reducing the CPU-time and number of page accesses (cf Fig. 6e). Furthermore
+note that the approaches U LP and U LG consistently perform worse than U LS over all val-
+ues of o, showing that the overhead for a parallel tree traversal outweights the power of
+early pruning in our setting.
+
+Geoinformatica
+
+Varying the cache size (c) For analyzing the cache size (see Fig. 7b) we only provide an
+insight into the impact on the number of page accesses since the cache does not affect the
+CPU time. Both kNN-join variants are barely affected by the size of the cache, the gain
+of all of these approaches is about 30 %. In contrast, the mutual pruning based algorithms
+behave by over an order of magnitude (TPL) and two orders of magnitude (UL) better for
+larger cache sizes. The results show that in a scenario where the accessible memory is large
+(about 10 % of the index), the UL algorithms can be a useful choice. Although they show
+a higher computational complexity, this disadvantage is compensated by the low number of
+disc accesses performed by this group of algorithms. If the cache size is relatively small,
+e.g. due to a multi-user environment, the kNN-based algorithms are the matter of choice.
+
+Note that in order to evaluate the performance of the approaches for larger datasets, we
+conducted the same experiment again, however with 106 points in the database, a page-
+size of 8192, and for cache sizes in range [215, 218]. Although the overall number of page
+access clearly increases with larger datasets, the relative performance of the different groups
+of algorithms and their behaviour did not change significantly compared to Fig. 7b; we
+therefore omit the corresponding plot.
+
+Varying the page size (p) The effect of an increasing page size is twofold. While the UL
+and hierarchical kNN-join approaches take mainly profit from a larger page size, the graph
+of the TPL and sequential kNN algorithms show a more or less increasing trend regarding
+the CPU cost (cf Fig. 5f). For the sequential join, if the page size grows too big, many
+pages have to be visited since they fall into the kNN-circles of a query point. Concerning
+the number of disk accesses (cf Fig. 6f), the kNN-join variants take profit from larger page
+sizes. If the page size is small, the number of points processed during one iteration of the join
+is small as well, since one iteration computes the kNN for one leaf from S. Therefore many
+iterations are necessary for computing the whole join result, and each of these iterations
+involves reloading pages into the cache.
+
+8.2 Real data experiments
+
+8.2.1 HSV dataset
+
+Now let us take a look at experiments driven with real data. As an input, we employed 3D
+HSV color feature vectors extracted from the caltech data set.3 We split the input data set
+containing 29639 feature vectors into two sets R and S such that |R| + |S| = 29639, varying
+the size of R. The results can be found in Fig. 8. Notice the two different behaviours of the
+self- and mutual pruning techniques. Concerning the CPU time, the self pruning approaches
+show better performance if R is large and S is small. The reason for this behaviour is that a
+self-join is always a quite expensive operation. For the hierarchical kNN self-join the com-
+plexity in the best case is about O(|S| log(|S|)) while for the sequential join the complexity
+is about O(|S|2). Combined with the varying-range-join we have an overall complexity of
+O(|S| log(|S|) + |S| log(|R|)) or O(|S|2 + |S| log(|R|)). Now if |S| is large (and |R| can be
+neglected), this leads to a complexity of O(|S| log(|S|)) and O(|S|2), respectively. On the
+other hand, if |S| can be neglected, we have a complexity of O(log(|R|)) in both cases. This
+also explains why the hierarchical and sequential techniques show the same performance
+if |S| becomes small. For TPL, the behaviour is different: its complexity in |S| is sublinear
+
+3http://www.vision.caltech.edu/Image Datasets/Caltech256/
+
+Geoinformatica
+
+Fig. 8 Performance (CPU time in seconds, page accesses), real dataset (HSV)
+
+but for each r ∈ R a separate query has to be performed, such that its complexity increases
+linear with |R|. Therefore the performance of TPL is better for small R (and large S), but
+worse for large R (and small S). For the UL approaches the results can be explained equiv-
+alently. Further note that the the U LS approach in this scenario shows a significantly lower
+number of page accesses than U LG and U LP
+
+8.2.2 Postoffice dataset
+
+As a second real dataset we employed a set of 123,593 post offices in the north-eastern
+united states.4 The set is clustered in the metropolitan areas, containing further noise in
+the rural areas. We included this dataset as it evaluates the applicability of the proposed
+approaches for geo-spatial applications. Although the overall behaviour of all algorithms on
+this two-dimensional dataset is similar to the behaviour on the mentioned three-dimensional
+data (see Fig. 9), the UL algorithms perform better in this special case concerning the
+number of page accesses. The observation that the UL approaches can outperform other
+algorithms on low-dimensional data has already been made when analyzing the synthetic
+data.
+
+8.3 Comparing CPU-cost and IO-cost
+
+Last but not least let us shortly analyze whether the techniques are IO- or CPU-bound.
+For this purpose, we reuse the results from the experiment where we varied the cache size.
+From the number of IO operations we computed the resulting IO time for both a solid state
+drive and a hard disk drive. We assumed an SSD with page access time of 0.1ms, for a
+HDD we assumed a combined seek time and latency of 13ms. These values have been taken
+from [31]. The graph in (Fig. 10) shows the amount of IO time and CPU time for sample
+approaches of the self- and mutual pruning approaches for both solid state (SSD) and hard
+disk (HDD) drives. Note that in most of the evaluated scenarios all of the algorithms are
+IO-bound, i.e. the IO-time is larger han the CPU time needed for evaluating a join. However
+there are small differences: in the case of an SSD the UL approaches (which have been
+optimized to greatly reduce the number of page accesses) become CPU-bound if the cache
+size becomes very large. In the case of a hard disk, all approaches are IO-bound even for
+very large cache sizes.
+
+4www.rtreeportal.org/
+
+Geoinformatica
+
+Fig. 9 Performance (CPU time, page accesses), real dataset (Postoffice)
+
+Fig. 10 CPU and IO time in seconds when varying the cache size. Left: SSD, righ: HDD
+
+9 Conclusions
+
+In this paper, we addressed the problem of running multiple RkNN-queries at a time, a.k.a
+RkNN join. For this purpose, we formally classified variants of the RkNN join, including
+monochromatic and bichromatic scenarios as well as self joins. Furthermore, we proposed a
+dedicated algorithm for RkNN join queries based on the well-known self pruning paradigm
+for single RkNN queries. We have shown that, in several scenarios, classic algorithms for
+performing single RkNN queries do not yield the expected performance such that the newly
+proposed algorithm usually leads to better results. In addition, due to our experiments,
+RkNN join algorithms based on the self pruning paradigm show better results than algo-
+rithms following the mutual pruning paradigm. Our experiments further indicate that not
+all scenarios ask for using RkNN join algorithms. To summarize the contribution of these
+experiments, we suggest different scenarios for RkNN query processing:
+
+–
+
+–
+
+If the database is relatively static and many RkNN queries are run expecting low latency,
+preprocessing as used in [7, 8] is a useful choice since self pruning is usually more
+selective than mutual pruning. This avoids computing the kNN-spheres each time a
+query is performed as done with our join algorithms. Note that precomputation usually
+can only be used if k is fixed.
+If the database is dynamic and RkNN queries are performed in a bulk, our proposed
+join algorithms, especially the self pruning variant clearly performs best. The technique
+is also preferable if an RkNN join of intermediate query results has to be computed.
+Furthermore, our self-pruning algorithm could be easily adapted to performing RkNN
+joins when each of the objects in R has another value of k. For low-dimensional data,
+such as 2D geo-spatial data, the mutual pruning RkNN join algorithm from [13] is the
+matter of choice.
+
+Geoinformatica
+
+–
+
+If the database is highly dynamic and single RkNN-queries have to be performed imme-
+diately, single RkNN queries based on mutual pruning like TPL [12] are the method of
+choice. This is also the case where the database is static but the self join of the whole
+set S cannot be justified by a low number of RkNN queries.
+
+In the future we will explore further pruning strategies such as a combination of mutual
+pruning and self pruning in order to increase the number of pruned subtrees, decreasing the
+execution time of RkNN algorithms and the number of page accesses. We would further
+like to extend our join algorithms to RkNN monitoring.
+
+References
+
+1. Bernecker T, Emrich T, Kriegel H-P, Mamoulis N, Renz M, Zhang S, Z¨ufle A (2011) Inverse queries
+
+for multidimensional spaces. In: Proc. SSTD, pp 330–347
+
+2. Jarvis RA, Patrick EA (1973) Clustering using a similarity measure based on shared near neighbors.
+
+IEEETC C-22(11):1025–1034
+
+3. Ankerst M, Breunig MM, Kriegel H-P, Sander J (1999) OPTICS: ordering points to identify the
+
+clustering structure. In: Proc. SIGMOD, pp 49–60
+
+4. Hautam¨aki V, K¨arkk¨ainen I, Fr¨anti P (2004) Outlier detection using k-nearest neighbor graph. In: Proc.
+
+ICPR, pp 430–433
+
+In: Proc. PAKDD, pp 577–593
+
+5. Jin W, Tung AKH, Han J, Wang W (2006) Ranking outliers using symmetric neighborhood relationship.
+
+6. Ester M, Kriegel H-P, Sander J, Xu X (1996) A density-based algorithm for discovering clusters in large
+
+spatial databases with noise. In: Proc. KDD
+
+7. Korn F, Muthukrishnan S (2000) Influenced sets based on reverse nearest neighbor queries. In: Proc.
+
+8. Yang C, Lin K-I (2001) An index structure for efficient reverse nearest neighbor queries. In: Proc. ICDE,
+
+SIGMOD, pp 201–212
+
+pp 485–492
+
+Proc. DMKD, pp 44–53
+
+Proc. CIKM, pp 91–98
+
+744–755
+
+9. Achtert E, B¨ohm C, Kr¨oger P, Kunath P, Pryakhin A, Renz M (2006) Efficient reverse k-nearest neighbor
+
+search in arbitrary metric spaces. In: Proc. SIGMOD, pp 515–526
+
+10. Stanoi I, Agrawal D, Abbadi AE (2000) Reverse nearest neighbor queries for dynamic databases. In:
+
+11. Singh A, Ferhatosmanoglu H, Tosun AS (2003) High dimensional reverse nearest neighbor queries. In:
+
+12. Tao Y, Papadias D, Lian X (2004) Reverse kNN search in arbitrary dimensionality. In: Proc. VLDB, pp
+
+13. Emrich T, Kriegel H-P, Kr¨oger P, Niedermayer J, Renz M, Z¨ufle A (2013) A mutual-pruning approach
+
+for rknn join processing. In: Proc. BTW, pp 21–35
+
+14. Emrich T, Kriegel H-P, Kr¨oger P, Niedermayer J, Renz M, Z¨ufle A (2013) Reverse-k-nearest-neighbor
+
+15. Wu W, Yang F, Chan C-Y, Tan K (2008) FINCH: evaluating reverse k-nearest-neighbor queries on
+
+join processing. In: Proc. SSTD, pp 277–294
+
+location data. In: Proc. VLDB, pp 1056–1067
+
+16. B¨ohm C, Krebs F (2004) The k-nearest neighbor join: turbo charging the KDD process. KAIS 6(6):728–
+
+17. Zhang J, Mamoulis N, Papadias D, Tao Y (2004) All-nearest-neighbors queries in spatial databases. In:
+
+749
+
+Proc. SSDBM, pp 297–306
+
+Geoinformatica
+
+18. Yu C, Zhang R, Huang Y, Xiong H (2010) High-dimensional knn joins with incremental updates.
+
+Geoinformatica 14(1):55–82
+
+19. Venkateswaran JG (2007) Indexing techniques for metric databases with costly searches, Ph.D. disserta-
+
+tion, University of Florida, Gainesville, FL, USA, aAI3300799
+
+20. Tao Y, Yiu ML, Mamoulis N (2006) Reverse nearest neighbor search in metric spaces. IEEE TKDE
+
+21. Cheema MA, Lin X, Zhang W, Zhang Y (2011) Influence zone: efficiently processing reverse k nearest
+
+18(9):1239–1252
+
+neighbors queries. In: ICDE, pp 577–588
+
+22. Achtert E, Kriegel H-P, Kr¨oger P, Renz M, Z¨ufle A (2009) Reverse k-nearest neighbor search in dynamic
+
+and general metric databases. In: Proc. EDBT, pp 886–897
+
+23. Kriegel H-P, Kr¨oger P, Renz M, Z¨ufle A, Katzdobler A (2009) Reverse k-nearest neighbor search based
+
+on aggregate point access methods. In: Proc. SSDBM, pp 444–460
+
+24. Xia C, Hsu W, Lee ML (2005) ERkNN: efficient reverse k-nearest neighbors retrieval with local kNN-
+
+distance estimation. In: Proc. CIKM, pp 533–540
+
+25. Papadias D, Kalnis P, Zhang J, Tao Y (2001) Efficient olap operations in spatial data warehouses. In:
+
+26. Kriegel H-P, Kr¨oger P, Renz M, Z¨ufle A, Katzdobler A (2009) Incremental reverse nearest neighbor
+
+27. Emrich T, Kriegel H-P, Kr¨oger P, Renz M, Z¨ufle A (2010) Boosting spatial pruning: on optimal pruning
+
+28. Achtert E, Hettab A, Kriegel H-P, Schubert E, Zimek A (2011) Spatial outlier detection: data, algorithms,
+
+29. Ciaccia P, Patella M, Zezula P (1997) M-Tree: an efficient access method for similarity search in metric
+
+30. Emrich T (2013) Coping with distance and location dependencies in spatial, temporal and uncertain data,
+
+Ph.D. dissertation, Ludwig-Maximilians University Munich
+
+31. Emrich T, Graf F, Kriegel H-P, Schubert M, Thoma M (2010) On the impact of flash ssds on spatial
+
+indexing. In: Proc. DaMoN, pp 3–8
+
+Proc. SSTD, pp 443–459
+
+ranking. In: Proc. ICDE, pp 1560–1567
+
+of mbrs. In: Proc. SIGMOD, pp 39–50
+
+visualizations. In: Proc. SSTD, pp 512–516
+
+spaces. In: Proc. VLDB, pp 426–435
+
+Tobias Emrich received a diploma in Media Informatics in 2008 and a PhD in Computer Science from
+LMU, Munich in 2013. His research interests include similarity search in spatial databases as well as query
+processing in uncertain spatial and spatio-temporal databases. To date, he has more than 35 publications
+in refereed conferences. He has been a member of the program committees in numerous conferences and
+workshops, and is co-organizer of the “GeoRich” (cid:4)14 SIGMOD workshop.
+
+Geoinformatica
+
+Hans-Peter Kriegel is a full professor for database systems and data mining in the Department “Institute
+for Informatics” at the Ludwig-Maximilians-University Munich, Germany and has served as the department
+chair or vice chair over the last years. He also served as a PC or Senior PC member in numerous international
+conferences in database systems and in data mining. His research interests are in spatial and multimedia
+database systems, particularly in query processing, performance issues, similarity search, high-dimensional
+indexing as well as in knowledge discovery and data mining. He has published over 300 refereed conference
+and journal papers and he received the “SIGMOD Best Paper Award” 1997 and the “DASFAA Best Paper
+Award” 2006 together with members of his research team. In 2009 he was appointed as an ACM fellow
+for contributions to knowledge discovery and data mining, similarity search, spatial data management, and
+access methods for high-dimensional data.
+
+Peer Kr¨oger is an “Akademischer Oberrat” (tenured lecturer and researcher at the rank of an assitant pro-
+fessor) in the database and data mining group at the Ludwig-Maximilians-University Munich, Germany. He
+finished his PhD thesis on clustering moderate-to-high dimensional data in July 2004 and his Habilitation
+on similarity search and data mining in scientific and multimedia data in January 2009. Since 2001, he con-
+tributed more than 70 refereed conference and journal publications and presented several tutorials at major
+venues. In 2008, he received the “Best Paper Honorable Mention Award” at the SIAM Int. Conf. on Data
+Mining (SDM) together with his co-authors. Peer Kr¨oger constantly serves as a program committee member
+for major database and data mining conferences like KDD, SSTD, and SSDBM as well as a referee for lead-
+ing journals such as the VLDB Journal, KAIS, TKDE, and TKDD. His research generally deals with scalable
+solutions for similarity search and data mining in scientific and multimedia database applications.
+
+Geoinformatica
+
+Johannes Niedermayer is a PhD student at the Database Systems Group at the Department of Com-
+puter Science of the Ludwig-Maximilians-University Munich, Germany. He received his degree from the
+Ludwig-Maximilians-Unversity Munich in 2011. His research interests include similarity search and query
+processing in spatial and spatio-temporal databases.
+
+Matthias Renz is an Assistant Professor (Akad. Rat a. Z.) at the Institute for Informatics at the Ludwig-
+Maximilians University Munich (LMU). In 2006, he received his PhD degree in Computer Science from
+the Ludwig-Maximilians University Munich (LMU). In 2011 he got the lecturer qualification for Computer
+Science at the LMU (habilitation). His research interests include efficient, effective and reliable data man-
+agement and data mining in scientific, mobile and uncertain databases. Dr. Renz has published more than 90
+peer-reviewed papers on international conferences and in international journals, in total achieving more than
+1000 citations.
+
+Geoinformatica
+
+Andreas Z¨ufle received his PhD from LMU, Munich in 2013. He is an Academic Assistant in the database
+systems and data mining group of Hans-Peter Kriegel at the Ludwig- Maximilians-University at Munich,
+Germany. His research interests include query processing in uncertain, spatial and spatio-temporal databases,
+mining uncertain data and similarity search in spatial, temporal, and multimedia databases. To date, he has
+more than 35 publications in refereed conferences. He has been a member of the program committees in
+numerous conferences and workshops, and is currently in the organizing committee of the “GeoRich” (cid:4)14
+SIGMOD workshop.
+
+

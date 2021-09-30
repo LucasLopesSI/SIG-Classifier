@@ -1,0 +1,866 @@
+bs_bs_banner
+
+Research Article
+
+Transactions in GIS, 2016, 00(00): 00–00
+
+Rendering 2D Lines on 3D Terrain Model with
+Optimization in Visual Quality and Running Performance
+
+Jiangfeng She,*† Xin Tan,*† Xingchen Guo,*† Junzhong Tan,†‡
+and Jianlong Liu,*†
+(cid:2)Jiangsu Provincial Key Laboratory of Geographic Information Science and Technology,
+Nanjing
+†Department of Geographical Information Science, Nanjing University
+‡Jinling College, Nanjing University
+
+Abstract
+With the gradual shift from 2D maps to a 3D virtual environment, various visual artifacts were generated
+by overlaying 2D map symbols on 3D terrain models. This work proposes a novel screen-based method
+for rendering 2D vector lines with the accuracy of more than one pixel on the screen in real time. First,
+screen pixels are inversely projected onto a 3D terrain surface, and then onto the 2D vector plane. Next,
+these pixels are classiﬁed into three categories in terms of their intersection situation with the 2D lines.
+After that, a multiple sampling process is applied to the pixels that intersect with the 2D lines in order to
+eliminate visual artifacts, such as intermittence and aliasing (in pixel scale). Finally, a suitable point-in-
+polygon judgment is implemented to color each sample point quickly. The algorithm is realized in a heter-
+ogeneously parallel model so that the performance is improved and becomes acceptable.
+
+1 Introduction
+
+Line symbols, the basic components of a two-dimensional (2D) map, such as roads, rivers and
+boundaries are represented by 2D vectors. Since three-dimensional (3D) landscape contains
+many more objects than 2D, such as undulating terrain and confusing texture, it is easier to get
+lost. So lines with obvious color play an even more important role of abstracting and generaliz-
+ing various spatial phenomena in 3D visualization, which can easily catch the eye and navigate
+the traveller for further exploration (McLaren and Kennie 1989; D€ollner 2005). However, the
+expression of 2D features in a 3D scene is no longer as simple as it was in 2D. This is especially
+true when attaching 2D lines to a 3D terrain surface, which could lead to various visual arti-
+facts, such as suspension, puncture, intermittence and aliasing (Ohlarik and Cozzi 2011). These
+visual artifacts have the potential to cause problems when judging the positional relations
+between 2D vectors and the 3D terrain surface, and cause topological errors when transferring
+information. For example, if one continuous line is rendered broken, it may be recognized as
+two separate lines, which could result in perception problems for terminal users. Some existing
+rendering methods can partially eliminate certain visual artifacts and achieve high accuracy,
+but they cannot reach a satisfying performance in real-time 3D rendering (Yang et al. 2010),
+especially when the terrain model is large and its level-of-detail (LOD) is complicated. A
+mature schedule for overlaying 2D vector data on a 3D terrain model fast and accurately is
+
+Address for correspondence: Junzhong Tan, Department of Geographical Information Science, Nanjing University, China. E-mail:
+jzhtan@nju.edu.cn
+Acknowledgements: This work was supported by the National Natural Science Foundation of China under Grant No. 41371365 and
+under Grant No. 41230751. The authors would like to thank the anonymous referees for their contributing comments.
+
+VC 2016 John Wiley & Sons Ltd
+
+doi: 10.1111/tgis.12202
+
+2
+
+J She, X Tan, X Guo, J Tan and J Liu
+
+urgently needed. This article proposes a new screen-based approach for this purpose, optimiz-
+ing both visual quality and running performance.
+
+2 Related Works
+
+Some researchers have classiﬁed existing approaches into two categories: texture-based
+and geometry-based (Wartell et al. 2003; Schneider et al. 2005; Agrawal et al. 2006), or includ-
+ing a shadow-volume based approach as a third category (Xu et al. 2010; Vaaraniemi et al.
+2011). We have divided them into three categories: texture-based, geometry-based and screen-
+based. Their respective mechanisms, strengths and weaknesses are illustrated below. The
+shadow volume algorithm (SVA) has been highlighted and analyzed separately due to its signiﬁ-
+cance and its comparability with our method.
+
+2.1 Existing Approaches
+
+2.1.1 Texture-based approaches
+
+The primary idea of texture-based approaches is to convert 2D vectors into texture, i.e. raster-
+izing the 2D vector data at the highest resolution of the 3D terrain model, then replacing the
+corresponding texel of the image layer (usually a satellite or aerial photograph) with the raster-
+ized results, and rendering the 3D terrain with the previously generated image texture. Due to
+the mature technique of terrain texturing, rendering methods based on this concept may be eas-
+ily accelerated to achieve high performance (D€ollner et al. 2000). The complexities of the vec-
+tor data have no effect on the render efﬁciency while using texture-based methods for this
+purpose (Xu et al. 2010). A GPU-friendly terrain model based on the textured vector data was
+promoted, which could further support editing while it is available for real-time rendering (Bru-
+neton and Neyret 2008). However, the mapping accuracy and texture quality is limited by the
+resolution. When the image is zoomed out, the line features (especially the border of a polygon)
+may be almost completely ﬁltered away (Wartell et al. 2003), causing subjective misunder-
+standings in geographic recognition. When zoomed in, the edge of the line features become ser-
+rated because of the resolution limitation, which is called aliasing (Schneider et al. 2005)
+(Figure 1a). Dynamic texture pyramids on demand upon view-dependent LOD terrain were
+built to eliminate aliasing in texel scale (Kersting and D€ollner 2002), but it may generate
+
+Figure 1 Visual artifacts in different rendering approaches: (a) Texture-based: aliasing in texel
+scale (Schneider et al. 2005); (b) Geometry-based: suspension and puncture; (c) Screen-based (SVA
+as an example): intermittence and aliasing in pixel scale
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+A Screen-based Method of Line Rendering
+
+3
+
+additional cost in operating subdivided texels, and aliasing may still remain when zoomed in
+again from the current distance.
+
+2.1.2 Geometry-based approaches
+
+The idea behind geometry-based approaches is to render 2D vectors as separate geometry prim-
+itives with an additional offset. The basic process is to insert and delete points in geometrically
+represented lines and polygons in dynamic LOD terrain models, which involves an interpola-
+tion method. The 3D terrain visualization model ‘IMAGINE VirtualGIS’ (ERDAS Inc. 1997)
+provides the early polyline rendering method, which is one kind of geometry-based approach.
+This method can only deal with the block-based terrain model, which has been applied to
+triangle-based terrain since 2003 (Wartell et al. 2003). It is noted that some widely used model-
+ing applications like AutoCAD adopt this kind of approach to render 3D lines on screen (Shih
+2013). However, for vector-data mapping it is difﬁcult (sometimes impossible) to access the
+current state of the geo-referenced surface and install callbacks that could transform and adapt
+to geometric objects representing vector data so they correspond to that state (Kersting and
+D€ollner 2002). Once the terrain changges from one LOD layer to another, the z-buffer stitching
+artifacts may appear; for example, rivers may be suspended above the ground, or roads may
+puncture into hills (Figure 1b). In addition, the performance of real-time rendering may become
+poor if the terrain model is complicated (Deng et al. 2013); studies have been carried out
+regarding geometry simpliﬁcation algorithms based on this kind of approach (Agrawal et al.
+2006; Yang et al. 2010).
+
+2.1.3 Screen-based approaches
+
+The screen-based approaches are novel and essentially different from the other two approaches.
+This kind of method focuses only on pixels of the display device, and it enables one to work,
+one by one, to decide whether a pixel should be ﬁlled with vector color, or color from the ter-
+rain surface. The rendering accuracy and quality in this approach is improved to one pixel level
+on the screen. More importantly, rendering vectors in this way is totally independent of the ter-
+rain model, which means that no matter how complicated the terrain model or its LOD is, few
+changes occur in the rendering performance. The factors that inﬂuence rendering performance
+are the window size of the display device and the vector data amount.
+
+2.2 Shadow Volume Algorithm
+
+Schneider and Klein (2007) creatively applied the shadow volume algorithm (SVA) to render
+vectors on the terrain surface, which becomes a milestone-like method among screen-based
+approaches. SVA conquers most of the artifacts generated by texture or geometry-based
+approaches. It is the ﬁrst method that has improved the rendering accuracy to one pixel level
+on the screen, while it permits the quantitative measurements and edits of vector data with
+ease. In this method, vector polygons are extruded into polyhedrons, then the z-pass and z-fail
+techniques are used to ﬁnd the pixels located in polyhedrons and ﬁnally ﬁll these pixels with
+the color of the vectors. However, there still remain problems in visual experience and running
+performance.
+
+2.2.1 Visual artifacts of SVA
+
+The lines rendered by SVA appear with aliasing (in pixel scale), and are sometimes intermittent
+(Figure 1c). The cause of these artifacts is the single sampling strategy regarding pixels
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+4
+
+J She, X Tan, X Guo, J Tan and J Liu
+
+Figure 2 Visual artifacts of rendering vector lines using single sampling in SVA: (a) One vector
+line over one pixel width on the screen; (b) Single sampling line in Figure 2a depends on the cen-
+ter position; (c) Expected result of SVA with perceptible aliasing; (d) One vector line less than one
+pixel width on screen; (e) Single sampling line in Figure 2a depends on the center position; and
+(f) Expected result of SVA with perceptible intermittence
+
+Figure 3 Schematic diagram of SVA, illustrated with pixel 1 and 2 color determination process
+
+(Figure 2). Determining the coloration of pixels using SVA only depends on their center posi-
+tions, which means the results returned by one ray cast from the geometric center of the square
+is used to represent the whole pixel. If the intersection point on the terrain surface is in the vec-
+tor range, the pixel is rendered with the vector color. If not, the pixel remains its original color,
+i.e. the terrain color (Figures 2b and e). Although one pixel deviation is insigniﬁcant to the
+whole scene, the frequent appearances of this mistake may cause aliasing in the line edges (Fig-
+ure 2c), or intermittence if the line width is rendered less than one pixel width (Figure 2f), espe-
+cially at the distant horizon.
+
+2.2.2 Running performance of SVA
+
+Later researchers having fulﬁlled SVA have commented that this method could hardly achieve
+real-time renderings for large-scale complex vector maps (<10 fps) (Yang et al. 2010a, 2011).
+As illustrated in Figure 3, in a standard GPU pipeline, SVA consists of three parts: shadow poly-
+hedron representation, ray-casting, and a stencil test (Dai et al. 2008). Shadow polyhedrons are
+extruded from polygon-represented 2D line features. The normal of every face in the polyhe-
+dron must be calculated in advance and preserved for later processes. The ray-casting proce-
+dure makes a deﬁnition of every ray cast from the geometric center of the pixels from the
+viewport, and then makes repeated collision detections with every polyhedron. The stencil test
+checks the occurrences of one ray passing through the polyhedron faces. The scene is supposed
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+A Screen-based Method of Line Rendering
+
+5
+
+to be rendered twice, ﬁrst for terrain, and next for the shadow mesh. Because the count of faces
+in polyhedrons is six times that of raw polygons (one polygon is extended into six polyhedron
+faces), the efﬁciency of collision detection and the stencil test will be reduced. In addition, poly-
+hedron representation is strongly inﬂuenced by the vector data amount.
+
+3 Our Approach
+
+Our method aims at eliminating intermittence and aliasing artifacts that SVA and other meth-
+ods might generate when rendering vector lines onto a terrain surface, with no need to make
+raw data complicated (like interpolation in the geometry-based method or building shadow
+polyhedron in SVA). First, a coordinate conversion process (screen space to the 3D world, then
+to the 2D vector plane) is applied to each screen pixel to acquire its spatial range on the 2D vec-
+tor plane. Second, screen pixels are classiﬁed into three categories according to their intersec-
+tion situation with vectors: pixels completely covering the vector, pixels partially intersecting
+with the vector, and other pixels. Third, for pixels that have partially intersected with the vec-
+tor, ﬁrst ﬁnd suitable sampling positions in their projected space on the 2D vector plane, and
+then make a point-in-polygon judgment for each sampled position. Finally, a blended color of
+each sampled position is worked out and averaged as the representation of that pixel. Further-
+more, a heterogeneous parallel computation model is used to achieve higher performance.
+
+3.1 Preprocess: Line Expansion
+
+There are two kinds of vector lines in a 3D scene: lines with ﬁxed widths on the screen and lines
+with geo-referenced widths. The former have no changes in line width when zooming in on the
+scene, and can only tell you ‘a linear symbol representing something is here.’ The latter have a
+geo-referenced process to assign their width in the real world, so they can transfer more infor-
+mation and have better perception. As mentioned in Cartographic Principles, ‘runtime scaling
+of line width’ is one of the key elements of cartographic representation of lines (Kraak 2001),
+so in our method a geo-referenced line has been adopted. As pre-processing, vector lines are
+expanded into polygons with two paralleled edges and two caps. The rounded caps can be
+applied to create more natural connections between the expanded edges (Vaaraniemi et al.
+2011). But in order to eradicate heavy loss in performance (judging pixels in or out of rounded
+cap may result in additional time costs), a simpliﬁed line expansion process needs to be
+designed (Figure 4). It can be seen in Figure 4 that the normal vectors of every edge (including
+caps) pointed against the expanding directions are reserved, as this is critical information for
+subsequent steps.
+
+3.2 Calculating Spatial Range of Pixels on 2D Vector Plane
+
+Converting a 3D world coordinate to a screen coordinate is basic knowledge in computer
+graphics. We considered a schedule that reverses this process to determine the color of pixels
+on the screen. As illustrated in Figure 5, three coordinate systems are involved in this process. If
+we wonder whether a certain pixel on the screen should be colored with the vector or not, we
+converted the screen coordinate of the pixel center to the 3D world coordinate (multiply a con-
+version matrix determined by camera parameters and depth buffer at this moment), and
+acquire its 2D coordinate on a 2D vector plane using an orthographic projection, then judge if
+this point is in or out of the vector coverage. The biggest difference between this idea and SVA
+is that, in our method, the question of whether a point is located in the vector area is
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+6
+
+J She, X Tan, X Guo, J Tan and J Liu
+
+Figure 4 Simpliﬁed line expansion steps from (a) to (f): (a) Original line segments; (b) Line expan-
+sion of both parallel sides; (c) Clips and Extensions of edge segments; (d) Adding top and bottom
+caps; (e) Preserving the normal vectors of all expanded edges including caps
+
+Figure 5 Schematic diagram of our method, illustrated with Pixel 1 and 2 coloring determination
+process
+
+determined based on whether that point is in the corresponding 2D polygon (orange ‘2D Vec-
+tors’ in Figure 5) which is exactly the spatial range of the vector. However, in SVA, that determi-
+nation is made by judging whether that point is in the corresponding 3D polyhedron (orange
+‘Shadow Polyhedron’ in Figure 3) that has been extruded from the vector. The geometry amount
+and complexity of a polyhedron is six-fold compared with a polygon. When the line features
+become tremendous, the decrease in the amount of calculation within our method is remarkable.
+The ideas and experiments of our research employ coordinate conversions as one key step in the
+rendering process. In addition, this mathematical calculation procedure for each screen pixel is
+almost the same, so it is suitable and possible for it to be implemented in parallel schema.
+
+In a standard GPU pipeline, one pixel has one depth value only. If we use this value to rep-
+resent the depth of the four corners of each pixel (actually four corners of a pixel have their
+own unique depth value which we cannot acquire directly), invisible gaps may occur on the 2D
+vector plane (Figure 6a). If a vector line happens to pass through the gaps, there will be no
+chance it will be detected and marked. The solution to this issue is to make the centers of the
+four adjacent pixels (self-center, right-center, upper-right-center and upper-center) as the sub-
+stitute of four corners of the lower left pixel and sub-sample the irregular quadrilateral after
+transformation (Figure 6b). Because adjacent pixels share common edges, there will be no gaps
+between any two neighboring quadrilaterals on the 2D projected plane. With this solution, a
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+A Screen-based Method of Line Rendering
+
+7
+
+Figure 6 Elimination with gaps on the 2D plane and its mechanism: (a) Four corners share one
+depth value as the center position (red points represent real intersections with terrain; blue points
+represent speculated intersections with terrain), gaps occur on the 2D vector plane; and (b) Lower
+left pixel is delineated by its four neighbor pixels, and the gaps can be eliminated
+
+‘shift’ in a half pixel to lower left will be generated. However, this tiny ‘shift’ appears accepta-
+ble for visualization when compared with artifacts generated by the geo-referenced processing
+of the vector data.
+
+3.3 Classiﬁcation of Pixels and Detection of Edges
+
+The multiple sampling (MS) technique is a classic topic in computer graphics and is used for
+the screen antialiasing of display devices to smooth the edges of primitives (Suffern 2007). It is
+worth noting that MS is too burdensome to be handled within an extremely short interval of
+frame buffer refreshing (at least 20 fps for 3D interaction, which means 0.05 second as one
+interval to run the callback functions). Consequently, it is nearly impossible to apply MS for
+every pixel to achieve a real-time 3D interaction using our method, especially when dealing
+with a high-resolution display (full screen antialiasing was tested by us and the result is shown
+later in Figure 14). The solution is to pick out those pixels located in the coverage of the lines
+only, which in fact take up only a small proportion of all the screen pixels.
+
+On-screen pixels can be classiﬁed into three types according to their overlying situation
+with the vector feature range: completely ﬁlled pixels (marked with ‘F’ in Figures 7a and d),
+partially intersected pixels (‘P’) and no intersected pixels (‘N’). For different kinds of pixels, we
+created different strategies in the GPU pipelines. ‘N’ and ‘F’ pixels were to be ﬁlled with terrain
+or vector colors in a standard way that resulted in no decline or blending, and with no sub-
+sample needs. The visual artifacts that screen-based approaches potentially generate (broken
+parts, serrated edges of lines) were all attributed to the ‘P’ pixels, so only this kind of pixel
+needs to be sub-sampled and ﬁlled with a blended color. After optimization, these lines stand
+no chance of having any intermittence but the color intensity of these lines may decrease and
+sometimes looks fuzzy (Figures 7c and f). In most cases, lines with a less than one pixel width
+appear near the horizon; the color decline for such lines is reasonable in the visual experience.
+
+3.4 Determination of MS Space and Position
+
+There are several basic sampling techniques, including mean sampling, random sampling, jit-
+tered sampling, n-rooks sampling (Shirley 1991) and Hammersley series sampling (Hammersley
+and Hanscomb 1964). Our experiment only refers to a small portion of pixels, and after testing
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+8
+
+J She, X Tan, X Guo, J Tan and J Liu
+
+Figure 7 MS process with vector lines more than (7a-7c) and less than (7d-7e) one pixel width on
+screen: (a) Three classes of pixels in terms of overlaying situation; (b) Operating with MS using
+our method; (c) Expected result of our method with color-blended edges; (d) Three classes of pix-
+els in terms of the overlaying situations; (e) Operating with MS using our method; and (f)
+Expected result of our method with no intermittence
+
+Figure 8 Modiﬁed mean sampling method with different sample spaces upon one pixel/quadrilat-
+eral: (a) Original mean MS space: screen; and (b) Mean MS space in our method: 2D vector plane.
+The coordinates of the sample point need to be calculated using the four corners and sub-sample
+number using bilinear interpolation
+
+the sampling techniques enumerated above there are no great differences in visualization. As
+such, the simplest mean sampling method was used in order to save rendering performance. As
+mentioned in Section 3.2, a single screen pixel has one depth value only. If we sub-sample the
+pixels on the screen, all the sample points share the same depth, and positional mistakes occur
+deﬁnitively after projection. So the sample space should be changed from the screen space to a
+2D vector plane (Figures 8a and b). The strategy of mean sampling in irregular quadrilaterals is
+to use bilinear interpolation for determining the 2D coordinates of every sample position.
+
+3.5 Optimization Strategy with ‘P’ Pixels
+
+The solution for coloring pixels marked as ‘P’ is to blend the color values of its sample points.
+Because there may be a great number of polygons to be judged, judging the sample points of all
+pixels using point-in-polygon methods is inefﬁcient. For example, if we use the classic sweep
+line technique (Wylie et al. 1964) to judge if a certain sample point is in the range of polygons,
+we ought to transverse every edge in every closed polygon. In actuality, most of these calcula-
+tions do not make sense, because only one or several polygons may intersect with a certain
+pixel quadrilateral.
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+A Screen-based Method of Line Rendering
+
+9
+
+Figure 9 Suitable point-in-polygon judgment method and the additional rule-out step: (a) Deter-
+mine if sample point ‘S’ is in the polygon range using the cosine of two vertex (blue); (b) An addi-
+tional judgment of pedal located ‘IN’ or ‘OUT’ of line; (c) The wrong value of ‘FLAG’ before the
+additional judgment; and (d) Modiﬁed ‘FLAG’ value after ﬁltering away any uncorrelated edges
+
+Under the circumstances explained above, a suitable point-in-polygon judgment method is
+promoted to reduce performance waste among existing popular approaches. The key is to use a
+portion of the edge segments, which potentially intersect with a certain pixel, and to then use
+these edges’ normal information to determine the color of the sample points. This way, only
+several lines are involved in the repeated calculation, rather than the whole vector layer or the
+whole closed polygon. Given a certain pixel ‘P’ had intersected with the line segment ‘AB’ that
+had been picked out, one such point ‘S’ multiple sampled in ‘P’ is to be judged whether it is
+inside ‘L’ with a particular discrimination index ‘FLAG’ with its value normalized by 0. The
+speciﬁc mathematical and logical process is written in Code A:
+
+while (Muti-Sample Number ! 5 0)
+
+while (Intersected Line Number ! 5 0)
+
+if (cos u (cid:3) 0) FLAG 11;
+else FLAG ––;
+
+In Code A, h is the angle of vector ‘SA’ plus ‘SB’ and the normal of ‘L’ (two blue vectors in Fig-
+ure 9a). The color of sample point ‘S’ is determined by the ‘FLAG’ value, and the positive value
+returns the vector color while the negative value (along with zero) returns the terrain back-
+ground color. This index is valid in most cases, but in some cases it appears incorrect (Figure
+10). Additional judgments are needed to rule out uncorrelated edges that generate mistakes in
+these cases. For example, referring the right case in Figure 10, the index is 1 while the sample
+position is out of polygon range. The procedure for ruling-out uncorrelated edges is written in
+Code B:
+
+if (H 2 AB)
+
+else
+
+mark AB with correlated; do {Code A};
+
+mark AB with uncorrelated; continue;
+
+This process is inserted in front of the calculation for cos h. The deﬁnition of correlation
+depends on the pedal ‘H’ of the sample point ‘S’ on the edge ‘AB’ (Figure 9b). If ‘H’ is not
+located in the range of ‘AB,’ this edge is judged to be uncorrelated and should not be considered in
+contributing to the discrimination index (like the two edges marked ‘OUT’ in Figure 9c). After this
+additional step (Figure 9d), the mistakes mentioned above can be solved and the value of the index
+can be returned to normal. Because this additional step runs before our point-in-polygon judgment,
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+10
+
+J She, X Tan, X Guo, J Tan and J Liu
+
+Figure 10 Situations of a 3 3 3 MS pixel with line segments intersected. Our suitable point-in-
+polygon judgment discrimination index ‘FLAG’ value is beneath them. The left eight cases were
+judged correct in laws of > 0 represented ‘IN’ and (cid:3)0 represented ‘OUT’, while the right case was
+judged incorrect using this law
+
+a considerable number of edges may be ﬁltered away in advance, which means the number of edges
+bound to run the point-in-polygon judgment can experience a potential decline. This is especially
+true when zoomed out a great distance; edges operating per pixel increase suddenly while the
+ruling-out procedure signiﬁcantly reduces the burden at runtime.
+
+3.6 Parallel Schema
+
+The key factors that may reduce performance are located in the pixel-level processes from Steps
+3.2 to 3.5, which consist of many similar calculations and judgments. Consequently, a parallel
+strategy was worked out speciﬁcally aimed at these steps using the Compute Uniﬁed Device
+Architecture (CUDA) (Table 1) (NVIDIA Corporation 2013). As an experiment, the 800 3
+1,200 resolution window on screen was divided into 9,600 blocks; therefore every block oper-
+ated only 40 pixels per frame. The MS process was decomposed to multiple threads for each
+block, and one thread operated one sample point only. The global scheduling work, such as
+data reading and preprocessing, were delivered to the CPU, while pixel level calculations, such
+as inverse projection and intersection judgment, were delivered to the GPU. The 3D graphics
+library OpenSceneGraph (OSG) allows us to handle screen buffers directly and runs the paral-
+leled calculating functions frame by frame. After testing, this heterogeneous parallel computing
+model improved the running performance to an acceptable 3D interactive level (Section 4).
+
+Table 1 Hardware and software environment associated with developing and running the
+platform
+
+Items
+
+Parameters
+
+Central Processing Unit (CPU)
+Graphics Processing Unit (GPU)
+3D Graphics API
+GPU Parallel Operation Toolkit
+Terrain Data Operation Toolkit
+
+InterVR XeonVR CPU E5-2609 0 @2.4Ghz
+NVIDIAVR QuadroVR 4000 2GB RAM
+OpenSceneGraph (OSG)
+NVIDIAVR CUDATM v5.5
+Geospatial Data Abstraction Library (GDAL)
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+A Screen-based Method of Line Rendering
+
+11
+
+Figure 11 GPU-CPU heterogeneously parallel schema in our method
+
+4 Analysis and Testing
+
+The platform upon which we launched our research has the following hardware and software
+parameters:
+
+Figures 12 and 13 illustrate the effects of our algorithm. Polylines are transformed to poly-
+gons using a 5.0 m geo-referenced width in a local coordinate and were adjusted to a proper
+perspective to render them at less than one pixel width on the screen. As shown in Figure 12a,
+single sampling causes obvious intermittence and solid lines look like dotted lines. Next, we
+discovered that intermittence still exists within the 2 3 2 multiple sampled results of our
+method (Figure 11b), while it was almost eliminated by 3 3 3 and 4 3 4 sampling (Figure 12c
+& 12d). Furthermore, if these lines were widened to 20.0 m and were watched closely, serrated
+edges generated by a single sampling (Figure 13a) would be signiﬁcantly smoother by 2 3 2
+(Figure 13b), even better by 3 3 3 (Figure 13c), and much better by the 4 3 4 (Figure 13d)
+samples. Theoretically, as vector lines become thinner and thinner, visual intermittence and
+disappearance are bound to happen. All we can do is to make sure these artifacts do not appear
+in most circumstances. In general, our method can improve the rendering quality of overlaid
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+12
+
+J She, X Tan, X Guo, J Tan and J Liu
+
+Figure 12 The effects of our algorithm towards lines with less than one pixel width (5.0 m width):
+(a) Single sampling by SVA; (b) 2 3 2 samples per pixel; (c) 3 3 3 samples per pixel; and (d) 4 3 4
+samples per pixel
+
+polylines in 3D visualization by eliminating intermittence and aliasing in normal view
+distances.
+
+Tables 2 to 5 illustrate the performance of our method under different platform and data
+situations. These experiments indicate: (1) the method is inﬂuenced by the vector data amount
+and window size; (2) the method is not inﬂuenced by terrain model; (3) the number of blocks
+in CUDA does not cause acceleration when this exceeds 4,800. In addition, compared with
+SVA and full screen antialiasing, our method shows obvious improvement on running per-
+formance when operating on the same data set of vectors, and is acceptable within 3D interac-
+tion (Figure 14).
+
+We made two groups of comparative experiments to test performance between SVA, full
+screen antialiasing and our method. In the ﬁrst group (Figure 14a), vector data consisting of
+1,640 vertices was tested. Using our method with 2 3 2 or 5 3 5 samples ran somewhat infe-
+rior to single sampling. The second group (Figure 14b) was vector data consisting of 4,101 ver-
+tices. This showed a similar trend as the ﬁrst group. We discovered when samples were over 5
+3 5 per pixel, there were few differences in the visual experience, and rendering quality could
+be improved a great deal at normal view distances. As a result, 2 3 2 to 5 3 5 samples per pixel
+is a recommend standard for most overlay situations.
+
+Figure 15 is Mount Yu in Zhenjiang City, Jiangsu Province of PRC, and the detailed
+parameters of data are presented in Table 6. We overlaid two levels of roads and lanes in this
+area, and optimized it with 5 3 5 multiple samples. The experiment’s results showed no inter-
+mittence or aliasing occurred from the normal view distance. As a limitation of the screen
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+A Screen-based Method of Line Rendering
+
+13
+
+Figure 13 Effect of our algorithm towards lines of more than one pixel width (20.0m width with a
+close view distance): (a) Single sampling by SVA; (b) 2 3 2 samples per pixel; (c) 3 3 3 samples
+per pixel; and (d) 4 3 4 samples per pixel
+
+Table 2
+Experiment #1 results (overlaid vector data consisting of about 2,000 vertices on terrain
+model consisting of 3,048 triangles) with a window size of 1,200 3 800 resolution using different
+number of multithreading blocks
+
+Numbers of Blocks
+
+Block Size (wdth 3 height in pixels)
+
+Average Rendering Rate (fps)
+
+600
+1,600
+2,400
+4,800
+9,600
+
+40 3 40
+20 3 30
+20 3 20
+10 3 20
+10 3 10
+
+11.6
+15.8
+21.2
+22.7
+22.7
+
+resolution that existed, visual artifacts in some cases such as viewing from an extremely close
+or far distance cannot be completely avoided.
+
+5 Discussion and Conclusions
+
+A novel screen-based method for overlaying 2D vector lines onto 3D terrain in real time was
+promoted here, improving rendering quality to more than one pixel level on the screen. With
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+14
+
+J She, X Tan, X Guo, J Tan and J Liu
+
+Table 3
+Experiment #2 results (overlaid vector data with about 2,000 vertices on terrain model
+consisting of 3,048 triangles) with different displaying window size using the same block size of
+4,800
+
+Window Size
+(width 3 length in
+pixels)
+
+Terrain Rendering
+Only (fps)
+
+Terrain and Vectors Rendering
+
+CPU Only (fps)
+
+CPU and GPU (fps)
+
+600 3 400
+800 3 600
+1024 3 768
+1200 3 800
+
+75.9
+73.7
+68.3
+60.8
+
+1.1
+1.1
+1.0
+<1.0
+
+31.9
+28.6
+25.0
+22.7
+
+Table 4
+dow size of 1,200 3 800 resolution using different terrain models
+
+Experiment #3 results (overlaid vector data consisting of about 2,000 vertices) with a win-
+
+Count of Triangles in Terrain model
+
+Layer Count of LOD
+
+Average Rendering Rate (fps)
+
+1
+3
+5
+9
+
+22.7
+22.7
+22.5
+22.1
+
+Table 5
+size of 1,200 3 800 resolution using different vector data
+
+Experiment #4 results (using terrain model consisting of 3,048 triangles) with a window
+
+Count of Vertices of Vector
+Data after Line Expansion Process
+
+Average Rendering
+Rate (fps)
+
+468
+3,048
+10,475
+22,530
+
+1,640
+2,601
+4,101
+10,171
+
+25.4
+21.3
+17.5
+7.8
+
+this method, common visual artifacts, such as punctures, suspension and aliasing (in texel scale)
+that texture or geometry-based approaches might generate, can be eliminated. The main contri-
+bution is, some special artifacts can be eliminated as well, such as intermittence and aliasing (in
+a pixel scale) that existing screen-based approaches might generate in normal view distance.
+The results of our method showed decreased confusion when recognizing line symbols in a 3D
+virtual environment, and perception was improved. It has been noted that this was attributed
+to a heterogeneous parallel computing model; MS does not cause any obvious decline in per-
+formance during runtime rendering.
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+A Screen-based Method of Line Rendering
+
+15
+
+Figure 14 Frame rate curves rendering the terrain model and the overlaid polylines using differ-
+ent methods: (a) Rendering vector data with 1,640 vertices in a 1,200 3 800 resolution screen; and
+(b) Rendering vector data with 4,101 vertices in a 1,200 3 800 resolution screen
+
+Figure 15 Results of overlying 2D vector lines onto 3D terrain in an experimental area (Mount Yu in
+Zhenjiang City, Jiangsu Province of PRC): (a) 2D line symbols representing the different levels of roads on
+the DOM; and (b) The corresponding overlying effect of 3D visualization in the same area using our
+method
+
+The main shortcoming of our method is that the running frame rate is inﬂuenced by the
+vector data amount and screen resolution, which all screen-based approaches cannot avoid.
+Besides, the implementation of parallel schema using CUDA is not convenient for most applied
+virtual geo-systems. But with the development of computer hardware, screen-based calculation
+is bound to become faster.
+
+Our further work may focus on handling complicated line symbols with cyclical changes
+(like dashed lines, railways, or administrative boundaries) and on optimization strategies both
+in rendering quality and running performance.
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+16
+
+J She, X Tan, X Guo, J Tan and J Liu
+
+Table 6
+with window size of 1,200 3 800 resolution
+
+Parameters of experimental area: Mount Yu in Zhenjiang City, Jiangsu Province of PRC
+
+Items
+
+Data Format
+
+Resolution/Width
+
+Data Amount
+(Raw)
+
+Data Amount
+(After Expansion)
+
+DEM
+DOM
+Vector (Orange)
+Vector (Pink)
+
+.tif
+.tif
+.shp
+.shp
+
+3 m 3 3 m
+0.3 m 3 0.3 m
+20.0 m
+12.0 m
+
+808.15 KB
+59.98 MB
+820 Vertices
+260 Vertices
+
+-
+-
+1,640 Vertices
+520 Vertices
+
+References
+
+Agrawal A, Radhakrishna M, and Joshi R C 2006 Geometry-based mapping and rendering of vector data over
+LOD photo-textured 3D terrain models. In Proceedings of the Fourteenth International Conference in Cen-
+tral Europe on Computer Graphics, Visualization and Computer Vision, Plzen, Czech Republic
+
+Bruneton E and Neyret F 2008 Real-time rendering and editing of vector-based terrains. Computer Graphics
+
+Forum 27: 311–20
+
+Dai C, Zhang Y, and Yang J 2008 Rendering 3D vector data using the theory of stencil shadow volumes.
+International Archives of the Photogrammetry, Remote Sensing and Spatial Information Sciences 37(B2):
+643–48
+
+Deng B, Xu D, Zhang J, and Song C 2013 Visualization of vector data on global scale terrain. In Proceedings of
+the Second International Conference on Computer Science and Electronics Engineering, Paris, France: 85-8
+Dollner J, Baumman K, and Hinrichs K 2000 Texturing techniques for terrain visualization. In Proceedings of the
+
+IEEE Conference on Information Visualization, Salt Lake City, Utah: 227-34
+
+Dollner J 2005 Geovisualization and real-time 3D computer graphics. In Dykes J, MacEachren A M, and Kraak
+
+M-J (eds) Exploring Geovisualization. Amsterdam, the Netherlands, Elsevier: 325–43
+
+ERDAS Inc. 1997 IMAGINE VirtualGIS V8.6 Tour Guide. WWW document, url?q5ftp://ftp.ecn.purdue.edu/
+
+jshan/86/help/hardcopy/VirtualGIS_Tour.pdf
+
+Hammersley J M and Hanscomb D C 1964 Monte Carlo Methods. London, Methuen
+Kersting O and Dollner J 2002 Interactive 3D visualization of vector data in GIS. In Proceedings of the Tenth ACM
+
+International Symposium on Advances in Geographic Information Systems, McLean, Virginia: 107-12
+
+Kraak M J 2001 Web Cartography: Developments and Prospects. Boca Raton, FL, CRC Press: 53–72
+McLaren R A and Kennie T J M 1989 Visualisation of digital terrain models: Techniques and applications. In
+Raper J (ed) Three Dimensional Applications in Geographic Information Systems. London, Taylor and
+Francis: 79–98
+
+NVIDIA Corporation 2013 Cuda C Programming Guide. WWW document, http://docs.nvidia.com/cuda/cuda-c-
+
+programming-guide/#axzz3d1u4XGNQ
+
+Ohlarik D and Cozzi P 2011 A screen-space approach to rendering polylines on terrain. In Proceedings of the
+Thirty-eighth International Conference and Exhibition on Computer Graphics and Interactive Techniques,
+Vancouver, British Columbia: 7-11
+
+Schneider M, Guthe M, and Klein R 2005 Real time rendering of complex vector data on 3D terrain models. In
+Proceedings of the Eleventh International Conference on Virtual Systems and Multimedia, Ghent, Belgium:
+573-82
+
+Schneider M and Klein R 2007 Efﬁcient and accurate rendering of vector data on virtual landscapes. Journal of
+
+WSCG 15(1-3): 59–64
+
+Shih R 2013 AutoCAD 2014 Tutorial – Second Level: 3D Modeling. Mission, KS, SDC Publications
+Shirley P 1991 Discrepancy as a quality measure for sample distributions. In Proceedings of the European Com-
+
+puter Graphics Conference and Exhibition, Vienna Austria: 183-94
+
+Suffern K 2007 Ray Tracing from the Ground Up. Wellesley, MA, A K Peters: 74-97
+Vaaraniemi M, Treib M, and Westermann R 2011 High-quality cartographic roads on high-resolution DEMs.
+
+Journal of WSCG 19(2): 41–8
+
+Wartell Z, Kang E, Wasilewski T, Ribarsky W, and Faust N L 2003 Rendering vector data over global, multi-
+resolution 3D terrain. In Proceedings of the Fourteenth IEEE Visualization Conference, Seattle, Washing-
+ton: 213-22
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+A Screen-based Method of Line Rendering
+
+17
+
+Wylie C, Romney G, Evans D, and Erdahl A 1967 Halftone perspective drawings by computer. In Proceedings of
+the Annual Meeting of the American Federation of Information Processing Societies and the AFIPS Fall
+Joint Computer Conference, Anaheim, California: 49–58
+
+Xu Y, Sui Z, Weng J, and Ji X 2010 Visualization methods of vector data on a digital Earth system. In Prooceed-
+
+ings of the Eighteenth International Conference on Geoinformatics, Beijing, China
+
+Yang L, Zhang L, Kang Z, Xiao Z, Peng J, Zhang X, and Liu L 2010 An efﬁcient rendering method for large vec-
+
+tor data on large terrain models. Science China Information Sciences 53: 1122–29
+
+Yang L, Zhang L, Ma J, Kang Z, Zhang L, and Li J 2011 Efﬁcient simpliﬁcation of large vector maps rendered
+
+onto 3D landscapes. IEEE Computer Graphics and Applications 31(2): 14–23
+
+VC 2016 John Wiley & Sons Ltd
+
+Transactions in GIS, 2016, 00(00)
+
+

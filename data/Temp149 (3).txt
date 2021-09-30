@@ -1,0 +1,1246 @@
+bs_bs_banner
+
+Research Article
+Research Article
+
+Transactions in GIS, 2015, 19(5): 678–693
+Transactions in GIS, 2014, (cid:129)(cid:129)((cid:129)(cid:129)): (cid:129)(cid:129)–(cid:129)(cid:129)
+
+Fast Image-Space Silhouette Extraction for
+Non-Photorealistic Landscape Rendering
+
+James E. Mower
+
+Department of Geography and Planning, University at Albany
+
+Abstract
+Landscape illustration, a core visualization technique for ﬁeld geologists and geomorphologists, employs
+the parsimonious use of linework to represent surface structure in a straightforward and intuitive manner.
+Under the rubric of non-photorealistic rendering (NPR), automated procedures in this vein render silhou-
+ettes and creases to represent, respectively, view-dependent and view-independent landscape features. This
+article presents two algorithms and implementations for rendering silhouettes from adaptive tessellations
+of point-normal (PN) triangles at speeds approaching those suitable for animation. PN triangles use cubic
+polynomial models to provide a surface that appears smooth at any required resolution. The ﬁrst algo-
+rithm, drawing on standard silhouette detection techniques in surface meshes, builds object space facet
+adjacencies and image space pixel adjacencies in the graphics pipeline following adaptive tessellation. The
+second makes exclusive use of image space analysis without referencing the underlying scene world geom-
+etry. Other than initial pre-processing operations, recent advances in the OpenGL API allow implementa-
+tions for both algorithms to be hosted entirely on the graphics processing unit (GPU), eliminating
+slowdowns through data transfer across the system memory bus. We show that both algorithms provide
+viable paths to real-time animation of pen and ink style landscape illustrations but that the second dem-
+onstrates superior performance over the ﬁrst.
+
+1 Introduction
+
+Perspective landscape illustration in the style of Holmes (Fernlund 2000), Davis (1908),
+Lobeck (1958), Imhof (2007), and many other ﬁeld geologists and geomorphologists of the
+19th and 20th centuries employs geometric structures originating in the perspective landscapes
+of da Vinci and others (Imhof 2007, pp. 3–14; Fernlund 2000, pp. 2–12). Their ﬁeld pencil
+sketches, copied in the studio to pen and ink illustrations, are rendered in a technical style with
+historical roots extending to the woodcuts of Swiss artists such as Jost Murer and others. Both
+traditions provide a relatively simple drawing framework for effective landscape visualization
+that is still practiced today (Coe 2010). Regardless of their utility as landscape visualization
+tools, the best pen and ink style landscapes have long been regarded as works of art in their
+own right (Imhof 2007, pp. 357–359).
+
+Unfortunately for manual practitioners, the artistic construction of pen and ink illustra-
+tions from initial ﬁeld sketch to ﬁnished document requires tremendous effort and skill. Given
+its potential efﬁcacy and beauty, landscape illustration has become an irresistible target for
+automation and several approaches have been described using techniques associated with the
+methods of non-photorealistic rendering (NPR) (Lesage and Visvalingam 2002, Kennelly and
+Kimerling 2006).
+
+Address for correspondence: James E. Mower, Department of Geography and Planning, AS 218, University at Albany, Albany, NY 12222,
+USA. E-mail: jmower@albany.edu
+
+VC 2014 John Wiley & Sons Ltd
+© 2014 John Wiley & Sons Ltd
+
+doi: 10.1111/tgis.12118
+doi: 10.1111/tgis.12118
+
+2
+
+J E Mower
+
+Fast Image-Space Silhouette Extraction
+
+679
+
+The goal of this work is to promote automated pen and ink style landscape illustration as
+an alternative, artistic form of landscape visualization suitable for implementation in modern
+high-speed interactive rendering environments. Taking advantage of recent developments in
+GPU hardware and accompanying software development environments, this work demon-
+strates the practicality of performing real-time landscape illustration in a form that has been
+long celebrated for its utility and beauty, opening it up to animation and experimentation with
+adaptable generalization and lighting parameters. It provides cartographers with an alternative
+to the ubiquitous draped air photography model that currently dominates 3D landscape repre-
+sentation. Concentrating on one aspect of pen and ink landscape representation – the identiﬁ-
+cation and rendering of silhouette lines – we show that attaining animation rendering frame
+rates requires not only the application of modern hardware but also a rethinking of older
+methods for feature extraction that fail to exploit the highly parallel nature of modern GPUs.
+Using the terminology of non-photorealistic rendering, we discriminate between linework
+
+representing view-dependent and view-independent features (Figure 1).
+
+Figure 1 A rendered portion of the Sawatch Range in Colorado, looking west, created from the
+implementation discussed in Mower (2011) and referred to as PenAndInk in the following discus-
+sions. Using a rendered B-spline surface as a mask and analytical surface, PenAndInk renders sil-
+representing visible/invisible surface borders and land/sky edges, and creases,
+houettes,
+representing view-independent hydrologic features, to create the ﬁnal composite image at the
+lower right. Illumination comes from the upper left. The B-spline in the upper left is rendered with
+non-emissive Phong shading for clarity here
+
+© 2014 John Wiley & Sons Ltd
+VC 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, (cid:129)(cid:129)((cid:129)(cid:129))
+Transactions in GIS, 2015, 19(5)
+
+680
+
+J E Mower
+
+Fast Image-Space Silhouette Extraction
+
+3
+
+PenAndInk Computations for Each Rendered Frame
+
+CPU
+
+B-spline generaton
+and tessellation
+
+Delaunay triangulation
+
+Vertex data
+
+Silhouette extraction
+
+System bus
+
+GPU
+Render surface
+     mask
+
+Render silhouettes
+
+Figure 2 Workload distribution in PenAndInk. A large number of supporting graphics operations
+execute on the CPU
+
+View-dependent features represent visual edges in a scene that arise through the overlay of
+a foreground object upon a more distant object or the trace of a feature’s proﬁle against
+the sky. Such features depend upon the sketch viewpoint and are referred to as silhouettes.
+View-independent features are rendered regardless of the viewpoint position and often repre-
+sent features of geomorphological importance (drainage channels, ridges, and so on). These
+features are often referred to as creases or form lines (Isenberg et al. 2003). We will use creases
+for the remainder of this article as the term ‘form lines’ is sometimes used in the cartographic
+literature to represent linework extending along the plane of a contour in a perspective image
+(Imhof 2007, p. 230).
+
+Mower (2011) provides an overview of many of the early NPR approaches to landscape
+representation and introduces algorithms that use smooth surface models for low noise silhou-
+ette and crease extraction. The algorithms presented there extract 3D geometry from adaptive
+B-spline surface models in object space. Although the implementation (PenAndInk) produces
+appropriate silhouettes and creases, it does so at speeds that are not conducive to real-time
+animation.
+
+Figure 2 illustrates the PenAndInk workload distribution and rendering pipeline. Process-
+
+ing bottlenecks occur on each frame when:
+
+1. B-spline rendering functions execute on the CPU instead of on the massively-parallel
+
+graphics processing unit (GPU);
+
+2. A supporting Delaunay triangulation of the tessellated surface is created on the CPU; and
+3. Topological data associated with the triangulation moves across the system bus from
+
+system memory to the GPU.
+
+Image construction in PenAndInk took up to 20 minutes to render silhouettes and
+creases for a single frame, depending upon scene size. Obviously, this approach is impracti-
+cable for real-time rendering applications. To approach animation speeds, the algorithms pre-
+sented in this article eliminate the use of object space Delaunay triangulation for image space
+techniques that operate on 2D depth buffers and other data hosted on the GPU. We discuss
+recent additions to GPU programming environments that support fast tessellation of cubic sur-
+faces and present two new silhouette algorithms that exploit them to circumvent the previous
+computational bottlenecks. The new algorithms:
+
+1. Eliminate data transfers across the system bus during frame-to-frame rendering;
+2. Execute all rendering functions on the GPU; and
+3. Avoid the creation of global topological models.
+
+© 2014 John Wiley & Sons Ltd
+VC 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, (cid:129)(cid:129)((cid:129)(cid:129))
+Transactions in GIS, 2015, 19(5)
+
+4
+
+J E Mower
+
+Fast Image-Space Silhouette Extraction
+
+681
+
+2 Modern GPUs and Shader Programming Environments
+
+In general, graphics programs that do their entire rendering on the GPU and minimize data
+transfer across the system memory bus achieve higher execution speeds than those that do not.
+As GPUs and their programming environments have matured, manufacturers have allowed
+programmers to customize ever more stages of the ‘programmable pipeline’ (Figure 3). Until
+the introduction of the NVIDIA GeForce 3 GPU in 2001, 3D application programming inter-
+faces (APIs) such as Microsoft DirectX and the open source OpenGL environments used ‘ﬁxed
+pipeline’ models, limiting programmers’ control of the functionality of existing GPU ﬁrmware
+functions to the modiﬁcation of their parameters (Wikipedia 2014a). Subsequent releases of
+OpenGL and DirectX began to support programmable pipeline architectures through the
+introduction of ‘shader languages’ that allow programmers to compile and run novel code on
+the GPU. GLSL, the group of shader languages intended for use with OpenGL and utilized by
+the implementations described within this article comprises several closely-related languages
+differentiated by their target shader ‘stage.’ Each of these stage-speciﬁc variants resemble C but
+differ from one another with respect to their input and output data streams, their allowable
+data types, their contextual behaviors, and their range of operators and built-in functions.
+Initial versions of GLSL limited programmers to the control of vertex and fragment processing
+on the GPU (Wikipedia 2014b). After nine subsequent releases through 2013, GLSL version
+4.3 allows access to sophisticated GPU functionality for the tessellation of smooth polynomial
+surfaces to any desired resolution. Whereas PenAndInk was written with respect to the
+OpenGL ﬁxed pipeline model, the implementations in this article depend largely upon GPU
+features exposed in versions 4.3 and later of GLSL, notably tessellation control, tessellation
+evaluation, and geometry (Shreiner et al. 2013). Figure 3 illustrates the GLSL programmable
+pipeline control ﬂow as of version 4.3. In the following discussions, ‘fragment’ will denote a
+memory location hosted on the GPU with ﬂoating point coordinates mapping to a frame
+buffer pixel. Depending on the data store, a fragment can hold arbitrarily complex structured
+data. ‘Pixel’ will denote a memory location in the frame buffer that holds rendered color infor-
+mation. A depth buffer is a frame buffer attachment that holds, for each pixel, the distance of
+the pixel’s referent surface to the viewpoint.
+
+Modern GPUs use massively parallel architectures to achieve high rendering speeds. GLSL
+enforces the abstraction that each input primitive is processed on its own virtual core, inde-
+pendent of all others, even if the number of physical cores is less than the number of input
+primitives at any given time. Consequently, GLSL programs are inherently parallel; a program
+written for any shader stage processes a large number of input primitives in parallel and asyn-
+chronously. GLSL encourages the limitation of inter-processor communication to a bare
+the implementations
+minimum to reduce idle time due to synchronization. Therefore,
+described in this article avoid ‘global’ approaches in favor of ‘local’ solutions; communication
+and synchronization between cores is limited as much as possible by acting on small surface
+patches independently of their neighbors.
+
+Figure 3 The GLSL programmable pipeline, versions 4.3 and later
+
+© 2014 John Wiley & Sons Ltd
+VC 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, (cid:129)(cid:129)((cid:129)(cid:129))
+Transactions in GIS, 2015, 19(5)
+
+682
+
+J E Mower
+
+Fast Image-Space Silhouette Extraction
+
+5
+
+Pre-Processing
+
+Vertex Shader
+
+CPU
+
+GPU
+
+Construct surface 
+mesh with 
+face normals
+(green) and 
+point normals
+(red)
+
+System 
+bus
+
+Tessellation 
+Control
+Shader
+
+b120
+
+b300
+
+b210
+
+b030
+
+B
+b012
+
+b021
+PN triangle A 
+with 
+interpolated 
+Bezier control points
+
+A
+
+b201
+
+b111
+
+b102
+b102
+
+b003
+
+A
+
+S
+Surface mesh 
+with point normals
+
+Tessellation
+Evaluation
+Shader
+
+Framebuffer
+(via fragment shader)
+Single
+rendered
+tessellated
+triangle B
+
+B
+
+One of 9 
+PN triangle
+subdivisions
+with tessellation
+evaluation sites
+
+B
+
+Figure 4 Rendering begins after the surface geometry is copied from the CPU to the GPU. For each
+frame on the GPU, the vertex shader passes the vertex and point normal data to the tessellation
+control shader (TCS) which creates PN triangles with interpolated Bezier control points (b003-b300).
+The TCS also creates a set of tessellated vertices as evaluation sites (green dots) within each PN tri-
+angle for the tessellation evaluation shader. The fragment and optional geometry stages were not
+presented here for clarity
+
+2.1 Tessellation Shaders
+
+PenAndInk uses the OpenGL NURBS (non-uniform, rational B-spline) facility to construct
+B-spline curves from elevation data extracted in square grid format from the National Eleva-
+tion Dataset (Shreiner et al. 2008, USGS 2014). Unfortunately, the NURBS facility is not
+hosted on the GPU but instead runs on the CPU, resulting in substantial execution slowdowns.
+Furthermore, OpenGL versions released since 3.1 in 2009 lack support for the NURBS facility
+in their core feature sets, leaving the construction of B-spline and related polynomial surfaces
+to the programmer. For both these reasons, the implementations in this article will not use the
+NURBS facility to generate analytical surfaces but instead will run user-deﬁned code on the
+GPU.
+
+GLSL 4.3 provides application programmers with built-in tessellation functions on the
+GPU through two separate stages. The ﬁrst, tessellation control, deﬁnes the control points
+(coefﬁcients) for local surface patch generation. In this stage, the level of detail is deﬁned by
+inner and outer tessellation values, parameters that determine how input primitives are subdi-
+vided on their edges and in their interiors to produce vertices of interior triangles as surface
+evaluation sites for the next stage, tessellation evaluation (Figure 4). In perspective imaging, it
+is frequently desirable to increase the sampling density in the image foreground and reduce it
+in the background where oversampling could write more than one color value to a given pixel.
+Specifying higher inner and outer parameter values in the foreground provides ﬁner level of
+detail where it matters than do the lower values typically reserved for the parts of a scene in
+the perspective background.
+
+© 2014 John Wiley & Sons Ltd
+VC 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, (cid:129)(cid:129)((cid:129)(cid:129))
+Transactions in GIS, 2015, 19(5)
+
+6
+
+J E Mower
+
+Fast Image-Space Silhouette Extraction
+
+683
+
+Following tessellation control, the tessellation evaluation stage outputs new vertices at the
+speciﬁed evaluation sites with values dependent upon a set of given parametric surface equa-
+tions, typically describing a cubic polynomial of some kind. An optional following geometry
+shader can then assemble the tessellated vertex stream from the evaluation stage into triangles
+for further processing (as described in the Adjacency algorithm and implementation below).
+If the application does not specify a geometry shader, the non-programmable primitive genera-
+tor will quietly assemble the vertices into triangles for output to the fragment shader (as in the
+Toward/Away algorithm and implementation). The algorithms described in this article use
+point-normal (PN) triangles (Vlachos et al. 2001) to deﬁne Bezier surface functions for subse-
+quent surface analysis.
+
+Numerous tutorials on OpenGL 4.x shaders exist. The author found those at Modern
+OpenGL Tutorials (Meiri 2014) to be particularly helpful, especially those concerning the con-
+struction of polynomial surfaces from PN triangles.
+
+2.2 PN Triangles
+
+Unlike the global B-spline surface constructed by the OpenGL NURBS facility for PenAndInk,
+PN triangles are local cubic Bezier surface patches assembled from triangular facets arranged
+in a mesh (Figure 4). Visual continuity (though not necessarily tangent continuity) is main-
+tained with adjacent patches by assigning normals to patch vertices in a CPU pre-processing
+stage. At each mesh vertex, the summed normals of the incident faces are normalized and
+assigned to the vertex, essentially providing an ‘average’ of the surrounding face normals,
+similar to the technique supporting Phong shading (Phong 1975). On the GPU, the tessellation
+control shader interpolates points at brst (where r, s, and t are barycentric coordinates relative
+to the PN triangle vertices) to serve, along with the PN triangle vertices and their associated
+vertex normals, as the control points or coefﬁcients of a cubic Bezier equation across the PN
+triangle. The control points are not representative of any sampled surface elevation value
+between the known vertices; rather, they function as a framework for smoothing across the PN
+triangle. Using the speciﬁed inner and outer tessellation level values, the tessellation control
+shader then determines the number and locations of vertices that will become evaluation sites
+for the tessellation evaluation stage. This stage determines elevations at these sites by supply-
+ing their barycentric coordinates to the Bezier equation of the parent PN triangle. The result-
+ing surface is generally sufﬁcient for use as a base for silhouette and form line generation, but
+tangent discontinuities leading to one or two pixel-wide cracks appearing between adjacent
+patches can become problematic for analysis unless corrected. For both algorithms described
+in this article, the input surface mesh is a regular triangulation of a ﬁxed-resolution grid cell
+DEM.
+
+3 Silhouette Extraction Algorithms for PN Triangle Surfaces
+
+Silhouette generation on a ﬁxed triangular mesh is a well-understood problem (Kennelly and
+Kimerling 2006). Given a viewpoint and a triangle with 3 edge-adjacent neighbors, a silhou-
+ette occurs along a shared edge if the normal of one triangle points toward the viewpoint (less
+than 90° between the line-of-sight vector and the surface normal) and the other points away
+(Figure 5). This approach assumes local knowledge of triangle adjacency, available to a GLSL
+geometry shader as an input stream from the evaluation shader, but only if tessellation is dis-
+abled. Since the ﬁrst of the two algorithms presented below (Adjacency) requires both tessel-
+lation and adjacency information, its implementation compensates for this incompatibility by
+
+© 2014 John Wiley & Sons Ltd
+VC 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, (cid:129)(cid:129)((cid:129)(cid:129))
+Transactions in GIS, 2015, 19(5)
+
+684
+
+J E Mower
+
+Fast Image-Space Silhouette Extraction
+
+7
+
+>90º
+
+<90º
+
+Silhouette
+
+Visible
+
+Z axis
+
+Invisible
+
+Figure 5 Silhouette viewing geometry. A silhouette exists along the shared edge of the two trian-
+gles because one is visible from the viewpoint and the other is not
+
+using shader storage objects (SSOs) to record and access information concerning the contain-
+ing (or generating) object-space surface triangle of each fragment. SSOs are cross-core memory
+structures hosted on the GPU that incur minimal synchronization penalties, allowing global
+read and write access across GPU cores with support for arbitrarily complex data structures.
+
+3.1 Algorithm 1 (Adjacency): Finding Silhouettes Through Triangle Adjacency
+
+Adjacency operates in three sections. The ﬁrst is a one-time operation run on the CPU. The
+next two sections run on the GPU as rendering passes for each new frame. The ﬁrst pass writes
+triangle data to SSOs; the second renders to the on-screen frame buffer.
+
+To ﬁnd silhouettes through adjacency (Adjacency):
+
+1. On CPU:
+
+1.1. Find the PN vertices for the mesh (one-time operation);
+
+2. On GPU, for each rendered frame:
+
+2.1. First rendering pass:
+
+2.1.1. Group mesh vertices into PN triangle patches (vertex shader);
+2.1.2. For each PN triangle, deﬁne Bezier control points and specify evaluation
+sites (tessellation vertices) using inner and outer tessellation values (tessella-
+tion control shader);
+
+2.1.3. For each tessellation vertex, evaluate surface with respect to its Bezier equa-
+
+tion (tessellation evaluation shader);
+
+2.1.4. Assemble tessellated vertices into triangles and write tessellated triangle IDs
+
+and vertex world coordinates to the triangle list SSO (geometry shader);
+
+2.1.5. For each frame buffer fragment,
+
+2.1.5.1.
+
+If the distance of this fragment to the viewpoint (depth) is less
+than that of the currently stored fragment,
+
+2.1.5.1.1. Store the ID of the containing tessellated triangle in the ID
+
+raster SSO cell representing this fragment (fragment shader);
+
+2.2. Second GPU rendering pass:
+
+2.2.1. Create two screen-ﬁlling triangles (vertex shader);
+2.2.2. For each frame buffer fragment,
+
+2.2.2.1. Look up the containing triangle ID of this fragment and its
+
+neighbors;
+2.2.2.2. For each neighbor,
+
+2.2.2.2.1.
+
+If the fragment and the neighbor have different containing tri-
+angle IDs, and if their referent 3-space triangles do not share a
+3-space edge,
+
+2.2.2.2.1.1. Render the fragment as a silhouette.
+
+© 2014 John Wiley & Sons Ltd
+VC 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, (cid:129)(cid:129)((cid:129)(cid:129))
+Transactions in GIS, 2015, 19(5)
+
+8
+
+J E Mower
+
+Fast Image-Space Silhouette Extraction
+
+685
+
+CPU Pre-Processing
+
+One-time Surface Facet and Vertex Processing
+
+Faces are created 
+from grid DEM samples. 
+Vertex normals are 
+summed from incident 
+face normals and ‘averaged’ 
+through normalization.
+
+GPU Pipeline (for each animation frame)
+
+Vertex Shader
+
+Tessellation Control Shader
+
+Tessellation Evaluation Shader 
+(TES)
+
+A
+
+A
+
+B
+
+C
+
+A
+
+B
+
+C
+
+C
+
+V
+
+B
+
+U
+
+All vertices and their 
+normals are output 
+for tessellation.
+
+A patch of 10 vertices
+(samples A, B, and C 
+and 7 other interpolated
+points) serve as Bezier 
+coefficients.
+
+For a U,V pair within
+ΔABC, 3D world coordinates
+are output for each tessellated
+vertex using the coefficients
+from the tess control stage
+
+Fragment Shader
+
+Geometry Shader
+
+Each fragment writes the 
+ID and surface normal 
+of its containing triangle 
+(from the geometry 
+shader) to a global
+fragment list, 
+implemented as a
+shader storage object.
+
+582350E, 4721690N,
+90M
+
+Tessellation vertices are
+assembled into triangles.
+The ID of each tessellated
+triangle and the world 
+coordinates of its
+vertices are output to a 
+triangle list implemented as
+a shader storage object.
+
+412
+
+582370E,
+4721630N,
+100M
+
+582350E,
+4721650N,
+120M
+
+Figure 6 The rendering pipeline for the ﬁrst rendering pass of Adjacency
+
+Figure 6 illustrates the rendering pipeline for the ﬁrst rendering pass of Adjacency.
+
+The ﬁrst rendering pass writes information to two independent SSOs. An invocation of the
+geometry stage, called once for each tessellated triangle, stores the ID and world coordinates
+of its vertices to the ﬁrst SSO (the containing triangle list). Although it would be tidier to
+maintain a single list of vertices for all triangles and refer to them by indices, in practice it was
+
+© 2014 John Wiley & Sons Ltd
+VC 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, (cid:129)(cid:129)((cid:129)(cid:129))
+Transactions in GIS, 2015, 19(5)
+
+686
+
+J E Mower
+
+Fast Image-Space Silhouette Extraction
+
+9
+
+T o w a r d
+
+D
+
+B
+
+T o w a
+
+C
+A
+
+D
+r d
+r drr d
+CC
+D
+D
+CC
+BBB
+C
+AAA
+Containing Tri SSO
+B
+A
+(ID Raster)
+
+Figure 7 Fragment processing in the 2nd rendering pass of Adjacency. The containing triangle IDs A,
+B, C, and D are stored in their projected locations in a shader storage object (SSO). Although frag-
+ments from triangles A and C are adjacent, they are not silhouettes because their containing trian-
+gles are adjacent in 3-space. Adjacent fragments from triangles B and D mark silhouettes because
+their containing triangles are not adjacent in 3-space. Only surfaces facing toward the viewpoint are
+considered
+
+found that doing so increased execution times substantially without producing an essential
+reduction in memory usage. The second SSO, the ID raster,
+is written by invocations
+of the fragment shader. Each fragment gets the ID of its containing parent triangle from
+the previous geometry shader invocation via the containing triangle list and writes its value
+to the appropriate cell in the SSO, formatted with the same row and column dimensions
+as the target frame buffer. The fragment shader is also responsible for creating a hidden surface
+mask in the image background color to hide any linework generated in the second pass that
+should not be visible from the selected viewpoint. This step was left out of the algorithm for
+clarity.
+
+The second GPU pass, unlike the ﬁrst, uses only vertex and fragment shader stages. In the
+vertex shader for the second pass, six vertices, given in screen coordinate space, specify two
+screen-ﬁlling triangles. Fragment shader invocations then run for each fragment within both
+triangles, with each reading its containing parent triangle ID and those of its 8-case neighbors
+from the ID raster SSO. As in ﬁxed-mesh silhouette detection, Adjacency requires that each
+tessellated triangle know its edge-adjacent neighbors. However, it does not require an expen-
+sive global Delaunay triangulation to establish surface topology as does PenAndInk. Instead,
+it uses the containing triangle ID raster as an adjacency map (Figure 7). A fragment shader
+invocation renders a pixel in the silhouette color only if:
+
+Its fragment borders another rendered from a different containing triangle; and
+
+1.
+2. The 2 fragments do not share a 3-space edge.
+
+3-space adjacency is determined by reading the records on the containing triangle list associ-
+ated with the contrasting IDs of the adjacent fragments and inspecting them for shared 3-space
+vertices. The implementation for this article currently renders silhouette pixels for both adja-
+cent fragments that pass the silhouette test; future implementations will render only one.
+
+Unfortunately, Adjacency is susceptible to cracks between PN triangle surface patches.
+Adjacent fragments along the edge of two neighboring patches may not render to adjacent
+cells in the SSO under certain conditions (Vlachos et al. 2001). In that case, whatever initiali-
+zation value has been stored in the SSO remains as the value between the two rendered PN
+
+© 2014 John Wiley & Sons Ltd
+VC 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, (cid:129)(cid:129)((cid:129)(cid:129))
+Transactions in GIS, 2015, 19(5)
+
+10
+
+J E Mower
+
+Fast Image-Space Silhouette Extraction
+
+687
+
+1
+
+0
+
+AwayAway
+
+T o w a r d
+
+C
+
+AwayAway
+w a
+w a
+o w a
+w aaw aa
+a
+a
+T
+
+B A
+
+Away Depth 
+Toward Depth
+
+v
+
+d
+d
+d
+d
+d
+
+r
+r
+r
+r
+r
+
+7
+
+8
+5
+
+u
+
+Away
+
+8
+7 5
+
+} Silhouette
+
+D
+
+e
+
+pth fro
+
+5
+
+m Vie
+
+w
+
+p
+
+oint
+
+Toward
+
+0
+
+Figure 8 Toward/Away depth buffers. A Toward fragment from containing triangle A has a distance
+of 5 from the viewpoint. An Away fragment from B, at the same screen coordinates as the Toward
+fragment from A, has a distance of 7. A screen-adjacent Toward fragment from C has a depth of 8.
+Since 8 > 7 > 5, a silhouette exists between and is painted on pixels corresponding to Toward frag-
+ment depths 5 and 8
+
+triangle edges. A fragment adjacent to the crack sees a crack fragment as having a different
+containing triangle ID from its own. Special case handling is required to prevent crack frag-
+ments from rendering as silhouettes.
+
+3.2 Algorithm 2 (Toward/Away): Finding Silhouettes in Image Space
+
+The second algorithm uses an exclusively image space approach to silhouette detection. Using
+the strategy illustrated in Figure 8, it examines fragments along the view axis for containing
+triangles that point toward the viewpoint and those that point away. If a given ‘toward’ frag-
+ment at some screen location u,v is nearer to the viewpoint than an ‘away’ fragment, also at
+u,v, and if another 8-case neighboring ‘toward’ fragment exists at even greater depth, a silhou-
+ette exists at u,v. Conversely, if the nearest away fragment depth at u,v is not bracketed
+between the adjacent toward fragment depths, then both toward fragments have been gener-
+ated from adjacent toward facing surfaces and no silhouette exists between them. Although
+this technique requires the storage of depth buffers for both ‘toward’ and ‘away’ fragments, it
+does not require:
+
+1. Extra surface processing beyond that for display purposes;
+2. A geometry stage to assemble and store containing triangle IDs; and
+3. SSOs for containing a triangle list or ID raster.
+
+To ﬁnd silhouettes through toward/away view contrast (Toward/Away):
+
+1. On CPU:
+
+1.1. Find the PN vertices for the mesh (one-time operation);
+
+2. On GPU, for each rendered frame:
+
+© 2014 John Wiley & Sons Ltd
+VC 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, (cid:129)(cid:129)((cid:129)(cid:129))
+Transactions in GIS, 2015, 19(5)
+
+688
+
+J E Mower
+
+Fast Image-Space Silhouette Extraction
+
+11
+
+2.1. First rendering pass:
+
+2.1.1. Group mesh vertices into PN triangle patches (vertex shader);
+2.1.2. For each PN triangle, deﬁne Bezier control points and specify evaluation
+sites (tessellation vertices) using inner and outer tessellation values (tessella-
+tion control shader);
+
+2.1.3. For each tessellation vertex, evaluate surface with respect to its Bezier equa-
+
+tion (tessellation evaluation shader);
+
+2.1.4. For each ‘toward’ or ‘away’ fragment, overwrite the value in the corre-
+sponding depth buffer if its depth value is less than the current value (frag-
+ment shader);
+2.2. Second rendering pass:
+
+2.2.1. Create two screen ﬁlling triangles (vertex shader);
+2.2.2. For each toward-facing frame buffer fragment,
+
+2.2.2.1.
+
+If an away-facing fragment depth at this location is greater
+than that of the toward-facing fragment, and if an 8-case
+neighboring toward-facing fragment is further than the away-
+facing fragment,
+
+2.2.2.1.1. Render a silhouette on the adjacent toward pixels (fragment
+
+shader).
+
+Toward/Away and Adjacency share the same design for their ﬁrst pass vertex, tessella-
+tion control, and tessellation evaluation shaders. However, the ﬁrst pass fragment shader in
+Toward/Away renders its evaluated surface to two off-screen frame buffers, both with depth
+buffer attachments. Any fragment whose associated surface normal points toward the view-
+point renders to the ‘toward’ frame buffer and records its depth in the associated depth buffer.
+Fragments with normals pointing away from the viewpoint render to the ‘away’ frame buffer
+and record their depth in the away depth buffer. Fragments nearer to the viewpoint in both
+cases overwrite data left by further fragments. After all vertices in the pipeline have passed
+through the fragment shader, the toward depth buffer holds the depths of the nearest toward-
+facing fragments along the line of site to the viewpoint and the away depth buffer holds depths
+for the nearest away-facing fragments. Like Adjacency, the ﬁrst pass fragment shader of
+Toward/Away also writes a hidden surface mask to the toward frame buffer (the color values
+in the away frame buffer are ignored). In the second pass, a Toward/Away fragment shader
+invocation looks up the depths of its nearest toward and away fragments, and the toward frag-
+ments of its 8-case neighbors. If it ﬁnds that an away depth at its frame buffer coordinates is
+greater than the toward depth, and if an 8-case neighbor is further away than the away depth,
+a silhouette is indicated at its location by rendering a pixel at its frame buffer coordinates for
+the on-screen frame buffer. The implementation for this article renders only one pixel for adja-
+cent fragments that pass the silhouette test.
+
+4 Test implementations and Results
+
+The implementations for Adjacency and Toward/Away share the PenAndInk C++ code
+base (developed by the author in Microsoft Visual Studio v. 10) for initial data input and mesh
+preparation. Both use OpenGL and GLSL versions 4.3. The author tested and recorded imple-
+mentation performance statistics on a Dell XPS system running Microsoft Windows 7 with an
+Intel Xeon processor clocked at 3.6 GHz and 8 GB main memory. The GPU is an NVIDIA
+GeForce GT 435 with 96 cores, 2.05 GB dedicated RAM, and a 650 MHz clock frequency.
+
+© 2014 John Wiley & Sons Ltd
+VC 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, (cid:129)(cid:129)((cid:129)(cid:129))
+Transactions in GIS, 2015, 19(5)
+
+12
+
+J E Mower
+
+Fast Image-Space Silhouette Extraction
+
+689
+
+Figure 9 West Temple rendered with PenAndInk
+
+Figure 10 West Temple rendered with Adjacency
+
+Figure 11 Rendering of West Temple feature with Toward/Away
+
+Figures 9–11 show the rendered silhouettes produced by PenAndInk, Adjacency, and
+Toward/Away respectively for a scene in Zion National Park centered on the West Temple
+feature from a viewpoint in UTM zone 12, 325,249 m E, 4,117,889 m N, elevation 2,000 m
+(vertical scaling = 1.0), with a view azimuth of 310° and view altitude of 0°. Table 1 lists
+elapsed times for a single rendered frame in each implementation. Figure 9 (the PenAndInk
+output) and its performance statistics are presented here for comparison with Adjacency and
+Toward/Away. The test data consists of elevation samples extracted from the National Eleva-
+tion Dataset (USGS 2014). Equation (1) provides the number of PN triangles for a grid cell
+DEM of a given size:
+
+N
+
+=
+
+[
+
+−(
+C
+
+) ×
+1
+
+−(
+R
+
+) ×
+1
+
+]
+
+2
+
+(1)
+
+where C is the number of columns, R is the number of rows, and N is the resulting number of
+triangles.
+
+© 2014 John Wiley & Sons Ltd
+VC 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, (cid:129)(cid:129)((cid:129)(cid:129))
+Transactions in GIS, 2015, 19(5)
+
+690
+
+J E Mower
+
+Fast Image-Space Silhouette Extraction
+
+13
+
+Table 1 West Temple silhouette rendering times and speedup values over PenAndInk for each of
+the implementations
+
+Implementation
+
+Elapsed time
+
+Frames per second (FPS)
+
+Appx. Speedup over
+PenAndInk
+
+PenAndInk
+Adjacency
+Toward/Away
+
+Appx. 1 min, 59 sec
+203.0 millisec
+66.96. millisecc
+
+.008
+4.93
+14.93
+
+–
+586 X
+1777 X
+
+implementations for Adjacency and Toward/Away applied identical
+
+The data points were extracted at 50 m horizontal resolution in easting and northing over
+a 6 km by 7 km region covering 120 columns by 140 rows, producing 33,082 PN triangles.
+The test
+levels
+of detail to PN triangle tessellation (and are comparable to the PenAndInk implement-
+ation). Previous testing with PenAndInk showed that a 50 m horizontal resolution provided
+a sufﬁciently smooth analytical surface with acceptable execution speeds and memory
+requirements.
+
+Figure 9, rendered by PenAndInk, illustrates silhouette production in a totally object-
+space, ﬁxed rendering pipeline implementation. Some small breaks exist along the silhouettes,
+largely due to precision issues with built-in ﬁxed pipeline line rendering techniques. For the
+most part, however, the placement of the lines are appropriate with respect to the features. The
+reader is invited to view this scene in Google Earth with the coordinates provided in the previ-
+ous paragraph for a photo-realistic illustration of the scene (PenInkImageSpace2013View.kml
+is provided on the Transactions in GIS website for the reader’s convenience).
+
+The most important attribute of the image in Figure 9, however, is the time required to
+produce it – approximately 1 minute and 59 seconds. Clearly, this is not a viable implementa-
+tion platform for animation given that frame rates supporting the appearance of acceptably
+smooth motion should not fall below 24 frames per second (FPS).
+
+Figure 10, produced by Adjacency, shows very few breaks along silhouette lines and
+also picks up more surface detail than does PenAndInk. Silhouettes appear wider than they
+do in PenAndInk because the working implementation renders both adjacent pixels in the sil-
+houette color (future implementations will shade only one). Adjacency is somewhat suscep-
+tible to spurious details introduced by surface cracking along PN triangle edges. Although
+special case handling eliminates most of the inappropriate silhouette pixels, some remain, espe-
+cially near horizontal lines toward the right of the image.
+
+Adjacency produced the image in Figure 10 in 203.0 milliseconds or at an animation
+rate of almost 5 FPS. Although this is still less than optimal for animation, Adjacency would
+produce approximately 586 frames for each of those produced by PenAndInk.
+
+The image in Figure 11 was produced by Toward/Away. Like PenAndInk, the silhou-
+ettes rendered by the Toward/Away implementation are one pixel wide. It shows fewer sil-
+houette ‘lines’ than does Figure 10 which may actually be desirable in an artistic sense. Some
+gaps occur in silhouette lines but none of the spurious detail in Figure 10 is present here.
+Toward/Away produced the image in Figure 11 in 66.96 milliseconds (14.93 FPS), giving an
+approximate speedup value of 3.03 over Adjacency.
+
+Two video screen capture ﬁles are provided on the Transactions in GIS website represent-
+ing ﬂy-throughs of the West Temple scene. Both ﬁles are encoded with the Lavf56.0.100 video
+
+© 2014 John Wiley & Sons Ltd
+VC 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, (cid:129)(cid:129)((cid:129)(cid:129))
+Transactions in GIS, 2015, 19(5)
+
+14
+
+J E Mower
+
+Fast Image-Space Silhouette Extraction
+
+691
+
+codec. The ﬁrst, WTemplesilh2.mpg, shows silhouette rendering alone using the Toward/
+Away implementation created for this article. Frames step 100 m in a horizontal position
+between animation frames to allow the viewer to see the effects of surface masking and per-
+spective parallax effects. The second (WtempleAll2.mpg) shows a combination of silhouette
+and drainage rendering for crease animation using a preliminary implementation that extracts
+viewpoint-independent features from a drainage model with level of detail dependent on the
+distance of the viewpoint to the surface. Frames step in 10 m increments to best show line
+selection detail. Both ﬁles were created with FFmpeg (FFmpeg 2014).
+
+5 Discussion
+
+Obviously, moving all silhouette rendering computations onto the GPU has led to very
+large increases in performance over PenAndInk. Additionally, the timing statistics show
+that Toward/Away produces silhouettes at faster speeds than does Adjacency. Although it
+is very difﬁcult to produce precise timing results within shader stages of a GPU implementa-
+tion, it is likely, given that geometry shaders are relatively expensive stages of the rendering
+pipeline (Shreiner et al. 2013, p. 562), that inclusion of a geometry shader stage in Adja-
+cency led to longer elapsed times over Toward/Away, which has none. Although Toward/
+Away uses two depth buffers to record closest toward and away-facing fragments and
+Adjacency uses only one, this does not appear to have made a critical difference in render-
+ing speeds.
+
+Both Adjacency and Toward/Away are fundamentally parallel algorithms with imple-
+
+mentations that achieve their large speedup values over PenAndInk by:
+
+1. Keeping data transfer between system and graphics memory to a minimum;
+2. Performing all per-frame rendering on the GPU; and
+3. Limiting GPU core synchronization wherever possible.
+
+To work within these constraints, both implementations:
+
+1. Do one-time vertex pre-processing on the CPU;
+2. Transfer processed vertex data once from system memory to GPU memory;
+3. Perform all subsequent rendering processing on the GPU;
+4. Use shader storage objects to support fast, shared data access across GPU cores; and
+5. Avoid any global topological construction on rendering passes that would require syn-
+
+chronized core-to-core data sharing.
+
+At rates of approximately 15 FPS for the Toward/Away implementation, hardware
+improvements are likely to bring animation frame rates up to standard animation speeds.
+Indeed, initial runs on a new development platform using an NVIDIA GTX 780 GPU with
+2,304 cores, 3 GB on-board RAM, and 863 MHz clock frequency rendered silhouettes for the
+West Temple scene in 33.4 milliseconds or at almost 30 FPS for the Toward/Away implemen-
+tation, bringing it above the minimum acceptable rate of 24 FPS. Of course, in a production
+environment, both silhouettes and creases will need to be rendered within a single frame. The
+author is currently developing two-shader-oriented algorithms for rendering creases. The ﬁrst
+performs real-time rendering of drainage direction vectors based upon elevation data associ-
+ated with frame buffer fragments. This technique makes use of a compute stage on the GPU,
+one that performs computations but does not consume or produce vertex data. The second
+samples from a pre-processed, high density drainage map to produce creases for varying tessel-
+
+© 2014 John Wiley & Sons Ltd
+VC 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, (cid:129)(cid:129)((cid:129)(cid:129))
+Transactions in GIS, 2015, 19(5)
+
+692
+
+J E Mower
+
+Fast Image-Space Silhouette Extraction
+
+15
+
+lated levels of detail. It is expected that the second algorithm, requiring no object-space analy-
+sis per scene, will perform at faster frame rates than the ﬁrst.
+
+6 Conclusions
+
+This article has demonstrated that the application of parallel programming strategies to
+modern GPU hardware can provide enormous increases in rendering performance over older
+sequential programming techniques, allowing cartographers to invent surface portrayals that
+recapture the beauty and utility of hand drawn pen and ink illustrations at animation speeds.
+The author is currently developing algorithms and implementations for creases that also show
+promise for attaining real-time rendering speeds. In combination with the silhouette rendering
+techniques described here, the results of that work will serve as a prototype for further
+research in improving the quality of automated pen and ink landscape imagery. It is exciting to
+imagine extending this work to other styles of landscape illustration such as the so-called
+‘painterly’ styles of non-photorealistic rendering that imitate watercolor or oil paintings. Other
+rendering styles, such as the addition of seasonal effects or feature geometries to photographic
+imagery, will become more practicable as well (Premože et al. 1999). Even more exciting is
+imagining how cartographic visualization might be integrated with numerical simulations.
+Beyond their capacity to support high-speed graphics applications, GPUs are already hosting
+myriad, exclusively numeric, applications. As GIS software engineers begin to reimagine stand-
+ard sequential numerical algorithms for massively parallel alternatives and integrate them with
+real-time cartographic visualization tools, it will become essential for cartographers to take a
+leading role in directing the design of next-generation GIS platforms.
+
+References
+
+Coe A L (ed) 2010 Geological Field Techniques. New York, Wiley-Blackwell
+Davis W M 1908 Atlas for Practical Exercises in Physical Geography. Boston, MA, Ginn and Co. (available at
+
+Fernlund K J 2000 William Henry Holmes and the Rediscovery of the American West. Albuquerque, NM, Uni-
+
+http://pds.lib.harvard.edu/pds/view/8916580)
+
+versity of New Mexico Press
+
+FFmpeg 2014 About FFmpeg. WWW document, https://www.ffmpeg.org/about.html
+Imhof E 2007 Cartographic Relief Presentation. Redlands CA, Esri Press
+Isenberg T, Freudenberg B, Halper N, Schlechtweg S, and Strothotte T 2003 A developer’s guide to silhouette
+
+algorithms for polygonal models. IEEE Computer Graphics and Applications 23: 3–7
+
+Kennelly P J and Kimerling A J 2006 Non-photorealistic rendering and terrain representation. Cartographic Per-
+
+Lesage P L and Visvalingam M 2002 Towards sketch-based exploration of terrain. Computers and Graphics 26:
+
+spectives 54: 35–54
+
+309–28
+
+Lobeck, A K 1958 Block Diagrams and Other Graphic Methods Used in Geology and Geography. Amherst,
+
+MA, Emerson Trussell Book Company
+
+Meiri E 2014 Modern OpenGL Tutorials. WWW document, http://ogldev.atspace.org/
+Mower J E 2011 Supporting automated pen and ink style surface illustration with B-spline models. Cartography
+
+and Geographic Information Science 38: 175–84
+
+Phong B T 1975 Illumination for computer generated pictures. Communications of the ACM 18: 311–17
+Premože, S, Thompson W B, and Shirley P 1999 Geospeciﬁc rendering of alpine terrain. In Lischinski D and
+Larson W (eds) Rendering Techniques ’99: Proceedings of the Eurographics Workshop in Granada, Spain.
+Berlin, Springer-Verlag: 107–18
+
+Shreiner D, Woo M, Neider J, and Davis T 2008 OpenGL Programming Guide (Sixth Edition). Upper Saddle
+
+River, NJ, Addison-Wesley Professional
+
+© 2014 John Wiley & Sons Ltd
+VC 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, (cid:129)(cid:129)((cid:129)(cid:129))
+Transactions in GIS, 2015, 19(5)
+
+16
+
+J E Mower
+
+Fast Image-Space Silhouette Extraction
+
+693
+
+Shreiner D, Sellers G, Kessenich, J, and Licea-Kane B 2013 OpenGL Programming Guide (Eighth Edition).
+
+Upper Saddle River, NJ, Addison-Wesley Professional
+
+US Geological Survey 2014 National Elevation Dataset. WWW document http://ned.usgs.gov
+Vlachos A, Peters J, Boyd C, and Mitchell J L 2001 Curved PN triangles. In Proceedings of the 2001 ACM Sym-
+
+posium on Interactive 3D Graphics, Research Park Triangle, North Carolina: 159–66
+
+Wikipedia 2014a GeForce 3 Series. WWW document http://en.wikipedia.org/wiki/GeForce_3
+Wikipedia 2014b OpenGL Shader Language. WWW document, http://en.wikipedia.org/wiki/OpenGL_Shading
+
+_Language
+
+Supporting Information
+
+Additional supporting information may be found in the online version of this article at the
+publisher’s website:
+
+PenInkImageSpace2013View.kml. KML ﬁle for use with Google Earth containing viewing
+parameters for the West Temple feature in Zion National Park that is the subject of the
+imagery in this document.
+WTemplesilh2.mpg. MPEG ﬁle containing a video screen capture of a ﬂy-through of the West
+Temple scene showing silhouette generation.
+WtempleAll2.mpg. MPEG ﬁle containing a video screen capture of a ﬂy-through of the West
+Temple scene including both silhouette and preliminary crease generation.
+
+© 2014 John Wiley & Sons Ltd
+VC 2014 John Wiley & Sons Ltd
+
+Transactions in GIS, 2014, (cid:129)(cid:129)((cid:129)(cid:129))
+Transactions in GIS, 2015, 19(5)
+
+

@@ -1,0 +1,2546 @@
+Geoinformatica (2012) 16:467–496
+DOI 10.1007/s10707-011-0144-5
+
+PNN query processing on compressed trajectories
+
+Shuo Shang · Bo Yuan · Ke Deng · Kexin Xie ·
+Kai Zheng · Xiaofang Zhou
+
+Received: 12 March 2011 / Revised: 16 September 2011 /
+Accepted: 26 September 2011 / Published online: 15 October 2011
+© Springer Science+Business Media, LLC 2011
+
+Abstract Trajectory compression is widely used in spatial-temporal databases as it
+can notably reduce (i) the computation/communication load of clients (GPS-enabled
+mobile devices) and (ii) the storage cost of servers. Compared with original trajecto-
+ries, compressed trajectories have clear advantages in data processing, transmitting,
+storing, etc. In this paper, we investigate a novel problem of searching the Path
+Nearest Neighbor based on Compressed Trajectories (PNN-CT query). This type
+of query is conducted on compressed trajectories and the target is to retrieve the
+PNN with the highest probability (lossy compression leads to the uncertainty), which
+can bring significant benefits to users in many popular applications such as trip
+planning. To answer the PNN-CT query effectively and efficiently, a two-phase
+solution is proposed. First, we use the meta-data and sample points to specify a tight
+search range. The key of this phase is that the number of data objects/trajectory
+segments to be processed or decompressed should be kept as small as possible.
+Our efficiency study reveals that the candidate sets created are tight. Second, we
+propose a reconstruction algorithm based on probabilistic models to account for
+the uncertainty when decompressing the trajectory segments in the candidate set.
+Furthermore, an effective combination strategy is adopted to find the PNN with
+the highest probability. The complexity analysis shows that our solution has strong
+advantages over existing methods. The efficiency of the proposed PNN-CT query
+processing is verified by extensive experiments based on real and synthetic trajectory
+data in road networks.
+
+S. Shang (B) · K. Deng · K. Xie · K. Zheng · X. Zhou
+
+School of Information Technology & Electrical Engineering,
+The University of Queensland, Brisbane St. Lucia, QLD 4072, Australia
+e-mail: shangs@itee.uq.edu.au
+
+B. Yuan
+Division of Informatics, Graduate School at Shenzhen, Tsinghua University,
+Shenzhen, 518055, People’s Republic of China
+e-mail: yuanb@sz.tsinghua.edu.cn
+
+468
+
+Geoinformatica (2012) 16:467–496
+
+Keywords Compressed trajectory · Path nearest neighbor ·
+Road networks · Spatial databases
+
+1 Introduction
+
+Path Nearest Neighbor (PNN) Query [8, 26, 36] is a well defined problem in spatial
+databases, which is designed to find the closest data object to the specified path.
+Different from traditional Nearest Neighbor (NN) query [13, 24], PNN is a globally
+optimal choice for the nearest neighbor to a given path. We noticed thrat travelers in
+many situations cannot specify a preferred path, especially in an unfamiliar region,
+for example, when traveling overseas. In this situation, consulting the travel history
+(i.e., trajectories) of other people as reference is a sensible choice and is getting
+more and more popular along with the development of online LBS (Location Based
+Services). We assume that a traveler has already selected a trajectory shared by
+others in route-sharing web sites1 as the preferred path and wants to know the
+nearest facility (e.g., supermarket, post office, etc.) relative to the route he/she will
+travel.
+
+In practice, most of the existing trajectory data are uploaded and stored in com-
+pressed format. Compared with the original trajectories, compressed trajectories
+have clear advantages in data processing, transmitting, storing, etc. [20]. However,
+apart from the existing challenge created by the large number of data objects,
+compressed trajectory data present new challenges to the original PNN query [8].
+First, due to the lossy compression, uncertainty must be taken into account in the
+trajectory decompression models and query processing algorithms. The impact of
+probabilistic and uncertain data, especially uncertain trajectories, has been exten-
+sively investigated in many recent studies [22, 27, 32–34, 37]. Second, to reconstruct
+the original trajectory, the full decompression process may prevent the query from
+being answered promptly, due to its intolerable time and storage cost. In this work,
+we investigate the problem of how to find the PNN based on compressed trajecto-
+ries (PNN-CT Query) effectively and efficiently. A series of novel algorithms are
+proposed and the complexity analysis shows that our solution has strong advantages
+over existing methods.
+
+Ideally, a trajectory compression method should notably reduce (i) the compu-
+tation/communication load of clients (GPS-enabled mobile devices), and (ii) the
+storage cost of servers. Despite the bulk of trajectory compression literature [3, 4, 7,
+10, 16, 19], no solution fulfills both requirements, except the linear prediction model
+based trajectory compression [14, 17, 21, 25, 30, 31]. Linear prediction models assume
+that the moving object follows linear movements, and introduce little computation
+and storage overhead. On the client-side, it is not necessary to record and upload
+each point in the trajectory unless it breaches the constraint set by the prediction
+model. On the server-side, since the whole trajectory is compressed into a set of
+sample points, the pressure of storage is elevated notably.
+
+1Bikely (http://www.bikely.com/) GPS-Waypoints (http://www.gps-waypoints.net/) Share My Routes
+(http://www.sharemyroutes.com/) Microsoft GeoLife (http://research.microsoft.com/en-us/projects/
+geolife/).
+
+Geoinformatica (2012) 16:467–496
+
+469
+
+Each trajectory compression algorithm requires a system specified error bound δ.
+For δ = 0, the compression is lossless. Otherwise, it is a lossy compression process.
+In general, a larger error bound will lead to a better compression ratio, but more
+information will be lost in the compression process, which will result in a higher
+level of uncertainty when decompressing the trajectory. Consequently, the path
+connecting the two adjacent sample points is usually not unique. A straightforward
+method is to reconstruct a deterministic trajectory (e.g., via interpolation), and then
+solve the problem in a deterministic manner. However, this solution is insufficient, as
+it considers only a single (e.g., the most optimistic) scenario, which may be infeasible
+in practice. Motivated by these observations, in this paper, we explicitly incorporate
+uncertainty into trajectories on road networks and propose a novel probabilistic PNN
+queries.
+
+An example of the linear prediction model based trajectory compression is
+demonstrated in Fig. 1. Initially, a moving object is at the source s1, and its current
+time-stamp, speed and heading are also recorded as the meta-data of s1. Then, based
+on the heading vector and error bound, a rectangular moving range is defined. At
+point s2, the moving object leaves the predefined moving range, and s2 needs to be
+recorded with the updated meta-data. Similarly, points s3, s4 and s5 are recorded and
+s5 is the destination. Hence, a trajectory is compressed into a series of sample points
+{s1, s2, s3, s4, s5} with a set of meta-data. Consequently, given a compressed trajectory,
+our target is to reconstruct all possible trajectories connecting s1 and s5 and find the
+PNN with the highest probability among data objects o1, o2, o3, o4.
+
+An intuitive approach to solving PNN-CT query is to fully reconstruct all possible
+trajectories connecting the source and destination, and perform the PNN query [8]
+on the decompressed trajectories. It is not practical for two reasons. First, due to
+the lossy compression, there may exist several possible sub-paths within the same
+trajectory segment. Suppose n is the number of vertices in each segment (rectangle),
+k is the number of trajectory segments, and m is the number of possible sub-paths in
+one segment. The complexity of the decompression process is O(kn2 + mk), which
+can become very time consuming for moderate data sets. Second, there are mk
+reconstructed trajectories and the original PNN query [8] needs to be performed mk
+times. Obviously, the corresponding time and space cost may easily prevent the PNN-
+CT query from being answered promptly. Note that, in this situation, the original
+PNN query is inadequate to specify a tight candidate set for either data objects or
+trajectory segments, due to its loose upper/lower bound.
+
+Fig. 1 Linear prediction
+model based trajectory
+compression
+
+o1
+
+o2
+
+s2
+
+s3
+
+s1
+
+o4
+
+s4
+
+o3
+
+s5
+
+470
+
+Geoinformatica (2012) 16:467–496
+
+To process the PNN-CT query effectively and efficiently, a two-phase solution is
+proposed. First, we use the sample points and the corresponding meta-data to specify
+a tight searching range. Here, the network expansion method [9] and branch-and-
+bound strategy are adopted. In this phase, most of the data objects and trajectory
+segments can be pruned. The efficiency study reveals that the candidate sets created
+are tight. Second, we propose a reconstruction algorithm based on probabilistic
+models to account for the uncertainty when decompressing the remaining trajectory
+segments. The proposed probabilistic model is logically sound and all possible trajec-
+tories are taken into account with each of them assigned a corresponding probability.
+Furthermore, an effective combination strategy is adopted to find the PNN with the
+highest probability and the complexity analysis shows that our solution has strong
+advantages over existing methods. Note that the proposed scheme represents a
+general paradigm for handling compressed trajectory data and is independent of the
+specific underlying probabilistic model. To sum up, the major contributions of this
+paper are:
+
+– A novel type of query to find the Path Nearest Neighbor based on Compressed
+Trajectories (PNN-CT). It provides new features for advanced spatial infor-
+mation systems, and benefits users in many popular applications such as trip
+planning.
+
+– A probabilistic model to evaluate the uncertainty when decompressing the
+trajectory segments and an efficient method for trajectory decompression.
+– A two-phase algorithm to answer the PNN-CT query effectively and efficiently.
+The efficiency study reveals that the candidate sets created are tight and the
+complexity analysis shows that our solution has strong advantages over existing
+methods.
+
+– Extensive experiments on real and synthetic trajectory data to investigate the
+
+performance of the proposed approaches.
+
+Note that in this work we are dealing with paths(routes) and spatial distance, and
+using the meta-data (e.g., time-stamp, maximum speed and heading vector) only in
+the path reconstruction and pruning procedures.
+
+The rest of the paper is organized as follows. Section 2 introduces the trajectory
+compression and decompression models used in this paper as well as problem
+definitions. The PNN-CT query processing is described in Section 3, which is
+followed by the experimental results in Section 4. This paper is concluded in Section 6
+after some discussions on related work in Section 5.
+
+2 Preliminaries
+
+2.1 Road networks
+
+In this work, road networks are modeled as connected and undirected graphs
+G(V, E), where V is the set of vertices and E is the set of edges. A weight can
+be assigned to each edge to represent its length. Given two locations a and b in
+road networks, the network distance between them is the length of their shortest
+network path, i.e. a sequence of edges linking a and b where the accumulated weight
+is minimal. The data objects are distributed along roads. If a data object is not located
+
+Geoinformatica (2012) 16:467–496
+
+471
+
+at a road intersection, we treat the data object as a vertex and further divide the edge
+it lies on into two edges. Thus, we assume that all data objects are in vertices for the
+sake of clarity. Note that in this work, the data objects are static.
+
+2.2 Trajectory compression
+
+The linear prediction model [14, 21, 25, 30, 31] is adopted in this work, which can
+notably reduce (i) the computation/communication load of clients (GPS-enabled
+mobile devices) and (ii) the storage cost of servers. In practice, the compression
+error bound (deviation threshold) δ is specified by the system. A larger error bound
+often leads to a better compression ratio but more information will be lost in the
+compression process. If the moving object m deviates from the predicted path over
+the error bound, its current position needs to be recorded with some meta-data, such
+as its current time-stamp t, maximum speed v, heading vector hv, etc. The vertices
+between two adjacent sample points are ignored. Hence, the trajectory is compressed
+into a series of sample points and a set of corresponding meta-data.
+
+Definition (Deviation distance) Given a moving object m, a sample point s and a
+heading vector
+
+−→
+hv , the deviation distance of m is
+
+where θ is the intersection angle between
+distance between m and s.
+
+Deviation(m) = dE(m, s) × |sin(θ)|
+
+(1)
+
+−→
+hv and
+
+−−−→
+(s, m), dE(m, s) is the Euclidean
+
+Definition (Moving object prediction model PM) Given a moving object m, a
+−→
+hv and an error bound δ, we assume
+source (or a sample point) s, a heading vector
+that the deviation distance of m is always less than δ. Otherwise, the current position
+of m needs to be recorded with its current time-stamp t, speed v and heading
+vector hv.
+
+An example is described in Fig. 2. Suppose an object m is moving from source s
+with initial heading vector hv. m1, m2 are the possible positions of data object m at
+time t1, t2 respectively. δ is the error bound specified by the system. The deviation
+distance of m1 is dE(s, m1) × |sin(θ1)| < δ, thus it is not necessary to record m1. By
+contrast, Deviation(m2) = dE(s, m2) × |sin(θ2)| > δ, and the data point m2 should be
+recorded with the corresponding time-stamp t2, speed v2 and heading vector hv2.
+
+Fig. 2 Linear prediction
+model
+
+m1
+
+Deviation(m1)
+
+s
+
+1
+
+2
+
+hv
+
+Deviation(m2)
+
+2
+
+m2
+
+472
+
+Geoinformatica (2012) 16:467–496
+
+Definition (Compressed trajectory) A compressed trajectory CT in a road network
+G is a finite sequence of positions: CT = s1, s2, ..., sn, where si is the sample point in
+G, for i = 1, 2, ..., n. Each sample point has a set of meta-data, including time-stamp
+t, speed v and heading vector hv.
+
+The sample points obtained from GPS devices are typically of the form of (lon
+gitude, latitude, time − stamp). How to map the (longitude, latitude) pair onto the
+digital map of a given road network is an interesting research problem itself but
+outside the scope of this paper. In this work, we assume that all sample points have
+already been aligned to the vertices on the road network by some map-matching
+algorithms [2, 6, 12, 35].
+
+2.3 Trajectory segment decompression
+
+Given a compressed trajectory segment Tseg(si, s j) connecting two adjacent sample
+points si, s j, it is difficult to find the exact path P(si, s j) between si, s j due to the
+compression loss. Here, we propose a probabilistic model to evaluate the uncertainty
+of the object’s moving path. All possibilities have been considered and each of
+them is assigned a corresponding probability. We assume that the object m moves
+randomly between si and s j, but its moving range is constraint by three conditions.
+
+–
+
+–
+
+First, P(si, s j) should not be over the constraint range of rectangle R, where R is
+the rectangle defined by sample points si, s j, heading vector hv and error bound
+δ. Otherwise, there must exist another sample point between si, s j.
+Second, the minimum moving time between si, s j is constrained by (t j − ti), where
+ti, t j are time-stamps of si, s j respectively.
+
+– Third, there is no loop in P(si, s j), which means one point can not appear twice
+
+The length of path P = {n1, ..., nk} is defined as the sum of weights of all edges in
+
+in one path.
+
+P, that is
+
+Length(P(n1, ...nk)) =
+
+(weight(ni, ni+1))
+
+The minimum moving time of path P = {n1, ..., nk} is defined as follows:
+
+Time(P(n1, ...nk)) =
+
+(weight(ni, ni+1)/v(ni, ni1
+
+))
+
+k−1(cid:2)
+
+i=1
+
+where v(ni, ni1
+Time(P(n1, ...nk)) should be no grater than (tk − t1).
+
+) is the maximum moving speed along the edge (ni, ni+1). Obviously,
+
+And the probability of P = {n1, ..., nk} is defined as the product of each edges’
+
+probability.
+
+Prob (P(n1, ...nk)) =
+
+(Prob (ni, ni+1))
+
+(4)
+
+(2)
+
+(3)
+
+k−1(cid:2)
+
+i=1
+
+k−1(cid:3)
+
+i=1
+
+Geoinformatica (2012) 16:467–496
+
+473
+
+Equations 2 and 4 are also applicable when combining sub-paths from different
+trajectory segments to create a full path P(s, d) = {P1, P2, ..., Pk} connecting the
+source s and the destination d.
+
+In general, all valid sub-paths in trajectory segment Tseg(si, s j) can be retrieved
+according to Algorithm 1. Suppose si, s j are two adjacent sample points and
+T D_Function(si) is a recursive function, which conducts a depth-first transversal of
+all possible sub-paths. Initially, all adjacent vertices of si will be visited iteratively
+(line 2). For each adjacent vertex n, we check whether it conflicts three conditions: n
+should be contained by rectangle R (line 3–4), n should not appear twice in the same
+path (line 5–6) and the traveling time of the path should not be greater than (t j − ti)
+(line 7–8). If n satisfies all three conditions, the information of path(n) is recorded,
+including its vertices, distance and probability (line 9–11). Once the destination s j
+is reached, one valid sub-path is found and stored in Pathlist(si, s j) (line 12–15).
+Otherwise, a new recursive function based on n will be conducted (line 16).
+
+In Fig. 3 we give an example of trajectory segment decompression. s1, s2 are the
+adjacent sample points, and n1, n2, ..., n8 are vertices in the road network and o1, o2
+are data objects. Each road segment is specified a weight to represent its network
+distance. The maximum moving speed along each edge is 1 and the moving time
+between s1, s2 is (t2 − t1) = 30, where t1, t2 are the time-stamps of s1, s2 respectively.
+It is easy to find that there are three sub-paths P1, P2, P3 which satisfy all three
+conditions stated above. For P1 = {s1, n1, n2, n4, n5, s2}, according to Eq. 3, it is
+easy to compute Time(P1) = 6/1 + 3/1 + 7/1 + 3/1 + 8/1 = 27. Compared with the
+
+474
+
+Fig. 3 Probabilistic model
+
+Geoinformatica (2012) 16:467–496
+
+moving time computation, the computation of probability is more complex. The
+first edge of P1 is (s1, n1) and its probability is 1
+1 . Since we assume the moving
+object moves randomly, at the intersection n1, the moving object m has four choices:
+{s1, n2, n3, n5} for the next step. However, vertex s1 is invalid in this case as a loop
+< s1, n1, s1 > will be formed. As a result, the rest three vertices share the same
+probability 1
+1 probability to be the next point as o1
+is out of the range and n1 will form a loop. Following the procedure, the probability
+of P1 can be computed based on Eq. 4. That is Prob (P1) = 1
+= 1
+18 .
+1
+Similarly, we can compute the moving time and probability of P2 = {s1, n1, n5, s2}
+and P3 = {s1, n1, n3, n6, n5, s2}. P2 has the moving time 21 and the probability 1
+×
+1
+= 1
+1
+9 .
+3
+
+× 1
+4
+Since all other paths are invalid and pruned, the probabilities of P1, P2, P3 need
+
+12 . P3 has the moving time 27 and the probability 1
+
+3 . Next, at intersection n2, n4 holds 1
+
+× 1
+3
+
+× 1
+1
+
+× 1
+2
+
+× 1
+3
+
+× 1
+3
+
+× 1
+1
+
+× 1
+1
+
+× 1
+3
+
+= 1
+
+1
+
+to be normalized according to Eq. 5.
+
+Prob N(Pi) =
+
+Prob (Pi)
+(Prob (Pi))
+
+(cid:4)
+k
+i=1
+
+(5)
+
+= 2
+
+9 , Prob N(P2) = 1/12
+1/4
+
+where Prob N(Pi) is the normalized probability of Pi. Consequently, Prob N(P1) =
+1/18
+3 and Prob N(P3) = 1/9
+9 . At this stage, the trajec-
+1/4
+1/4
+tory segment Tseg(si, s j) is decompressed into three possible sub-paths P1, P2, P3 and
+the probability for each of them is also available.
+
+= 4
+
+= 1
+
+475
+
+(6)
+
+Geoinformatica (2012) 16:467–496
+
+2.4 Probabilistic path nearest neighbor
+
+Given any two locations a, b in road networks, the shortest network path between
+them is denoted as SP(a, b ) and the length of SP(a, b ) is denoted as sd(a, b ). Given
+a trajectory Traj and a data object o in road networks, the minimum detour distance
+dD(o, Traj) of data object o from Traj is defined as
+
+dD(o, Traj) = min
+ni∈Traj
+
+{sd(o, ni)},
+
+Definition (Path nearest neighbor) Given a trajectory Traj and a set of data object
+O, the path nearest neighbor (PNN) of Traj is the data object o ∈ O with the
+minimum dD(o, Traj), such that dD(o, Traj) ≤ dD(o(cid:5), Traj), ∀o(cid:5) ∈ {O − o}.
+
+Definition (Probabilistic path nearest neighbor) Given a path P and its PNN o, o
+holds the same probability as P, that is Prob (o) = ProbN(P). At the meantime, if o
+is the PNN of multiple paths P1, P2, ..., Pn, the probability of o is
+
+Prob (o) =
+
+ProbN(Pi)
+
+(7)
+
+n(cid:2)
+
+i=1
+
+As shown in Fig. 3, it is easy to find that the PNN of P1 is data object o1, and
+dD(o1, P1) = 3. For sub-path P2, its PNN is data object o2 and dD(o2, P2) = 5. Sub-
+path P3’s PNN is also data object o2 and dD(o2, P3) = 2. As computed in Section 2.3,
+9 , and o1 takes probability Prob (o1) = 2
+the normalized probability of sub-path P1 is 2
+9
+to be the PNN of trajectory segment Tseg(s1, s2). In the meantime, data object o2 is
+the PNN of both P2 and P3, thus o2 holds the probability Prob (o2) = Prob N(P2) +
+9 to be the PNN of Tseg(s1, s2). Therefore, data object o2 is the PNN
+Prob N(P3) = 7
+with the highest probability to the compressed trajectory segment Tseg(s1, s2).
+
+2.5 Problem definition
+
+Definition (Compressed trajectory based path nearest neighbor query (PNN-CT))
+Given a compressed trajectory CT, a set of data object O, a moving object prediction
+model PM and the meta-data (time-stamp t, maximum speed v and heading vector
+hv) of each sample point s ∈ CT, Compressed Trajectory based Path Nearest Neigh-
+bor Query (PNN-CT) finds the data object o with the highest probability to be the
+Path Nearest Neighbor (PNN) of CT, such that Prob (o) ≥ Prob (o(cid:5)), ∀o(cid:5) ∈ {O − o}.
+
+3 PNN-CT query processing
+
+Intuitively, the Compressed Trajectory based Path Nearest Neighbor (PNN-CT)
+query can be solved by decompressing all trajectory segments and preform a
+traditional PNN query processing [8] on all possible paths. However, in order to
+reconstruct the paths connecting the source and the destination, the valid sub-
+paths in each trajectory segment must be connected sequentially with those in the
+neighboring segments. The number of all possible paths may be extremely large,
+which prevents the query from being answered promptly. To overcome this weakness
+and solve the PNN-CT query effectively and efficiently, a two-phase solution is
+
+476
+
+Geoinformatica (2012) 16:467–496
+
+proposed. In the first phase, we use the meta-data and sample points to specify a tight
+search range (Section 3.1). The efficiency study reveals that the candidate sets for
+both data objects and trajectory segments are tight (Section 3.2). The second phase
+introduces the probabilistic PNN query processing based on an effective combination
+strategy (Section 3.3). The complexity analysis shows that our solution has strong
+advantages over existing methods (Section 3.4).
+
+3.1 Identifying candidates
+
+Given a compressed trajectory CT, a set of data objects O, a moving object pre-
+diction model PM and the meta-data (time-stamp t, maximum speed v and heading
+vector hv) for each sample point s ∈ CT, we try to specify a tight search range based
+on sample points and meta-data. In our approach, we estimate the minimum detour
+distance of a data object o from the compressed trajectory CT by a pair of lower
+bound o.lb and upper bound o.ub .
+
+Consider the schematic example demonstrated in Fig. 4. There is a compressed
+trajectory CT connecting a source s and a destination d, while si, s j are two adjacent
+sample points and o, o1, o2 are data objects. n is a vertex on the compressed trajectory
+segment Tseg(si, s j) (i.e., n is on a possible path connecting si and s j). An upper bound
+of the minimum detour distance from o to CT is given by:
+
+o.ub = min{sd(o, si), sd(o, s j)}
+
+(8)
+
+This upper bound can be further tightened and a global optimal upper bound is
+proposed, which will be discussed later in this section. Next, we estimate the lower
+bound of o based on the triangular inequality of shortest path. The triangular
+inequality in road networks can be represented as:
+(cid:5)
+
+sd(v1, v2) + sd(v1, v3) ≥ sd(v2, v3)
+sd(v1, v2) − sd(v1, v3) ≤ sd(v2, v3)
+where sd(v1, v2) indicates the shortest path distance between two vertices v1 and v2.
+In Fig. 4, suppose (o, n) is the minimum detour from data object o to the trajectory
+
+Fig. 4 Identifying candidates
+
+si, sj  are sample points
+
+rsj
+
+CT
+
+d
+
+s
+
+si
+
+n
+
+sj
+
+rsi
+
+o2
+
+o
+
+o1
+
+Expansion wavefront
+
+Geoinformatica (2012) 16:467–496
+
+477
+
+segment Tseg(si, s j). According to the triangular inequality introduced above, we
+have:
+
+(cid:5)
+
+sd(o, n) ≥ sd(o, si) − sd(si, n)
+sd(o, n) ≥ sd(o, s j) − sd(s j, n)
+
+=⇒ sd(o, n) ≥ sd(o, si) + sd(o, s j) − sd(si, n) − sd(s j, n)
+
+2
+
+2
+
+Then, we adopt d(si, n) to denote the network distance between si and n along
+the trajectory segment Tseg(si, s j) (not necessarily a network shortest path). Based
+on the definition of shortest path, it is easy to find that d(si, n) ≥ sd(si, n) and
+d(n, s j) ≥ sd(n, s j). Thus, d(si, s j) = d(si, n) + d(n, s j) ≥ sd(si, n) + sd(n, s j) and we
+can use d(si, s j) to replace sd(si, n) + sd(n, s j) in the equation:
+sd(o, n) ≥ sd(o, si) + sd(o, s j) − d(si, s j)
+
+The length of Tseg(si, s j) is difficulty to retrieve since Tseg(si, s j) is uncertain. Here, we
+use the time-stamps ti, t j and the maximum speed v between si, s j to estimate d(si, s j).
+These data are stored as meta-data with each sample point. Consequently, we can
+compute the maximum moving distance between si, s j as v × (t j − ti). Intuitively, v ×
+(t j − ti) ≥ d(si, s j). Thus, the lower bound of data object o is represented as
+
+o.lb = sd(o, si) + sd(o, s j) − v × (t j − ti)
+
+2
+
+(9)
+
+Now we expect to identify the candidates from data objects set O based on
+the upper/lower bound introduced above. Any data object o whose lower bound
+is greater than any other data object’s upper bound will be pruned. For trajectory
+segment Tseg(si, s j), if the shortest path distances from o to si, s j are known, the
+candidature of o can be determined. Here, Dijkstra’s expansion [9] is adopted
+to select the data object candidates. From each sample point s ∈ CT, a browsing
+wavefront is expanded in Dijkstra’s algorithm. Conceptually, the browsed region is
+restricted as a circle as shown in Fig. 4, where the radius is the shortest network
+distance from the center s to the browsing wavefront, denoted as rs.
+
+Among all data objects scanned by the expansion wave, we define a global upper
+
+bound U B as
+
+U B = min
+∀o∈Os
+
+{o.ub }
+
+(cid:6)
+
+k+1
+i=1 Oi and (k + 1) is the
+where Os is the set of all scanned data objects, Os =
+number of sample points. An example is demonstrated in Fig. 4, where o, o2 ∈ Os and
+o1 /∈ Os. An efficiency study in Section 3.2 reveals that U B is tight. The expansion
+of browsing wavefront will be stopped once rsi+rsj−v×(t j−ti)
+is greater than U B, where
+rsi (rsj) is the radius of the corresponding browsed region. It can be proved that the
+data objects outside the browsed region cannot have shortest network distance to
+Tseg(si, s j) less than U B, and can be pruned safely (e.g., o1).
+
+2
+
+Lemma 1 For any data object o outside the browsed region, we have o.lb > U B and
+o can be pruned safely.
+
+478
+
+Geoinformatica (2012) 16:467–496
+
+Proof As shown in Fig. 4, since the Dijkstra’s algorithm always chooses the vertex
+with the smallest distance label for expansion, we have sd(o1, si) > rsi and sd(o1, s j) >
+rsj. The browsing wavefront stops when rsi+rsj−v×(t j−ti)
+
+> U B, and we have:
+
+o1.lb = sd(o1, si) + sd(o1, s j) − v × (t j − ti)
+
+> U B
+
+2
+
+2
+
+Therefore, the data objects outside the browsed region can be pruned safely.
+
+(cid:9)(cid:10)
+
+The candidates to the ith trajectory segment Tseg(si, s j) are:
+
+Ci = {o| sd(o, si) + sd(o, s j) − v × (t j − ti)
+
+2
+
+≤ U B, o ∈ O}
+
+(10)
+
+For some candidates in Ci, the network distances to both si and s j are known
+and for other candidates only the network distance to either si or s j is known when
+the browsing wavefronts stop expanding. For example, in Fig. 4, only the network
+distance from o2 to si is known. If network distances to si, s j are known, o2 may
+not be a candidate according to Eq. 10. Therefore, we further continue the network
+expansion until all candidates in Ci have their lower bounds determined and invalid
+data objects will be pruned from Ci.
+
+To further tighten the candidate set Ci, a new lower bound of the minimum detour
+distance based on Euclidean distance is proposed. In the prediction model intro-
+duced in Section 2.2, the compressed trajectory segment Tseg(si, s j) is represented by
+a rectangle R, and R is defined by adjacent sample points si, s j, heading-vector hv
+and error bound δ. Suppose that n is the closest vertex to data object o in Tseg(si, s j).
+The relationship between n and rectangle R can be expressed as follow:
+
+(cid:5)
+
+n ∈ Tseg(si, s j)
+Tseg(si, s j) ⊂ R
+
+=⇒ n ∈ R
+
+Therefore, for any data object o, the lower bound of its minimum detour distance
+
+sd(o, n) can be estimated by
+
+o.lb = dE(o, R)
+where dE(o, R) is the Euclidean distance between data object o and rectangle R.
+If data object o is out of the rectangle R, as shown in Fig. 5, the rectangle R is
+mapped into a two-dimensional coordinate system. The position of data object o
+is described by its coordinates (o.x, o.y). l(si, v3) and l(o, v4) are two perpendicular
+straight lines and their intersection point is v1. The Euclidean distance between o and
+R is dE(o, v2) = dE(o, v1) − δ =
+(o.x − v1.x)2 + (o.y − v1.y)2 − δ, when o is out of
+R. On the other hand, if o ∈ R, we define that dE(o, R) = 0.
+
+(11)
+
+(cid:7)
+
+(cid:5) (cid:7)
+
+dE(o, R) =
+
+(o.x − v1.x)2 + (o.y − v1.y)2 − δ (o /∈ R)
+
+0 (o ∈ R)
+
+Different from Eq. 9, o.lb = dE(o, R) is the lower bound estimated by Euclid-
+ean distance. To further tighten the candidate set Ci, the greater one between
+sd(o,si)+sd(o,s j)−v×(t j−ti)
+and dE(o, R) is chosen as the lower bound of data object o. In
+2
+
+Section 3.2, we prove that this lower bound is tight.
+(cid:5)
+
+o.lb = max
+
+sd(o, si) + sd(o, s j) − v × (t j − ti)
+2
+
+, dE(o, R)
+
+(cid:8)
+
+(12)
+
+Geoinformatica (2012) 16:467–496
+
+Fig. 5 Detour distance lower
+bound
+
+y
+
+o
+
+479
+
+v2
+
+v1
+
+sj
+
+si
+
+ha
+
+v3
+
+0
+
+90°-ha
+
+v4
+
+x
+
+Then, based on Eq. 12, every data object in Ci will be checked whether its lower
+bound o.lb is greater than U B, as shown in Algorithm 2.
+
+Sometimes we may have an empty Ci, which means there is no PNN candidate to
+the ith compressed trajectory segment Tseg(si, s j). Therefore, in the following search,
+it is not necessary to decompress Tseg(si, s j) if Ci = 0. Here, we use T to denote the
+set of compressed trajectory segments whose data object candidate set is not empty.
+To identify the complete data object candidate set to the whole compressed
+trajectory CT, the candidates to the individual trajectory segments are combined.
+Since one data object may be candidate to more than one trajectory segments, such
+duplicate candidates are merged and purged. The complete candidates to CT is
+
+(cid:9)
+
+C =
+
+o|o ∈
+
+(cid:11)
+
+k(cid:10)
+
+i=1
+
+Ci
+
+(13)
+
+where k is the number of trajectory segments in CT.
+
+3.2 Efficiency study
+
+Theorem 1 U B = min{o.ub }, o ∈ Os is the tight upper bound among all data objects
+in O, e.g., any data object in O − Os must not have upper bound less than U B.
+
+Proof As shown in Fig. 4, o is within the browsed region and o1 is out of the browsed
+{oi.ub } ≤ o.ub . Since the search
+region. According to the definition, U B = min∀oi∈Os
+
+480
+
+Geoinformatica (2012) 16:467–496
+
+process based on Dijkstra’s algorithm always chooses the vertex with the smallest
+distance label value for expansion, it is easy to find that:
+
+(cid:5)
+
+sd(o1, si) > sd(o, si)
+sd(o1, s j) > sd(o, s j)
+
+=⇒ o1.ub > o.ub ≥ U B
+
+Therefore, U B is the tight upper bound among all data objects in O.
+
+(cid:9)(cid:10)
+
+Theorem 2 For any data object o ∈ O, its lower bound of the minimum detour
+distance is tight.
+
+Proof The trajectory segment Tseg(si, s j) is represented by a rectangle R, which is
+defined by sample points si, s j, heading vector hv and error bound δ. The width of R
+is 2δ. If δ = 0 (means the compression is lossless), the rectangle will degenerate to a
+straight line. It is just the exact path between two adjacent sample points. As shown
+in Fig. 6, Tseg(si, s j) is the straight line connecting si and s j. Straight line P(o, n) is
+the minimum detour from Tseg(si, s j) to data object o, and P(o, n) is perpendicular to
+Tseg(si, s j). In this context, the minimum detour distance of o is dD(o, Tseg(si, s j)) =
+dE(o, n) = dE(o, R). From Eq. 9, we can get
+
+dD(o, Tseg(si, s j)) ≥ sd(o, si) + sd(o, s j) − v × (t j − ti)
+
+⇒ dE(o, R) ≥ sd(o, si) + sd(o, s j) − v × (t j − ti)
+
+2
+
+2
+
+⇒ dE(o, R) = o.lb ⇒ dD(o, Tseg(si, s j)) = o.lb
+
+If there exists another lower bound greater than o.lb , in this case, it must be
+greater than dD(o, Tseg(si, s j)), which conflicts with the definition of the lower bound.
+Therefore, max { sd(o,si)+sd(o,s j)−v×(t j−ti)
+, dE(o, R)} is the tight lower bound for data
+object o.
+
+2
+
+The candidature of a data object is determined by whether its lower bound
+is greater than the global upper bound U B. In this section, we prove that the
+lower bound and upper bound we proposed are tight for a compressed trajectory.
+(cid:9)(cid:10)
+Therefore, the candidate sets specified by this upper/lower bound are tight.
+
+Fig. 6 Lower bound
+confliction
+
+si, sj are sample points
+
+s
+
+si
+
+n
+
+CT
+
+sj
+
+d
+
+Geoinformatica (2012) 16:467–496
+
+481
+
+3.3 Probabilistic PNN query processing
+
+Now, we have two candidate sets: a data object set C and a trajectory segment set T.
+In this section, we present the algorithms based on an effective combination strategy
+(including step 2 & 3 as follows) to find the PNN with the highest probability. Given
+candidate sets C and T, the probabilistic PNN query processing takes three steps.
+
+1. Each trajectory segment in T is decompressed into several sub-paths according
+
+2. For each sub-path, find its local PNN and compute the corresponding minimum
+
+3. Combine sub-paths and corresponding local PNNs to find the global PNN with
+
+to Algorithm 1;
+
+detour distance;
+
+the highest probability.
+
+In the first step, we decompress the trajectory segments in T according to
+Algorithm 1. Then, each segment Tseg(si, s j) ∈ T is transformed into several sub-
+paths stored in Pathlist(si, s j) and each sub-path holds a corresponding probability.
+Here, we define a new relationship between trajectory segment and sub-paths:
+
+P ∈ Pathlist(si, s j) ⇒ P ∈ Tseg(si, s j)
+
+For each sub-path P, its minimum detour distance to the closest data object is
+denoted as P.minDetour. Suppose that path P(s, d) is composed of a series of sub-
+paths {P1, P2, ..., Pk}, the PNN of P(s, d) can be represented as:
+{Pi.minDetour}
+
+(14)
+
+P(s, t).minDetour = min
+∀Pi∈P
+
+In the second step, we compute the minimum detour distance of each data object
+o ∈ C, and the local PNN for each sub-path is found. ∀o ∈ C, its lower bound of
+the minimum detour distance is computed based on Eq. 12 and the one with the
+minimum lower bound is selected in each time, since candidates with smaller lower
+bounds are more likely to be the solution, and should be processed first.
+
+An example is demonstrated in Fig. 7, where trajectory segment Tseg(si, s j)
+has been decompressed into two sub-paths P1, P2 connecting sample points s1, s2.
+By expanding a browsing wavefront from candidate o according to the Dijkstra’s
+algorithm, n1 is the first vertex in P1 which has the minimum value among all vertices
+in the wavefront, i.e. wavefront will expand next from n1 to the adjacent vertices
+
+Fig. 7 Minimum detour
+distance
+
+Browsed region
+
+r =  d(o,p2)  
+
+o
+
+n2
+
+s1
+
+p2
+
+n1
+
+p1
+
+s2
+
+482
+
+Geoinformatica (2012) 16:467–496
+
+of n1. Similarly, n2 is the closest vertex to o in P2. The expansion of browsing
+wavefront stops when all sub-paths in any one trajectory segments are all reached
+by the browsing wavefront.
+
+Lemma 2 Given a candidate o, if all sub-paths in a trajectory segment Tseg(si, s j) have
+been reached, the expansion process can be stopped.
+
+Proof As demonstrated in Fig. 7, the expansion of browsing wavefront stops when
+P1, P2 ∈ Tseg(si, s j) are both reached. Consequently, we have the minimum detour
+distance from o to sub-paths dD(o, P1) = sd(o, n1), dD(o, P2) = sd(o, n2), and an ex-
+pansion radius o.r = max{dD(o, P1), dD(o, P2)}. If the browsing wavefront continues
+to expand and reaches another sub-path P3 /∈ Tseg(si, s j), then we have dD(o, P3) >
+o.r. If P3’s PNN is o, P3.minDetour = dD(o, P3). According to Eq. 14, dD(o, P3)
+can not be better than dD(o, P1) or dD(o, P2) to be the global minimum detour.
+Therefore, the expansion process can be stopped when P1, P2 are both reached. (cid:9)(cid:10)
+
+After that, for all unprocessed data objects in C, if its lower bound is greater
+than o.r, it will be pruned from C based on the similar reason stated in Lemma 2.
+Consequently, the local PNN for each sub-path P ∈ Tseg(si, s j) can be identified as
+Algorithm 3.
+
+In the third step, we combine all the local PNNs to find the global PNN
+with the highest probability. As described in Fig. 8, there are two trajectory
+segments Tseg(s1, s2) and Tseg(s2, s3). After decompression, we have sub-paths
+
+Fig. 8 Sub-paths combination
+
+o1
+
+3
+
+2
+
+p2
+
+o2
+
+s1
+
+s2
+
+p1
+
+o3
+
+4
+
+p4
+
+p3
+
+5
+
+o4
+
+s3
+
+Geoinformatica (2012) 16:467–496
+
+483
+
+P1, P2 ∈ Tseg(s1, s2) and each of them takes 50% probability. In the meantime, sub-
+paths P3, P4 ∈ Tseg(s2, s3) and each of them takes 50% probability. Data objects
+o1, o2, o3, o4 are local PNNs to paths P1, P2, P3, P4 respectively. To find the global
+PNN with the highest probability, an intuitive method is to test all possible com-
+binations of all sub-paths. For example, path {P1, P3} holds 50% × 50% = 25%
+probability and its PNN is o1. Path {P1, P4} holds 50% × 50% = 25% probability
+and its PNN is o1. Path {P2, P3} holds 50% × 50% = 25% probability and its PNN is
+o2. Path {P2, P4} holds 50% × 50% = 25% probability and its PNN is o2. Therefore,
+o1 has 50% probability to be the global PNN, so as o2.
+
+Obviously, this approach can be very time consuming as we have to test all
+possible combinations. Suppose that there are k trajectory segments and each one
+is decompressed into m sub-paths. The complexity of the combining process is mk,
+which prevents the query from being answered promptly. Here, we propose a novel
+method to optimize this process. For each trajectory segment Tseg(si, s j) ∈ T, we
+define the upper/lower bound for the minimum detour distance as follows.
+
+Tseg(si, s j).ub =
+
+{P.minDetour}
+
+Tseg(si, s j).lb =
+
+{P.minDetour}
+
+max
+∀P∈Tseg(si,s j)
+
+min
+∀P∈Tseg(si,s j)
+
+Lemma 3 If there exists A ⊆ T, satisfying
+
+∀Tseg(si, s j) ∈ A, ∀Tseg(se, sh) ∈ T − A
+
+Tseg(si, s j).ub ≤ Tseg(se, sh).lb
+there is no need to test combinations in T − A, i.e. we only need to test the combina-
+tions of trajectory segments in A.
+
+Proof Since Tseg(si, s j) ∈ A and Tseg(sg, sh) ∈ T − A, we have Tseg(si, s j).ub <
+Tseg(se, sh).lb . For any sub-path Px ∈ Tseg(si, s j) and Py ∈ Tseg(sg, sh), we have
+Px.minDetour ≤ Py.minDetour. Since the global PNN computation is based on
+Eq. 14, the local PNN of Py can not be better than the local PNN of Px to be the
+global PNN. Therefore, we only need to consider combining trajectory segments in
+(cid:9)(cid:10)
+subset A.
+
+An example is demonstrated in Fig. 8. Since Tseg(s1, s2).ub = 3 < Tseg(s2, s3).lb =
+4, there is no need to test sub-paths in Tseg(s2, s3). For Tseg(s1, s2), data object o1 takes
+50% probability to be the global PNN, so as o2. This outcome is the same as the result
+by testing all possible combinations.
+
+484
+
+Geoinformatica (2012) 16:467–496
+
+The combination procedure is introduced in Algorithm 4. We select the trajectory
+segment with the minimum upper bound from T and put it into A (line 2). If the
+maximum upper bound in A is no greater than the minimum lower bound in T,
+subset A is found and then we only need to test all possible combinations of sub-
+paths in A (line 3–5).
+
+3.4 Complexity analysis
+
+Suppose data objects are uniformly distributed in road networks and the sample
+points in trajectories are uniformly distributed as well. We now analyze the com-
+plexity of PNN-CT query by estimating the cost in each searching phase. In the first
+phase, the network browsing is performed from each sample point to identify the can-
+didate sets (data object candidate set C and trajectory segment set T). In a specified
+road network G(V, E), the corresponding complexity is O((k + 1)(Vlg(V) + E))
+where (k + 1) is the number of sample points (while k is the number of trajectory
+segments). The second searching phase includes three steps: (1) we decompress each
+trajectory segment in T. The complexity is O(an2) where a is the size of T and n is the
+number of vertices in each segment (rectangle); (2) we calculate the minimum detour
+distance of each data object in C, and the complexity is O(b (Vlg(V) + E)) where b
+is the size of data object candidate set C; (3) we select a sub-set A from T and test
+all possible combinations of A. The complexity is O(mc), where m is the number of
+possible paths in one trajectory segment and c is the size of A. Consequently, the
+complexity of PNN-CT query is
+
+O((k + 1 + b )(Vlg(V) + E) + an2 + mc)
+
+(15)
+
+An intuitive approach to solving PNN-CT query is to decompress all trajectory
+segments, and then perform the PNN query on all possible trajectories. It is a
+simple extension of PNN query and we use EPNN to denote this query process. The
+complexity of EPNN is
+
+O((2 + b p)mk(Vlg(V) + E) + kn2 + mk)
+
+(16)
+
+where b p is the data object candidates specified by the original PNN query. Through
+comparing Eqs. 15 and 16, we have ((2 + bp)mk) >> (k + b1 + 1) and k ≥ a and k ≥
+c. Thus, the complexity of EPNN is much higher than the complexity of PNN-CT.
+
+Now we analyze the optimization of each searching phase in PNN-CT. In the first
+phase, when the tight upper/lower bound was not in use, the bi-direction network
+expansion of PNN was applied instead. Here, we use (v1(t2 − t1) + v2(t3 − t2) + ... +
+vk(tk+1 − tk)) = 2r to estimate the distance of the whole trajectory. Consequently, the
+complexity is
+
+(cid:12)
+(2 + b p)(Vlg(V) + E) + kn2 + mk
+Suppose the density of data object is ρ, and we have b 2 = 2ρπr2 and b = (k +
+1)ρπ(r/k)2. Thus,
+
+(17)
+
+O
+
+(cid:13)
+
+2 + b 2 = 2 + 2ρπr2 = ρπr2
+
+(cid:14)
+
+(cid:15)
+
+2 + 2
+ρπr2
+(cid:14)
+
+(cid:15)
+
+k + 1
+k2
+
++ k + 1
+ρπr2
+
+k + 1 + b = k + 1 + (k + 1)ρπ(r/k)2 = ρπr2
+
+Geoinformatica (2012) 16:467–496
+
+485
+
+Compared with the number of data objects, k is a very small value and k << ρπr2.
+Thus, we have:
+(cid:14)
+
+(cid:15)
+
+(cid:14)
+
+(cid:15)
+
+2 + 2
+ρπr2
+
+≥
+
+k + 1
+k2
+
++ k + 1
+ρπr2
+
+⇒ (2 + b 2) ≥ (k + 1 + b )
+
+By comparing Eqs. 15 and 17, it is clear that the upper/lower bound reduces the
+complexity notably.
+
+In the second phase, when the effective combination strategy is not in use, all
+possible combinations in T are tested and the minimum detour distance for all
+possible paths should be computed. The complexity is
+
+O((k + 1 + b ma)(Vlg(V) + E) + an2 + mc)
+
+(18)
+
+By comparing Eqs. 15 and 18, we have (k + 1 + b ma) > (k + 1 + b ) and the pro-
+posed combination strategy reduces the complexity notably.
+
+4 Experiments
+
+In this section, we conducted extensive experiments on real spatial data-sets to
+demonstrate the efficiency of PNN-CT query. The two data sets used in our ex-
+periments were Beijing Road Network (BRN)2 and Oldenburg City Road Network
+(ORN),3 which contain 28,342 vertices and 6,105 vertices respectively, stored as
+adjacency lists. In BRN, we adopted the real trajectory data collected by the MOIR
+project [18]. In ORN, the synthetic trajectory data were used. All algorithms were
+implemented in Java and tested on a Windows platform with Intel Core2 CPU
+(2.13 GHz) and 1 GB memory. Data objects were generated on the networks
+uniformly with densities from 5 to 30%,
+
+density =
+
+the numb er of data ob jects
+the numb er of vertices in the network
+
+(19)
+
+In our experiments, the networks resided in memory when running Dijkstra’s
+algorithm as the storage memory occupied by BRN/ORN was less than 1MB, which is
+trivial for most hand-held devices in nowadays. All experiment results were averaged
+over 20 independent testes with different query inputs. The main performance metric
+was CPU time and the parameter settings are listed in Table 1.
+
+By default, the density of data objects was 10%, and the number of trajectory
+segments k was 6 in both BRN and ORN. In the meantime, the compression error
+bound was set to 50 (≈0.35 km) for BRN, and 100 (≈0.35 km) for ORN. To the best
+of our knowledge, no existing method in literature has been proposed to address the
+PNN-CT query investigated in this work. For the purpose of comparison, an algo-
+rithm based on the Path Nearest Neighbor (PNN) query [8] was also implemented
+(referred to as EPNN). In this algorithm, all trajectory segments were decompressed
+initially. Then, the PNN query was conducted on each possible path connecting the
+source and the destination.
+
+2http://www.iscas.ac.cn/
+3www.cs.fsu.edu/∼lifeifei/SpatialDataset.htm
+
+486
+
+Table 1 Parameter setting
+
+Geoinformatica (2012) 16:467–496
+
+Density of data objects ρ
+The number of trajectory segments k
+Compression error bound δ
+
+5–30% (default 10%)
+1–10 (default 6)
+50–300 (default 50)
+
+5–30% (default 10%)
+1–10 (default 6)
+100–350 (default 100)
+
+BRN
+
+ORN
+
+4.1 Effect of data object density
+
+First of all, we investigated the effect of data object density on the performance of
+PNN-CT and EPNN with the default settings. Intuitively, the higher the density of
+data objects, the smaller the required search range. In Fig. 9b, the CPU time of EPNN
+decreases while the density increases. However, in large data set, the higher data
+object densities may lead to more candidates to be processed, which may offset the
+time saved by the smaller search ranges. For example, in Fig. 9a, the CPU time of
+EPNN increases with the density. For PNN-CT, the higher data object density may
+result in more trajectory segments to be decompressed. Thus in both Fig. 9a and b,
+the CPU times of PNN-CT increase slowly with the density. Nevertheless, the CPU
+time required by EPNN was two orders of magnitude higher than that of PNN-CT.
+
+4.2 Effect of the number of compressed trajectory segments k
+
+Figure 10 shows the performance of PNN-CT and EPNN when the number of
+trajectory segments varies. Since longer trajectories cause more data objects to be
+processed, the CPU time is expected to be higher for both PNN-CT and EPNN.
+However, the CPU time of EPNN increases much faster than PNN-CT for two
+reasons. The first is due to the much larger number of candidates (data objects
+to be checked and trajectory segments to be decompressed) by using bi-direction
+network expansion method in EPNN, and the second is that EPNN has to process all
+possible combinations since no combination strategy is adopted. For instance, when
+
+PNN-CT
+EPNN
+
+PNN-CT
+EPNN
+
+ 100
+
+ 1
+
+l
+
+)
+e
+a
+c
+s
+ 
+
+g
+o
+l
+(
+ 
+
+i
+
+e
+m
+T
+U
+P
+C
+
+ 
+
+ 5
+
+ 1
+
+l
+
+)
+e
+a
+c
+s
+ 
+
+g
+o
+l
+(
+ 
+
+i
+
+e
+m
+T
+U
+P
+C
+
+ 
+
+ 0.2
+
+ 0.05
+
+ 0.25
+
+ 0.3
+
+ 0.05
+
+ 0.1
+
+ 0.15
+
+ 0.2
+
+ 0.25
+
+ 0.3
+
+Density of Data Ojbects
+(b) ORN
+
+ 0.2
+
+ 0.15
+
+ 0.1
+Density of Data Ojbects
+(a) BRN
+
+Fig. 9 Effect of data object density
+
+Geoinformatica (2012) 16:467–496
+
+487
+
+ 1500
+
+PNN-CT
+EPNN
+
+PNN-CT
+EPNN
+
+ 1
+
+ 6
+
+ 4
+
+ 3
+
+ 5
+
+ 2
+Number of Trajectory Segments
+(a) BRN
+
+ 7
+
+ 8
+
+ 9  10
+
+ 1
+
+ 4
+
+ 3
+
+ 5
+
+ 6
+
+ 2
+Number of Trajectory Segments
+(b) ORN
+
+ 7
+
+ 8
+
+ 9  10
+
+Fig. 10 Effect of trajectory segment number k
+
+k is equal to 10, PNN-CT outperforms EPNN by almost three orders of magnitude.
+Note that this result demonstrates the importance of smart selection of candidates
+and the necessity of an effective combination strategy.
+
+4.3 Effect of prediction model error bound δ
+
+Figure 11 shows the effect of error bound δ on the query time of PNN-CT and
+EPNN. In general, a larger error bound will lead to a greater level of uncertainty
+when decompressing, and more sub-paths to be considered. In both BRN and ORN,
+the CPU-time of EPNN increases exponentially, while the time cost of PNN-CT only
+rises slightly due to the proposed effective combination strategy.
+
+PNN-CT
+EPNN
+
+PNN-CT
+EPNN
+
+l
+
+)
+e
+a
+c
+s
+ 
+g
+o
+l
+(
+ 
+e
+m
+T
+U
+P
+C
+
+ 
+
+i
+
+ 1
+
+l
+
+)
+e
+a
+c
+s
+ 
+g
+o
+l
+(
+ 
+e
+m
+T
+U
+P
+C
+
+ 
+
+i
+
+ 2000
+
+ 1
+
+ 50
+
+ 1
+
+l
+
+)
+e
+a
+c
+s
+ 
+g
+o
+l
+(
+ 
+e
+m
+T
+U
+P
+C
+
+ 
+
+i
+
+ 50
+
+ 1
+
+l
+
+)
+e
+a
+c
+s
+ 
+g
+o
+l
+(
+ 
+e
+m
+T
+U
+P
+C
+
+ 
+
+i
+
+ 50
+
+ 100
+
+ 250
+
+ 300
+
+ 100
+
+ 150
+
+ 300
+
+ 350
+
+ 150
+ 200
+Error Bound
+(a) BRN
+
+ 200
+ 250
+Error Bound
+(b) ORN
+
+Fig. 11 Effect of prediction model error bound δ
+
+488
+
+)
+c
+e
+s
+(
+ 
+e
+m
+T
+U
+P
+C
+
+ 
+
+i
+
+ 3
+
+ 2
+
+ 1
+
+ 0
+
+ 1
+
+ 3.5
+
+ 4
+
+ 3
+
+ 2
+
+ 1
+
+ 2.5
+
+ 1.5
+
+ 0.5
+
+ 2.5
+
+ 1.5
+
+ 3
+
+ 2
+
+ 1
+
+)
+c
+e
+s
+(
+ 
+e
+m
+T
+U
+P
+C
+
+ 
+
+i
+
+)
+c
+e
+s
+(
+ 
+
+i
+
+e
+m
+T
+U
+P
+C
+
+ 
+
+Geoinformatica (2012) 16:467–496
+
+with upper/lower bound
+without upper/lower bound
+
+with upper/lower bound
+without upper/lower bound
+
+ 0.05
+
+ 0.1
+
+ 0.2
+
+ 0.15
+
+ 0.25
+Density of Data Ojbects
+(a) BRN
+
+ 0.2
+
+ 0.15
+
+ 0.1
+ 0.25
+Density of Data Ojbects
+(b) ORN
+
+ 0.3
+
+ 0.3
+
+ 0.2
+
+ 0.05
+
+with upper/lower bound
+without upper/lower bound
+
+with upper/lower bound
+without upper/lower bound
+
+ 5
+
+ 4
+
+ 3
+
+ 2
+Number of Trajectory Segments
+(c) BRN
+
+ 7
+
+ 8
+
+ 6
+
+ 9  10
+
+ 1
+
+ 6
+
+ 3
+
+ 5
+
+ 4
+
+ 2
+Number of Trajectory Segments
+(d) ORN
+
+ 8
+
+ 7
+
+ 9  10
+
+with upper/lower bound
+without upper/lower bound
+
+with upper/lower bound
+without upper/lower bound
+
+)
+c
+e
+s
+(
+ 
+e
+m
+T
+U
+P
+C
+
+ 
+
+i
+
+)
+c
+e
+s
+(
+ 
+e
+m
+T
+U
+P
+C
+
+ 
+
+i
+
+)
+c
+e
+s
+(
+ 
+
+i
+
+e
+m
+T
+U
+P
+C
+
+ 
+
+ 0.7
+
+ 0.6
+
+ 0.5
+
+ 0.4
+
+ 0.3
+
+ 1
+
+ 0.8
+
+ 0.6
+
+ 0.4
+
+ 0.2
+
+ 0.75
+
+ 0.6
+
+ 0.45
+
+ 0.3
+
+ 0.5
+
+ 50
+
+ 100
+
+ 150
+ 200
+Error Bound
+(e) BRN
+
+Fig. 12 Effect of upper/lower bound
+
+ 250
+
+ 300
+
+ 100
+
+ 150
+
+ 300
+
+ 350
+
+ 200
+ 250
+Error Bound
+(f) ORN
+
+Geoinformatica (2012) 16:467–496
+
+489
+
+with combination strategy
+without combination strategy
+
+with combination strategy
+without combination strategy
+
+ 1.5
+
+ 2
+
+ 1
+
+ 0.5
+
+ 2.5
+
+ 1.5
+
+ 2
+
+ 1
+
+ 0.5
+
+ 2.5
+
+ 1.5
+
+ 2
+
+ 1
+
+ 0.5
+
+)
+c
+e
+s
+(
+ 
+e
+m
+T
+U
+P
+C
+
+ 
+
+i
+
+)
+c
+e
+s
+(
+ 
+e
+m
+T
+U
+P
+C
+
+ 
+
+i
+
+)
+c
+e
+s
+(
+ 
+
+i
+
+e
+m
+T
+U
+P
+C
+
+ 
+
+ 10
+
+ 8
+
+ 6
+
+ 4
+
+ 2
+
+ 8
+
+ 6
+
+ 4
+
+ 2
+
+ 0
+
+ 1
+
+ 50
+
+ 40
+
+ 30
+
+ 20
+
+ 10
+
+)
+c
+e
+s
+(
+ 
+e
+m
+T
+U
+P
+C
+
+ 
+
+i
+
+)
+c
+e
+s
+(
+ 
+e
+m
+T
+U
+P
+C
+
+ 
+
+i
+
+)
+c
+e
+s
+(
+ 
+
+i
+
+e
+m
+T
+U
+P
+C
+
+ 
+
+ 0
+ 0.05
+
+ 0.1
+
+ 0.15
+
+ 0.2
+
+ 0.25
+
+ 0.3
+
+Density of Data Ojbects
+(a) BRN
+
+ 0
+ 0.05
+
+ 0.2
+
+ 0.15
+
+ 0.1
+Density of Data Ojbects
+(b) ORN
+
+ 0.25
+
+ 0.3
+
+with combination strategy
+without combination strategy
+
+with combination strategy
+without combination strategy
+
+ 3
+
+ 5
+
+ 4
+
+ 2
+Number of Trajectory Segments
+(c) BRN
+
+ 7
+
+ 6
+
+ 8
+
+ 9  10
+
+ 0
+
+ 1
+
+ 6
+
+ 4
+
+ 3
+
+ 5
+
+ 2
+Number of Trajectory Segments
+(d) ORN
+
+ 8
+
+ 7
+
+ 9  10
+
+with combination strategy
+without combination strategy
+
+with combination strategy
+without combination strategy
+
+ 0
+
+ 50
+
+ 100
+
+ 250
+
+ 300
+
+ 0
+ 100
+
+ 150
+
+ 150
+ 200
+Error Bound
+(e) BRN
+
+ 300
+
+ 350
+
+ 250
+ 200
+Error Bound
+(f) ORN
+
+Fig. 13 Effect of combination strategy
+
+490
+
+Geoinformatica (2012) 16:467–496
+
+4.4 Effect of the upper/lower bound of the minimum detour distance
+
+This experiment tests the effect of the proposed tight upper/lower bound of the
+minimum detour distance (Section 3.1) on the performance of PNN-CT. These
+bounds are used to prune candidates (both data objects and trajectory segments)
+and to ensure that the data object candidates are processed in proper order. PNN-
+CT was run with and without the upper/lower bound. When the upper/lower bound
+was not in use, the bi-direction network expansion of PNN was applied instead. In
+Fig. 12, it is clear that the performance is accelerated by 2–4 times with the help of
+our bounds, and the effect is more obvious in large data-set as shown in Fig. 12a, c, e.
+
+4.5 Effect of combination strategy
+
+We also tested the effect of combination strategy (Section 3.3) on the performance
+of PNN-CT. A suitable combination strategy can avoid a huge amount of repeated
+computation and improve the performance notably. We run PNN-CT with and
+without the combination strategy. When the combination strategy was not in use, all
+possible sub-path combinations was tested to reconstruct possible paths, and PNNs
+of all possible paths were found. In Fig. 13, among all six sub-figures, it is easy to
+find that without the sub-paths combination strategy, the corresponding CPU-times
+increase dramatically. By contrast, the CPU-time of PNN-CT only increases slightly.
+
+5 Related work
+
+Path Nearest Neighbor (PNN) The concept of Path Nearest Neighbor is first
+proposed as In-route Nearest Neighbor (IRNN) [26, 36], which is designed for users
+that drive along a fixed path routinely. As this kind of drivers would like to follow
+their preferred routes, IRNN queries are proposed for finding the nearest neighbor
+with the minimum detour distance from the fixed route, based on the assumption
+that a commuter will return to the route after visiting to the nearest facility (e.g.,
+petrol station) and will continue the journey along the previous route. Recently, k-
+PNN proposed by Chen et al. in [8] is an extension of the IRNN query. k-PNN can
+monitor the k nearest neighbors efficiently to a continuously changing shortest path,
+and the user only needs to input the destination rather than exactly the whole query
+path. The models of IRNN and k-PNN are both based on the same assumption that
+the user prefer to follow their previous route with the minimal detour distance. In
+IRNN query and PNN query, solutions based on R-tree and network expansion are
+adopted respectively.
+
+Moving object prediction models Generally, moving object prediction models can
+be classified into two categories: linear prediction models [14, 17, 21, 25, 30, 31]
+and non-linear prediction models [1, 5, 11, 15, 23, 28, 29]. Linear prediction models
+assume that the moving object follows linear movements, and introduce little com-
+putation and storage overhead. Given an object’s location s1 at time t1 and its speed
+−→v , the linear models estimate the object’s future location at time t2 by using the
+−→v are 2 − dimensional vectors. On
+formula s2 = s1 + −→v × (t2 − t1), where s1, s2 and
+
+Geoinformatica (2012) 16:467–496
+
+491
+
+the other hand, non-linear prediction models consider not only linear but also non-
+linear motions of moving objects. Compared with linear models, they can produce
+more accurate prediction results but incur additional computation over head and
+storage cost. Most of non-linear models are based on the historic position data of
+moving objects. For example, Recursive Motion Function [28] formulates an object’s
+location based on its locations at the h most recent time-stamps. In Hybrid Prediction
+Model [15], a pattern tree is maintained to describe the historic moving patterns of
+the corresponding moving object.
+
+Trajectory compression Trajectory compression is a widely used technology in spa-
+tial databases. Compared with original trajectory data, compressed trajectories have
+clear advantages in data processing, transmitting, storing, etc. [20]. Ideally, a trajec-
+tory compression approach can notably reduce (i) the computation/communication
+load of clients (GPS-enabled mobile devices) and (ii) the storage cost of servers.
+Despite the bulk of trajectory compression literature [3, 4, 7, 10, 16, 19], no solution
+fulfills both requirements, except the linear prediction model based trajectory com-
+pression [14, 17, 21, 25, 30, 31]. Traditional compression methods, including Douglas–
+Peucker Algorithm [10], Modified Douglas–Peucker [19] and Bellman’s Algorithm
+[3, 4, 16], require the access to complete trajectory data. Although they can achieve
+high compression ratios, on the client-side, every point should be recorded and
+uploaded, which incurs intolerable computation/communication load. On the other
+hand, in linear prediction model based trajectory compression, it is not necessary to
+record and upload each point in the trajectory unless it breaches the constraint set by
+the prediction model. On the server-side, since the whole trajectory is compressed
+into a set of sample points, the pressure of storage is reduced notably. Note that
+the non-linear prediction models [1, 5, 11, 15, 23, 28, 29] are not suitable for
+the trajectory compression. Compared with linear models, they can produce more
+accurate prediction results but incur additional computation load and storage cost.
+For example, Recursive Motion Function [28] and Hybrid Prediction Model [15] are
+two typical non-linear prediction models. To describe the movement of the moving
+object, a matrix and a pattern tree need to be maintained respectively. In most
+cases, the space required by the additional information offsets the space saved by
+compression. In addition, the extra information is problem specific and can hardly
+be shared among different trajectories. In the meantime, the non-linear prediction
+models may demand even higher computation effort than simply sampling every
+point in the trajectory.
+
+6 Conclusion
+
+Trajectory compression is widely used in spatial databases as it can notably reduce
+(i) the computation/communication load of clients (GPS-enabled mobile devices)
+and (ii) the storage cost of servers. Compared with original trajectories, compressed
+trajectories have strong advantages in data processing, transmitting, storing, etc. In
+this work, we investigated a novel PNN-CT query to find the path nearest neighbor
+based on compressed trajectories. This query can bring significant benefits to users
+in many popular applications such as trip planning. To address the PNN-CT query
+effectively and efficiently, we proposed a novel two-phase solution. The efficiency
+
+492
+
+Geoinformatica (2012) 16:467–496
+
+study revealed that the candidate sets created are tight and the complexity analysis
+showed that our solution has strong advantages over the existing methods. The
+efficiency of PNN-CT query processing was verified by extensive experiments based
+on real and synthetic trajectory data in road networks.
+
+Acknowledgements We wish to thank the anonymous reviewers for several comments and sugges-
+tions that have improved the paper. This work was supported by the ARC grant DP110103423 and
+the National Natural Science Foundation of China (No.60905030).
+
+References
+
+PODS, pp 252–259
+
+Princeton
+
+ming. CACM 4(6):284
+
+1. Aggarwal CC, Agrawal D (2003) On nearest neighbor indexing of nonlinear trajectories. In:
+
+2. Alt H, Efrat A, Rote G, Wenk C (2003) Matching planar maps. In: SODA, pp 589–598
+3. Bellman R, Dreyfus S (1962) Applied dynamic programming. Princeton University Press,
+
+4. Bellman RE (1961) On the approximation of curves by line segments using dynamic program-
+
+5. Bhattacharya A, Das SK (1999) Lezi-update: an information-theoretic approach to track mobile
+
+users in pcs networks. In: MobiCom, pp 1–12
+
+6. Brakatsoulas S, Pfoser D, Salas R, Wenk C (2005) On map-matching vehicle tracking data. In:
+
+7. Cao H, Wolfson O, Trajcevski G (2006) Spatio-temporal data reduction with deterministic error
+
+8. Chen Z, Shen HT, Zhou X, Yu JX (2009) Monitoring path nearest neighbor in road networks.
+
+VLDB, pp 853–864
+
+bounds. In: VLDB J, vol 15, pp 211–228
+
+In: SIGMOD, pp 591–602
+
+9. Dijkstra EW (1959) A note on two problems in connection with graphs. Numer Math 1:269–271
+10. Douglas D, Peucker T (1973) Algorithms for the reduction of the number of points required to
+
+represent a line or its caricature. In: The Canadian cartographer, vol 10, pp 112–122
+
+11. Giannotti F, Nanni M, Pinelli F, Pedreschi D (2007) Trajectory pattern mining. In: SIGKDD,
+
+12. Greenfeld J (2002) Matching gps observations to locations on a digital map. In: 81th annual
+
+meeting of the transportation research board
+
+13. Hjaltason GR, Samet H (1999) Distance browsing in spatial databases. ACM TODS 24(2):
+
+14. Jensen CS, Lin D, Ooi BC (2004) Query and update efficient b+-tree based indexing of moving
+
+objects. In: VLDB, pp 768–779
+
+15. Jeung H, Liu Q, Shen HT, Zhou X (2008) A hybrid prediction model for moving objects. In:
+
+16. Kleinberg J, Tardos E (2005) Algorithm design. Addison-Wesley, Reading, MA
+17. Lange R, Farrell T, Drr F, Rothermel K (2009) Remote real-time trajectory simplification. In:
+
+pp 330–339
+
+265–318
+
+ICDE, pp 70–79
+
+PerCom, pp 1–10
+
+18. Liu K, Deng K, Ding Z, Li M, Zhou X (2009) Moir/mt: monitoring large-scale road network
+
+traffic in real-time. In: VLDB, pp 1538–1541
+
+19. Meratnia N, By RAd (2004) Spatiotemporal compression techniques for moving point objects.
+
+20. Muckell J, Hwang J-H, Lawson C, Ravi S (2010) Algorithms for compressing gps trajectory data:
+
+21. Patel JM, Chen Y, Chakka VP (2004) Stripes: an efficient index for predicted trajectories. In:
+
+In: EDBT, pp 765–782
+
+an empirical evaluation. In: ACM GIS
+
+SIGMOD, pp 635–646
+
+data: tutorial summary. In: SIGMOD
+
+22. Pei J, Hua M, Tao Y, Lin X (2008) Query answering techniques on uncertain and probabilistic
+
+23. Rabiner L (1989) A tutorial on hidden markov models and selected applications in speech
+
+recognition. In: IEEE Proceedings, vol 77, pp 257–286
+
+24. Roussopoulos N, Kelley S, Vincent F (1995) Nearest neighbor queries. In: SIGMOD, pp 71–79
+25. Saltenis S, Jensen CS, Leutenegger ST, Lopez MA (2000) Indexing the positions of continuously
+
+moving objects. In: SIGMOD, pp 331–342
+
+Geoinformatica (2012) 16:467–496
+
+493
+
+26. Shekhar S, Yoo JS (2003) Processing in-route nearest neighbor queries: a comparison of alterna-
+
+tive approaches. In: ACM GIS, pp 9–16
+
+27. Suciu D, Dalvi N (2005) Foundations of probabilistic answers to queries. In: SIGMOD tutorial
+28. Tao Y, Faloutsos C, Papadias D, Liu B (2004) Prediction and indexing of moving objects with
+
+29. Tao Y, Kollios G, Considine J, Li F, Papadias D (2004) Spatio-temporal aggregation using
+
+unknown motion patterns. In: SIGMOD
+
+sketches. In: ICDE, p 214
+
+30. Tao Y, Papadias D (2003) Spatial queries in dynamic environments. ACM TODS 28(2):101–139
+31. Tao Y, Papadias D, Sun J (2003) The tpr*-tree: an optimized spatiotemporal access method for
+
+predictive queries. In: VLDB, pp 790–801
+
+32. Tao Y, Xiao X, Cheng R (2007) Range search on multidimensional uncertain data. ACM TODS
+
+32(3):15–54
+
+33. Trajcevski G, Tamassia R, Ding H, Scheuermann P, Cruz IF (2009) Continuous probabilistic
+
+nearest-neighbor queries for uncertain trajectories. In: EDBT, pp 874–885
+
+34. Trajcevski G, Wolfson O, Hinrichs K, Chamberlain S (2004) Managing uncertainty in moving
+
+35. Wenk C, Salas R, Pfoser D (2006) Addressing the need for map-matching speed: localizing
+
+objects databases. ACM TODS 29(3):463–507
+
+globalb curve-matching algorithms. In: SSDBM
+
+36. Yoo JS, Shekhar S (2005) In-route nearest neighbor queries. GeoInformatica 9:117–137
+37. Zheng K, Trajcevski G, Zhou X, Scheuermann P (2011) Probabilistic range queries for uncertain
+
+trajectories on road networks. In: EDBT
+
+Shuo Shang is a PhD candidate of Data and Knowledge Engineering (DKE) Division, School of
+Information Technology & Electrical Engineering (ITEE) at the University of Queensland (UQ).
+He is currently working on Spatial-Temporal Databases with Prof. Xiaofang Zhou and Dr. Ke Deng.
+He got his bachelor degree from Peking University, China in 2008.
+
+494
+
+Geoinformatica (2012) 16:467–496
+
+Bo Yuan is a computer scientist mostly interested in Data Mining, Evolutionary Computation,
+Global Optimization and Parallel Computing. He received the B.E. degree from Nanjing University
+of Science and Technology, P.R. China, in 1998, and the M.Sc. and Ph.D. degrees from The
+University of Queensland, Australia, in 2002 and 2006 respectively. From 2006 to 2007, he was
+a Research Officer on a project funded by the Australian Research Council at The University of
+Queensland.
+
+He is currently an Associate Professor (Lecturer: 07/2007–12/2009) in the Division of Informatics,
+Graduate School at Shenzhen, Tsinghua University, P.R. China, and a member of the Intelligent
+Computing Lab. He is also a member of the IEEE and the IEEE Computational Intelligence Society.
+
+Ke Deng is an ARC Postdoctoral Fellow in DKE division, ITEE School of the University of
+Queensland. Before joining DKE, he was with CSIRO ICT centre as a Post Doctorial Fellow. His
+research interest includes Data Quality, Spatial Database. He was conferred his PhD degree in 2007
+in University of Queensland. His Master’s degree is in Information and Communication Technology
+and was awarded in 2001 in Griffith University. From 2001–2003, he has worked in an Internet
+Service Provider as a software engineer for two years.
+
+Geoinformatica (2012) 16:467–496
+
+495
+
+Kexin Xie is a research student studying for a PhD degree at School of Information Technology
+and Electrical Engineering, University of Queensland, Brisbane, Australia. He worked as a research
+intern at Microsoft Research Asia doing spatial data mining research. He received his Bachelor of
+Information Technology and Master of Engineering (Software Engineering) degrees in University
+of Queensland, Brisbane, Australia in 2006 and 2007 respectively.
+
+Kai Zheng is a PhD candidate of Data and Knowledge Engineering (DKE) Division, School of
+Information Technology & Electrical Engineering (ITEE) at the University of Queensland (UQ).
+He is currently working on Uncertain and Probabilistic Database with Prof. Xiaofang Zhou. He got
+his master degree from Fudan University, China in 2009.
+
+496
+
+Geoinformatica (2012) 16:467–496
+
+Xiaofang Zhou is a Professor of Computer Science at the University of Queensland. He is the Head
+of the Data and Knowledge Engineering Research Division at UQ. He is the Convenor and Director
+of ARC Research Network in Enterprise Information Infrastructure (a major national research
+collaboration initiative in Australia), and the founding chair of ACM SIGSPATIAL Australian
+Chapter. Xiaofang received his BSc and MSc degrees in Computer Science from Nanjing University,
+China, and PhD in Computer Science from the University of Queensland. Before joining UQ in
+1999, he worked as a researcher in Commonwealth Scientific and Industrial Research Organisation
+(CSIRO), leading its Spatial Information Systems group. His research focus is to find effective and
+efficient solutions for managing, integrating and analyzing very large amount of complex data for
+business, scientific and personal applications.
+
+

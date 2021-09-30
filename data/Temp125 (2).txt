@@ -1,0 +1,2049 @@
+Geoinformatica (2008) 12:411–433
+DOI 10.1007/s10707-007-0034-z
+
+Processing Optimal Sequenced Route
+Queries Using Voronoi Diagrams
+
+Mehdi Sharifzadeh · Cyrus Shahabi
+
+Received: 3 January 2007 / Accepted: 7 August 2007 /
+Published online: 4 October 2007
+© Springer Science + Business Media, LLC 2007
+
+Abstract The Optimal Sequenced Route (OSR) query strives to ﬁnd a route of
+minimum length starting from a given source location and passing through a number
+of typed locations in a speciﬁc sequence imposed on the types of the locations. In this
+paper, we propose a pre-computation approach to OSR query in both vector and
+metric spaces. We exploit the geometric properties of the solution space and theo-
+retically prove its relation to additively weighted Voronoi diagrams. Our approach
+recursively accesses these diagrams to incrementally build the OSR. Introducing the
+analogous diagrams for the space of road networks, we show that our approach is
+also efﬁciently applicable to this metric space. Our experimental results verify that
+our pre-computation approach outperforms the previous index-based approaches in
+terms of query response time.
+
+1 Introduction
+
+Suppose that we are planning a Saturday trip in town as following: ﬁrst we intend
+to visit a shopping center in the afternoon to check the season’s new arrivals, then
+we plan to dine in an Italian restaurant in early evening, and ﬁnally, we would like
+to watch a speciﬁc movie at late night. Naturally, we intend to drive the minimum
+
+This research has been funded in part by NSF grants EEC-9529152 (IMSC ERC), IIS-0238560
+(PECASE), IIS-0324955 (ITR), IIS-0534761, and unrestricted cash gifts from Google and
+Microsoft. Any opinions, ﬁndings, and conclusions or recommendations expressed in this
+material are those of the author(s) and do not necessarily reﬂect the views of the NSF.
+
+M. Sharifzadeh (B) · C. Shahabi
+
+Information Laboratory (InfoLab), Computer Science Department,
+University of Southern California, Los Angeles, CA 90089-0781, USA
+e-mail: sharifza@alumni.usc.edu
+URL: http://infolab.usc.edu
+
+C. Shahabi
+e-mail: shahabi@usc.edu
+
+412
+
+Geoinformatica (2008) 12:411–433
+
+overall distance to these destinations. In other words, we need to ﬁnd the locations
+of the shopping center si, the Italian restaurant rj, and the theater tk that shows
+the speciﬁc movie, which driving toward them considering the sequence of the plan
+shortens our trip (in terms of distance or time). Note that in this example, a time
+constraint enforces the order in which these destinations are to be visited; we usually
+do not have dinner in the afternoon, or do not go for shopping at late night. This type
+of query is also essential in other application domains such as crisis management,
+air trafﬁc ﬂow management, supply chain management, and video surveillance. In
+crisis management, suppose that an ambulance needs to repeatedly visit one of
+the several attacked points ai and hospitals hj, respectively. In this example, it is
+critical for the ambulance to visit as many of the attacked points as possible in
+the shortest time. The constraint that enforces the order in this example is that
+there is no reason for the ambulance to go to a hospital if it has not picked up an
+injured person yet. Note that in this example, although there are only 2 different
+types of points (i.e., attacked points and hospitals), the size of the sequence can
+be very large [e.g., (a1, h1, a2, h2, ..., ai, hi)]. In surveillance applications, consider
+searching for a sequence of relevant images of different scene types to discover an
+event. For instance, among time-stamped images showing individuals approaching
+a building, waiting in its lobby or leaving it, we look for the minimal three images
+with approach/wait/leave sequence. Here, the distance could be deﬁned according to
+high-dimensional feature space of images including their time-stamps.
+
+We call this type of query, where the order of the sequence in which some points
+must be visited is enforced and cannot be changed, the Optimal Sequenced Route
+or OSR query. Similar types of the planning queries have received recent attention
+by the database community [2], [4], [7], [12] to solve problems in the domains of
+air trafﬁc ﬂow and supply chain management, which shows the importance of these
+query types. We use the ﬁrst example described above as our running example
+throughout the paper. Figure 1 shows three different types of point sets shown by
+white, black and gray circles, which represent shopping centers, Italian restaurants,
+and theaters, respectively, and a starting point q (shown by (cid:2)). The distance between
+two points is their Manhattan distance. Here, the route (q, s1, r1, t1) (shown with solid
+lines in the ﬁgure) with the length of 12 units is the optimum answer to our query.
+
+Fig. 1 Three different
+types of point sets
+
+s3
+
+s1
+
+s2
+
+q
+
+8
+
+7
+
+6
+
+5
+
+4
+
+3
+
+2
+
+1
+
+r2
+
+r3
+
+t1
+
+t2
+
+r1
+
+t3
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+8
+
+9 10 11 12
+
+s4
+7
+
+Geoinformatica (2008) 12:411–433
+
+413
+
+One can show that OSR query may not be optimally answered by simply performing
+a series of independent nearest neighbor queries at different locations (e.g., 15-unit
+length route (q, s2, r2, t2)).
+
+We, for the ﬁrst time, introduced the OSR query in Sharifzadeh et al. [10] and
+proposed two online approaches for vector and metric spaces (e.g., road networks).
+The R-LORD algorithm of Sharifzadeh et al. [10] subsequently performs range
+queries utilizing an R-tree index structure to ﬁlter out the points that cannot possibly
+be on the optimal route, and then builds the optimal route in reverse sequence (i.e.,
+from ending to the starting point). In this paper, we exploit the geometry of the OSR
+problem space to propose a novel pre-computation algorithm which utilizes Voronoi
+diagrams for processing OSR queries in vector spaces. In our running examples, we
+use Manhattan distance in R2 which is a representative of the network distance if the
+road network consists of a set of north–south and east–west roads [1].
+
+A preliminary version of this work was presented in Sharifzadeh and Shahabi
+[11], where an OSR query processing algorithm was proposed only for vector
+spaces. This paper subsumes [11] and extends our algorithm for the metric space
+of spatial networks (i.e., road networks) where the distance function depends on the
+connectivity of a graph model.
+
+1.1 Contributions
+
+Assume that we are only interested in the OSRs that follow a ﬁxed sequence M. For
+example, assume that this ﬁxed sequence for Fig. 1 is (white, black, gray). Suppose
+we can partition the space of points of interest (e.g., R2) into regions each including
+all the points with a common OSR. For instance, in Fig. 1, there are many points
+similar to q for which the OSR to a white, then a black, and ﬁnally a gray point
+is the route (s1, r1, t1). Suppose that our partitioning identiﬁes the region including
+these points. Furthermore, assume that the partitioning also identiﬁes the region
+corresponding to each and every possible route (si, rj, tk) to a white, a black, and a
+gray point. Assume that we associate and store all regions and their corresponding
+OSRs. Therefore, for a given starting point q we can address the OSR query with
+sequence M by simply locating the unique region that includes q and reporting
+its corresponding OSR. In Section 3, we prove that such partitioning exists as
+an additively weighted (AW) Voronoi diagram, a speciﬁc type of general Voronoi
+diagrams. We theoretically exploit interesting properties of these diagrams which
+makes them appropriate data structures for efﬁcient OSR query processing.
+
+We enhance the above query processing approach by exploiting an interesting
+property of OSRs proved in Lemma 1 (see Section 3). The lemma states that if
+(s1, r1, t1) is q’s optimal route to a white, a black, and a gray point, then (r1, t1) is
+s1’s optimal route to a black and then a gray point. Recursively, (t1) is r1’s optimal
+route to a gray point. Lemma 1 enables us to avoid storing the complete OSR
+corresponding to each region of the diagram for a given sequence M; we store only
+the ﬁrst point of the OSR for each region of the Voronoi diagram [e.g., s1 for the
+region corresponding to (s1, r1, t1)]. Instead, we require to compute and store the
+Voronoi diagrams corresponding to all sufﬁxes of M.
+
+For instance, to answer queries with sequence (white, black, gray) in Fig. 1,
+our approach requires the diagrams corresponding to three sequences (white, black,
+gray), (black, gray), and (gray). We refer to these diagrams as the OSR–Voronoi
+
+414
+
+Geoinformatica (2008) 12:411–433
+
+family of sequence (white, black, gray). Now, we iteratively process a given OSR
+query. For the starting point q, we ﬁrst ﬁnd s1, the white point associated with the
+region including q in the diagram of (white, black, gray). Then, we ﬁnd r1, the black
+point stored with the region including s1 in the diagram of (black, gray). Finally, we
+seek for t1, the gray point corresponding to the region including r1 in the diagram of
+(gray). Now, the ﬁnal OSR of q is the route (s1, r1, t1), which includes s1, r1, and t1 in
+the order of their retrieval.
+
+In Section 5, we extend our query processing algorithm for the metric space of
+spatial network databases (SNDB). With SNDBs (e.g., road networks), spatial objects
+are restricted to pre-deﬁned locations (e.g., within the roads) that are speciﬁed
+by an underlying network. Consequently, the distance between each two locations
+is the length of the shortest path through network edges that connects the two
+locations. In Section 5, we introduce the network AW-Voronoi diagrams. We show
+that exactly the same relation between OSR queries and AW-Voronoi diagrams in
+vector spaces holds between OSR queries and network AW-Voronoi diagrams in
+metric spaces. Hence, by pre-computing network AW-Voronoi diagrams, one can
+efﬁciently process OSR queries for an SNDB. Finally, we propose a data structure to
+store and an algorithm to build network AW-Voronoi diagrams. To the best of our
+knowledge, no other work has studied these diagrams.
+
+Our OSR query processing using Voronoi diagrams best suits the applications
+where the sequences of user’s interest are known in advance. This allows pre-
+computation of the corresponding diagrams. Notice that using the OSR–Voronoi
+family of a sequence M, we can address OSR queries of all sufﬁx sequences of M.
+Through extensive experiments with a real-world dataset, we show that our approach
+signiﬁcantly outperforms the R-LORD approach proposed in Sharifzadeh et al. [10]
+in terms of response time. We also show that the off-line process used to build the
+OSR–Voronoi family of a single sequence is reasonably fast. With a given sequence
+M = (M1, . . . , Mm), this pre-computation phase takes O
+|UMi
+com-
+putation steps for a vector space where |UMi
+| denotes the cardinality of the dataset
+corresponding to the ith point type in M. For the metric space of SNDBS, the time
+where |E| and |V| are the
+complexity of this phase is O
+number of edges and vertices of the network, respectively.
+
+(|E| + |V| log |V|)
+
+| log |UMi
+
+(cid:5)(cid:3)|M|
+
+m
+i=1
+
+(cid:2)(cid:3)
+
+i=1
+
+(cid:6)
+
+(cid:4)
+
+|
+
+2 Preliminaries
+
+2.1 Formal problem deﬁnition
+
+In this section, we describe the terms and notations used in Sharifzadeh et al. [10] to
+formally deﬁne the OSR query. We use the same notations throughout the paper .
+
+Let U1, . . . , Un be n sets, each containing points in a d-dimensional space Rd, and
+D(., .) be a distance metric deﬁned in Rd 1. To illustrate, in the example of Fig. 1,
+U1, U2, and U3 are the sets of black, white, and gray points, representing restaurants,
+shopping centers and theaters, respectively. We ﬁrst deﬁne the following four terms.
+
+1Rd and D(., .) form a metric space.
+
+Geoinformatica (2008) 12:411–433
+
+415
+
+Deﬁnition 1 Given n, the number of point sets Ui, we say M = (M1, M2, . . . , Mm)
+is a sequence if and only if 1 ≤ Mi ≤ n for 1 ≤ i ≤ m. That is, given the point sets
+Ui, a user’s OSR query is valid only if she asks for existing location types. For the
+example of Fig. 1 where n = 3, (2, 1, 2) is a sequence (specifying a shopping center, a
+restaurant, and a shopping center), while (3, 4, 1) is not a sequence because 4 is not
+an existing point set. We use sf x(M, i) = (Mi+1, . . . , Mm) to refer to the sufﬁx of M
+with size m − i.
+
+Deﬁnition 2 We say R = ( p1, p2, . . . , pr) is a route if and only if pi ∈ Rd for each
+1 ≤ i ≤ r. We use p ⊕ R = ( p, p1, . . . , pr) to denote a new route that starts from
+starting point p and goes sequentially through p1 to pr. The route p ⊕ R is the result
+of adding p to the head of route R. We use sf x(R, i) = ( pi+1, . . . , pr) to refer to the
+sufﬁx of R with size r − i.
+
+Deﬁnition 3 We deﬁne the length of a route R = ( p1, p2, . . . , pr) as
+
+L(R) =
+
+D( pi, pi+1)
+
+r−1(cid:7)
+
+i=1
+
+(1)
+
+Note that L(R) = 0 for r = 1. For example, the length of the route (s2, r2, s3) in Fig. 1
+is 4 units where D is the L1 norm (i.e., Manhattan distance).
+
+Deﬁnition 4 Let M = (M1, M2, . . . , Mm) be a sequence. We refer to the route R =
+( p1, p2, . . . , pm) as a sequenced route that follows sequence M if and only if pi ∈ UMi
+where 1 ≤ i ≤ m. In Fig. 1, (s2, r2, s3) is a sequenced route that follows (2, 1, 2) which
+means that the route passes only through a white, then a black and ﬁnally a white
+point. Now, we formally deﬁne the OSR query.
+
+Deﬁnition 5 For a given starting point q in Rd and the sequence M = (M1, M2,. . . ,
+is deﬁned as ﬁnding a sequenced route R =
+Mm), the OSR Query, Q(q, M),
+( p1, . . . , pm) that follows M where the value of the following function L is minimum
+over all the sequenced routes that follow M:
+
+L(q, R) = D(q, p1) + L(R)
+
+(2)
+
+Note that L(q, R) is in fact the length of route Rq = q ⊕ R. Throughout the paper,
+we use Q(q, M) = ( p1, p2, . . . , pm) to denote the answer to the OSR query Q.
+Without loss of generality, we assume that this optimal route is unique for given
+q and M. For the example in Section 1 where (U1, U2, U3) = (black, white, gray),
+M = (2, 1, 3), and D(., .) is the shortest path distance, the answer to the OSR query
+is Q(q, M) = (s1, r1, t1).
+
+One special variation of OSR is when the user asks for an OSR that ends in a
+given destination q(cid:6). A special case of this query is where she intends to return to
+her starting location q. This variation of OSR can be addressed by deﬁning a new
+point set Un+1 = {q(cid:6)} and a new sequence M(cid:6) = (M1, . . . , Mm, n + 1). Consequently,
+Q(q, M(cid:6)) will be the optimal route following M which ends in q(cid:6). Our Voronoi-
+based algorithm proposed in this paper is theoretically able to process this variation
+of OSR queries using the above approach. However, because of the overhead of
+
+Table 1 Summary of notations
+
+416
+
+Symbol
+
+Ui
+n
+M
+Mi
+|R|
+L(R)
+sf x(R, i)
+L(q, R)
+|Ui|
+D(., .)
+|M|
+R
+pi
+q ⊕ R
+sf x(M, i)
+
+Geoinformatica (2008) 12:411–433
+
+Meaning
+
+a point set in Rd
+number of point sets Ui
+a sequence, = (M1, . . . , Mm)
+i-th item of M
+r, number of points in R
+length of R
+route ( pi+1, . . . , pr), a sufﬁx of R
+L(q ⊕ R), length of the route q ⊕ R
+cardinality of the set Ui
+distance function in Rd
+m, size of sequence M = number of items in M
+route ( p1, p2, . . . , pr), where pi is a point
+i-th point in R
+route R p = (q, p1, . . . , pr) where R = ( p1, . . . , pr)
+sequence (Mi+1, . . . , Mm), a sufﬁx of M
+
+pre-computing Voronoi diagrams, the algorithm is not efﬁcient for this variation.
+That is, the practical solution for this variation is employing the online algorithms
+proposed in Sharifzadeh et al. [10].
+
+Table 1 summarizes the notations we use throughout the paper.
+
+2.2 Voronoi diagrams
+
+The general Voronoi diagram of a given set S including points in Rd partitions the
+space into regions each including all points with a common closest point in the given
+set according to a distance metric d(., .). The region corresponding to the point p
+contains all the points q ∈ Rd for which we have
+
+∀ p(cid:6) ∈ S, p(cid:6) (cid:8)= p ⇒ d(q, p) ≤ d(q, p(cid:6))
+
+(3)
+
+The equality holds for the points on the borders of p’s and p(cid:6)’s regions. Incorporating
+arbitrary distance metrics d(., .) in the above equation results in different variations
+of Voronoi diagrams. Figure 2 shows the standard Voronoi diagram of nine points in
+R2 where the distance metric is Euclidean. We refer to the region V( p) containing
+the point p as its Voronoi cell. We also refer to point p as the generator of Voronoi
+cell V( p).
+
+Now assume that S is a set of points p ∈ Rd each assigned a weight w( p) ∈ R. We
+deﬁne the distance metric d(x, p) as D(x, p) + w( p) where D(., .) denotes a distance
+metric. Without loss of generality, we assume that D(., .) is Euclidean distance. The
+AW-Voronoi diagram of the points in S with respect to distance function D(., .) is
+deﬁned using Eq. 3. Here, the cell corresponding to point p contains all the points
+q ∈ Rd for which we have
+
+∀ p(cid:6) ∈ S, p(cid:6) (cid:8)= p ⇒ D(q, p) + w( p) ≤ D(q, p(cid:6)) + w( p(cid:6))
+
+(4)
+
+Geoinformatica (2008) 12:411–433
+
+417
+
+Fig. 2 The standard Voronoi
+diagram of 9 points, the point
+p and its Voronoi cell V( p)
+
+V(p)
+
+p
+
+Figure 3 illustrates the AW-Voronoi diagram of a set of 13 points labeled with their
+negative weights.
+
+The computational geometry literature generally uses negative weights in Eq. 4 to
+deﬁne the AW-Voronoi diagrams. When negative weights are assigned to points p,
+their AW-Voronoi diagram can be seen as the standard Voronoi diagram of a set of
+d-dimensional balls each centered at a point p with a radius equal to the absolute
+value of w( p). Here, the set S includes balls such as b centered at a point p. The
+distance d(q, b ) between a ball b and the point q outside b is the smallest Euclidean
+distance between q and any point inside b . The literature uses this view to deﬁne
+the AW-Voronoi diagram of the centers of a set of balls (e.g., disks in R2) [8]. Each
+region of the space is assigned to a unique ball which is the common closest ball of
+all points inside that region. Figure 4 illustrates deﬁning the AW-Voronoi diagram
+of ﬁve points with negative weights w( p) < 0 using ﬁve corresponding disks. Here,
+d(q, c), the distance of a point q to a disk c centered at p with radius r = −w( p) is
+deﬁned as D(q, p) − r. As the ﬁgure shows, point q which is inside the cell of disk c
+(corresponding to point p) is closer to disk c than to disk c(cid:6). It also shows that some
+points such as p(cid:6)(cid:6) have empty cells. That is, no point in the space is closer to the disk
+c(cid:6)(cid:6) than to any other disk.
+
+Fig. 3 The AW-Voronoi
+diagram of 13 points with
+their negative weights
+
+418
+
+Geoinformatica (2008) 12:411–433
+
+Fig. 4 The AW-Voronoi
+diagram of ﬁve disks (i.e., ﬁve
+points with negative weights).
+Here, the distance function
+D(., .) is Euclidean
+
+The AW-Voronoi diagram demonstrates the following properties:
+
+Property AWV-1 With Euclidean distance (i.e. L2 norm) as metric D(., .) in Eq. 4,
+the cell edges are either straight lines or hyperbolic curves [8].
+Hence, these curved cells are not convex polygons as the cells
+of general Voronoi diagrams. Using Manhattan distance (i.e. L1
+norm), all edges become straight lines.
+
+Property AWV-2 The arbitrary numeric values of weights can result in empty cells
+[8]. We refer to the generator point of an empty cell as a trivial
+point.
+
+Property AWV-3 The AW-Voronoi diagram of n points consists of at most O(n)
+
+connected edges [9].
+
+3 OSR and AW-Voronoi diagrams
+
+Assume that we are only interested in the OSRs that follow a ﬁxed sequence M (i.e.,
+Q(q, M) for points such as q). Suppose we can partition the space Rd into regions
+each including all the points q with a common OSR. That is, for any two points x
+and y inside the same region, we have Q(x, M) = Q(y, M). Assume that for each
+region, we pre-compute this common OSR. Furthermore, we store all regions and
+their corresponding OSRs for the given sequence M. Therefore, for a given starting
+point q we can address the query Q(q, M) by simply locating the region including q
+and reporting its corresponding optimal route.
+
+In this section, we show that the above partitioning which facilitates processing
+OSR queries exists as an AW-Voronoi diagram. We prove that a unique property of
+OSRs enables us to employ this partitioning. First, we prove Lemma 1 which states
+
+Geoinformatica (2008) 12:411–433
+
+419
+
+that the optimal route from pi that follows a sufﬁx of the original sequence M is the
+same as the corresponding sufﬁx of the optimal route from q that follows M.
+
+Lemma 1 Given the sequence M = (M1,. . ., Mm) and the starting point q, if Q(q, M) =
+R = ( p1, . . . , pm), then for any 1 ≤ i < m, we have Q( pi, M(cid:6)) = sf x(R, i) where M(cid:6) =
+sf x(M, i).
+
+Proof The proof is by contradiction. Assume that Q( pi, M(cid:6)) = R(cid:6) = ( p(cid:6)
+).
+1
+Obviously sf x(R, i) = ( pi+1, . . . , pm) follows sequence M(cid:6),
+therefore we have
+L( pi, R(cid:6)) < L( pi, ( pi+1, . . . , pm)). We add L(q, ( p1, . . . , pi)) to the both sides of this
+inequality to get:
+
+, . . . , p(cid:6)
+
+m−i
+
+(cid:2)
+
+(cid:2)
+q,
+
+L
+
+p1, . . . , pi, p(cid:6)
+
+, . . . p(cid:6)
+
+1
+
+m−i
+
+< L (q, ( p1, . . . , pm))
+
+(cid:4)(cid:4)
+
+(cid:4)
+
+The above inequality shows that the answer to Q(q, M) must be
+
+p1, . . . , pi, p(cid:6)
+,
+1
+which clearly follows sequence M. This contradicts our assumption that
+(cid:10)(cid:11)
+
+. . . , p(cid:6)
+Q(q, M) = ( p1, . . . , pm).
+
+m−i
+
+(cid:2)
+
+This property of the OSRs implies that only the last point of the OSR Q(q, M)
+(i.e., pm) must necessarily be the closest point of U M to its previous point in the
+route (i.e., pm−1 for i = m − 1).
+
+Here, we utilize the special case of Lemma 1 for the ﬁrst point of the route (i.e.,
+p1 for i = 1). For instance, if the optimal route from point q to a white, a black, and a
+gray point is (s1, r1, t1), then the optimal route from the point s1 to a black then a gray
+point is (r1, t1) (see Fig. 1). Therefore, if we identify the white point s1 with which the
+optimal route from q to a white, a black, then a gray point starts (i.e., the ﬁrst point
+of the route) and we know that the optimal route from s1 to a black and then a gray
+point is (r1, t1), we have found the optimal route from q (we just append s1 to the
+head of (r1, t1)). The following lemma identiﬁes this ﬁrst point.
+
+Lemma 2 Given the sequence M and the starting point q, if there exists a point p1 ∈
+U M1 so that ∀ p(cid:6)
+
+∈ U M1
+
+(cid:8)= p1
+
+, p(cid:6)
+1
+
+1
+
+D(q, p1) + L( p1, Q( p1, M(cid:6))) < D
+
+(cid:4)
+
+(cid:2)
+q, p(cid:6)
+1
+
+(cid:2)
+
+(cid:2)
+
++ L
+
+p(cid:6)
+1
+
+, Q
+
+p(cid:6)
+1
+
+, M(cid:6)
+
+(cid:4)(cid:4)
+
+(5)
+
+where M(cid:6) = sf x(M, 1), then the optimal route Q(q, M) starts with p1 which is followed
+by the points in Q( p1, M(cid:6)) (i.e., Q(q, M) = p1 ⊕ Q( p1, M(cid:6))).
+
+Proof The proof is by contradiction. Assume that Q(q, M) = ( p(cid:6)
+) starts
+1
+with p(cid:6)
+(cid:8)= p1. By deﬁnition, the length of q ⊕ Q(q, M) is minimum over all the routes
+1
+which follow sequence M. It is clear that the route p1 ⊕ Q( p1, M(cid:6)) follows M, so
+we have
+
+, . . . , p(cid:6)
+m
+
+L(q, ( p1 ⊕ Q( p1, M(cid:6)))) ≥ L(q, Q(q, M))
+(cid:4)
+
+(cid:4)
+
+(cid:2)
+
+(cid:2)
+
+p(cid:6)
+1
+
+, M(cid:6)
+
+=
+
+p(cid:6)
+2
+
+, . . . , p(cid:6)
+m
+
+where M(cid:6) = sf x(M, 1).
+
+Lemma 1 states that we have Q
+Hence, we get
+
+Q(q, M) = p(cid:6)
+1
+
+⊕ Q
+
+p(cid:6)
+1
+
+, M(cid:6)
+
+(cid:2)
+
+(cid:4)
+
+(6)
+
+(7)
+
+420
+
+Geoinformatica (2008) 12:411–433
+
+Therefore, we replace Q(q, M) in Eq. 6 to get
+(cid:2)
+q, p(cid:6)
+1
+
+(cid:2)
+q, p1 ⊕ Q
+
+p1, M(cid:6)
+
+≥ L
+
+(cid:4)(cid:4)
+
+L
+
+(cid:2)
+
+(cid:4)(cid:4)
+
+⊕ Q
+
+p(cid:6)
+1
+
+, M(cid:6)
+
+Finally, we use the deﬁnition of function L() to change Eq. 8 as follows for the point
+p(cid:6)
+1
+
+(cid:8)= p1:
+
+D(q, p1) + L( p1, Q( p1, M(cid:6))) ≥ D
+
+(cid:4)
+
+(cid:2)
+q, p(cid:6)
+1
+
+(cid:2)
+
+(cid:4)(cid:4)
+
++ L
+
+p(cid:6)
+1
+
+, Q
+
+p(cid:6)
+1
+
+, M(cid:6)
+
+The above inequality contradicts the one given in the assumption of the lemma.
+
+(8)
+
+(9)
+
+(cid:10)(cid:11)
+
+(cid:2)
+
+(cid:2)
+
+In the example of Fig. 1, U1, U2, and U3 are the sets of black, white, and gray
+
+points, respectively. For the sequence M = (2, 1, 3), we have M(cid:6) = (1, 3) and
+
+Q(s1, M(cid:6)) = (r1, t1), Q(s2, M(cid:6)) = (r3, t3),
+Q(s3, M(cid:6)) = (r1, t1), Q(s4, M(cid:6)) = (r1, t1)
+D(q, s1) + L(s1, Q(s1, M(cid:6))) = 3 + (7 + 2) = 12
+D(q, s2) + L(s2, Q(s2, M(cid:6))) = 2 + (3 + 9) = 14
+D(q, s3) + L(s3, Q(s3, M(cid:6))) = 4 + (8 + 2) = 14
+D(q, s4) + L(s4, Q(s4, M(cid:6))) = 5 + (9 + 2) = 16
+
+According to Lemma 2, the OSR of q to a white, a black and a gray point starts with
+s1 followed by Q(s1, M(cid:6)) = (r1, t1).
+
+We now strive to ﬁnd the locus of all points in space whose OSR that follows a
+given sequence starts with a point p1 and hence all share a common OSR for that
+sequence. In Fig. 1, for any white point si, there are points such as q whose optimal
+routes given the sequence (white, black, gray) start with si. Notice that the rest of
+their optimal route is the same [e.g., (r1, t1) for s1] and depends only on the location
+of point si and the given sequence [e.g., (black, gray)].
+
+Theorem 1 Let M = (M1, M2, . . . , Mm) be a given sequence and M(cid:6) = sf x(M, 1).
+The locus of all points q with a common OSR Q(q, M) which starts with p1 is
+inside p1’s cell in the AW-Voronoi diagram of the set of points in UM1 where the
+weight of each point p is w( p) = L( p, Q( p, M(cid:6))). Their common optimal route is
+Q(q, M) = p1 ⊕ Q( p1, M(cid:6)).
+
+Proof Let the set S = UM1 and w( p) = L( p, Q( p, M(cid:6))). According to the deﬁnition
+of the AW-Voronoi cell of p1 given by Eq. 4, for the point q inside this cell we get
+∀ p(cid:6)
+1
+
+∈ UM1
+
+(cid:8)= p1
+
+, p(cid:6)
+1
+
+D(q, p1) + L( p1, Q( p1, M(cid:6))) < D
+
+(cid:4)
+
+(cid:2)
+q, p(cid:6)
+1
+
+(cid:2)
+
+(cid:2)
+
++ L
+
+p(cid:6)
+1
+
+, Q
+
+p(cid:6)
+1
+
+, M(cid:6)
+
+(cid:4)(cid:4)
+
+Therefore, according to Lemma 2 the optimal route Q(q, M) is p1 ⊕ Q( p1, M(cid:6))
+(cid:10)(cid:11)
+which clearly starts with p1, the generator of the Voronoi cell including q.
+
+Given a sequence M, we refer to the AW-Voronoi diagram of the points p
+in UM1 using the weights w( p) = L( p, Q( p, M(cid:6))) where M(cid:6) = sf x(M, 1), as the
+
+Geoinformatica (2008) 12:411–433
+
+a
+
+8
+
+7
+
+6
+
+5
+
+4
+
+3
+
+2
+
+1
+
+s1
+
+10
+
+s2
+
+s3
+
+9
+
+12
+
+q
+
+11
+
+s4
+
+7
+
+b
+
+8
+
+7
+
+6
+
+5
+
+4
+
+3
+
+2
+
+1
+
+r2
+11
+
+s2
+
+9
+
+r3
+
+s3
+
+s1
+
+r1
+
+2
+
+c
+
+8
+
+7
+
+6
+
+5
+
+4
+
+3
+
+2
+
+1
+
+r2
+
+r3
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+8
+
+9 10 11 12
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+8
+
+9 10 11 12
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9 10 11 12
+
+s4
+7
+
+Fig. 5 The OSR–Voronoi diagrams of a the sequence (white, black, gray), b the sequence
+(black, gray), c and the sequence (gray) using the white points in Fig. 1
+
+421
+
+t1
+
+t2
+
+r1
+
+t3
+
+OSR–Voronoi diagram of the sequence M. Figure 5a illustrates the OSR–Voronoi
+diagram of sequence (white, black, gray) [i.e., M = (2, 1, 3)]. The distance function
+D(., .) is Manhattan distance and each white point si is labeled with its weight
+[i.e., L(si, Q(si, (1, 3))]. The OSR–Voronoi diagram has some interesting properties
+whose proofs are trivial:
+
+Property OSRV-1 All points in the OSR–Voronoi diagram of the sequence M (any
+
+Property OSRV-2 Given the sequence M,
+
+p ∈ UM1 ) have positive weights.
+
+if for the points p and p(cid:6) ∈ UM1
+we have Q( p, M(cid:6)) = Q( p(cid:6), M(cid:6)) = ( p2, . . . , pm) and D( p, p2) =
+D( p, p(cid:6)) + D( p(cid:6), p2) where M(cid:6) = sf x(M, 1), then p is a trivial
+point in OSR–Voronoi diagram of sequence M. That is, the
+Voronoi cell of p is empty and no OSR that follows M starts
+with p.
+
+4 OSR query processing using OSR–Voronoi diagrams
+
+In this section, we describe our OSR query processing approach that utilizes OSR–
+Voronoi diagrams deﬁned in Section 3. Assume that we have already built the OSR–
+Voronoi diagram of a given sequence M. The user asks for the OSR Q(q, M) given
+a starting point q. Subsequently, we locate the Voronoi cell which contains q in the
+OSR–Voronoi diagram of M. According to Theorem 1, the OSR of q starts with
+the generator of this cell (e.g., s1 in Fig. 5a). This point is then followed by the
+result of another OSR query (i.e., Q(s1, M(cid:6))). If we already knew the answer to this
+second query, we immediately report user’s desired route as s1 ⊕ Q(s1, M(cid:6)). Now the
+problem is that the we need the OSR–Voronoi diagram of sequence M(cid:6) to answer
+the second OSR query. Repeating the same reasoning for M(cid:6) veriﬁes that we will
+require the OSR–Voronoi diagrams of all sufﬁxes of the original sequence M. That
+is, to ﬁnd the OSR which follows M = (M1, . . . , Mm) we need the OSR–Voronoi
+diagrams of all sequences (Mi, . . . , Mm) for all 1 ≤ i ≤ m. We refer to these diagrams
+as the OSR–Voronoi family of M. For instance, to answer queries with sequence
+(white, black, gray) in Fig. 1, we require the OSR–Voronoi diagrams of sequences
+(white, black, gray), (black, gray), and (gray). Notice that the OSR–Voronoi family
+of a sequence can also be used to answer OSR queries of any sufﬁx of that sequence.
+
+422
+
+Geoinformatica (2008) 12:411–433
+
+4.1 Query processing
+
+Here, we assume that we have already built the OSR–Voronoi family of a given
+sequence M. Subsequently, we employ this set of diagrams to answer the OSR query
+Q(q, M). Section 4.2 shows how we recursively build all these diagrams.
+
+We describe our query processing approach using the example of Fig. 1. Notice
+that here the sequence is (white, black, gray) and the distance function D(., .) is
+Manhattan distance. We have already built and loaded the OSR–Voronoi diagrams
+of sequences (white, black, gray), (black, gray), and (gray) illustrated in Figs. 5a–c,
+respectively. Notice that the last diagram is the standard Voronoi diagram on
+gray points as the OSR of a point q which follows the sequence (gray) is simply
+the closest gray point to q (see Lemma 1 for i = m − 1). First, we locate the
+cell containing q in the OSR–Voronoi diagram of (white, black, gray). Following
+Theorem 1, our OSR starts with s1, the generator of this cell (see Fig. 5a). The rest
+of the OSR is the same as the OSR of s1 which follows (black, gray). Hence, we
+next ﬁnd r1, the generator of the cell containing s1 in the OSR–Voronoi diagram
+of (black, gray) shown in Fig. 5b. Finally, we ﬁnd the closest gray point to r1 as
+the generator of the cell containing r1 in the OSR–Voronoi diagram of (gray)
+(see Fig. 5c). The OSR of point q which follows sequence (white, black, gray)
+is (s1, r1, t1) built using the three subsequently retrieved points. Figure 6 shows
+the pseudo-code of our OSR query processing approach as a recursive function
+ComputeOSR(point, sequence).
+
+4.2 Data structures
+
+The OSR–Voronoi diagrams are instances of AW-Voronoi diagrams whose weights
+are constrained by geometry. Therefore, we build them using any algorithm for
+building AW-Voronoi diagrams. The algorithm proposed by Karavelas and Yvinec
+[5] computes the diagram of n points in O(n log n) steps. Our approach utilizes
+the OSR–Voronoi diagrams of all sufﬁxes of a sequence M to ﬁnd the OSRs that
+follow M. Therefore, to answer queries with sequence (white, black, gray) in Fig. 1,
+we require the OSR–Voronoi diagrams of this sequence together with those of
+sequences (black, gray) and (gray). In general, for a given sequence M, we require
+|M| OSR–Voronoi diagrams of all sufﬁxes of M to answer Q(q, M). Hence, the pre-
+computation phase takes O(
+| log |UMi
+We incrementally build the OSR–Voronoi family of (white, black, gray) as fol-
+lows. First, we build the OSR–Voronoi diagram of (gray) shown in Fig. 5c which
+
+|) computation steps.
+
+(cid:3)|M|
+i=1
+
+|UMi
+
+Fig. 6 Computing OSR
+for query Q(q, M)
+
+Function Compute OSR (point q, sequence M )
+
+Returns rout e
+
+1. V ( p) = the cell containing q in the OSR-Voronoi diagram of M
+2. p = the generator of V ( p)
+3. if | M | = 1 then
+return ( p)
+4.
+5. else
+6.
+
+Com puteO S R ( p, s f x( M ,1))
+
+return p
+
+⊕
+
+Geoinformatica (2008) 12:411–433
+
+423
+
+is simply the standard Voronoi diagram of the set of gray points T = {t1, t2, t3}
+with respect to Manhattan distance [8]. Second, for each black point ri we ﬁnd the
+generator gray point of the cell containing ri in this OSR–Voronoi diagram. In Fig. 5c,
+each black point is connected to its corresponding gray generator by a solid line.
+We assign the distance between the point ri and its corresponding gray point to the
+weight of ri. For instance, we assign w(r1) = 2. Third, we build the OSR–Voronoi
+diagram of (black, gray) using the set of black points R = {r1, r2, r3} and their weights
+(see Fig. 5b). Similar to the previous step, for each white point si we locate rx, the
+generator of the cell which contains si in the diagram built in this step and assign
+D(si, rx) + w(rx) to the weight of si. For example, the weight of s1 is 7 + 2 = 9. Finally,
+we build the OSR–Voronoi diagram of (white, black, gray) using the set of white
+points S = {s1, s2, s3, s4} with respect to their corresponding weights (see Fig. 5a).
+Figure 7 shows the pseudo-code of the above algorithm.
+
+Once we computed the OSR–Voronoi family of a sequence, we require to store
+the boundaries of the Voronoi cells corresponding to each OSR–Voronoi diagram
+of the family. However, with Euclidean distance, these boundaries consist of curved
+edges and hence cannot be stored as simple polygons. This problem can be solved
+in the two following ways. Each solution guarantees that given a starting point q, we
+can easily determine the cell containing q.
+
+2.
+
+1. The cells are approximated by convex polygons and consequently these polygons
+are stored. The polygons are also indexed by a spatial index structure such as
+R-tree. Therefore, the cell containing the starting point q is easily retrieved by
+a spatial contains() query. This solution introduces an error in OSR query
+processing proportional to the approximation error.
+Instead of storing the cells, the neighborhood graph of the cell generators
+is stored (similar to Delaunay graph for the general Voronoi diagrams [8]).
+Vertices of the graph are the generators of the OSR–Voronoi diagram of M.
+There is a graph edge connecting p and p(cid:6) iff V( p) and V( p(cid:6)) have common
+boundaries. Now, to determine the inclusion of a starting point q in a cell, we
+start traversing the graph from any vertex p. We iteratively visit the vertex p(cid:6),
+
+Fig. 7 Incrementally building
+the data structures required
+to answer the OSR query
+Q(q, M)
+
+424
+
+a
+
+a
+
+4
+b
+
+4
+
+c
+
+5
+
+d
+
+6
+
+2
+g
+
+5
+
+h
+
+5
+
+2
+
+7
+
+4
+
+e
+
+4
+
+f
+
+3
+
+4
+
+i
+2
+2
+k
+2
+2
+m
+
+j
+
+l
+
+3
+
+3
+
+3
+
+n
+
+4
+o
+
+4
+
+p
+
+Geoinformatica (2008) 12:411–433
+
+t1
+
+2
+
+2
+
+3
+s4
+
+2
+
+t2
+
+1
+
+3
+
+b
+
+a
+r1
+
+b
+s3
+
+3
+
+2
+
+r2
+
+s1
+
+2
+
+q
+
+s2
+
+2
+
+2
+
+r3
+
+2
+
+t3
+
+Fig. 8 a Graph model of a road network, b 10 points on the edges of the graph
+
+the neighbor of the current vertex p which minimizes D(q, p(cid:6)) + w( p(cid:6)) among
+p’s neighbors and p itself. When no such a vertex is found, q is inside the Voronoi
+cell of the current vertex p.
+
+5 Extension to SNDBs
+
+In this section, we extend our OSR query processing algorithm from the vector space
+to the metric space of SNDBs. With SNDBs (e.g., road networks), spatial objects
+are restricted to pre-deﬁned locations (e.g., within the roads) that are speciﬁed
+by an underlying network. Consequently, the distance D(., .) between each two
+locations is their network distance (e.g., the length of the shortest path through
+network edges that connects the two locations). This computationally expensive
+network-based metric depends on the connectivity of the network in addition to the
+objects’ locations. Here, we ﬁrst formally deﬁne this new metric by modeling a spatial
+network as a graph. Then, we show that our query processing algorithm proposed in
+Section 4 remains valid for this metric space. Finally, we propose an algorithm to
+build AW Voronoi diagrams in this space.
+
+5.1 Modeling SNDBs
+
+Consider the weighted undirected2 graph G = (V, E) as the two sets V of vertices,
+and E ⊆ V×V of edges. We represent each edge of E, directly connecting vertices u
+and v, as the pair [u, v]. Each vertex v represents a 2-d point (v.x, v.y) in a geometric
+space (e.g., an intersection in a road network). Hence, each edge is also a line segment
+in that space (e.g., a road segment). A numeric weight (cost) wuv is associated with
+the edge [u, v]. In an SNDB representing a road network, this is the distance or
+the travel time between intersections u and v. We use N to refer to the space of
+points located on the edges/vertices of graph G. For a point p ∈ N located on the
+edge [u, v], we deﬁne wup = |up|
+wuv where |uv| is the Euclidean distance between u
+|uv|
+
+2Many spatial networks consist of directed edges and hence must be modeled as directed graphs.
+Throughout the paper, we use undirected graphs for simplicity. However, our algorithms can be
+easily extended to support directed graphs.
+
+Geoinformatica (2008) 12:411–433
+
+425
+
+and v. Figure 8a shows the graph model of a road network including the vertex set
+V={a, . . . , p}. Each edge of the graph is labeled by its weight. Figure 8b shows points
+s1, . . . , s4, r1, . . . , r3, and t1, . . . , t3 on the edges of the same graph. As shown in the
+ﬁgure, point r1 ∈ N corresponds to the weights wr1a = 1 and wr1b = 3.
+
+Deﬁnition 6 Given a graph G, a path P from p1 ∈ N to p2 ∈ N is an ordered set
+P={ p1, v1, . . . , vn, p2} consisting of a sequence of connected edges from p1 to p2.
+Here, p1 and p2 are located on the edges [u, v1] and [vn, w], respectively. Also, vi
+is connected to vi+1 by the edge [vi, vi+1] for 1 ≤ i < n. As shown in Fig. 8b, P =
+{t1, a, b , s3} is a path from t1 to s3.
+
+Deﬁnition 7 Given a path P={ p1, v1, . . . , vn, p2}, we deﬁne Path Cost of P, pcost(P),
+as the sum of the costs of all edges in P. Formally, for the path P, we have,
+
+pcost(P) = w p1v1
+
++
+
+wvivi+1
+
++ wvn p2
+
+n−1(cid:7)
+
+i=1
+
+In Fig. 8b, the cost of path P={t1, a, b , s3} is calculated as pcost(P)=3+4+1=8. For
+the points p1, p2 ∈ N, we use P p1 p2 to denote the shortest path from p1 to p2 in G;
+the path P={ p1, . . . , p2} with minimum cost pcost(P).
+
+Deﬁnition 8 Given the two points p1 and p2 in N, the network distance between
+p1 and p2, Dn( p1, p2), is the cost of the shortest path between p1 and p2 (i.e.,
+Dn( p1, p2) = pcost(P p1 p2
+)). For instance, we have Dn(t1, s3) = 8. The network dis-
+tance Dn(., .) is non-negative and obeys identity, symmetry and the triangular
+inequality. Hence, together with N, it forms a metric space.
+
+5.2 OSR processing for SNDBs
+
+Given the graph G modeling a spatial network, suppose U1, . . . , Un are n sets, each
+containing points in N (on the edges/vertices of G). The OSR query considering
+Ui sets and the distance function Dn(., .) in N is deﬁned by the same deﬁnitions
+of Section 2.1 for general distance D(., .) in Rd. Figure 8b shows U1 = {r1, . . . , r3},
+U2 = {s1, . . . , s4}, and U3 = {t1, . . . , t4}. It also shows a starting point q ∈ N (shown
+by (cid:2)). The OSR from q to a white si, a black ri, and ﬁnally a gray ti point is (s1, r1, t1).
+We show that our OSR query processing algorithm is applicable in the metric
+space of N. First, we deﬁne network AW-Voronoi diagrams, the corresponding
+structure to AW-Voronoi diagrams with respect to network distance.
+
+Deﬁnition 9 Given a graph G, let S be a set of points p in N each assigned a numeric
+weight w( p). The network AW-Voronoi diagram of S partitions N into regions. Each
+region corresponding to a point p ∈ S is called the network Voronoi cell of p and
+includes edges or portions of edges of G. It contains all the points q of N for which
+we have
+
+∀ p(cid:6) ∈ S, p(cid:6) (cid:8)= p ⇒ Dn(q, p) + w( p) ≤ Dn(q, p(cid:6)) + w( p(cid:6))
+
+(10)
+
+426
+
+a
+
+3
+
+8
+
+s3
+
+s1
+
+12
+
+4.5
+
+1
+
+s4
+
+1.5
+
+Geoinformatica (2008) 12:411–433
+
+3.5
+
+3
+
+1
+
+1
+
+s2
+
+14
+
+b
+
+4
+
+r1
+
+1.5
+
+1.5
+
+1
+
+b
+
+x
+
+c
+
+2.5
+
+2
+
+4.5
+
+6
+
+r2
+
+5.5
+
+c
+
+7
+
+r3
+
+t1
+
+3
+
+t2
+
+4.5
+
+3.5
+
+4.5
+
+t
+3
+
+Fig. 9 The network OSR–Voronoi diagrams of a the sequence (white, black, gray) , b the sequence
+(black, gray), and c the sequence (gray) using the points in Fig. 8b
+
+When all the weights are set to zero, the diagram is network Voronoi diagram of
+S [8]. Figure 9a shows the network AW-Voronoi diagram of the points s1, . . . , s4
+each labeled by its weight. The network Voronoi cell of each si is depicted using a
+different line style. The ﬁgure shows separator markers to specify the boundaries
+of adjacent cells. Notice that the edges consisting of two lines with different styles
+are parts of cell boundaries; locus of the points p where we have Dn( p, si) + w(si) =
+Dn( p, sj) + w(sj).
+
+Now, we show that network AW-Voronoi diagrams can be used by the same OSR
+query processing algorithm of Section 4. The algorithm makes no assumption other
+than the fact that the distance function D(., .) must form a metric space with the
+set of data objects. That is, we deﬁne OSR for a metric space. As this property also
+holds for the network distance Dn(., .) and N (metric space of spatial networks), our
+algorithm is applicable in its entirety for SNDBS. Similar to Section 3, we assume
+that we can partition the points in N into subsets each including all points q with a
+common OSR given a sequence M. We call this partition of N as the network OSR–
+Voronoi diagram of M = (M1, . . . , Mm). Theorem 1 states that this partitioning of N
+is a network AW-Voronoi diagram. Figure 9a shows this diagram for the sequence
+(white, black, gray). Similarly, the network OSR–Voronoi family of M is deﬁned as
+the network OSR–Voronoi diagrams of all sequences (Mi, . . . , Mm) for all 1 ≤ i ≤ m.
+Figures 9a–c show this family of diagrams for the sequence (white, black, gray). Now,
+our OSR processing algorithm ﬁrst locates the starting point q in the network OSR–
+Voronoi diagram of (white, black, gray) (Fig. 9a). The point q is in the network
+Voronoi cell of s1. The next step locates s1 in the network OSR–Voronoi diagram of
+(black, gray) (Fig. 9b) and returns r1, the generator of the cell including s1. Finally,
+the algorithm ﬁnds r1 in the network OSR–Voronoi diagram of (gray) (Fig. 9c)
+and returns t1. Hence, the OSR of q which follows sequence (white, black, gray) is
+(s1, r1, t1) consisting of all three returned points.
+
+5.3 Building network AW-Voronoi diagrams
+
+General network Voronoi diagrams have been used for different purposes such as
+k nearest neighbor processing [6]. However, to the best of our knowledge, no study
+has deﬁned network AW-Voronoi diagrams. In this section, we ﬁrst show our storage
+schema for these diagrams. Then, we extend the algorithm proposed in Erwig [3] for
+general network Voronoi diagrams to build network AW-Voronoi diagrams.
+
+Geoinformatica (2008) 12:411–433
+
+427
+
+Fig. 10 Computing network
+AW-Voronoi diagram
+
+Given a graph G = (V, E), the data structure used to maintain the network AW-
+Voronoi diagram of set S consists of a record (u, pu, du) for each vertex u ∈ V. The
+point pu ∈ S is the closest point of S to u and du is the network distance Dn(u, pu). If
+the closest points to u and v connected by the edge [u, v] are different (i.e., pu (cid:8)= pv),
+then we know that a point on [u, v] speciﬁes the boundaries of the cells of pu and pv
+(e.g., in Fig. 9b the point x on [b , c] is on the boundaries of the cells of r1 and r2).
+As these separator points on the boundaries of adjacent cells can be computed on
+the ﬂy using the records of u and v, we do not store them explicitly. Consequently,
+the network AW-Voronoi of S = {r1, r2, r3} in Fig. 9b is represented as: {(a, r1, 1),
+(b , r1, 3), (c, r2, 2), (d, r1, 6), (e, r1, 6), ( f, r2, 2), (g, r1, 8), (h, r2, 4), (i, r1, 12), ( j, r3, 7),
+(k, r3, 5), (l, r3, 7), (m, r3, 5), (n, r3, 6), (o, r3, 2), ( p, r3, 2)}.
+
+Figure 10 shows the pseudo-code of our algorithm to build network AW-Voronoi
+diagram of a set S of weighted points in N. The algorithm resembles a parallel
+Dijkstra’s algorithm starting simultaneously from each point of S. It maintains a
+minheap H that includes entries <u, p> associated with a key (cid:2)=Dn(u, p) + w( p)
+for u ∈ V and p ∈ S. It also adds records representing the network AW-Voronoi
+diagram of S to the set NAWVD. We describe the algorithm using the set of data
+points S = {r1, r2, r3}, corresponding to the weights 4,6,7 shown in Fig. 9b. Table 2
+shows the trace of the algorithm. The algorithm ﬁrst initializes H and NAWVD to
+empty sets. Then, it locates the edge [a, b ] that includes r1. Subsequently, it adds
+(<a, r1>: Dn(a, r1) + w(r1)) and (<b , r1>: Dn(b , r1) + w(r1)) to H. It repeats the
+same step for r2 and r3. The ﬁrst row of Table 2 shows the contents of H after
+this step. After this initialization step, an iteration repeatedly removes the ﬁrst entry
+(<u, p>: (cid:2)) from H, adds the corresponding record (u, p, (cid:2) − w( p)) to the ﬁnal
+result, and mark u as complete. It also adds any uncomplete unvisited adjacent vertex
+of u such as v to H. If v is already visited and hence is in H, the algorithm updates
+its key. In our example, the ﬁrst iteration removes (<a, r1>: 5) from H and adds
+(a, r1, 5 − w(r1)) and (<d, r1>: Dn(a, d) + 5) to NAWVD and H, respectively. The
+iteration is applied on H until H becomes empty and the network AW-Voronoi
+diagram of S is returned as the records of the set NAWVD. When Fibonacci heaps
+are used, the time complexity of this algorithm is O(|E| + |V|log|V|) where |E| and
+|V| are the number of edges and vertices of G, respectively.
+
+428
+
+Geoinformatica (2008) 12:411–433
+
+Table 2 Building network AW-Voronoi diagram for the example of Fig. 9b
+
+Contents of H
+
+Add to NAWVD
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10
+
+11
+
+12
+
+13
+
+14
+15
+16
+17
+
+(<a, r1>: 5),(<b , r1>: 7), (<c, r2>: 8),
+(< f, r2>: 8), (<o, r3>: 9), (< p, r3>: 9)
+(<b , r1>: 7), (<c, r2>: 8), (< f, r2>: 8),
+(<o, r3>: 9), (< p, r3>: 9), (<d, r1>: 10)
+(<c, r2>: 8), (< f, r2>: 8), (<o, r3>: 9),
+(< p, r3>: 9), (<d, r1>: 10), (<e, r1>: 10)
+(< f, r2>: 8), (<o, r3>: 9), (< p, r3>: 9),
+(<d, r1>: 10), (<e, r1>: 10)
+(<o, r3>: 9), (< p, r3>: 9), (<d, r1>: 10),
+(<e, r1>: 10), (<h, r2>: 10), (<m, r2>: 15)
+(< p, r3>: 9), (<d, r1>: 10), (<e, r1>: 10),
+(<h, r2>: 10), (<k, r3>: 12), (<n, r3>: 13),
+(<m, r2>: 15)
+(<d, r1>: 10), (<e, r1>: 10), (<h, r2>: 10),
+(<k, r3>: 12), (<m, r3>: 12), (<n, r3>: 13),
+(<e, r1>: 10), (<h, r2>: 10), (<k, r3>: 12),
+(<m, r3>: 12), (<g, r1>: 12), (<n, r3>: 13),
+(<i, r1>: 16)
+(<h, r2>: 10), (<k, r3>: 12), (<m, r3>: 12),
+(<g, r1>: 12), (<n, r3>: 13), (<i, r1>: 16)
+(<k, r3>: 12), (<m, r3>: 12), (<g, r1>: 12),
+(<n, r3>: 13), (<l, r2>: 15), (<i, r1>: 16)
+(<m, r3>: 12), (<g, r1>: 12), (<n, r3>: 13),
+(<l, r3>: 14), (< j, r3>: 14), (<i, r1>: 16)
+(<g, r1>: 12), (<n, r3>: 13), (<l, r3>: 14),
+(< j, r3>: 14), (<i, r1>: 16)
+(<n, r3>: 13), (<l, r3>: 14), (< j, r3>: 14),
+(<i, r1>: 16)
+(<l, r3>: 14), (< j, r3>: 14), (<i, r1>: 16)
+(< j, r3>: 14), (<i, r1>: 16)
+(<i, r1>: 16)
+
+(a, r1, 1)
+
+(b , r1, 3)
+
+(c, r2, 2)
+
+( f, r2, 2)
+
+(o, r3, 2)
+
+( p, r3, 2)
+
+(d, r1, 6)
+
+(e, r1, 6)
+
+(h, r2, 4)
+
+(k, r3, 5)
+
+(m, r3, 5)
+
+(g, r1, 8)
+
+(n, r3, 6)
+(l, r3, 7)
+( j, r3, 7)
+(i, r1, 12)
+
+6 Performance evaluation
+
+We conducted several experiments to evaluate the performance of our proposed
+approach. We compared the query response time of our Voronoi-based approach
+(denoted by OSRV) with that of our R-LORD algorithm proposed in Sharifzadeh
+et al. [10]. We also evaluated our new OSRV approach with respect to its overall
+time required to build the OSR–Voronoi family of a given query. We evaluated
+OSRV by investigating the effect of the following two parameters on its performance:
+1) size of sequence M in Q(q, M) (i.e., number of points in the optimal route), and
+|Ui|).
+2) cardinality of the datasets (i.e.,
+We used a real-world dataset which is obtained from the U.S. Geological Survey
+(USGS) and consists of 950, 000 locations of different businesses (e.g., schools) in the
+entire country. Table 3 shows the characteristics of this dataset. In our experiments,
+
+n
+i=1
+
+(cid:3)
+
+Geoinformatica (2008) 12:411–433
+
+Table 3 USGS dataset
+
+Points
+
+Hospital
+Summit
+Church
+Populated place
+Building
+Cemetery
+School
+Institution
+
+429
+
+Size
+
+5,314
+69,498
+127,949
+167,203
+15,127
+109,557
+139,523
+319,751
+
+we randomly selected sets of 40K, 70K, 250K and 500K, and 950K points from this
+dataset. We used CGAL’s implementation of [5] to implement the OSR–Voronoi
+diagrams.3 We ran 1000 OSR queries from random starting points on a DELL
+Precision 470 with Xeon 3.2 GHz processor and 3 GB of RAM.
+
+In the ﬁrst set of experiments, we study the performance of OSRV in terms of
+query time. Figure 11a shows the query response time for our OSRV and R-LORD
+approaches when the number of points in optimal route (i.e., |M|) varies from 3 to 12.
+All the required diagrams ﬁt in main memory, so the reported time represents CPU
+time. While the ﬁgure depicts the experimental results on 250 K USGS dataset, the
+trend is the same with those of our other datasets with different cardinalities. Figure
+shows that OSRV always outperforms R-LORD. As expected, R-LORD performs
+slower with the bigger sequences as it requires more range queries on the R-tree. In
+contrast, OSR query with OSRV has almost no cost in time. OSRV’s response time is
+unnoticeably increasing as OSRV consists of a sequence of only |M| point locations
+on our efﬁcient AW-Voronoi diagrams.
+
+Figure 11b illustrates the result of our second set of experiments on the impact of
+the cardinality of the dataset on the efﬁciency of OSRV. We varied the cardinality of
+our real datasets from 40K to 950K and ran OSR queries of sequence size |M| = 6.
+Figure 11b shows that OSRV’s performance is not much affected by the dataset size
+and veriﬁes the scalability of OSRV. This is while the processing time of R-LORD
+moderately increases for larger datasets. For example, R-LORD’s query response
+time is 0.09 seconds for 40, 000 points, and it increases by a factor of 16 when the
+number of points increases to 950, 000 by a factor of 24. Consequently, OSRV is the
+superior approach although R-LORD also exhibits a reasonable performance for
+large datasets.
+
+The last experiment aims to measure the time required to build the diagrams
+in the OSR–Voronoi family of a given sequence. Note that this is a batch process
+which is performed off-line. Figure 11c illustrates the average build time for different
+sizes of the sequence M for 250K dataset. Moreover, Fig. 11d depicts the result of
+the same experiment for different dataset cardinalities when the sequence size is
+6. Figure 11c shows that it takes only 9 min to build 12 OSR–Voronoi diagrams
+needed for the OSR query of a sequence of size 12. However, Fig. 11d shows that
+
+3http://www.cgal.org/.
+
+430
+
+)
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+ 
+e
+s
+n
+o
+p
+s
+e
+R
+
+0.8
+
+0.6
+
+0.4
+
+0.2
+
+0.0
+
+R-LORD
+OSRV
+
+R-LORD
+OSRV
+
+)
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+ 
+e
+s
+n
+o
+p
+s
+e
+R
+
+1.6
+
+1.2
+
+0.8
+
+0.4
+
+0.0
+
+)
+n
+i
+m
+
+(
+ 
+e
+m
+
+i
+t
+ 
+d
+l
+i
+u
+B
+
+10
+9
+8
+7
+6
+5
+4
+3
+2
+1
+0
+
+)
+n
+m
+
+i
+
+(
+ 
+e
+m
+
+i
+t
+ 
+d
+
+l
+i
+
+u
+B
+
+40
+
+35
+
+30
+
+25
+
+20
+
+15
+
+10
+
+5
+
+0
+
+Geoinformatica (2008) 12:411–433
+
+3
+
+6
+
+9
+
+12
+
+No of points in route (|M|)
+
+40
+
+70
+
+250
+
+500
+
+950
+
+Dataset cardinality (K)
+
+3
+
+6
+
+9
+
+12
+
+No of points in route (|M|)
+
+40
+
+70
+
+250
+
+500
+
+950
+
+Dataset cardinality (K)
+
+a
+
+b
+
+c
+
+d
+
+Fig. 11 Experimental results on the performance of OSRV. a Query cost vs. sequence cost (250 K).
+b Query cost vs. cardinality (|M| = 6). c Build cost vs. sequence size (250 K). d Build cost vs.
+cardinality (|M| = 6)
+
+despite its excellent performance for small datasets, OSRV’s procedure for building
+the OSR–Voronoi family of a sequence of size 6 takes about 36 min for the 950K
+dataset. This is still a reasonable performance for an off-line process. Our current
+implementation does not use an efﬁcient point location method when a new point is
+added to a partially built diagram. We believe that using a data structure that serves
+as an auxiliary index (perhaps in secondary storage) for the Voronoi construction
+process will enhance OSRV’s off-line performance for large datasets.
+
+7 Related work
+
+In an independent research, Li et al. [7] studied trip planning queries (TPQ), a class
+of queries similar to our OSR query. With a TPQ, the user speciﬁes a subset (not
+a sequence) of location types R and asks for the optimal route from her starting
+location to a speciﬁed destination which passes through at least one database point
+of each type in R. In particular, TPQ eliminates the sequence order of OSR to
+deﬁne a new query. Consequently, ﬁnding accurate solutions to TPQ becomes NP-
+hard as the size of candidate space signiﬁcantly grows. The paper proposes several
+approximation methods to provide near-optimal answers to TPQs. In theory, OSR
+algorithms are able to address TPQ queries. This can be done by running any
+OSR algorithm |R|! times, each time using a permutation of point types in R as
+the sequence M and returning the optimal route among all the resulted routes.
+This exponentially complex solution is inefﬁcient in practice. The approximation
+algorithms of Li et al. [7] are designed to handle the exponential growth of the
+problem’s search space.
+
+Terrovitis et al. [12] addressed k-stops shortest path problem for spatial databases.
+The problem seeks for the optimal path from a starting location to a given destination
+which passes through exactly k intermediate points of the location database. The k-
+stops problem is a specialized case of OSR queries. To be speciﬁc, OSR reduces a
+k-stops problem to query Q(q, M) where q is the starting location, M = (1, . . . , 1),
+|M| = k, and U1 is the single given point set representing the location database.
+The destination is considered by the variation of the above OSR query described in
+
+Geoinformatica (2008) 12:411–433
+
+431
+
+Section 2.1. A major drawback is that Terrovitis et al. [12] only considers Euclidean
+space.
+
+8 Conclusions and future work
+
+We studied the problem space of the OSR query in vector and metric spaces. We
+exploited the geometric properties of the solution space and identiﬁed the AW-
+Voronoi diagrams as its corresponding geometric representation. In particular, we
+proved that given a sequence M the locus of all points with a common OSR R is
+the cell of the ﬁrst point of R in a AW-Voronoi diagram whose weights depend
+on the sequence M. Based on our theoretical ﬁndings, we proposed a novel OSR
+query processing approach using a family of pre-computed AW-Voronoi diagrams.
+Through experiments with a real-world dataset, we showed that our approach
+signiﬁcantly outperforms the previous solutions to OSR query in terms of response
+time. We also extended our approach to the metric space of SNDBs. Towards this
+end, we introduced, for the ﬁrst time, the network AW-Voronoi diagrams for and
+proposed an algorithm for their computation.
+
+While in this paper we adapted AW-Voronoi diagrams for OSR queries, we be-
+lieve that these diagrams can also be used to answer a variation of OSR query where
+the sequence is not important (TPQ problem [7]). Another interesting direction for
+the future work is to investigate how AW-Voronoi diagrams (and their different
+versions) can be incorporated within a traditional spatial index structure such as R-
+tree. Such a hybrid data structure can expedite processing classic nearest neighbor as
+well as complex TPQs. However, mixing the two structure may impose overheads on
+the maintenance procedures of the hybrid index structure.
+
+References
+
+1. Y. Du, D. Zhang, and T. Xia. “The optimal-location query,” in Proc. of SSTD’05, Angra dos
+
+Reis, Brazil, pp. 163–180, Springer, 2005.
+
+2. C. du Mouza, P. Rigaux, and M. Scholl. “Efﬁcient evaluation of parameterized pattern queries,”
+
+in Proceedings of CIKM’05, Bremen, Germany, pp. 728–735, ACM, 2005.
+
+3. M. Erwig. “The graph Voronoi diagram with applications,” Networks, Vol. 36(3):156–163, 2000.
+4. M. Hadjieleftheriou, G. Kollios, P. Bakalov, and V.J. Tsotras. “Complex spatio-temporal pattern
+
+queries,” in Proc. of VLDB’05, Trondheim, Norway, pp. 877–888, 2005.
+
+5. M.I. Karavelas and M. Yvinec. “Dynamic additively weighted Voronoi diagrams in 2d,” in Proc.
+of the 10th Annual European Symposium on Algorithms (ESA’02), London, UK, pp. 586–598,
+Springer-Verlag, 2002.
+
+6. M. Kolahdouzan and C. Shahabi. “Voronoi-based K nearest neighbor search for spatial network
+
+databases,” in VLDB 2004, Toronto, Canada, 2004.
+
+7. F. Li, D. Cheng, M. Hadjieleftheriou, G. Kollios, and S.-H. Teng. “On trip planning queries in
+spatial databases,” in Proceedings of SSTD’05, Angra dos Reis, Brazil, pp. 273–290. Springer,
+2005.
+
+8. A. Okabe, B. Boots, K. Sugihara, and S.N. Chiu. Spatial Tessellations, Concepts and Applica-
+
+tions of Voronoi Diagrams. 2nd edition, John Wiley: New York, 2000.
+
+9. Y. Ostrovksy-Berman. “Computing transportation Voronoi diagrams in optimal time,” in Proc.
+of the 21st European Workshop on Computational Geometry (EWCG’05), Eindhoven, the Nether-
+lands, pp. 159–162, 2005.
+
+432
+
+Geoinformatica (2008) 12:411–433
+
+10. M. Sharifzadeh, M. Kolahdouzan, and C. Shahabi. “The optimal sequenced route query,” The
+VLDB Journal: The International Journal on very Large Data Bases, SSN: 1066-8888 (Print)
+0949-877X (Online), doi:10.1007/s00778-006-0038-6, Issue: Online First, 2007.
+
+11. M. Sharifzadeh and C. Shahabi. “Additively weighted Voronoi diagrams for optimal se-
+quenced route queries,” in Proc. of the 3rd International Workshop on Spatio-Temporal Data-
+base Management (STDBM’06), Seoul, Korea, 2006. CEUR Workshop Proceedings, online
+http://sunsite.informatik.rwth-aachen.de/Publications/CEUR-WS//Vol-174/paper5.pdf.
+
+12. M. Terrovitis, S. Bakiras, D. Papadias, and K. Mouratidis. “Constrained shortest path computa-
+
+tion,” in Proc. of SSTD’05, Angra dos Reis, Brazil, pp. 181–199, Springer, 2005.
+
+Mehdi Sharifzadeh received his B.S. and M.S. degrees in Computer Engineering from Sharif
+University of Technology in Tehran, Iran, in 1995, and 1998, respectively. He received his Ph.D.
+degree in Computer Science from the University of Southern California in May 2007. His research
+interests include spatial and spatio-temporal databases, data stream processing, and sensor networks.
+
+Geoinformatica (2008) 12:411–433
+
+433
+
+is currently an Associate Professor and the Director of the Information Laboratory
+Cyrus Shahabi
+(InfoLAB) at the Computer Science Department and also a Research Area Director at the NSF’s
+Integrated Media Systems Center at the University of Southern California. He received his B.S.
+in Computer Engineering from Sharif University of Technology in 1989 and then his M.S. and
+Ph.D. degrees in Computer Science from the University of Southern California in May 1993 and
+August 1996, respectively. He has two books and more than hundred articles, book chapters,
+and conference papers in the areas of databases, GIS and multimedia. Dr. Shahabi’s current
+research interests include Geospatial and Multidimensional Data Analysis, Peer-to-Peer Systems and
+Streaming Architectures. He is currently an associate editor of the IEEE Transactions on Parallel
+and Distributed Systems and on the editorial board of ACM Computers in Entertainment magazine.
+He is also a member of the steering committees of IEEE NetDB and general co-chair of ACM GIS
+2007. He serves on many conference program committees such as ACM SIGKDD 2006-08, IEEE
+ICDE 2006 and 08, SSTD 2005-08 and ACM SIGMOD 2004. Dr. Shahabi is the recipient of the 2002
+NSF CAREER Award and 2003 Presidential Early Career Awards for Scientists and Engineers. In
+2001, he also received an award from the Okawa Foundations.
+
+

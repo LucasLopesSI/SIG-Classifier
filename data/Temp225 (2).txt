@@ -1,0 +1,1289 @@
+This article was downloaded by: [University of Windsor]
+On: 19 November 2014, At: 08:13
+Publisher: Taylor & Francis
+Informa Ltd Registered in England and Wales Registered Number: 1072954 Registered
+office: Mortimer House, 37-41 Mortimer Street, London W1T 3JH, UK
+
+International Journal of Geographical
+Information Science
+Publication details, including instructions for authors and
+subscription information:
+http://www.tandfonline.com/loi/tgis20
+
+Parallel optimal choropleth map
+classification in PySAL
+Sergio J. Rey a , Luc Anselin a , Robert Pahle a , Xing Kang a &
+Philip Stephens a
+a School of Geographical Sciences and Urban Planning, Arizona
+State University , Tempe , AZ , USA
+Published online: 25 Feb 2013.
+
+To cite this article: Sergio J. Rey , Luc Anselin , Robert Pahle , Xing Kang & Philip Stephens (2013)
+Parallel optimal choropleth map classification in PySAL, International Journal of Geographical
+Information Science, 27:5, 1023-1039, DOI: 10.1080/13658816.2012.752094
+
+To link to this article:  http://dx.doi.org/10.1080/13658816.2012.752094
+
+PLEASE SCROLL DOWN FOR ARTICLE
+
+Taylor & Francis makes every effort to ensure the accuracy of all the information (the
+“Content”) contained in the publications on our platform. However, Taylor & Francis,
+our agents, and our licensors make no representations or warranties whatsoever as to
+the accuracy, completeness, or suitability for any purpose of the Content. Any opinions
+and views expressed in this publication are the opinions and views of the authors,
+and are not the views of or endorsed by Taylor & Francis. The accuracy of the Content
+should not be relied upon and should be independently verified with primary sources
+of information. Taylor and Francis shall not be liable for any losses, actions, claims,
+proceedings, demands, costs, expenses, damages, and other liabilities whatsoever or
+howsoever caused arising directly or indirectly in connection with, in relation to or arising
+out of the use of the Content.
+
+This article may be used for research, teaching, and private study purposes. Any
+substantial or systematic reproduction, redistribution, reselling, loan, sub-licensing,
+systematic supply, or distribution in any form to anyone is expressly forbidden. Terms &
+Conditions of access and use can be found at http://www.tandfonline.com/page/terms-
+and-conditions
+
+International Journal of Geographical Information Science, 2013
+Vol. 27, No. 5, 1023–1039, http://dx.doi.org/10.1080/13658816.2012.752094
+
+Parallel optimal choropleth map classiﬁcation in PySAL
+
+Sergio J. Rey*, Luc Anselin, Robert Pahle, Xing Kang and Philip Stephens
+
+School of Geographical Sciences and Urban Planning, Arizona State University, Tempe, AZ, USA
+
+(Received 5 July 2012; ﬁnal version received 18 November 2012)
+
+In this article, we report on our experiences with refactoring a spatial analysis library
+to support parallelization. Python Spatial Analysis Library (PySAL) is a library of spa-
+tial analytical functions written in the open-source language, Python. As part of a larger
+scale effort toward developing cyberinfrastructure of GIScience, we examine the partic-
+ular case of choropleth map classiﬁcation through alternative parallel implementations
+of the Fisher-Jenks optimal classiﬁcation method using a multi-core, single desktop
+environment. The implementations rely on three different parallel Python libraries,
+PyOpenCL, Parallel Python, (PP) and Multiprocessing. Our results point to the domi-
+nance of the CPU-based Parallel Python and Multiprocessing implementations over the
+Graphical Processing Unit (GPU)-based PyOpenCL approach.
+
+Keywords: parallelization; spatial analysis; PySAL
+
+1.
+
+Introduction
+
+Recent years have seen increased attention directed toward the use of high-performance
+computing (HPC) in spatial analysis (Armstrong 2000; Openshaw and Turton 2000; Wang
+2008; Anselin and Rey 2012). Motivated by the tremendous opportunities that advances in
+computing technologies hold, this focus seeks to move spatial analysis into a new era of
+CyberGIScience.
+
+Most of these efforts, however, have been either largely conceptual, outlining theo-
+retical frameworks for HPC and spatial analysis, or empirical but focused on one-off
+implementations for a particular type of spatial analysis. What is missing is a compre-
+hensive treatment of the host of implementation issues that face researchers attempting to
+exploit HPC across the entire spatial analysis research stack, from data input, processing,
+and management to exploration, modeling, and visualization, and ﬁnally decision support.
+In this article, we report on an initial effort to use parallelization to optimize parts of
+the Python Spatial Analysis Library (PySAL) (Rey and Anselin 2010). This is part of a
+larger multi-institution project that is developing a CyberGIS framework for the synthesis
+of cyberinfrastructure, geographic information system (GIS), and spatial analysis (Wang
+2010). PySAL covers a wide spectrum of spatial analysis methods and thus serves as a
+useful framework to explore issues of parallelization across the various areas of interest.
+This study is the ﬁrst step in the larger effort to explore parallelization across the spatial
+analysis research stack.
+
+*Corresponding author. Email: srey@asu.edu
+
+© 2013 Taylor & Francis
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 1024
+
+S.J. Rey et al.
+
+We focus on the case of choropleth map classiﬁcation methods. Speciﬁcally, we explore
+parallelization of the Fisher-Jenks choropleth map classiﬁcation scheme. This classiﬁer is
+optimal regarding the minimization of within-class variation for a partitioning of n values
+into a predeﬁned set of k classes. However, its runtime is O(nk) which precludes its appli-
+cation to large-sized problems. To address this, we explore the potential computational
+gains from parallel implementations of this optimal classiﬁer. We utilize three different
+Python libraries for this purpose, and we compare the speed-up performance between these
+approaches across a variety of sample sizes. We also focus on the case of a single multi-
+core desktop machine. Our reasons for doing so are twofold. First, a desktop machine is
+likely the most common environment in which most spatial analysts are introduced, or have
+access, to parallelization. Second, starting with a simpliﬁed compute environment allows us
+to focus on a subset of issues associated with libraries supporting parallelization in Python,
+and thus PySAL. While many of these same libraries can also be used in distributed com-
+puting, understanding their basic usage in a single machine setting seemed like a logical
+ﬁrst step.
+
+The remainder of this article is organized as follows: In Section 2, an overview of
+recent work on parallelization in general and its application in the ﬁeld of spatial analysis
+is provided. The motivation for employing PySAL in this study, along with an overview
+of the key component of the library, is discussed in Section 3. In Section 4 we outline the
+design of our experiments and present the results in Section 5. The article concludes with
+a summary of key ﬁndings and directions for future research.
+
+2. Parallel computing and spatial analysis
+
+2.1. Parallelism
+Parallel computing involves the concurrent computation of many calculations. A parallel
+computer combines multiple processors or several computers connected via a network to
+work together on a single computational problem. The central idea is that by harnessing
+the power of these multiple processors, the problem should be solved in less time than is
+required for a single processor machine to complete the same task.
+
+Amdalh’s law states that the theoretical maximum speedup to be gained from paral-
+
+lelization is
+
+S(P) =
+
+1
+(1 − α) + α
+P
+
+(1)
+
+where P is the number of processors and α is the proportion of the sequential program that
+can be parallelized (Amdahl 1967). This is a theoretical maximum for the speedup from
+parallelization, as in practice, there are additional costs of synchronization and coordina-
+tion invoked in communication across the processes in parallel implementations that keep
+observed speedups from this upper bound.
+
+Parallelism has existed for several decades in the realm of HPC where it relied upon
+large-scale and expensive computers which limited its use to select elite problems (Kirk
+et al. 2010). Within the past decade, however, parallel computing has attracted increased
+attention due to limits on chip designers’ ability to ﬁt more and more transistors onto a
+single chip while avoiding overheating (Herlihy and Shavit 2008). The turn to multi-core
+architectures that exploit parallelism represents a response by manufacturers to increase
+compute power.
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 International Journal of Geographical Information Science
+
+1025
+
+A second related approach toward increasing the number of compute processors on
+a single machine has been efforts that exploit advances in graphical processing unit
+(GPU) technologies. Modern GPUs can have hundreds of compute cores available; each
+of which can support multithreading and share an instruction cache with other cores.
+In contrast, the current state-of-the-art multi-core hardware, the Intel Core i7 micropro-
+cessor, has up to six cores. Because of the differential in the number of cores on each
+unit, the GPU-based path to parallelization has been labeled as many-core (Kirk et al.
+2010).
+
+The rise of multi-core and many-core architectures have had profound impacts on sci-
+entiﬁc computing. First, while distributed computing environments, clusters, grids, etc.
+have also enjoyed impressive technological advances during this period, access to those
+environments is still more limited than is the case for single desktop machines with
+modern, many, and multi-core frameworks. Second, the transition from the paradigm of
+single-processor desktop computers to the ubiquity of multiprocessor systems has largely
+outpaced the ability of users to explicitly and fully exploit these new compute environ-
+ments. In large part, this is because mutiprocessing hardware fundamentally changes the
+way software needs to be developed. No longer can developers rely on well-established
+abstractions from sequential programing. Instead, developers must be aware of a number
+of issues related to memory organization, caching, bandwidths, ﬂoating point precision
+versus accuracy, synchronization, and communication, among others, in order to properly
+implement a parallel algorithm.
+
+2.2. Spatial analysis
+
+Research on HPC and spatial analysis can be organized into those efforts concerned with
+larger theoretical and conceptual issues on the one hand, and, on the other, empirical appli-
+cations of HPC to address particular spatial analysis problems. With regard to the former,
+much effort has been directed at developing organizing frameworks for the seamless inte-
+gration of spatial analysis and HPC such as CyberGIS (Wang 2010), spatial CI (Wright
+and Wang 2011), or geospatial CI (Yang et al. 2010). These frameworks allow for the inte-
+gration of HPC together with distributed geoprocessing, data management, exploratory
+spatial data analysis, and decision support through software systems (i.e., middleware).
+Essentially, the goal here is to move the existing spatial analysis research stack from its
+current desktop paradigm to the HPC realm.
+
+Some initial work has begun to exploit the emerging geospatial computational infras-
+tructure for application areas in spatial analysis. Although an exhaustive overview is
+beyond the current scope of this paper, some representative examples include the work
+by Yang and colleagues (Yang et al. 2008, 2010, 2011) exploring the use of distributed
+geoprocessing of massive geophysical data, while Rey et al. (2009) suggest an approach
+based on web services for spatial weights. Yan et al. (2007) demonstrate the use of paral-
+lelization in the application of Markov chain Monte Carlo methods for Bayesian space-time
+analysis of geostatistical data.
+
+These examples have demonstrated that while the potential HPC offers to spatial anal-
+ysis is potentially transformative, there are a number of challenges confronting the ﬁeld
+that must be addressed before these promises are fully realized. A fundamental issue is
+that the vast majority of spatial analytical software packages that researchers rely on today
+were designed and implemented in a single-CPU realm. Thus, in order to reap the beneﬁts
+of multi-core processors, and grid and cluster computing, these packages will have to be
+redesigned and refactored.
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 1026
+
+S.J. Rey et al.
+
+Toward that end, we feel that exploring these implementation issues across a spectrum
+of problems within spatial analysis is an important pursuit. Some processing aspects within
+the spatial analysis stack are inherently sequential, while others are difﬁcult to parallelize
+as these pose challenges of boundary conditions related to organizing data and processes to
+share between different compute units. In this article we begin the exploration by focusing
+on the case of optimal map classiﬁcation which is one component of the spatial analysis
+library PySAL.
+
+3. PySAL
+PySAL is a library for advanced spatial analysis. Written in Python, PySAL consists of a
+number of modules covering various areas of spatial analysis including geospatial ﬁle han-
+dling, exploratory spatial data analysis, spatial dynamics, regionalization, spatial weights,
+spatial networks, and spatial econometrics. Our goals for PySAL have been twofold. The
+ﬁrst is to provide a library of spatial analytical functions that other researchers could use to
+build specialized applications. Second, we wanted to ensure that PySAL served a pedagog-
+ical role for education in spatial analysis and geocomputation, and by relying on its clean
+syntax and shallow learning curve, Python has allowed us to stay true to this goal.
+
+Using Python to develop PySAL has had numerous advantages. Rapid development
+time afforded by the scripting language has enabled us to widen the scope of the types of
+spatial analytical problems we have addressed with PySAL. Were we to have attempted to
+implement the library using C/C++ or Fortran, its feature set would be a fraction of what
+it is today. While other mathematically oriented scripting languages, such as Matlab and
+R, were available at the time PySAL was conceived, we deliberately selected Python for
+two fundamental reasons. First, a great deal of effort in realistic spatial analysis projects
+deals with data management, integration, and processing. Python offers strong support
+for ﬂexible handling of heterogeneous data types, together with rich scientiﬁc computing
+libraries, which make it a powerful environment for spatial data analysis and geocompu-
+tation. Second, although Python was rapidly making inroads in the scientiﬁc computing
+realm, spatial analysis and geocomputation were largely missing from this evolution, and
+we saw PySAL as a way to ﬁll that niche.
+
+This initial implementation has led to PySAL being used as the engine for a num-
+ber of applications including GeoDaSpace (Anselin 2011), CAST (Rey et al. 2012) and
+GeoDaNet (Hwang and Winslow 2012). In doing so, we have been provided with invalu-
+able insights as to what parts of the code base are speed critical and might be targets for
+subsequent optimization. Paths towards optimization we have explored include alternative
+sequential algorithms for particular analytical tasks and writing low-level C and Fortran
+extensions for critical compute-intensive sections of the code. The third path toward opti-
+mization is the one we focus on here, namely, parallelization. Like other spatial analysis
+software, the original implementation of PySAL was targeted at traditional desktop hard-
+ware and relied on a sequential design. As an initial foray into parallelizing PySAL, we
+focus in this article on one particular part of the library: the map classiﬁcation methods in
+the exploratory spatial data analysis module.
+
+4. Methods
+
+To investigate these issues, we apply a collection of parallelization libraries from Python
+to a particular map classiﬁcation algorithm from PySAL. In this section, we detail the
+particular classiﬁcation method that serves as the computational problem, and provide an
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 International Journal of Geographical Information Science
+
+1027
+
+overview of the particular Python libraries we examine together with a description of the
+hardware employed and the experimental design.
+
+4.1. Map classiﬁcation
+Choropleth maps play a central role in the visual display of geographical data organized
+for areal units. Attribute values measured either intensively (rates) or, less frequently,
+extensively (counts) have their values mapped to depict the spatial variation across the
+areal units. An important consideration is the choice of the classiﬁcation scheme used to
+transform interval or ratio attribute values into visually ordered groupings. Central to any
+classiﬁcation is the deﬁnition of the membership rules used to assign the n observations
+to speciﬁc classes. In most schemes encountered in choropleth mapping, the classiﬁcation
+deﬁnes a set of k classes, C1, C2, . . . , Ck such that i ∈ Cj if Cl
+j and Cu
+j
+j
+are the lower and upper bounds of interval j, and yi is the observation for enumeration unit
+i on variable y.
+
+j , where Cl
+
+< yi ≤ Cu
+
+A vast literature has suggested many different classiﬁcation schemes and examined the
+impact of the choice of classiﬁcation scheme on the ability of users to visualize spatial pat-
+terns, compare spatial distributions across pairs of maps, and detect spatial autocorrelation
+(Cromley 1996, Slocum et al. 2008). One which is often recommended by cartographers
+is the so-called Fisher-Jenks optimal classiﬁcation scheme. Introduced by the cartographer
+Jenks, (1977), the approach relies on the optimal partitioning of univariate data that was
+originally proposed by the statistician Fisher, (1958).
+
+The original algorithm employs dynamic programing that rests on the relationship
+between the optimal partitioning of n values into k groups and the optimal partitioning
+of n − nk values into k − 1 groups, where nk is the number of objects in the kth group.
+This optimal partitioning can be based on either the minimization of the total sum of
+squared deviations about class means or the sum of the absolute deviations about the class
+medians. The general partitioning problem of assigning n objects into k exhaustive and
+mutually exclusive groups has a runtime on the order of O(kn). However, when applied
+to choropleth map classiﬁcation, the attribute values are ordered, and this substantially
+reduces the runtime to O(nk).
+
+Even with this reduction, however, the runtime can be prohibitive for large values of
+n and k. Approximate solutions have been suggested and are implemented in PySAL for
+cases where these costs become too large, and include the application of the algorithm to
+a subset of the original ordered data to obtain the classiﬁcation in a more efﬁcient man-
+ner, and then applying the resulting classiﬁcation to the entire dataset. Here a trade-off is
+being made between a loss in the ﬁt criterion on the one hand and speed of the classi-
+ﬁcation on the other. However, to our knowledge, the accuracy-speed trade-off has not
+been fully evaluated to date. At the same time parallelization may offer the possibility for
+not having to face this trade-off in the best case, or in the worst case, may allow for an
+increase in the efﬁciency and accuracy of the sampling-based approaches. Towards these
+possibilities, we explore the implementation of a parallelized version of the Fisher-Jenks
+algorithm.
+
+Parallelization of the Fisher-Jenks classiﬁcation requires a refactoring of the sequential
+implementation of the optimal partitioning algorithm. The sequential algorithm has four
+steps which depart from the sorted attribute values X1 ≤ X2 ≤ . . . ≤ Xn :
+
+(1) Compute the diameter D(I, J ) for the contiguous group (I, I + 1, . . . , J ), for all
+I, J such that 1 ≤ I ≤ J ≤ n. The diameter can be based on the variation about the
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 1028
+
+S.J. Rey et al.
+
+means or the absolute deviations about the class medians. Here, we use the total
+variation: D(I, J ) =
+(2) Compute the errors of
+
+the optimal partitions, 2 ≤ I ≤ n, by e[P(I, 2)] =
+
+i=I (Xi − ¯XIJ )2, with ¯XIJ = 1
+
+J
+i=I Xi.
+
+J −I+1
+
+(cid:2)
+
+(cid:2)
+
+J
+
+min[D(1, J − 1) + D(J , I)] over the range 2 ≤ J ≤ I.
+
+(3) For each L[3 ≤ L ≤ K] compute the errors of the optimal partitions e[P(I, L)](L ≤
+I ≤ n) by e[P(I, L) = min {e[P(J − 1, L − 1)] + D(J , I)} over the range L ≤ J ≤ I.
+(4) The optimal partition P(n, k) is recovered from the table of errors e[P(I, L)](1 ≤
+L ≤ K, 1 ≤ I ≤ n) by ﬁrst ﬁnding J such that e[P(n, k)] = e[P(J − 1, K − 1)] +
+D(J , n).
+
+Thus,
+
+the last class will
+is
+
+include the sorted values (XJ , XJ +1, . . . , Xn). The
+(XJ ∗, XJ ∗+1, . . . , XJ −1) with e[P(J − 1, K − 1)] =
+penultimate class
+e[P(J∗−1, K − 2)] + D(J∗, J − 1)] Remaining classes are recovered from the error table
+in a similar fashion.
+
+found as
+
+Of these four steps, the last three are sequential in nature, and are thus, not candidates
+for parallelization. In the ﬁrst step, however, the calculation of the group diameters can be
+done independently, and therefore, we target this step for a parallel implementation. How
+this is accomplished varies across the three different parallel Python libraries we examine,
+but the key aspect is that we rely on data parallelization to decompose the calculation of the
+diameter matrix into separate processes that each work on sections of the matrix. When the
+processes are completed, we combine the results from the individual processes to populate
+the ﬁnal diameter matrix.
+
+4.2. Parallel Python libraries
+We implement different versions of the parallel Fisher-Jenks classiﬁcation using three dif-
+ferent parallel Python libraries: PyOpenCL, Multiprocessing, and Parallel Python (PP).
+PyOpenCL is a Python wrapper that provides users with access to the complete set
+of parallel computation application programing interface (API) deﬁned in OpenCL, a
+new industry standard for task-parallel and data-parallel heterogeneous computing on a
+variety of modern computational hardware (Munshi 2008). Compared to other parallel
+processing libraries written in Python, PyOpenCL has its unique strengths. Most signiﬁ-
+cantly, PyOpenCL can take advantage of multiple types of modern computational hardware
+including both CPUs and GPUs to perform parallel processing tasks simultaneously with-
+out worrying about their difference in hardware design. Multiprocessing is the ofﬁcial
+package for parallel processing in Python. Its design and implementation are based on the
+multi-process architecture, where each process is an independent running instance of the
+program and has its unique allocated memory and system states. The Global Interpreter
+Lock (GIL) (Beazley 2010) in Python limits execution of bytecode to one thread at a
+time. The Multiprocessing package works around the GIL by using subprocesses instead of
+threads. PP (Vanovschi 2012) is the third open-source Python module for parallel process-
+ing we examine. Similar to Multiprocessing, PP also adopts the multi-process structure
+to get around the GIL restriction. However, the most outstanding feature of PP is that it
+natively supports parallelization on both a single machine with multi-core processors and
+cluster computing environment.
+
+To give some feel for the implementation of Fisher-Jenks using one of these parallel
+libraries, Figure 1 provides a code snippet that illustrates the key aspects of the algorithm
+for the case of Multiprocessing.1 The function _pﬁsher_jenks_mp is the core of the algo-
+rithm, taking as arguments the array to be classiﬁed (values), the number of classes, and a
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 International Journal of Geographical Information Science
+
+1029
+
+Figure 1. Multiprocessing Fisher-Jenks implementation.
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 1030
+
+S.J. Rey et al.
+
+ﬂag as to whether the values need to be sorted or not. The storage arrays are then preallo-
+cated in lines 8–18. The set up for the Multiprocessing module occurs in lines 20–25. The
+Multiprocessor instance grabs a pool of processes based on the number of compute units
+available on the hardware. In line 23, the arguments for the function computeError are
+deﬁned for the individual processes, and the pool object then maps or distributes calcula-
+tion of different sections of the diameter matrix to individual processes in line 24. The ﬁrst
+argument to the mapping is the function computeError which calculates the diameter for a
+range of clusters. Once all the processes return, the pool is closed and the diameter matrix
+is populated with the results from the different processes in lines 27–28. Lines 30–45 then
+represent the sequential evaluation of the remaining steps of the Fisher-Jenks algorithm,
+where the ﬁnal return is the position of the class breaks (pivots) in the sorted array. The
+implementation reﬂects the need to avoid shared state for the diameter matrix across the
+different processes. As a result, there is an additional overhead required to populate the
+ﬁnal diameter matrix in sequential fashion, after the calculation of the cluster diameters
+are done in parallel.
+
+4.3. Experiment
+
+We evaluate different parallelized implementations of the Fisher-Jenks algorithm using the
+three parallel libraries outlined above. Using synthetic data, we explore two dimensions of
+the classiﬁcation problem. First, we vary the number of map classes, setting k = 5, 7, 9,
+which are reﬂective of common choices in practice. We also vary the sample size, starting
+with n = 125 and doubling the sample size up to n = 16,000, for a total of eight different
+values of n. The larger sample size is at a range where discrimination between individ-
+ual polygons given desktop screen resolutions is beginning to become difﬁcult. For each
+sample size we draw from a standard normal distribution, and we apply the three different
+implementations to the same sample of observations and solve for the same number of
+classes.
+
+4.4. Hardware
+All tests were run on the same machine for comparability, a recent model Apple Mac Pro.
+It has two 6-core Intel Xeon 2.93-GHz CPUs, 32 GB of 1333-MHz RAM, and dual graphic
+cards housing ATI Radeon HD 5770 GPUs with 1-GB on-board RAM and 10 compute
+units. The Python version for these tests was Enthought Python Distribution version 7.0-2
+(64-bit).
+
+5. Results
+As a baseline for our experiments, we ﬁrst use a sequential approach to solve the Fisher-
+Jenks classiﬁcation for three different partitions (k = 5, 7, 9) and a variety of sample sizes
+from 125 through 16,000. Figure 2 shows the compute times required for these different
+cases. Solution times grow in a piecewise linear function of sample size. The effect of the
+number of desired classes also increases with sample size, with larger number of classes
+requiring more time for solution generation. In our largest sample size, the sequential solu-
+tion requires on the order of ﬁve minutes, suggesting that turning to a parallelized solution
+may offer gains in speed.
+
+To evaluate the performance of the three parallel implementations of the Fisher-Jenks
+where Tn,k,s is the time required
+
+classiﬁer, we rely on the speedup deﬁned as Sn,k,l = Tn,k,s
+Tn,k,l
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 International Journal of Geographical Information Science
+
+1031
+
+Fisher-Jenks sequential
+
+350
+
+300
+
+250
+
+200
+
+150
+
+100
+
+50
+
+0
+
+0
+
+1.8
+
+1.6
+
+1.4
+
+1.2
+
+1.0
+
+0.8
+
+0.6
+
+0.4
+
+0.2
+
+0
+
+)
+c
+e
+s
+(
+ 
+s
+T
+
+p
+T
+/
+s
+T
+
+2000
+
+4000
+
+6000
+
+10,000 12,000 14,000
+
+16,000
+
+8000
+n
+
+Figure 2. Compute times for sequential solution of Fisher-Jenks choropleth classiﬁcation.
+
+Multiprocessing speedup
+
+k = 5
+k = 7
+k = 9
+
+k = 5
+k = 7
+k = 9
+
+2000
+
+4000
+
+6000
+
+10,000 12,000 14,000 16,000
+
+8000
+n
+
+Figure 3. Speedup curve for multiprocessing implementation of Fisher-Jenks choropleth
+classiﬁcation.
+
+for the sequential solution for n observations and k classes, while Tn,k,l is the time required
+for parallel implementation l for the same problem.
+
+Figure 3 reveals that for the Multiprocessing solution the gains from parallelization
+begin to be realized for the third sample size, as below n = 500 the overhead associated
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 1032
+
+S.J. Rey et al.
+
+with the implementation results in an increased time to solution relative to the sequen-
+tial implementation. The speedup advantages grow relatively quickly, however, up to the
+sample size of n = 2000 at which point there is a plateau. In contrast to what held
+for the sequential solutions where runtime was monotonic in the number of classes, for
+multi-processing there is no clear pattern.
+
+Turning to the implementation using Parallel Python in Figure 4, the general pattern of
+speedup initially growing with sample size and then plateauing is again found. However,
+the sample size required for the parallelization to dominate the sequential implementation
+now moves to 4000. Also repeated is the criss-crossing of the speedup curves for the dif-
+ferent cluster sizes, with a slight decline in speedup occurring for the k = 5 solution as
+the sample size grows after n = 8000, while that decline began earlier at n = 4000 for the
+multi-processing based solution.
+
+For the PyOpenCL implementation results in Figure 5, the patterns are rather distinct
+from those of the ﬁrst two implementations. The ﬁrst thing to note is that the largest sample
+size we were able to obtain results for using PyOpenCL was 4000. Beyond this size we
+encountered memory allocation errors. Second, the decline in the speedup curve is seen
+for all values of k after n = 2000. Because of this, we also evaluated the use of PyOpenCL
+on the CPU, as one advantage of this library is that it can abstract the physical hardware.
+The results of doing so are seen in Figure 6. Now, we are able to evaluate the parallel
+implementation over all sample sizes, and in general, the speedup factor grows with sample
+size with the exception of the smallest value of k.
+
+To gain a better understanding of the relative performance of the four parallel imple-
+mentations, we combine the speedup curves for each of the different partition solutions
+(and sample sizes) in Figures 7–9.
+
+In each partition case the same general patterns hold, with PyOpenCL on the GPU
+showing the greatest speedups in small samples (n ≤ 500) and then Multiprocessing dom-
+inating out to n = 4000. The speedup for the CPU version of PyOpenCL is below that of
+
+Parallel Python speedup
+
+p
+T
+/
+s
+T
+
+1.6
+
+1.4
+
+1.2
+
+1.0
+
+0.8
+
+0.6
+
+0.4
+
+0.2
+
+0.0
+
+0
+
+k = 5
+k = 7
+k = 9
+
+2000
+
+4000
+
+6000
+
+10,000 12,000 14,000 16,000
+
+8000
+n
+
+Figure 4. Speedup curve for Parallel Python implementation of Fisher-Jenks choropleth
+classiﬁcation.
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 International Journal of Geographical Information Science
+
+1033
+
+PyOpenCL (GPU) speedup
+
+p
+T
+/
+s
+T
+
+1.4
+
+1.3
+
+1.2
+
+1.1
+
+1.0
+
+0.9
+
+0.8
+
+0.7
+
+0
+
+p
+T
+/
+s
+T
+
+1.6
+
+1.4
+
+1.2
+
+1.0
+
+0.8
+
+0.6
+
+0.4
+
+0.2
+
+0.0
+
+k = 5
+k = 7
+k = 9
+
+k = 5
+k = 7
+k = 9
+
+500
+
+1000
+
+1500
+
+2500
+
+3000
+
+3500
+
+4000
+
+2000
+n
+
+Figure 5. Speedup curve for PyOpenCL GPU implementation of Fisher-Jenks choropleth
+classiﬁcation.
+
+PyOpenCL (GPU) speedup
+
+0
+
+2000
+
+4000
+
+6000
+
+8000
+
+10,000
+
+12,000
+
+14,000
+
+16,000
+
+n
+
+Figure 6. Speedup curve for PyOpenCL CPU implementation of Fisher-Jenks choropleth
+classiﬁcation.
+
+the GPU version for all sample sizes we can compare the two on, while the CPU version is
+faster than the Parallel Python implementation for most of the smaller sample sizes and val-
+ues of k. In general terms, all of the implementations display the plateau effect beginning
+with n = 2000.
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 1034
+
+S.J. Rey et al.
+
+Comparative speedups k = 5
+
+p
+T
+/
+s
+T
+
+1.6
+
+1.4
+
+1.2
+
+1.0
+
+0.8
+
+0.6
+
+0.4
+
+0.2
+
+0.0
+
+0
+
+p
+T
+/
+s
+T
+
+1.6
+
+1.4
+
+1.2
+
+1.0
+
+0.8
+
+0.6
+
+0.4
+
+0.2
+
+0.0
+
+0
+
+500
+
+1000
+
+1500
+
+2500
+
+3000
+
+3500
+
+4000
+
+2000
+n
+
+Figure 7. Comparative speedups, k = 5.
+
+Comparative speedups k = 7
+
+PyOpenCL (GPU)
+PyOpenCL (CPU)
+Multiprocessing
+PP
+
+PyOpenCL (GPU)
+PyOpenCL (CPU)
+Multiprocessing
+PP
+
+500
+
+1000
+
+1500
+
+2500
+
+3000
+
+3500
+
+4000
+
+2000
+n
+
+Figure 8. Comparative speedups, k = 7.
+
+Moving beyond n = 4000 limits the comparison to the Multiprocessing, Parallel
+Python, and PyOpenCL CPU implementations. Figures 10–12 display the speedups for
+these three methods. For each value of k and all sample sizes, Multiprocessing domi-
+nates the other two approaches, while for values of n > 4000 Parallel Python is above the
+PyOpenCL CPU implementation. For k = 5 and k = 9, the methods show the plateauing
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 p
+T
+/
+s
+T
+
+p
+T
+/
+s
+T
+
+1.6
+
+1.4
+
+1.2
+
+1.0
+
+0.8
+
+0.6
+
+0.4
+
+0.2
+
+0.0
+
+0
+
+1.6
+
+1.4
+
+1.2
+
+1.0
+
+0.8
+
+0.6
+
+0.4
+
+0.2
+
+0.0
+
+0
+
+International Journal of Geographical Information Science
+
+1035
+
+Comparative speedups k = 9
+
+PyOpenCL (GPU)
+PyOpenCL (CPU)
+Multiprocessing
+PP
+
+500
+
+1000
+
+1500
+
+2500
+
+3000
+
+3500
+
+4000
+
+2000
+n
+
+Figure 9. Comparative speedups, k = 9.
+
+Comparative speedups k = 5
+
+PyOpenCL (CPU)
+Multiprocessing
+PP
+
+2000
+
+4000
+
+6000
+
+10,000 12,000 14,000 16,000
+
+8000
+n
+
+Figure 10. Comparative speedups, k = 5 (Large samples included).
+
+effect with a slight decline in speedup for the larger samples, although this decline is some-
+what steeper for Multiprocessing. However, for k = 7 the plateauing is not evident as the
+speedups grow with the sample size, after a slight decline in the case of Multiprocessing
+between n = 4000 and n = 8000.
+
+Recall from Equation (1) that the theoretical maximum speedup to be gained from par-
+, where P is the number of processors and is the proportion of
+
+allelization is S(P) =
+
+1
+(1−α)+ α
+P
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 1036
+
+S.J. Rey et al.
+
+Comparative speedups k = 7
+
+PyOpenCL (CPU)
+Multiprocessing
+PP
+
+0.0
+
+0
+
+2000
+
+4000
+
+6000
+
+10,000 12,000 14,000 16,000
+
+8000
+n
+
+Figure 11. Comparative speedups, k = 7 (Large samples included).
+
+Comparative speedups k = 9
+
+1.6
+
+1.4
+
+1.2
+
+1.0
+
+0.8
+
+0.6
+
+0.4
+
+0.2
+
+1.8
+
+1.6
+
+1.4
+
+1.2
+
+1.0
+
+0.8
+
+0.6
+
+0.4
+
+0.2
+
+p
+T
+/
+s
+T
+
+p
+T
+/
+s
+T
+
+0.0
+
+0
+
+2000
+
+4000
+
+6000
+
+10,000 12,000 14,000 16,000
+
+8000
+n
+
+Figure 12. Comparative speedups, k = 9 (Large samples included).
+
+PyOpenCL (CPU)
+Multiprocessing
+PP
+
+the sequential program that can be parallelized. In the case of the Fisher-Jenks algorithm,
+stage 1 lends itself to parallelization, as subsequent stages are sequential. Timing experi-
+ments show that this stage of the sequential algorithm accounts for approximately 0.57 of
+the solution time for n = 125, but this share is expected to grow with n. For the CPU hard-
+ware used here P = 12, so the upper bound on the speedup is on the order of 2.09. This
+is a theoretical maximum, however, as there are additional data management, calculation,
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 International Journal of Geographical Information Science
+
+1037
+
+preallocation, and process management involved in the parallel implementations that offset
+the theoretical gains, and these are reﬂected in our results.
+
+While our results generally point to superior performance of the CPU-based Parallel
+Python and Multiprocessing implementations over the GPU-based PyOpenCL implemen-
+tation, a few qualiﬁcations need to be kept in mind. The graphics card we utilized here is
+mid-range, and more powerful GPU cards are available. Also the ATI card is compatible
+with the OpenCL but not the CUDA GPU library (NVIDIA 2012) which arguably offers
+a richer set of GPU programing features for numerical computation. Our intention here
+was to explore the implementation issues for these different paths towards parallelization,
+rather than carry out a comprehensive comparison of speedups.
+
+6. Conclusions
+Our initial investigation into the use of parallelization in PySAL has revealed several
+insights. First, it matters what parallel library one uses to implement a parallelized ver-
+sion of a sequential library. Second, choice of that library cannot easily be divorced from
+the available hardware at hand. For example our use of PyOpenCL was restricted by the
+speciﬁcs of the GPU hardware on our test machine.
+
+While our results are conditioned by our experimental settings, and further work is
+required before deﬁnitive conclusions can be reached, we feel the following lessons can
+be drawn from our results. In the case of the optimal map classiﬁcation problem, the
+beneﬁts from parallelization are realized for moderate to large sample sizes. It is only
+in the smallest sample sizes where the additional overhead associated with the parallel
+implementations results in slower performance. In those cases, the solution time for the
+sequential implementation may be satisfactory. For the larger sample sizes we examined,
+we found a general ﬂattening out of the speedup curves together with a general insensi-
+tivity to the number of classes. Both of these are somewhat counterintuitive, and we are
+interested in pursuing these issues in more powerful distributed settings, as we describe
+below.
+
+Another important conclusion we can draw from this experiment is that additional
+effort is required to implement the parallelized version of Fisher-Jenks and that effort
+changes with the choice of parallel library employed. In this regard, spatial analysis appears
+to be a special case of the more general missing “holy grail” (p. 561 Shen and Lipasti
+2005) that would support the automated parallelization of sequential programs. This raises
+an important question of whether the additional effort required for parallelization of com-
+pute intensive sections of the library is warranted by the performance gains. Answering
+that question requires a more extensive set of experiments and a broader collection of
+implementations than what this initial effort has contributed.
+
+Towards those questions, we are pursuing several extensions of this work. First, we
+are exploring the implementation of parallelization for other portions of the PySAL
+library including the regionalization and spatial econometric modules. The former has a
+number of heuristic sequential algorithms for NP-complete problems that are ripe for par-
+allelization, while the latter includes new simulation-based estimators that have enormous
+computational costs.
+
+A second focus is on implementing parallelization of PySAL on distributed and clus-
+tered environments. In this article we focused on the relative difﬁculty of using OpenCL
+versus other parallel libraries that relied on multi-core architectures. Limits of the hardware
+were not a main concern and indeed showed their impact when we reached larger sample
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 1038
+
+S.J. Rey et al.
+
+sizes. We expect that in more powerful compute environments, the beneﬁts of paralleliza-
+tion will become more apparent, and we are currently investigating parallelizing PySAL
+on distributed environments and clusters.
+
+Note
+1. For economy of space, we exclude other code responsible for imports of modules and related
+tasks. All the source code for the implementation of the parallel versions of Fisher-Jenks is
+available on the PySAL code repository under the parallel branch at http://code.google.com/p/
+pysal.
+
+References
+Amdahl, G., 1967. Validity of the single processor approach to achieving large scale computing
+capabilities. In: AFIPS Conference Proceedings vol. 30, 18–20 April, Atlantic City, NJ, USA.
+Reston, VA: AFIPS Press, 483–485.
+
+Anselin, L., 2011. GeoDaSpace: a tool for modern spatial econometrics. Annual meeting of the
+
+Association of American Geographers, 12–16 April, Seattle, WA.
+
+Anselin, L. and Rey, S., 2012. Spatial econometrics in an age of cyberGIScience. International
+
+Journal of Geographic Information Science, 26, 2211–2226.
+
+Armstrong, M., 2000. Geography and computational science. Annals of the Association of American
+
+Geographers, 90 (1), 146–156.
+
+Beazley, D., 2010. Understanding the Python GIL. PyCON, 20 February, Atlanta, GA.
+Cromley, R., 1996. A comparison of optimal classiﬁcation strategies for choroplethic displays of
+spatially aggregated data. International Journal of Geographical Information Systems, 10 (4),
+405–424.
+
+Fisher, W.D., 1958. On grouping for maximum homogeneity. Journal of the American Statistical
+
+Herlihy, M. and Shavit, N., 2008. The art of multiprocessor programming. San Francisco, CA:
+
+Association, 53, 789–798.
+
+Morgan Kaufmann.
+
+Hwang, M. and Winslow, A., 2012. User manual for GeoDaNet: spatial analysis on undirected net-
+works. Working paper, GeoDa Center for Geospatial Analysis and Computation, Arizona State
+University, 22 March 2012.
+
+Jenks, G.F., 1977. Optimal data classiﬁcation for choropleth maps. Occasional Paper No. 2,
+
+Department of Geography, University of Kansas.
+
+Kirk, D., Wen-mei, W., and Hwu, W., 2010. Programming massively parallel processors: a hands-on
+
+Munshi, A., 2008. “opencl” speciﬁcation version 1.0 [online]. Available from: http://www.khronos.
+
+approach. Burlington, MA: Morgan Kaufmann.
+
+org/registry/cl/ (accessed 03 December 2012).
+
+NVIDIA, 2012. CUDA API reference manual, Version 4.0, February 2011. Technical report, NVIDIA
+
+Corporation.
+
+Openshaw, S. and Turton, I., 2000. High performance computing and the art of parallel program-
+
+ming: an introduction for geographers, social scientists, and engineers. New York: Routledge.
+
+Rey, S., Anselin, L., and Hwang, M., 2009. Manipulation of spatial weights using web services.
+Proceedings of the 17th ACM SIGSPATIAL international conference on Advances in Geographic
+Information Systems, Seattle, WA. ACM, 72–80.
+
+Rey, S.J. and Anselin, L., 2010. PySAL: a Python library of spatial analytical methods. In: M.M.
+Fischer and A. Getis, eds. Handbook of applied spatial analysis. Berlin: Springer, 175–193.
+Rey, S.J., Li, X., and Anselin, L., 2012. Visualization of space-time dynamics in criminal activity.
+
+Joint Statistical Meetings, 30 July 2012, San Diego, CA.
+
+Shen, J. and Lipasti, M., 2005. Modern processor design: fundamentals of superscalar processors.
+
+Slocum, T., et al., 2008. Thematic cartography and geovisualization. Upper Saddle River, NJ:
+
+Vanovschi, V., 2012. Parallel Python [online]. Available from: http://www.parallelpython.com
+
+New York: McGraw-Hill.
+
+Prentice Hall.
+
+(accessed 03 December 2012).
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 International Journal of Geographical Information Science
+
+1039
+
+Wang, S., 2008. GISolve toolkit: advancing GIS through cyberinfrastructure. Proceedings of the 16th
+ACM SIGSPATIAL international conference on Advances in geographic information systems,
+Irvine, CA. ACM, 83.
+
+Wang, S., 2010. A cyberGIS framework for the synthesis of cyberinfrastructure, GIS, and spatial
+
+analysis. Annals of the Association of American Geographers, 100 (3), 535–557.
+
+Wright, D. and Wang, S., 2011. The emergence of spatial cyberinfrastructure. Proceedings of the
+
+National Academy of Sciences, 108 (14), 5488.
+
+Yan, J., et al., 2007. Parallelizing MCMC for Bayesian spatiotemporal geostatistical models. Statistics
+
+and Computing, 17 (4), 323–335.
+
+Yang, C., et al., 2008. Distributed geospatial information processing: sharing distributed geospatial
+
+resources to support digital earth. International Journal of Digital Earth, 1 (3), 259–278.
+
+Yang, C., et al., 2010. Geospatial cyberinfrastructure: past, present and future. Computers,
+
+Environment and Urban Systems, 34 (4), 264–277.
+
+Yang, C., et al., 2011. Using spatial principles to optimize distributed computing for enabling the
+physical science discoveries. Proceedings of the National Academy of Sciences of the United
+States of America, 108 (14), 5498.
+
+Downloaded by [University of Windsor] at 08:14 19 November 2014 

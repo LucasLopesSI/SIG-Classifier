@@ -1,0 +1,1655 @@
+This article was downloaded by: [University of Alberta]
+On: 15 October 2014, At: 19:43
+Publisher: Taylor & Francis
+Informa Ltd Registered in England and Wales Registered Number: 1072954
+Registered office: Mortimer House, 37-41 Mortimer Street, London W1T 3JH, UK
+
+International Journal of
+Geographical Information Science
+Publication details, including instructions for authors and
+subscription information:
+http://www.tandfonline.com/loi/tgis20
+
+Efficient computation of spatial
+joins with intersection predicates
+Nick Koudas
+Published online: 10 Nov 2010.
+
+To cite this article: Nick Koudas (2002) Efficient computation of spatial joins with
+intersection predicates, International Journal of Geographical Information Science, 16:2,
+179-202, DOI: 10.1080/13658810110095020
+
+To link to this article:  http://dx.doi.org/10.1080/13658810110095020
+
+PLEASE SCROLL DOWN FOR ARTICLE
+
+Taylor & Francis makes every effort to ensure the accuracy of all the information
+(the “Content”) contained in the publications on our platform. However, Taylor
+& Francis, our agents, and our licensors make no representations or warranties
+whatsoever as to the accuracy, completeness, or suitability for any purpose
+of the Content. Any opinions and views expressed in this publication are the
+opinions and views of the authors, and are not the views of or endorsed by Taylor
+& Francis. The accuracy of the Content should not be relied upon and should be
+independently verified with primary sources of information. Taylor and Francis
+shall not be liable for any losses, actions, claims, proceedings, demands, costs,
+expenses, damages, and other liabilities whatsoever or howsoever caused arising
+directly or indirectly in connection with, in relation to or arising out of the use of
+the Content.
+
+This article may be used for research, teaching, and private study purposes.
+Any substantial or systematic reproduction, redistribution, reselling, loan,
+sub-licensing, systematic supply, or distribution in any form to anyone is
+
+expressly forbidden. Terms & Conditions of access and use can be found at http://
+www.tandfonline.com/page/terms-and-conditions
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 int. j. geographical information science, 2002
+vol. 16, no. 2, 179± 202
+
+Research Article
+
+E(cid:141) cient computation of spatial joins with intersection predicates
+
+NICK KOUDAS
+AT&T Labs, Research, Room B-157, 180 Poue Avenue, Building 303,
+Florham Park, NJ 07932, USA
+
+(Received 6 March 1999; accepted 15 August 2001)
+
+Abstract. We introduce a new algorithm to compute the spatial join of two or
+more spatial data sets, when indexes are not available on them. Size Separation
+Spatial Join (S 3J ) imposes a hierarchical decomposition of the data space and,
+in contrast to previous approaches, requires no replication of entities from the
+input data sets. Thus its execution time depends only on the sizes of the joined
+data sets. We described S 3J and present an analytical evaluation of its I/O and
+processor requirements comparing them with those of previously proposed algo-
+rithms for the same problem. We show that S3J has relatively simple cost estima-
+tion formulas that can be exploited by a query optimizer. S 3J can be e(cid:141) ciently
+implemented using software already present in many relational systems. In addi-
+tion, we introduce Dynamic Spatial Bitmaps (DSB), a new technique that enables
+S 3J dynamically or statically to exploit bitmap query processing techniques.
+Finally, we present experimental results for a prototype implementation of S 3J
+involving real and synthetic data sets for a variety of data distributions. Our
+experimental results are consistent with our analytical observations and demon-
+strate the performance bene(cid:142) ts of S 3J over alternative approaches that have been
+proposed recently.
+
+1.
+
+Introduction
+Research and development in Database Management Systems (DBMS) in recent
+decades has led to the existence of many products and prototype s capable of
+managing relational data e(cid:141) ciently. Recently there has been interest in enhancing
+the functionality of relational data base systems with Object-Relational capabilities
+(Stonebraker and Moore 1996). This means, among other things, that Object-
+Relational systems should be able to manage and answer queries on diŒerent data
+types, such as spatial and multimedia data. Spatial data are commonly found in
+applications like cartography , CAD/CAM and Earth Observation/Information
+systems and Geographical Information Systems. Multimedia data include video,
+images and sound.
+
+In this paper we introduce a new algorithm to perform the Spatial Join (SJ) of
+two or more spatial data sets. Spatial Joins generalize traditional relational joins to
+apply to multidimensional data. In an SJ, one applies a predicate to pairs of entities
+from the underlying spatial data sets and performs meaningful correlations between
+them. Our algorithm, named Size Separation Spatial Join (S 3J ), is a generalization
+of the relational Sort Merge Join algorithm. S3J is designed so that no replication
+
+Internationa l Journal of Geographica l Informatio n Science
+ISSN 1365-881 6 print/ISSN 1362-308 7 online © 2002 Taylor & Francis Ltd
+http://www.tandf.co.uk/journals
+DOI: 10.1080/13658810110095020
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 180
+
+N. Koudas
+
+of the spatial entities is necessary, whereas previous approaches have required replica-
+tion. The algorithm does not rely on statistical information from the data sets
+involved to perform the join e(cid:141) ciently and, for a variety of data distributions, oŒers
+a guaranteed worst case performance independent of the spatial statistics of the
+data sets. We introduce and describe the algorithm, analysing its I/O behaviour, and
+compare it with the behaviour of previous approaches. Using a combination
+of analysis and experimentation with an implementation, we demonstrate the
+performance bene(cid:142) ts of the new algorithm.
+
+The remainder of the paper is organized as follows. Section 2 reviews relevant
+work in spatial joins and describes two previously proposed algorithms for computing
+spatial joins of data sets without indices. Section 3 introduces and describes Size
+Separation Spatial Joins. Section 4 presents an analysis of the I/O and processor
+requirements of the three algorithms and compares their performance analytically.
+In section 5, we describe prototype implementations of the three algorithms and
+present experimental results involving actual and synthetic data sets. Section 6
+concludes the paper and discusses directions for future work.
+
+2. Overview of spatial joins
+
+We consider spatial data sets that are composed of representations of point, lines,
+and regions. Given two data sets, A and B, a spatial join between them, A sph B,
+applies predicate h to pairs of elements from A and B. Predicates might include,
+overlap, distance within e, etc. As an example of a spatial join, consider one data set
+describing parking lots and another describing movie theatres of a city. Using the
+predicate ‘next to’, a spatial join between these data sets will provide an answer to
+the query: ‘(cid:142) nd all movie theatres that are adjacent to a parking lot’.
+
+The shapes of spatial objects are rarely regular. In order to facilitate indexing
+and query processing, spatial objects are usually described by their Minimum
+Bounding Rectangle (MBR) or some other approximation (BrinkhoŒet al. 1994 ).
+As suggested by Orenstein (1986), spatial joins can be executed in two steps. In the
+(cid:142) rst step, called the Filter Step, the predicate is evaluated on the spatial approxi-
+mations of objects, and a list of candidate join pairs is produced. In the Re(cid:142) nement
+Step, the actual spatial objects corresponding to the candidate pairs are checked
+under the predicate.
+
+There exists an extensive body of work on spatial join algorithms. For Grid Files
+(Nievergelt et al. 1984), an algorithm for doing spatial joins was developed by Rotem
+(1993). BrinkhoŒet al. (1993) proposed an algorithm to perform the spatial join of
+two spatial data sets indexed with R-trees (Guttman 1984, Sellis et al. 1987). Sevcik
+and Koudas recently introduced an access method called Filter T rees and provided
+an algorithm to perform the Spatial Join of two data sets indexed with Filter Trees
+(Sevcik and Koudas 1996).
+
+Lo and Ravishankar (1994) studied the problem of computing spatial joins when
+an index exists for only one of the two data sets. They proposed a method called
+Seeded T rees, which makes use of an R-tree index already available on one data set
+to construct an index for the second data set dynamically. In subsequent work, they
+studied the problem of creating a seeded tree using sampling techniques (Lo and
+Ravishankar 1995).
+
+Gunther (1993) presented an analytical model for evaluating the e(cid:141) ciency of
+spatial join computation, comparing nested loops and join indices. Cost models for
+spatial joins have been proposed by Theodoridis et al. (1998) and cost models for
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 EYcient computation of spatial joins
+
+181
+
+multiway spatial joins have been proposed by Papadias et al. (1999), and Mamoulis
+and Papadias (1999). There are many e(cid:141) cient algorithms for computing the spatial
+join of two unindexed spatial data sets in the case where both sets (cid:142) t in main
+memory. One example, which derives from computational geometry, is the Plane
+Sweep (Preparata and Shamos 1985). Arge et al. (1998) proposed sweeping-based
+algorithms for processing spatial join operations.
+
+Two algorithms have been proposed recently to solve this problem for the case
+where the data sets do not (cid:142) t in main memory and the case of intersection predicates.
+Patel and De Witt (1996) introduced Partition Based Spatial Merge Join (PBSM) to
+compute the spatial
+indices. Lo and
+Ravishankar (1996) also presented an algorithm for the same problem called Spatial
+Hash Joins. In the next subsections, we describe these two algorithms in greater detail.
+
+join of two data sets without the use of
+
+2.1. Partition based spatial merge joins
+
+Partition Based Spatial Merge Join (PBSM) is a generalization of the sort merge
+join algorithm. Given two spatial data sets, A and B, the algorithm uses a formula
+to compute a number of partitions into which to divide the data space. These
+partitions act as buckets in hash joins. Once they are (cid:142) lled with data, only correspond-
+ing partitions for the two data sets must be processed to locate all candidate joining
+pairs. However, since the entities in the two data sets are in general not uniformly
+distributed, the number of objects that fall in various partitions will vary. To improve
+the chances of achieving balanced partition sizes, the algorithm partitions the space
+into a larger number of tiles and maps the tiles to partitions, either round robin or
+using a hash function.
+
+A spatial entity might intersect two or more partitions. The algorithm requires
+replication of the entity in all the partitions it intersects. Once the (cid:142) rst spatial data
+set has been partitioned, the algorithm proceeds to partition the second data set,
+using the same number and placement of tiles and the same tile to partition mapping
+function. Depending on the predicate of the spatial join, it might be the case that,
+during the partitioning of the second data set, a spatial entity that does not overlap
+with any tile can be eliminated from further processing since it cannot possibly join
+with any entities from the (cid:142) rst data set. We refer to this feature of PBSM as (cid:142) ltering.
+Figure 1(a) presents a tiled space with three objects. Assuming four partitions, one
+possible tile-to-partition mapping is (A, B, E, F ) to the (cid:142) rst partition, (C, D, G, H)
+to the second, (I, J, M, N ) to the third and (K, L , O, P) to the fourth. Under this
+scheme object Obj1 will be replicated in the (cid:142) rst and second partitions.
+
+Once the partitions are formed for both spatial data sets, the algorithm proceeds
+to perform the join on partition pairs (repartitioning, if needed, to make pairs of
+partitions (cid:142) t in main memory) and writes the results to an output (cid:142) le. Corresponding
+partitions are loaded in main memory and a Plane Sweep technique is used to
+evaluate the predicate. Since partitions may include some replicated objects, the
+algorithm has to detect (via hash or sort) and remove duplicates before reporting
+the candidate joining pairs. The complete algorithm is summarized in (cid:142) gure 2.
+
+When both spatial data sets involved in the join are base sets and not intermediate
+results, one can adaptively determine the number of tiles one should use in order to
+achieve good load balance. For intermediate results, however, the appropriate
+number of tiles to use is di(cid:141) cult to choose, since statistical information is not
+available and an adaptive technique cannot be applied. If an inappropriate number
+of tiles is used, the algorithm still works correctly; however, using too few tiles may
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 182
+
+N. Koudas
+
+Figure 1. Space partition by the (a) PBSM, and (b) SHJ algorithms.
+
+Figure 2. The PBSM algorithm.
+
+result in high load imbalance resulting in a lot of repartitioning, while using too
+many may result in an excessive number of replicated objects. Note that replication
+takes place in both data sets. The amount of replication that takes place depends
+on the characteristics of the underlying data sets, the number of tiles, and the tile-
+to-partition mapping function.
+
+2.2. Spatial hash joins
+
+Lo and Ravishankar proposed Spatial Hash Joins (SHJ) in order to compute
+the spatial join of two (or more) unindexed spatial data sets. The algorithm starts
+by computing the number of partitions into which the data space should be divided.
+The authors use the term slot (Lo and Ravishankar 1996), but in order to unify
+terminology and facilitate the presentation, we use the term partitions throughout
+this paper. The computation uses a formula proposed by the same authors in earlier
+work (Lo and Ravishankar 1995). Once the number of partitions is computed, the
+(cid:142) rst data set is sampled. The centres of the spatial objects obtained from sampling
+are used to initialize the partitions. Then the (cid:142) rst data set is scanned and the spatial
+entities are assigned to partitions based on the nearest centre heuristic (Lo and
+Ravishankar 1995). Each spatial entity is placed in the partition for which the
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 EYcient computation of spatial joins
+
+183
+
+distance from its centre to the centre of the partition is minimum. Once an entity is
+inserted in a partition, the MBR of the partition is expanded to contain the entity
+if necessary. When the MBR of the partition is expanded, the position of its centre
+is changed. At the end of this process, the partitions for the (cid:142) rst data set are formed.
+Notice that no replication takes place in the (cid:142) rst data set.
+
+The algorithm proceeds by scanning the second data set and partitioning it using
+the same partitions as adjusted to accommodate the (cid:142) rst data set. If an entity
+overlaps multiple partitions, it is recorded in all of them, so replication of spatial
+entities takes place at this point. Any entity that does not overlap with any partition
+can be eliminated from further processing. Consequently, (cid:142) ltering can take place in
+this step of the algorithm. Figure 1(b) presents one possible coverage of the space
+by partitions after the partitioning of the (cid:142) rst data set. In this case, object Obj1 of
+the second data set will have to be replicated in partitions A, B and C and object
+Obj3 in partitions C and D.
+
+After the objects of the second data set have been associated with partitions, the
+algorithm proceeds to join pairs of corresponding partitions. It reads one partition
+into main memory, builds an R-tree index on it, and processes the second partition
+by probing the index with each entity. If memory space is exhausted during the
+R-tree building phase, LRU replacement is used as outer objects are probed against
+the tree. The complete algorithm is summarized in (cid:142) gure 3.
+
+2.3. Summary
+
+Both PBSM and SHJ divide the data space into partitions, either regularly
+(PBSM) or irregularly (SHJ) and proceed to join partition pairs. They both introduce
+replication of the entities in partitions in order to compute the join. Replication is
+needed to avoid missing joining pairs in the join phase when entities cross partition
+boundaries. When data distributions are such that little replication is introduced
+during the partition phase, the e(cid:141) ciency of the algorithms is not aŒected. However,
+for other data distributions, replication can be unacceptabl y high, and can lead to
+deterioration of performance. Prompted by the above observation, in this paper, we
+present an alternative algorithm that requires no replication. We experiment with
+data distributions that can lead to increased replication using the previously proposed
+algorithms and we show the bene(cid:142) ts of avoiding replication in such cases.
+
+3. Size separation spatial join
+
+Size Separation Spatial Join derives it properties from the Filter Tree join algo-
+rithm (Sevcik and Koudas 1996). Filter Trees partition spatial data sets by size.
+
+Figure 3. The SHJ algorithm.
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 184
+
+N. Koudas
+
+Given two spatial data sets, their join can be computed with minimal eŒort, requiring
+that each page of the data sets be read only once. S 3J constructs a Filter Tree
+partition of the space on the (cid:143) y without building complete Filter Tree indices. The
+level j (cid:142) lter is composed of 2jÕ
+1 equally spaced lines in each dimension. The level
+of an entity is the highest one (smallest j ) at which the MBR of the entity is intersected
+by any line of the (cid:142) lter. This assures that large entities are caught at high levels of
+the Filter Tree, while most small entities fall to lower levels.
+
+3.1. S3J Algorithm
+
+Denoting the opposite corners of the MBR of an entity by (xl, yl) and (xh, yh),
+
+S 3J uses two calculated values:
+
+yh/2) (Bially 1969).
+
+Hilbert (xc, yc), the Hilbert value of the centre of the MBR (where xc 5 xl1 xh/2,
+yc 5 yl1
+Level (xl, yl, xh, yh), the level of the Filter Tree at which the entity resides (which
+is the number of initial bits in which xl and xh as well as yl and yh agree)
+(Sevcik and Koudas 1996).
+
+Given two spatial data sets, A and B, to be joined using an intersection predicate,
+S 3J proceeds as follows. Each data set in turn is scanned and partitioned into level
+(cid:142) les. For each entity, its level, Level(xl, yl, xh , yh ), is determined, and an entry of the
+form shown in (cid:142) gure 5 is composed and written to the corresponding level (cid:142) le for
+that data set.
+
+The memory requirement of this phase is L 1
+
+1 pages where L is the number of
+level (cid:142) les (typically, 10 to 20) for the data set being partitioned. One page is used
+for reading the data set, and L are used for writing the level (cid:142) les.
+
+Next, each level (cid:142) le for each data set is sorted so that the Hilbert values of the
+entries are monotonically nondecreasing. The (cid:142) nal step of the algorithm is to join
+the two sets of sorted level (cid:142) les. The join is accomplished by performing a synchron-
+ized scan over the pages of all level (cid:142) les and reading each page once, as follows: Let
+Al(Hs, He) denote a page of the l-th level (cid:142) le of A containing entities with Hilbert
+values in the range (Hs, He). Then for level (cid:142) les l 5 0, ..., L :
+
+process entries in Al(Hs, He) with those contained in BlÕ
+process entries in Bl(Hs, He) with those in AlÕ
+
+i(Hs, He ) for i 5 1, ..., l.
+
+i(Hs, He ) for i 5 0, ..., l.
+
+Figure 4 shows two levels of the space segmentation on which S 3J is based and
+
+Figure 4. Space partition by S3J.
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 EYcient computation of spatial joins
+
+185
+
+Figure 5. Format of entries in a level (cid:142) le.
+
+presents the intuition behind the algorithm. S3J divides the space in multiple reso-
+lutions as opposed to PBSM and SHJ which partition the object space at a single
+level. S 3J takes advantage of this space-partitioning scheme and is able to perform
+the join while reading each page only once. Partitioning the space in multiple
+resolutions and placing each object at a level determined largely by its size, the
+algorithm can determine which pages are actually needed at each step. Figure 4
+presents two data sets, A and B, each composed of two level (cid:142) les after being processed
+by S3J. Partition A1 from data set A needs to be processed against partitions B1
+and B0 of data set B only. Similarly, partition B1 of data set B has to be processed
+only with partition A0
+of A. No further processing for these partitions is necessary
+since no other overlapping pairs are possible.
+
+Figure 6 summarizes the S 3J algorithm. Notice that no assumptions about the
+statistical properties of the data set are made. The algorithm can be applied either
+to base spatial data sets or to intermediate data sets without any modi(cid:142) cation. While
+we choose to use Hilbert curves to order level (cid:142) les, any curve that recursively
+subdivides the space will work (e.g. z-order, grey code curve, etc.). Notice that the
+computation of the Hilbert value is not always necessary. The Hilbert values can be
+computed at the time entities are inserted and become a part of the descriptors of
+each spatial entity at the expense of storing them. For base spatial data sets this is
+probably a good choice. When the spatial data sets involved are derived from base
+sets via a transformation that changes the entity’s physical position in the space or
+creates new entities, the Hilbert values can be recomputed.
+
+The implementation of the S3J algorithm is relatively straightforward. Parti-
+tioning the data sets involves only reading each entity descriptor and routing it to
+the appropriate level (cid:142) le (buŒer page) based on examining the bit representations of
+the coordinates of the corners of its MBR. Sorting each level (cid:142) le, based on the
+Hilbert value of the centre of the MBR of each entity, can be done with a sort utility
+
+Figure 6. Size separation spatial joint algorithm.
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 186
+
+N. Koudas
+
+commonly available in database systems. Finally, the synchronized scan of the level
+(cid:142) les strongly resembles an L -way merge sort (which can be implemented in a couple
+of hundred lines of code).
+
+3.2. Dynamic spatial bitmaps for (cid:142) ltering
+
+Both PBSM and SHJ are capable of (cid:142) ltering, which makes it possible to reduce
+the size of the input data sets during the partitioning phase. S 3J as described,
+performs no (cid:142) ltering since the partitioning of the two data sets is independent. No
+information obtained during the partitioning of the (cid:142) rst data set is used during the
+partitioning of the second.
+
+S 3J can be extended to perform (cid:142) ltering by using Dynamic Spatial Bitmaps (DSB).
+DSB is similar to the technique of bitmap join indices in the relational domain
+(Valduriez 1987, O’Neil and Graefe 1995, O’Neil 1996). However, DSB is tailored
+to a spatial domain.
+
+S 3J dynamically maps entities into a hierarchy of level (cid:142) les. Given a spatial
+entity, pages from all the level (cid:142) les of the joining data set have to be searched for
+joining pairs, but, as indicated in the previous section, this is done in a very
+e(cid:141) cient manner.
+
+DSB constructs a bitmap representation of the entire data space as if the complete
+data set were present in one level (cid:142) le. A bitmap is a compressed indication of the
+contents of a data set. In the relational domain, using a bitmap of N bits to represent
+a relation of N tuples, we can perform a mapping between tuples and bits. Using
+this mapping we can obtain useful information during query processing. For example
+we could, by consulting the bitmap, check whether tuples with certain attributes
+exist. Now consider a two-dimensional grid. In a similar manner, we can de(cid:142) ne a
+mapping between grid cells and bits of a bitmap. In this case the bitmap could, for
+example, record whether any entity intersects the grid cell or not.
+
+To support (cid:142) ltering in S3J, we use a bitmap corresponding to level l. At level
+(cid:142) le, l, there are 4l-partitions to the space, so the bitmap, M, will have 4l-one-bit
+entries. Initially all the bit entries of M are set to zero. Then, during the partitioning
+phase, for each spatial entity, e, that belongs to level (cid:142) le le and has Hilbert value
+H lee .
+
+l>le we have to compute the Hilbert values at level (cid:142) le l, H l
+
+le , we transform the Hilbert value, H lee , of e into H l
+le least signi(cid:142) cant bits of H lee ). We then set M[H l
+
+If l<
+the lÕ
+e1 , H l
+e2 ,
+If
+..., H l
+ei ], i 5 1, ..., n to one. The compu-
+tation of H l
+, H l
+en can be performed either by determining all the
+e1
+e2
+partitions at level l that e overlaps and computing their Hilbert values, or by
+extending H lee with all possible le Õ
+
+en , that completely cover e and set M[H l
+
+e (by setting to zero
+
+e] to one.
+
+l bit strings.
+
+, ..., H l
+
+The operation described above essentially projects all entities onto level (cid:142) le l.
+Then, during the partitioning of the second data set B, for each spatial entity e, the
+same operation is performed, but this time:
+
+le, e is placed into level (cid:142) le le only if M[Hl
+
+If l<
+If l>le, e is placed into level (cid:142) le le only if at least one of the bits M[Hl
+M[H l
+
+e ] is set to one.
+
+e2 ], ..., M[Hl
+
+en], is set to one.
+
+e1 ],
+
+Figure 7 illustrates the operation of Dynamic Spatial Bitmaps. Entities e1 and
+which, for the purposes
+, are projected to the higher level L 1
+, existing in level (cid:142) le L 2
+
+e2
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 EYcient computation of spatial joins
+
+187
+
+Figure 7. Example operation of DSB.
+
+of this example, is the level chosen to represent the bitmap. The corresponding bit
+of the bitmap are set to one, indicating that entities exist in the portion of the space.
+Similarly entity, e3
+, since it overlaps
+partitions 0 and 1 of L 1
+only those bits should be set to one. We can either calculate
+the partitions involved for each entity and set the corresponding bits or set all the
+bits corresponding to the partition that contains e3 in L 0 which is faster but less
+accurate.
+
+from the level (cid:142) le L 0
+
+is projected to L 1
+
+. For e3
+
+Consider again the example in (cid:142) gure 4. A spatial entity belonging in partition
+of data set B needs to be stored in a level (cid:142) le for data set B only if a spatial
+B1
+entity of data set A exists in partitions A1
+. Information about whether any
+spatial entity of data set A exists in any partitions of any level (cid:142) le is captured by
+the bitmap.
+
+or A0
+
+The size of the bitmap depends on which level (cid:142) le is chosen as the base onto
+which to project the data space. For level (cid:142) le l, the size of the bitmap is 4l bits. With
+a page of size 2p bits, 22lÕ p pages are needed to store the bitmap. Assuming a page
+size of 212 bits (4 KB), using level (cid:142) le seven for bitmap construction will yield a
+bitmap of four pages. Using level eight will yield a bitmap of 16 pages and so on.
+There is a trade-oŒbetween the size of the bitmap and its eŒectiveness. Using a
+lower-level (cid:142) le (larger j ) will yield a more precise bitmap. However, this will increase
+the number of pages needed to store the bitmap and the processor time to manipulate
+it. As long as a spatial entity belongs in a level lower than the level (cid:142) le used to
+represent the bitmap, the Hilbert value transformation is very fast, since it involves
+a simple truncation of a bit string. However, for spatial entities belonging to level
+(cid:142) les higher than the bitmap level (cid:142) le, several ranges of Hilbert values have to be
+computed and this will increase the processor time required. Alternatively, one might
+choose to extend Hlee will all possible lÕ
+le long bit strings. This will oŒer a fast
+Hilbert value transformation , since only a bit expansion is involved, but will decrease
+the precision of the bitmap.
+
+Several options for advanced spatial query processing are opened by the use of
+DSB. For example, if bitmaps exist for both data sets, a bitmap intersection operation
+will identify the exact ranges of interest to the join. S 3J could take advantage of
+these ranges while performing a synchronized scan over the pages of the data sets.
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 188
+
+Sf
+J
+D
+H
+
+E
+
+N. Koudas
+
+Table 1. Symbols and their meanings.
+
+Symbol
+
+Meaning
+
+Symbol
+
+Meaning
+
+Size of (cid:142) le f in pages
+Size of join result in pages
+Divisions of space
+Processor time to compute a Hilbert
+
+value
+
+Object descriptor entries per page
+
+M
+rf
+L f
+C
+B
+
+Memory size in pages
+Replication factor for data set f
+Number of level (cid:142) les for data set f
+Size of candidate pair list before sort
+Size of bulk reads from disk
+
+4. Analysis of I/O behaviour
+
+In this section we present an analytical comparison of the I/O behaviour of S3J,
+PBSM and SHJ. Table 1 summarizes the symbols used and their meaning. For the
+purpose of this analytic comparison, we assume a spatial data set composed of
+entities with square MBRs of size d3 d that are uniformly distributed over the
+unit square.
+
+4.1. Analysis of the three algorithms
+4.1.1. S3J I/O analysis
+
+The Size Separation Spatial Join algorithm proceeds by reading each data set
+L B level (cid:142) les. The
+
+once and partitioning essentially according to size, creating L A1
+number of page reads and writes for data sets A and B in the scan phase will be:
+
+2 SA1
+
+2 SB
+
+the factor of two accounts for reading and writing each data set.
+
+In the sort phase, S 3J sorts each level (cid:142) le. Assuming a uniform distribution of
+
+squares, level (cid:142) le i will contain a fraction of objects given by:
+
+d )
+
+© 2id )
+Æ 2k(d) d )2
+
+f i 5 Gd (2Õ
+
+2id (1Õ
+(1Õ
+
+i 5 0
+i 5 1, ..., k(d )Õ
+i 5 k(d )
+
+1
+
+[Õ
+
+log2 d ] is the lowest level to which any d3 d object can fall (since d
+where k(d ) 5
+k) Sevcik and Koudas (1996). Then the expected size of each
+must be less than 2Õ
+f iSj, i 5 1...max(L A, L B), j × A, B. Assuming
+level (cid:142) le i for data set j will be about Sij 5
+that read requests take place in bulks of B pages from the disk, applying merge sort
+logFSij] merged
+on the level (cid:142) le of size Sij will yield a sort fan-in F of M/B and [li 5
+sort levels (li will not commonly be one). The total number of page reads and writes
+of the sorting process is given by:
+
+LA
+
+2 (cid:158)
+
+i=1
+
+lA SiA1
+
+lB SiB
+
+LB
+
+2 (cid:158)
+
+i=1
+
+Once the sorted level (cid:142) les are on disk, S3J proceeds with the join phase by
+
+reading each page only once, computing and storing the join result, incurring:
+
+SA 1 SB1 J
+page reads and writes. The total number of page reads and writes of S3J is the sum
+of the three terms above. The best case for S3J occurs if each level (cid:142) ts in main
+
+(4)
+
+(1)
+
+(2)
+
+(3)
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 EYcient computation of spatial joins
+
+189
+
+memory (Sij < M, Y i). In this case the total number of page reads and writes of the
+algorithm becomes:
+
+5 SB1 J
+In its worst case, S 3J will (cid:142) nd only one level (cid:142) le in each data set. In this case,
+
+5 SA1
+
+(5)
+
+the total number of page reads and writes will be:
+
+3 SA1
+
+3 SB1
+
+2 lA SA 1 2 lB SB1 J
+
+(6)
+
+Except for arti(cid:142) cially constructed data sets, the largest of the level (cid:142) les would
+usually contain 10% to 30% of the entities in the data sets. If the Hilbert values are
+initially not part of the spatial entity’s descriptor, then they have to be computed.
+This computation takes place while partitioning the data set into levels. The processor
+time for this operation is:
+
+H (SA1 SB) E
+Using a table-driven routine for computing the Hilbert values, we were able to
+perform the computation in less than 10 msec per value at maximum precision on a
+133 MHz processor, so H $ 10 msec.
+
+(7)
+
+4.1.2. PBSM I/O analysis
+
+(Patel and DeWitt 1996) is:
+
+The number of partitions suggested by Patel and DeWitt for the PBSM algorithm
+
+D 5
+
+SA 1 SB
+M
+
+(8)
+
+(9)
+
+(10)
+
+De(cid:142) ning the replication factor rf as:
+
+rf 5
+
+Data set size after replication and filtering
+original data set size (Sf)
+
+the number of page reads and writes during the partitioning phase is:
+
+(11
+
+rA ) SA1
+
+(11
+
+rB) SB
+
+since the algorithm reads each data set and possibly introduces replication for entities
+crossing partition boundaries.
+
+Entity replication will increase the data set size, making rf greater than one, but
+(cid:142) ltering will counteract that, reducing rf, possibly to be even less than one for cases
+where the join is highly selective (i.e. where there are very few join pairs). Owing to
+replication, the size of the output (cid:142) le that is written back to disk may be larger than
+the initial data set size. More precisely, if A is the data set that is partitioned (cid:142) rst,
+then rA > 1 and rB > 0. The amount of replication introduced depends on the data
+distributions of the data sets and the degree of dividing of the data space into tiles.
+Depending on data distributions, 1<
+rB < D. Notice that rB could be
+less than one depending on the partitioning imposed on the (cid:142) rst data set. To illustrate
+the eŒects of replication, again assume uniformly distributed squares of size d3 d,
+normalized in the unit square. Then assuming a regular partitioning of the unit
+j, the fraction, N, of objects falling inside tiles will be:
+square into sub squares of side 2Õ
+
+rA < D and 0<
+
+assuming that d< 2Õ
+
+1Õ
+
+(11)
+j, so that the data side of each square object is less than or
+
+d 2j+11
+
+d 2 22j
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 190
+
+N. Koudas
+
+equal to the side of each tile. As a result the fraction of objects replicated will be
+d 2j+1 Õ
+d 2 22j. The amount of replication taking place depends on d 2j, since replica-
+tion is introduced either by increasing the object size for constant number of tiles
+or increasing the number of tiles for constant object size. Figure 8 shows the fraction
+of objects replicated as a function of d 2j. As d 2j increases, the amount of replication
+that takes place increases.
+
+The algorithm then checks whether corresponding partitions (cid:142) t in main memory.
+Assuming that partitions have the same size and that each pair of partitions (cid:142) ts in
+main memory, the number of page reads and writes for this step is:
+
+rASA 1
+
+rBSB1 C
+
+(12)
+
+where C is the size of the initial candidate list. If partition pair i does not (cid:142) t in main
+memory then it has to be repartitioned. Using equation (8) to compute the number
+of partitions we expect under a uniform distribution, half the partitions to require
+repartitioning. Using a hash function to map tiles to partitions, we expect the MBRs
+of partitions to be the same as the MBR of the original data (cid:142) le. Thus the fraction
+of replicated objects remains the same for subsequent repartitions. The total
+number of page IOs during the (cid:142) rst partitioning phase is given by equation (10).
+Since on average half of the partitions will have to be repartitioned, the expected
+number of page IOs during the second partitioning phase will be:
+
+(11
+
+rA ) rASA
+2
+
+(11
+
+rB) rBSB
+2
+
+For uniform data distributions, this is expected to oŒer acceptable size balance across
+partitions and pairs of corresponding partitions will (cid:142) t in main memory. The algo-
+rithm proceeds to read all pairs of corresponding partitions and join them in main
+memory using Plane Sweep. The total number of page IOs for this phase will be:
+
+(11
+
+rA) rASA
+2
+
+(11
+
+rB) rBSB
+2
+
+1 C
+
+where C is the size of the candidate list. After the join phase, the result of the join
+
+(13)
+
+(14)
+
+Figure 8. Fractions of replicated objects.
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 1
+1
+EYcient computation of spatial joins
+
+191
+
+is stored on disk, but duplicate elimination must be performed since replication of
+entities may have occurred in both data sets. Duplicate elimination is achieved by
+sorting the join result. The number of page reads and writes during the sort is:
+
+2 J (cid:158)
+
+lÕ 1
+
+i=0
+
+C
+F i M
+
+5 2 J
+
+C
+M
+
+(1Õ
+1Õ
+
+1/F l)
+1/F
+
+(15)
+
+where F is the fanout factor of the sort. The number of sort merge phases will be
+logFC. Since elimination of duplicates can take place in any phase of the sort we
+l 5
+have to perform the summation over all sort merge phases, resulting in equation
+(15 ). If C (cid:142) ts in memory, the cost of page reads and writes during the sort (with
+duplicate elimination) will be C1 J.
+
+The total number of page reads and writes of the algorithm results if we sum all
+clauses above, taking into account whether intermediate results (cid:142) t in main memory
+or not. The replication factors, rA and rB, play an important role in the total number
+of I/Os given above. Their value depends on the number of tiles in the space and
+the input data distributions.
+
+4.1.3. Spatial hash joins
+
+Assuming that data set A is to be processed with D partitions, the number of
+
+page reads and writes during sampling and partitioning of data set A is:
+
+where c is some integer and cD represents (an upper limit on) the random I/O
+performed while sampling set A. The number and page reads and writes during
+partitioning of data set B is:
+
+since all of data set B must be read and multiple rB of its initial size must be written.
+After the partitioning phase, the algorithm joins the corresponding pairs of partitions.
+If the corresponding partitions for both data sets (cid:142) t in main memory, both partitions
+will be read and then joined. The join can be done either using nested loops or by
+constructing an R-tree in main memory for the (cid:142) rst partitions and probing it with
+the elements of the second. If both partitions (cid:142) t in main memory the number of
+page reads and writes during the join phase is:
+
+cD1
+
+2 SA
+
+(11
+
+rB) SB
+
+SA1
+
+rB SB1 J
+
+(16)
+
+(17)
+
+(18)
+
+where the (cid:142) rst two terms correspond to reads and the third to writes. However, with
+SHJ there is no guarantee that the partitions will be balanced in size or that they
+will (cid:142) t in main memory. Moreover, the partition placement depends only on samples
+taken from one data set. A general analysis of SHJ is di(cid:141) cult, because its behaviour
+depends on the distributions of the joined data. For uniformly distributed squares,
+an analysis similar to the one presented for PBSM can be applied. However, for
+speci(cid:142) c data set sizes and main memory size, the number of partitions used by SHJ
+is much larger than the number used for PBSM. Consequently, the amount of
+replication required in SHJ is expected to be larger than that in PBSM. Assuming
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 192
+
+N. Koudas
+
+that partitions do not (cid:142) t in main memory and that partitions are joined using nested
+loops, the number of page reads and writes during the join phase becomes:
+
+D
+
+i=1 A SiA
+
+M
+
+SiB1 SiAB
+
+(19)
+
+where SiA , SiB are the sizes of the partitions for A and B. Very little can be said
+about SiA and SiB. For uniformly distributed data sets, we expect SiA 5 SA /D and
+SiB 5
+
+rB 3 SB/D.
+
+For SHJ, replication is introduced only for one of the two data sets involved. As
+in the case of PBSM, the value for the replication factor rB plays an important role
+in the algorithm’s performance. Notice that in the worst case rB 5 D.
+
+4.2. Analytical comparison of the algorithms
+
+Using the formulas derived in the previous subsections, we perform an analytical
+comparison of the algorithms in terms of I/O behaviour. The results are shown in
+(cid:142) gure 9. For this comparison, we assume that SA 5 SB 5 10 000 pages. For S 3J, an
+adversarial placement of objects based on knowing the position of the underlying
+grid could lead to a single level (cid:142) le with all objects in it. However, if the adversary
+does not have knowledge of the exact position of grid lines (i.e. the grid can be
+shifted slightly), then even by placing objects in a nonindependent fashion, extreme
+imbalance of level (cid:142) le size cannot be forced. Consequently, we take as a practical
+‘worst case’ a situation where 30% of the entities are in the largest of the level (cid:142) les.
+(This choice is supported by previous analysis (Sevcik and Koudas 1996 ).) To simplify
+the (cid:142) gures we assume that no duplicate tuples are introduced during PBSM’s
+operation, so the size of the intermediate result is equal to the size of the join result
+(that is, C 5 J ). This favours PBSM, since fewer I/O operations are necessary, both
+when writing the intermediate result, and when sorting to eliminate duplicates.
+
+Figure 9 presents the total number of page reads and writes predicted by the
+
+Figure 9. Analytical comparison of disk accesses.
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 (cid:158)
+EYcient computation of spatial joins
+
+193
+
+formulas, normalized to S3J performance, for PBSM and SHJ as a function of the
+replication factors, rA and rB. This is a low selectivity join, since the size of the join
+result is twice the aggregate size of the two data sets. A word of caution is in order
+when interpreting (cid:142) gure 9: for two speci(cid:142) c data sets, there is no reason to believe
+that the replication factor for the second data set, rB, introduced by PBSM and SHJ
+is the same. As we pointed out earlier, we expect replication to be higher for SHJ.
+However, in order to present a comparison we represent rB on a common axis for
+both algorithms.
+
+S 3J does not introduce any replication, so its performance is independent of
+replication factors. In addition, the buŒering requirements of the algorithm during
+the partitioning and join phases are modest, being only a page per level (cid:142) le plus a
+page in the buŒer pool for output tuples: L A1
+1. Increasing the available buŒer
+size helps the sorting phase of S3J (if the level (cid:142) les cannot (cid:142) t in main memory).
+
+L B1
+
+By contrast, PBSM’s performance depends heavily on the degree of replication
+as is evident in (cid:142) gure 9. As replication increases the performance of PBSM becomes
+worse. PBSM makes the partitions (cid:142) t in main memory only when partitions are size
+balanced and the aggregate size of the data sets before partitioning is less than or
+equal to their aggregate size after partitioning. This is due to the fact that the number
+of partitions used for PBSM (equation (8)) does not take replication into account.
+It sets the number of partitions based on the size of the data sets before partitioning.
+When we increase the amount of memory available to the join, the part of PBSM’s
+total number of page reads and writes that is aŒected is the number of I/Os incurred
+while sorting. Since the sort can use a larger fanout, the number of I/Os is smaller.
+SHJ introduces replication only in the second data set and, as a result, its I/O
+behaviour is competitive to S3J for higher replication factor values, as shown in
+(cid:142) gure 9. For the purposes of this analysis, each random disk access incurred via
+sampling during the partitioning phase of SHJ is assumed (cid:142) ve times more expensive
+than the cost per page in a sequential access. SHJ typically uses a large number of
+partitions and thus frequently makes pairs of partitions (cid:142) t in main memory during
+the join phase. Increasing the buŒer size available by a factor f , causes an increase
+in the number of partitions by a factor that can be more than f of the number
+estimated before the increase. This will improve the join phase of the algorithm but
+will negatively aŒect its partitioning phase.
+
+5. Experimental comparison
+
+In this section, we present experimental results from prototype implementations
+of all three algorithms. We include experimental results using combinations of real
+and synthetic data sets. We implemented all three algorithms on top of a common
+storage manager that provides e(cid:141) cient I/O. Several components common to all
+algorithms were shared between implementations, contributing to the fairness of the
+comparison of the algorithms at the implementation level. Speci(cid:142) cally, the same
+sorting module is used by S 3J and PBSM, and all three algorithms use the same
+module for plane sweep.
+
+All of our experiments were conducted on an IBM RS6000 model 43P (133 MHz),
+running AIX with 64 MB of main memory (varying the buŒer size during experiments)
+with a Seagate Hawk 4 disk with capacity 1GB attached to it. The processor’s SPEC
+ratings are SPECint95 4.72 and SPECfp95 3.76. Average disk access time (including
+latency) is 18.1 m secÕ 1 assuming random reads.
+
+We present and discuss sets of experiments, treating joins of synthetic and real
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 194
+
+N. Koudas
+
+data sets for low (many output tuples) and high (few output tuples) selectivity joins.
+For our treatment of S3J, we assume that the Hilbert value is computed dynamically.
+If the Hilbert value were present in the entity descriptor initially, the response times
+for S 3J would be smaller than the ones presented by a small amount, re(cid:143) ecting
+savings of processor time to compute the values.
+
+For PBSM, we demonstrate the eŒect of diŒerent parameters on the performance
+of the algorithm. We include results for various numbers of tiles. In all PBSM
+experiments, we compute the number of partitions using equation (8 ) as suggested
+by Patel and DeWitt (1996). Similarly, SHJ performance depends on the statistical
+properties of the input data sets. We compute the number of partitions using the
+formula suggested by Lo and Ravishankar (1995).
+
+We present the times required for diŒerent phases of the algorithms. Table 2
+summarizes the composition of the phases for the three algorithms. For the experi-
+ments that follow, unless stated otherwise, the total buŒer space available is 10% of
+the total size of the spatial data sets being joined.
+
+5.1. Description of data sets
+
+Table 3 presents the data sets used for our experiments. All the data sets composed
+of uniformly distributed squares are normalized in the unit square. UN1, UN2 and
+UN3 have arti(cid:142) cially low variability of the sizes of objects and consequently low
+coverage, 0.4, 0.9 and 1.6, respectively. Coverage is de(cid:142) ned as the total area occupied
+by the entities over the area of the MBR of the data space. The LB and MG data
+sets contain road segments extracted from the TIGER/Line data set Bureau of the
+Census (1991). The (cid:142) rst (LB) presents road segments in Long Beach County,
+
+Table 2. Phase timings for the three algorithms.
+
+Algorithm
+
+Phase
+
+Contains
+
+S 3J
+
+PBSM
+
+SHJ
+
+Name
+
+UN1
+UN2
+UN3
+LB
+MG
+TR
+CFD
+
+Partition
+Sort
+Join
+
+Partition
+Join
+Sort
+
+Reading, partitioning and writing the level (cid:142) les for both data sets
+Sorting (reading and writing) the sorted level (cid:142) les
+Merging the sorted level (cid:142) les and writing the result on disk
+
+Reading, partitioning and writing partitions for both data sets
+Joining corresponding partitions and writing the result on disk
+Sorting the join result with duplicate elimination and writing the
+result on disk
+
+Partition
+Join
+Sort
+
+Reading, partitioning and writing partitions for both data sets
+Joining corresponding partitions and writing the result on disk
+none
+
+Table 3. Real and synthetic data sets used.
+
+Type
+
+Size
+
+Coverage
+
+Uniformly distributed squares
+Uniformly distributed squares
+Uniformly distributed squares
+Line segments from Long Beach County, California
+Line segments from Montgomery County, Maryland
+Squares of various sizes
+Point data (CDF)
+
+100 000
+100 000
+100 000
+53 145
+39 000
+50 000
+208 688
+
+0.4
+0.9
+1.6
+0.15
+0.12
+13.96
+—
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 EYcient computation of spatial joins
+
+195
+
+California. The second (MG) represents road segments from Montgomery County,
+Maryland and contains 39 000 line segments. Data set TR is used to model scenarios
+in which the spatial entities in the data sets are of various sizes. We produced a data
+set in which the sizes of the square spatial entities are generated according to a
+triangular-shape d distribution. More precisely, the size of the square entities is,
+l where l has a probability distribution with minimum value x1 maximum
+d 5 2Õ
+value x3 , and the peak of the triangular distribution at x2 . As one would expect, the
+overlap among the entities of such a data set is high. TR contains 50 000 entities
+and was generated using x1 5 4, x2 5 18, x3 5 19. CFD is a vertex data set from a
+Computational Fluid Dynamics model, in which a system of equations is used to
+model the air (cid:143) ows over and around aero-space vehicles. The data set describes a
+two-dimensional cross-section of a Boeing 737 wing with (cid:143) aps out in landing con(cid:142) g-
+uration. The data space consists of a collection of points (nodes) that are dense in
+areas of great change in the solution of the CFD equations and sparse in areas of
+little change. The location of the points in the data set is highly skewed.
+
+5.2. Experimental results
+5.2.1. No (cid:142) ltering case
+
+We present and discuss a series of experiments involving low selectivity joins of
+synthetic and real data sets. Table 4 summarizes all the experimental results in this
+subsection and presents the response times of PBSM and SHJ normalized to the
+response time of S3J as well as the replication factors observed for them.
+
+The (cid:142) rst two experiments involve data objects of a single size that are uniformly
+distributed over the unit square. For uniformly and independently distributed data,
+the coverage of the space is a realistic measure of the degree of overlap among the
+entities of a data set. From the (cid:142) rst experiment to the second, we increase the
+coverage (using squares of larger size) of the synthetic data sets and present the
+measured performance of the three algorithms. For algorithms that partition the space
+and replicate entities across partitions, the probability of replication increases with
+coverage, for a (cid:142) xed number of partitions.
+
+Figure 10(a) presents the response time for the join of two uniformly distributed
+data sets, UN1 and UN2 containing 100 000 entities each. Results for PBSM are
+included for two diŒerent choices of tiling: the (cid:142) rst choice is the number of tiles that
+achieves satisfactory load balance across partitions and the second is a number of
+tiles larger than the previous one. For S3J the processor time needed to evaluate the
+Hilbert values accounts for 8% of the total response time. The partitioning phase is
+
+Table 4.
+
+Join response times, normalized to S3J response time and replication observed.
+
+PBSM small #tiles
+
+PBSM large #tiles
+
+SHJ
+
+Data sets used Response time rA1
+
+rB Response time rA1
+
+rB Response time
+
+rB
+
+UN1, UN2
+UN2, UN3
+LB, LB’
+MG, MG’
+TR
+CFD
+
+1.3
+1.58
+1.9
+1.92
+2.32
+1.75
+
+2.44
+2.66
+2.4
+2.62
+4.92
+4.2
+
+1.5
+1.85
+2.34
+2.26
+3.1
+1.96
+
+3.3
+3.8
+3
+3.2
+7.8
+4.6
+
+1.35
+1.38
+1.33
+1.4
+2.65
+3.04
+
+1.5
+1.6
+1.62
+1.5
+
+10
+4
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 196
+
+N. Koudas
+
+relatively fast, since it involves sequential reads and writes for both data sets while
+determining the output level of each spatial entity and computing its Hilbert value.
+For PBSM, since we are dealing with uniformly distributd objects, a small number
+of tiles is enough to achieve balanced partitions. The greatest portion of time is
+spent partitioning the data sets. Most partitions pairs do not (cid:142) t in main memory
+and the algorithm has to read again and repartition those that they do not (cid:142) t in
+main memory. Approximately half of PBSM’s response time is spent partitioning
+the input data sets and the rest is spent joining the data sets and sorting (with
+duplicate elimination) the (cid:142) nal output.
+
+SHJ uses more partitions than PBSM does for this experiment. The large number
+of partitions covers the entire space and introduces overlap between partition bound-
+aries. The algorithm spends most of its time sampling and partitioning both data
+sets. As is evident from (cid:142) gure 10 (a) the partitioning phase of SHJ is more expensive
+than the corresponding phase of S3J and a little more expensive than that PBSM
+with large tiles. The join phase, however, is fast since all pairs of partitions (cid:142) t in
+main memory and owing to less replication, fewer entities have to be tested for
+intersection.
+
+Figure 10(b) presents the results for the join of UN2 and UN3. The impact of
+higher coverage in UN3 relative to UN1 aŒects S 3J only in processor time during
+the join phase. The portion of time spent partitioning into levels and sorting the
+level (cid:142) les is the same. Although the partitioning times remain about the same, join
+time and sorting time increase according to the data set sizes. For SHJ the larger
+replication factor observed increases I/O as well as processor time in the partitioning
+and join phases. Owing to the increased replication, the join phase of SHJ is more
+costly than in the previous experiment.
+
+Figures 11 (a) and 11(b) present results for joins of data sets LB and MG. For
+each of LB and MG, we produce a shifted version of the data set, LB’ and MG’, as
+follows: the centre of each spatial entity in the orignal data set is taken as the
+position of the lower left corner of an entity of the same size in the new data set.
+
+Figure 11(a) presents performance results for the join of LB and LB’. For S 3J,
+the time to partition and join is a little more than the time to sort the level (cid:142) les.
+When decomposed by S3J, LB yields 19 level (cid:142) les. The largest portion of the
+execution time is spent joining partition pairs. PBSM’s performance is worse with
+more tiles because of increased replication. In this case, the join result is larger than
+both input data sets, so PBSM incurs a larger number of I/Os from writing the
+intermediate result on disk and sorting it. Not all partitions (cid:142) t in main memory
+
+Figure 10.
+
+Join performance for uniformly distributed data sets of squares.
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 EYcient computation of spatial joins
+
+197
+
+Figure 11.
+
+Join performance for real data sets.
+
+(because of the nonuniformity of the data set) and SHJ has to read pages from disk
+during the join phase. Figure 11 (b) presents the corresponding experiment involving
+the MG and MG’ data sets. Similar observations hold in this case.
+
+The experiments described above oŒer intuition about the trends and trade-oŒs
+involved with real and synthetic data sets with moderate and low coverage. With
+the following experiment, we explore the performance of the algorithms on data sets
+with high coverage, with varying sizes in the spatial entities, and with distributions
+with high clustering.
+
+Figure 12(a) presents the results of a self join of TR. Although only a single data
+set is involved, the algorithm does not exploit that fact. S3J, with Hilbert value
+computation, is processor bound. Owing to the high coverage in the data set, S3J
+has to keep the pages of level (cid:142) les in memory longer while testing for intersections.
+PBSM spends most of its time partitioning and joining corresponding partitions
+but sorting and duplicate elimination also account for a large fraction of the execution
+time, since the size of the join result is large. In contrast with S3J, PBSM appears
+I/O bound.
+
+SHJ requires extensive replication during the partitioning of the second data set.
+This results from the spatial characteristics of the data set and the large number of
+partitions used. Large variability in the sizes of the entities leads to large partitions.
+As a result, the probability that an entity will overlap more than one partition
+increases with the variability of the sizes of the spatial entities. SHJ is I/O bound
+
+Figure 12. Self Join performance for real data sets.
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 198
+
+N. Koudas
+
+and most of its time is spent joining pairs of partitions which, in this case, do not
+(cid:142) t in main memory. As a result of the replication, the time spent by the algorithm
+partitioning the second data set is much larger than the time spent during the
+partitioning of the (cid:142) rst data set. Although SHJ introduces more replication than
+PBSM, it does not require duplicate elimination and, depending on the amount of
+replication and repartitioning performed by PBSM, its partitioning phase might be
+cheaper. It is due to the fact that no duplicate elimination is needed that SHJ is able
+to outperform PBSM in the case of large tiles.
+
+Figure 12(b) presents results from a self-join of CFD. We employ a spatial join
+to (cid:142) nd all pairs of points within 10Õ 6 distance from each other. For this data
+distribution, which involves a large cluster in the centre of the data space, both
+PBSM and SHJ perform poorly. PBSM requires a large number of tiles to achieve
+load balancing for its partitions and a lot of repartitioning takes place, introducing
+a large degree of replication. The join phase is faster than SHJ, however, in this
+experiment since all pairs of partitions obtained via repartitioning (cid:142) t in main memory.
+The sampling performed by SHJ is ineŒective in this case and the join phase is costly
+involving a large number of page reads from the disk. The partitions have varying
+sizes and one of them contains almost the entire data set.
+
+5.2.2. T he eVects of (cid:142) ltering
+
+With the experiments described in the previous subsection, we investigated the
+relative performance of the algorithms when no (cid:142) ltering takes place during the join
+of the data sets involved. With the experiments in this section, we study the eŒects
+of (cid:142) ltering on all three algorithms.
+
+For this purpose we perform two experiments. In the (cid:142) rst, we join two uniformly
+distributed data sets of 50 000 entities each. The data sets are uniformly distributed
+in disjoint portions of the unit square so that there is no overlap between the total
+MBRs of the two data sets. The results are presented in (cid:142) gure 13 (a).
+
+S 3J incurs a number of disk accesses while reading and partitioning the (cid:142) rst data
+set and requires processor time to create a bitmap for it. During processing of the
+second data set, the algorithm has to read the data set, but no entities are written
+
+Figure 13.
+
+Join performance with (cid:142) ltering for uniformly distributed data sets of squares.
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 EYcient computation of spatial joins
+
+199
+
+back on disk since the complete data set is (cid:142) ltered out with the use of the bitmap
+constructed during the partitioning of the (cid:142) rst data set. PBSM reads the (cid:142) rst data
+set and introduces a 4% replication factor (rA 5 1.04) during its partitioning. The
+second data set is completely (cid:142) ltered out for PBSM as well. PBSM incurs a large
+number of I/Os than S3J. SHJ has to go through its partitioning phase for the (cid:142) rst
+data set. This involves sampling the (cid:142) rst data set and populating its partitions. The
+second data set is (cid:142) ltered out completely by SHJ as well. Hovewer, the expensive
+partitioning phase causes its performance to be worse relative to PBSM in this case.
+Figure 13(b) presents the results of a second experiment involving uniformly
+distributed squares, but this time, the total MBR of the (cid:142) rst data set is contained in
+the total MBR of the second. The ratio of the area of the total MBR of the two
+data sets, is one thousand. There exist some joining entities between the two data
+sets. S 3J reduces the size of the second data set using the bitmap and the total
+number of page reads and writes of its partitioning, sorting and joining phase are
+small. PBSM is able nearly to match S3J’s performance since a small replication
+factor is introduced during the partitioning of the (cid:142) rst data set, and a large portion
+of the second data set is successfully (cid:142) ltered out and not involved in further pro-
+cessing. For SHJ, although a signi(cid:142) cant amount of (cid:142) ltering takes place also, the
+expensive partitioning phase once again causes poor performance.
+
+5.2.3. T rends of IO and processor time
+
+The last series of experiments we performed assessed the overall trends in the IO
+and processor time of the algorithms as various parameters of interest change in the
+underlying data sets. In (cid:142) gure 14 (a) the portions of processor and IO time required
+by each algorithm as the coverage in the underlying data space increases is presented.
+The dataset is a uniformly distributed set with 50 deg K spatial entities. As coverage
+increases, the join operation becomes less selective. For S3J this translates to an
+increase in processor time as more pairs belong to the join result. IO time remains
+the same as the operation is completed on a single pass. For PBSM both processor
+and IO time increases, as replication increases IO time and since more pairs are
+
+Figure 14. Trends for IO and processor time.
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 200
+
+N. Koudas
+
+processed processor time increases as well. Similar observations hold for SHJ. In
+(cid:142) gure 14(b) we present the result for increasing buŒer size. We can observe that both
+S 3J and SHJ remain relatively unaŒected by the increase as expected. The perform-
+ance of PBSM improves as more memory becomes available because sorting becomes
+less expensive. Although more memory improves the performance of PBSM the
+amount of this improvement heavily depends on the selectivity of the join operation.
+
+5.2.4. T he impact of hardware con(cid:142) guration
+
+Changing trends in hardware will impact the performance of the algorithms.
+Currently, processor speeds are increasing much faster than IO speeds. The proposed
+algorithm can be either processor or IO bound, depending on the selectivity of the
+join. Faster processor speeds will have a positive eŒect on the proposed algorithm
+where it is processor bound. Similar trends will be observed if a faster IO subsystem
+is utilized. In summary, we expect that the relative performance of the algorithms
+will not change if faster processors or disks are used.
+
+5.3. Discussion
+
+We have presented several experiments comparing the performance of the three
+algorithms S3J, PBSM, and SHJ, involving real and synthetic data sets. Our experi-
+mental results are consistent with our analytic observations. The relative performance
+of the algorithms depends heavily on the statistical characteristics of the datasets.
+S 3J appears to have comparable performance to SHJ when the replication introduced
+is not large, but is able to outperform it by large factors as replication increases.
+PBSM is comparable with S3J when su(cid:141) cient (cid:142) ltering takes place and in this case
+performs better than SHJ. The amount of (cid:142) ltering that makes PBSM competitive is
+di(cid:141) cult to quantify, because it depends on the characteristics of the data sets involved,
+the amount of replication that PBSM introduces, the order in which the data sets
+are partitioned, and the number of page reads and writes of the sorting phase
+of PBSM.
+
+While S3J neither requires nor uses statistical knowledge of the data sets, the
+best choice for the number of tiles in PBSM or for the amount of sampling in SHJ
+depends on the spatial characteristics of the data sets involved in the join operation.
+Good choices can be made only when statistical information about the data sets is
+available and the MBRs of the spaces are known. Under uniform distributions, the
+amount of overlap between the MBRs of the two spaces gives a good estimate of
+the expected size of the join result. Under skewed data distributions, however, no
+reliable estimate can be made, unless detailed statistical characteristics of both data
+sets are available. We believe that such measures could be computed for base spatial
+data sets. However, for intermediate results, the number of page reads required to
+obtain the statistical characteristics might be high.
+
+It appears from our experiments that, although the partitioning phase of SHJ is
+expensive, it is worthwhile in the case of low selectivity joins because it yields a large
+number of partitions which usually (cid:142) t in main memory in the subsequent join phase.
+By contrast, the analytical estimate for the number of partitions of PBSM doesn’t
+consistently yield appropriate values. The partition pairs often do not (cid:142) t in main
+memory because of the replication introduced by the algorithm, and the cost of
+repartitioning can be high.
+
+We showed experimentally that there are data distributions (such as the triangular
+data distribution we experimented with) for which both PBSM and SHJ are very
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 EYcient computation of spatial joins
+
+201
+
+ine(cid:141) cient. For such distributions it is possible that, owing to the high replication
+introduced by both PBSM and SHJ, the disk space used for storing the replicated
+partitions, as well as the output of the join before the duplicate elimination in the
+case of PBSM, is exhausted especially in environments with limited disk space.
+
+Depending on the statistical characteristics of the data sets involved, S 3J can be
+either I/O bound or processor bound. We showed experimentally that, even with
+distributions with many joining pairs, both PBSM and SHJ are I/O bound, but S3J
+can complete the join with a minimal number of I/Os and can outperform both
+other algorithms. For distributions in which (cid:142) ltering takes place, we showed experi-
+mentally that S3J with DSB is able to outperform both PBSM and SHJ. When
+enough (cid:142) ltering takes place, PBSM does better than SHJ mainly because of the
+expensive partitioning phase of SHJ. However, the previous argument depends also
+on the number of tiles used by PBSM, since it might be the case that excessive
+replication is introduced by PBSM using too many tiles and the performance
+advantage s are lost. S 3J is equally capable of reducing the size of the data sets
+involved and is able to perform better than both PBSM and SHJ.
+
+6. Conclusions
+
+We have presented a new algorithm to perform the join of spatial data sets when
+indices do not exist for them. Size Separation Spatial Join imposes a dynamic
+hierarchical decomposition of the space and permits an e(cid:141) cient joining phase.
+Moreover, our algorithm reuses software modules and techniques commonly present
+in any relational system, thus reducing the amount of software development needed
+to incorporate it. The Dynamic Spatial Bitmap feature of S3J can be implemented
+using bitmap indexing techniques already available in most relational systems. Our
+approach shows that often the e(cid:141) cient bitmap query processing algorithms already
+introduced for relational data can be equally well applied to spatial data types using
+our algorithm.
+
+We have presented an analytical and experimental comparison of S3J with two
+previously proposed algorithms for computing spatial joins when indices do not
+exist for the data sets involved. Using a combination of analytical techniques and
+experimentation with real and synthetic data sets, we showed that S3J outperforms
+current alternative methods for a variety of types of spatial data sets.
+
+Several directions for future work arise from this study. First, extension of the
+algorithms to allow higher dimensions is important for applications like multimedia
+query processing where descriptions of multimedia objects are represented as points
+in a multidimensional space (Faloutsos 1996). Second, parallelism is necessary for
+high performance query processing on nontraditional data types. Exploration of
+e(cid:141) cient parallelization of previously proposed algorithms as well as S 3J, for low
+and high spatial dimensions is an interesting and important area for future study.
+
+Acknowledgments
+
+We thank Dave DeWitt, Ming Ling Lo, Jignesh Patel and Chinya Ravishankar
+for their comments and clari(cid:142) cations of the operation of their respective algorithms.
+We also thank Al Cameau of the IBM Toronto Laboratory for useful discussions
+regarding our implementations, and Scott Leutenegger of the University of Denver
+for making the CFD data set available to us. This research is being supported by
+the Natural Sciences and Engineering Council of Canada, Information Technology
+Research Centre of Ontario and the IBM Toronto Laboratory.
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 202
+
+EYcient computation of spatial joins
+
+References
+Arge, L., Procopiuc, O., Ramaswamy, S., Suel, T., and Vitter, J., 1998, Scalable-Sweeping
+
+Basal Spatial Join. Proceedings of V L DB, 570–581.
+
+Bially, T., 1969, Space-(cid:142) lling curves: their generation and their application to bandwidth
+
+reduction. IEEE T ransactions on Information T heory, IT-15, 658–664.
+
+Brinkhoff, T., Kriegel, H.-P., and Seeger, B., 1993, E(cid:141) cient processing of spatial joins
+
+using R-trees. Proceedings of ACM SIGMOD, 237–246.
+
+Brinkhoff, T., Kriegel, H., Schneider, R., and Seeger, B., 1994, Multistep processing of
+
+spatial joins. Proceedings of ACM SIGMOD, 189–208.
+
+Bureau of the Census, 1991, TIGER/Line Census Files.
+Faloutsos, C., 1996, Indexing Multimedia Databases (Dordrecht: Kluwer).
+Gunther, O., 1993, E(cid:141) cient computation of spatial joins. Proceedings of the International
+
+Conference on Data Engineering, Vienna, pp. 50–59.
+
+Guttman, A., 1984, R-trees: a dynamic index structure for spatial searching. Proceedings of
+
+Lo, M.-L., and Ravishankar, C. V., 1994, Spatial joins using seeded trees. Proceedings of
+
+ACM SIGMOD, 47–57.
+
+ACM SIGMOD, 209–220.
+
+Lo, M.-L., and Ravishankar, C. V., 1995, Generating seeded trees from spatial data sets.
+Proceedings of Symposium on L arge Spatial Data Bases, Zu¨rich, pp. 328–347.
+Lo, M.-L., and Ravishankar, C. V., 1996, Spatial hash-joins. Proceedings of ACM
+
+SIGMOD, 247–258.
+
+Mamoulis, N., and Papadias, D., 1999, Integration of spatial join algorithms for processing
+
+multiple inputs. Proceedings of ACM SIGMOD, 1–12.
+
+Nievergelt, J., Hinterberger, H., and Sevcik, K. C., 1984, The grid (cid:142) le: an adaptable,
+
+symmetric multikey (cid:142) le structure. ACM T ODS 1984, 38–71.
+
+O’ Neil, P., 1996, Query performance, Talk Delivered at IBM Toronto.
+O’ Neil, P., and Graefe, G., 1995, Multi-table joins through bitmapped join indices. SIGMOD
+
+Record, 24, 8–11.
+
+Orenstein, J., 1986, Spatial query processing in an object-oriented database system.
+
+Proceedings of ACM SIGMOD, 326–336.
+
+Papadias, D., Mamoulis, N., and Theodoridis, Y., 1999, Processing and optimization of
+
+multiway spatial joins using R-trees. PODS, 44–55.
+
+Patel, J. M., and DeWitt, D. J., 1996, Partition based spatial-merge join. Proceedings of
+
+Preparata, F. P., and Shamos, M. I., 1995, Computationa l Geometry (New York-Heidelberg-
+
+Rotem, D., 1993, Spatial join indices. Proceedings of the International Conference on Data
+
+ACM SIGMOD, 259–270.
+
+Berlin: Springer-Verlag).
+
+Engineering, Vienna, pp. 500–509.
+
+Sellis, T., Roussopoulos, N., and Faloutsos, C., 1987, The R1
+
+-tree: a dynamic index for
+
+multi-dimensional data. Proceedings of V L DB 1987, 507–518.
+
+Sevcik, K. C., and Koudas, N., 1996, Filter trees for managing spatial data over a range of
+
+size granularities. Proceedings of V L DB, 16–27.
+
+Stonebraker, M., and Moore, D., 1996, Object Relational Databases: T he Next Wave (Morgan
+
+KauŒman).
+
+Theodoridis, Y., Stafanakis, E., and Sellis, T., 1998, Cost models for join queries in spatial
+
+databases. Proceedings of ICDE, 476–483.
+
+Valduriez, P., 1987, Join indexes. ACM T ODS, 12, 218–246.
+
+Downloaded by [University of Alberta] at 19:43 15 October 2014 

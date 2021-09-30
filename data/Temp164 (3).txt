@@ -1,0 +1,2843 @@
+Received: 1 February 2019  |  Revised: 15 March 2019  |  Accepted: 16 March 2019
+DOI: 10.1111/tgis.12536  
+
+R E S E A R C H   A R T I C L E
+
+A deep learning approach for rooftop geocoding
+
+Zhengcong Yin1  |   Andong Ma1 |    Daniel W. Goldberg1,2
+
+1Department of Geography, Texas A&M 
+University, College Station, Texas
+
+2Department of Computer Science & 
+Engineering, Texas A&M University, College 
+Station, Texas
+
+Correspondence
+Zhengcong Yin, Department of Geography, 
+Texas A&M University, 810 Eller O&M 
+Building, MS 3147, College Station, TX.
+Email: yinzhengcong@tamu.edu
+
+Funding information
+North American Association of Central 
+Cancer Registries; US National Institutes of 
+Health; US National Cancer Institute
+
+Abstract
+
+Geocoding  has  become  a  routine  task  for  many  research 
+
+investigations  to  conduct  spatial  analysis.  However,  the 
+
+output quality of geocoding systems is found to impact the 
+
+conclusions  of  subsequent  studies  that  employ  this  work‐
+
+flow.  The  published  development  of  geocoding  systems 
+
+has been limited to the same set of interpolation methods 
+
+and reference data sets for quite some time. We introduce 
+
+a  novel  geocoding  approach  utilizing  object  detection  on 
+
+remotely sensed imagery based on a deep learning frame‐
+
+work to generate rooftop geocoding output. This allows ge‐
+
+ocoding systems to use and output exact building locations 
+
+without employing typical geocoding interpolation methods 
+
+or being completely limited by the availability of reference 
+
+data  sets.  The  utility  of  the  proposed  approach  is  demon‐
+
+strated over a sample of 22,481 addresses resulting in sig‐
+
+nificant spatial error reduction and match rates comparable 
+
+to typical geocoding methods. For different land‐use types, 
+
+our  approach  performs  better  on  low‐density  residential 
+
+and commercial addresses than on high‐density residential 
+
+addresses. With appropriate model setup and training, the 
+
+proposed approach can be extended to search different ob‐
+
+ject locations and to generate new address and point‐of‐in‐
+
+terest reference data sets.
+
+1 |  I NTRO D U C TI O N
+
+Geocoding is the process of converting text‐based description of a location into a pair of coordinates (Boscoe, 
+
+2008).  It  has  been  widely  used  for  spatial  analysis  in  health,  crime,  and  social  research  investigations  (Murray, 
+
+Grubesic, Wei & Mack, 2011; Rose et al., 2004; Rushton et al., 2006). However, relatively large spatial errors are 
+
+Transactions in GIS. 2019;23:495–514. 
+
+wileyonlinelibrary.com/journal/tgis 
+
+© 2019 John Wiley & Sons Ltd  |  495
+
+496  |    
+
+still  found  in  most  modern  geocoding  systems  due  to  the  limitations  of  typical  geocoding  techniques  (address 
+
+point geocoding, address polygon geocoding, and street geocoding) and the availability and quality of the refer‐
+
+ence data sets they use (Cayo & Talbot, 2003; Goldberg, 2008; Grubesic & Murray, 2004; Goldberg & Cockburn, 
+
+2010; Zandbergen, 2008). Spatial errors in geocoding output are propagated through to the output data utilized 
+
+in subsequent studies, thereby affecting the validity and accuracy of further data creation and the research con‐
+
+clusions of these studies (Jacquez, 2012). For example, in air pollution exposure studies, two common geocod‐
+
+ing  error  distances,  100  and  250  m,  could  lead  to  biased  exposure  classifications  (Nuvolone  et  al.,  2011),  and 
+
+spatial error produced by street geocoding was proven to result in consistent overestimation for the number of 
+
+exposed individuals (Zandbergen & Green, 2007). In a cancer risk assessment study, the spatial error for residen‐
+
+tial locations lower than 50 m was required to conduct further analysis (Washburn et al., 1994). Among typical 
+
+geocoding methods, address point geocoding, which attempts to pinpoint the output to the centroid of a building 
+
+rooftop, has been shown to generate highly accurate results and is recommended for use if the data are available 
+
+(Vieira, Fraser, Webster, Howard, & Bartell, 2008; Goldberg & Cockburn, 2012). However, due to the unavailabil‐
+
+ity of rooftop reference data sets, this method is not widely used (Zandbergen, 2008). This leads to the question 
+
+whether there is a way to automatically generate building rooftop geocoding outputs using readily available re‐
+
+motely sensed data.
+
+Researchers have recently proposed different deep learning frameworks to extract objects from high‐reso‐
+
+lution remote sensing imagery (Chen, Xiang, Liu, & Pan, 2014; Xu, Cheng, Yang, & Liu, 2016; Chen et al., 2018). 
+
+Several articles have noted that aerial imagery can be used as supplementary material for producing geocoding 
+
+reference data sets (Delmelle, Tang, Zheng, Lan, & Owusu, 2017; Goldberg, Jacquez, & Mullan, 2013; Zandbergen, 
+
+2008). However, to date, a geocoding approach integrating object detection for generating rooftop centroid out‐
+
+puts is yet to be developed.
+
+In this work we combine a typical geocoding workflow and building detection based on a fast region‐based 
+
+convolutional neural network (Faster R‐CNN) model to create a new geocoding approach. This allows geocoding 
+
+systems to place outputs at the centroid of building rooftops without conducting typical geocoding interpolation 
+
+methods or being completely limited by the availability of reference data sets. The contributions of this work are 
+
+twofold.
+
+From a methodology perspective, we develop a deep learning based building rooftop extraction method and 
+
+fully integrate it into the geocoding process. Then we propose centroid candidate selection methods specific to 
+
+this new geocoding workflow. Through an evaluation of 22,481 addresses, clear spatial error reduction resulting 
+
+from the proposed approach was observed in comparison to typical geocoding methods using the same refer‐
+
+ence data set, while maintaining a comparable match rate. Compared to address point/polygon geocoding, our 
+
+approach reduced the average spatial error by 4.96 m (from 16.76 m to 11.80 m). Compared to street geocoding, 
+
+our approach reduced the average spatial error by 51.10 m (from 130.46 m to 79.36 m). For different land‐use 
+
+types, our approach performed better on low‐density residential and commercial addresses than on high‐density 
+
+residential addresses.
+
+From an application perspective, the new geocoding approach provides the GIS community with new insights 
+
+to leverage recent advances in computer vision and deep learning domains for geospatial applications. For the 
+
+geocoding community, our approach can be used to generate new address or point‐of‐interest (POI) reference 
+
+data sets. For general GIS applications, the proposed approach can be extended to search different object loca‐
+
+tions with appropriate model setup and training.
+
+The  reminder  of  this  article  is  organized  as  follows.  Section  2  outlines  the  limitations  of  existing  geocod‐
+
+ing methods and recent advances in object detection. Section 3 details the building rooftop centroid extraction 
+
+method and how it is integrated into geocoding workflow. Section 4 illustrates evaluation metrics for our work and 
+
+discusses the results. Finally, Section 5 concludes this paper with potential avenues for future work.
+
+YIN et al.    |  497
+
+2 |  R E L ATE D WO R K
+
+2.1 | Limitations of current geocoding methods
+
+The limitations of existing geocoding methods have been well studied throughout the literature. Although errors 
+
+can be found in every component of a geocoding process, reference data sets and interpolation methods are still 
+
+considered as the main sources of spatial error (Goldberg, Wilson, & Knoblock, 2007; Goldberg, 2013).
+
+2.1.1 | Street geocoding
+
+The most widely used geocoding method is street geocoding, which utilizes street networks as reference sources. 
+
+However, the outputs of street geocoding are determined by the numeric value of the input and reference house 
+
+numbers in a linear interpolation manner, with three major assumptions: (1) an address existence assumption; (2) 
+
+a uniform lot assumption; (3) a parcel extension assumption (Goldberg, 2008). According to USPS TIGER (https :// 
+
+www2.census.gov/geo/pdfs/maps‐data/data/tiger/ tgrsh p2017/ TGRSH P2017_TechD oc_Ch4.pdf.),  house  num‐
+
+bers are arbitrarily assigned to an address range, even if they do not exist in reality. All parcels on a street are as‐
+
+sumed to have the same size and completely fill the street without corner offsets. A previous study attempted to 
+
+tackle these issues by incorporating the number of buildings and the parcel size found online (Bakshi, Knoblock, & 
+
+Thakkar, 2004). Arguably, this method relies heavily on the availability of this auxiliary information. In addition to 
+
+these assumptions, the offset distance from a street centerline to a building is predefined by geocoding systems 
+
+without adjusting for variations across different places, which also can introduce errors into the output (Grubesic 
+
+& Murray, 2004).
+
+2.1.2 | Address polygon geocoding
+
+Address polygon geocoding uses geographic polygons representing one or more administrative units of geography 
+
+as its reference data set. To generate a geocoded output, a process for deriving a point from a polygon is required. 
+
+Typically, there are three interpolation methods to generate such an output point: (1) bounding box; (2) mass of 
+
+centroid; (3) weighted centroid (Goldberg, 2013). However, these three methods make the same assumption: the 
+
+point derived from a polygon or a bounding box is the actual building location. This assumption was proven to 
+
+work well for small‐size parcels but failed in large‐size parcels (Cayo & Talbot, 2003). Also, for parcels with irregular 
+
+shapes such as “L” or “S,” this interpolation method cannot guarantee that the centroid is located inside a parcel 
+
+(Goldberg  &  Cockburn,  2012).  Improving  on  this  method,  researchers  used  population  density  information  to 
+
+place the output at a more reasonable location (Schultz, Beyer, & Rushton, 2007). However, this method typically 
+
+only applies to large geographic areas, such as zip codes, or counties where a population surface derived from a 
+
+lower‐level geography can be applied.
+
+2.1.3 | Address point geocoding
+
+By  definition,  address  points  typically  represent  actual  building  locations  (Zandbergen,  2008).  The  process  of 
+
+generating such a data set, either by producing the centroid from a building footprint or parcel or field collection 
+
+using GPS, is costly in terms of time and effort (Zandbergen, 2008; Goldberg & Cockburn, 2012). These costs help 
+
+explain the limited coverage of these data sets. Because the reference datum is already a point, no further inter‐
+
+polation is needed. The match rate and quality of the rooftop geocoding method rely completely on the quality 
+
+of reference data (Goldberg & Cockburn, 2012). Modern geocoding systems usually employ multiple sources of 
+
+reference data sets (Goldberg & Cockburn, 2012). This may lead one to question which reference data set should 
+
+be used if different data sources are available.
+
+YIN et al.498  |    
+
+2.1.4 | Advances in object detection
+
+Object detection is an image processing technology that detects semantic objects of a specific label in natural 
+
+digital images. Girshick, Donahue, Darrell, and Malik (2014) first proposed region‐based CNN (R‐CNN) for object 
+
+detection. Because there are numerous candidate regions, and each requires computation for feature extraction, 
+
+the processing speed of R‐CNN has been shown to be very slow. To address this, Girshick proposed a new training 
+
+algorithm for R‐CNN by utilizing a region‐of‐interest pooling layer to train the whole network from end to end, 
+
+named Fast R‐CNN (Girshick, 2015). He, Zhang, Ren, and Sun (2014) investigated the utilization of a region pro‐
+
+posal network to generate region proposals and proposed Faster R‐CNN with much smaller time cost compared 
+
+to R‐CNN and Fast R‐CNN. Within the Faster R‐CNN model, all learning schemes, including feature and proposal 
+
+extraction,  bounding  box  regression,  and  classification,  are  incorporated  into  a  single  deep  learning  network. 
+
+These enhancements resulted in significant increases to processing accuracy and speed.
+
+3 |  WO R K FLOW  FO R M A LIZ ATI O N
+
+The workflow of the proposed approach is depicted in Figure 1. Similarly to typical geocoding, input addresses 
+
+are parsed to generate a query string for the initial geographic context. We first conduct an exact feature matching 
+
+process using a deterministic matching method to retrieve geographic features that match the input house num‐
+
+ber. If there are zero matches, we revert to an upper geographic level to retrieve geographic features that match 
+
+the input street name, known as fuzzy feature matching. Next, the proposed approach constructs a searching zone 
+
+using the retrieved geographic context for building rooftop centroid extraction to generate output candidates, the 
+
+key difference from typical geocoding workflows.
+
+3.1 | Searching zone
+
+The searching zone is used to generate a query to obtain an aerial image for building rooftop centroid extraction. 
+
+Two geographic points, termed benchmark points, are derived from the retrieved geographic context to construct 
+
+such a region of interest. We define two kinds of searching zones, exact and fuzzy, which are in accordance with 
+
+the exact and fuzzy feature matching scenarios, respectively.
+
+3.1.1 | Exact searching zone
+
+Since the spatial accuracy of the geographic context (i.e. address polygon or address point features) returned 
+
+from exact feature matching should be relatively high (Zandbergen, 2008), we choose two benchmark points 
+
+from them to construct the searching zone, as depicted in Algorithm 1. If the geographic context is a polygon 
+
+feature, we select two vertices from this polygon that have the largest distance to be benchmark points so that 
+
+we can calculate latitude and longitude differences per pixel as required by Algorithm 3. If a point feature has 
+
+been retrieved, we use two endpoints of a 50‐m diagonal centered on this point feature as benchmark points. 
+
+We consider this empirical radius (i.e. 25 m) to be reasonable because a point feature is considered to represent 
+
+a building centroid (Zandbergen, 2008). When both a point and a polygon feature have been retrieved, we first 
+
+attempt to derive benchmark points from the polygon feature since it can depict the actual parcel boundary for 
+
+the input address.
+
+YIN et al.    |  499
+
+3.1.2 | Fuzzy searching zone
+
+If fuzzy feature matching has been carried out, namely, an exactly matched point or polygon feature cannot be 
+
+found, we build a fuzzy searching zone which has the largest possibility of containing the input address. Inspired 
+
+by using the “similar” house number to improve match rates (Murray et al., 2011), we select the geographic con‐
+
+text with the minimum house number difference to the input address as benchmark points to bound this search 
+
+zone, as depicted in Algorithm 2. We first attempt to identify the two house numbers which are closest to the 
+
+input address and make sure they agree with the parity (i.e. odd or even) of the input house number. According 
+
+to  USPS  TIGER 
+
+(https ://www2.census.gov/geo/pdfs/maps?data/data/tiger/ tgrsh p2017/ TGRSH P2017_TechD 
+
+oc_Ch4.pdf.), the last two digits of an address range start from 00 and end with 99. Thus, we keep track of the 
+
+valid address range for each house number identified to ensure it belongs to the block of the input address. If the 
+
+nearest house number is outside the block of the input address, we will use the nearest address range number that 
+
+has the same parity of the input house number as the substitution. For example, given the input house number is 
+
+1603, two nearby house numbers, 1515 and 1607, are selected. We consider that the house number 1515 belongs 
+
+to another block as the valid address range for the input address should be 1600 to 1699. Since the range number 
+
+1601 has the smallest numeric difference to the input address, it is selected to bound the size of the searching 
+
+zone (i.e. 1601–1607). When a nearby house number is found in more than one reference data set, we select the 
+
+ideal reference data item based on the preferential ordering of reference data categories shown as optimal in a 
+
+previous study: point > polygon > street line (Zandbergen, 2008). The possible combinations of nearby features 
+
+that can build a fuzzy searching zone are summarized in Table 1.
+
+YIN et al.500  |    
+
+F I G U R E   1  Workflow of the proposed approach
+
+3.2 | Building detection and centroid extraction
+
+3.2.1 | Model setup and data training
+
+Unfortunately, existing training data sets of building rooftops are scarce in the computer vision community. Thus, 
+
+we collected 250 aerial RGB images of size 640 × 480 pixels in two cities in Texas from Google Earth (https ://
+
+www.google.com/earth/ ), and labeled all rooftops on each image. We also expanded the training samples by flip‐
+
+ping images both horizontally and vertically and conducting 90° image rotation.
+
+We adopted the Faster R‐CNN model for building rooftop detection owing to its performance and reliability (He 
+
+et al., 2014). ResNet‐50 (He, Zhang, Ren, & Sun, 2016) was used as the base deep neural network, which was pre‐
+
+trained by ImageNet (http://image ?net.org/index ). Our region proposal network consisted of three convolutional 
+
+layers. The input layer was assembled by 512 kernels of size 3 × 3. The class prediction layer was created by nine 
+
+kernels of size 1 × 1. The regression layer contained 9 × 4 kernels of size 1 × 1. The total number of epochs and 
+
+YIN et al.    |  501
+
+TA B L E   1  Possible nearby features for benchmark points of fuzzy searching zone
+
+Nearby features
+
+Possible scenarios
+
+Two house numbers
+
+Two nearby house numbers are found in polygon or point reference data sets.
+
+One house number, one address 
+
+endpoint
+
+(1) Only one nearby house number is found in point or polygon reference data 
+sets and the other nearby feature is retrieved from street line reference data 
+sets. (2) One of two retrieved nearby house numbers belongs to the block of 
+the input address.
+
+Two address endpoints
+
+(1) Only address range endpoints is found. (2) Two retrieved nearby house 
+
+N/A
+
+numbers both do not belong to the block of the input address.
+
+No nearby house numbers are found in polygon or point reference data sets 
+and the matched address range is found in street line reference data sets.
+
+YIN et al.502  |    
+
+12.5 hours.
+
+the length of each epoch were set to 50 and 400, respectively. With this setup, model training was completed in 
+
+3.2.2 | Building detection and centroid extraction
+
+As shown in Figure 1, with the help of two benchmark points (i.e. the red and yellow dots), we captured satellite im‐
+
+ages covering the building in question using Google Maps (https ://devel opers.google.com/maps). Then the Faster 
+
+R‐CNN model output a rectangular bounding box for each detected building rooftop on the input images. Algorithm 
+
+3 depicts the way we obtain the geographic coordinates of a building rooftop centroid from the bounding box. Since 
+the bounding box is presented as the pixel locations (i.e. row and column) of top‐left and bottom‐right corners, Ptl 
+and Pbr, it becomes possible to calculate each bounding box’s centroid, Pc, to represent a building location. However, 
+this image does not have spatial information associated with it yet. To do so, we take advantage of two benchmark 
+points, BP1 and BP2, by detecting their row/column by their own pre‐assigned RGB values. Because the latitude and 
+longitude of these two benchmark points are known, we can obtain the coordinate difference per pixel for the input 
+image. Finally, we can calculate the latitude and longitude of Pc using its pixel location related to the input image’s 
+top‐left corner, which is (0, 0).
+
+3.3 | Centroid candidate selection
+
+3.3.1 | Candidate validation
+
+It is possible for multiple centroid candidates to be returned by the building rooftop centroid extraction process 
+
+because an input image can contain multiple buildings, as shown in Figure 1. To facilitate candidate selection, we 
+
+use a multi‐step procedure based on topological relationships to filter out invalid candidates.
+
+The first step is to make sure candidates are located in reasonable areas. Since each searching zone is the area 
+
+that has the greatest possibility of containing the input address, we conduct a point‐in‐polygon analysis to filter 
+
+out candidates that are outside the constructed searching zone.
+
+YIN et al.The  second  step  is  to  check  if  the  candidate  agrees  with  the  address  parity  rule  (i.e.  odd  and  even  house 
+
+numbers are located on opposite sides of a street). To do so, we propose a clockwise checking method to select 
+
+candidates that obey this rule: 
+
+ 
+
+endpoint =
+
+left side
+
+right side
+
+if xpnt1 < xc
+if xpnt2 > xc,
+
+⎧
+⎪
+⎨
+⎪
+⎩
+
+�
+�
+�
+�
+�
+�
+�
+�
+�
+�
+
+xs
+
+xpnt1
+
+xpnt2
+
+ys
+
+ypnt1
+
+ypnt2
+
+1
+
+1
+
+1
+
+�
+�
+�
+�
+�
+�
+�
+�
+�
+�
+
+=
+
+⎧
+⎪
+⎨
+⎪
+⎩
+
+> 0
+
+< 0
+
+if counter- clockwise
+
+if clockwise.
+
+    |  503
+
+(1)
+
+(2)
+
+ As shown in Figure 2, with the help of Equation 1, we can find the left‐ and right‐side endpoint of an address, de‐
+noted by (xpnt1, ypnt1) and (xpnt2, ypnt2). Next, we randomly sample a nearby address from the reference data set, referred 
+to as sample address, and connect these points as follows: sample address → left‐side endpoint → right‐side endpoint. 
+
+Finally, we determine if this path is clockwise or counter‐clockwise using Equation 2. To agree with the address parity 
+
+rule, all valid candidates should have the same path, if the input address and sample address have the same house 
+
+number parity. For example, if a sample address has house number 1505 and has a clockwise path, and the input house 
+
+number is an odd number, then all potential candidates should also have a clockwise path.
+
+The third and final step is to test if a candidate is a false positive match, which means that it is actually an‐
+
+other address which exists in the reference data sets. We first conduct a K‐nearest neighbor query to retrieve 
+
+10 nearby addresses from the reference data set. Then we compare the distances between a candidate and the 
+
+10 nearby addresses to a threshold distance of 3 m. If the smallest distance is less than 3 m and their address 
+
+descriptions  are  different,  the  candidate  is  determined  as  a  false  positive  match.  We  consider  this  threshold 
+
+distance  to  be  reasonable,  as  it  is  much  smaller  than  the  conventionally  employed  offset  distance  of  15  m 
+
+(Zandbergen, 2009).
+
+3.3.2 | Candidate selection
+
+The candidate selection process determines the best candidate for the final output. Because the two types of 
+
+searching zone result in different levels of confidence, the candidate selection process works differently for each.
+
+F I G U R E   2  Clockwise checking method to check address parity
+
+YIN et al.504  |    
+
+Exact searching zone
+
+follows:
+
+If multiple candidates exist in an exact searching zone, it can be a multi‐building residential structure (e.g. a house 
+
+with a detached garage), an apartment complex, or a commercial complex. However, land‐use information is dif‐
+
+ficult to obtain from reference data sets. To deal with possible scenarios, the selection procedure is executed as 
+
+1.  If  the  searching  zone  is  constructed  by  address  polygon  reference  data,  we  utilize  the  threshold  value  5 
+
+as  the  minimum  number  of  candidates  to  differentiate  an  apartment  complex  from  a  residential  parcel. 
+
+This  value  was  determined  by  a  manual  review  of  local  apartment  complexes.  If  the  number  of  candi‐
+
+dates  is  less  than  5,  the  input  address  is  determined  to  be  a  residential  parcel  and  the  candidate  with 
+
+the  largest  bounding  box  is  selected  because  we  assume  that  the  main  residential  building  will  typically 
+
+be  larger  than  other  structures  (such  as  a  detached  garage).  Otherwise,  we  consider  the  input  address 
+
+to  be  an  apartment  complex  or  a  commercial  complex.  Typically,  available  reference  data  sets  do  not 
+
+have  unit  number  information  for  each  building,  which  is  a  consistent  difficulty  for  geocoding  systems 
+
+(Zandbergen  &  Green,  2007).  Thus,  we  use  the  centroid  of  a  convex  hull  assembled  from  all  detected 
+
+rooftops  as  the  output.  This  centroid  is  weighted  by  the  location  of  the  buildings  in  a  parcel,  which  is 
+
+considered  to  derive  a  more  reasonable  output  than  a  geometric  centroid  (Boscoe,  2008;  Schultz  et  al., 
+
+2007).
+
+2.  If the searching zone is constructed by address point reference data, we empirically select the candidate which 
+
+is closest to these reference data as the best candidate. Owing to the definition of address point reference data 
+
+(Zandbergen, 2008), the nearest candidate to this point feature is most likely to be the best candidate.
+
+Fuzzy searching zone
+
+There  is  a  significant  chance  that  multiple  centroid  candidates  exist  in  a  fuzzy  searching  zone,  because  such  a 
+
+searching zone is bounded by nearby house numbers related to the input address. The only difference between 
+
+these candidates is their locations. Thus, we propose a house number difference ranking method to select the best 
+
+candidate, as illustrated in Algorithm 4. Intuitively, the distance from a candidate to a benchmark address reflects 
+
+the numeric difference between these house numbers.
+
+Therefore, an important step of the algorithm is to determine a benchmark address. Because two benchmark 
+
+points that bound a fuzzy searching zone have the house numbers and geographic locations which are near to 
+
+the input address, we select one of them as the benchmark address. First, the benchmark point with the smaller 
+
+house number difference to the input house number is used as the benchmark address. If both benchmark points 
+
+have the same house number difference to the input address, we choose the one that comes from a high‐quality 
+
+reference source as follows: point > polygon > street line. The other key step is to determine the best candidate 
+
+from the candidate list sorted by distances from each candidate to the benchmark address in ascending order. 
+
+As illustrated in Figure 3, taking house number parity into account, the input address 209 is only one magnitude 
+away from the benchmark address 207, thus the candidate with the smaller distance d1 to the benchmark address 
+is more likely to be the candidate for the input address. It is possible that the benchmark address 207 has been 
+
+included in the candidate list. To check this situation, we compare the distance between the benchmark address 
+
+and the first candidate in the sorted list to the same value used for testing a false positive match. If this distance 
+
+is less than 3 m, we will choose the second candidate in the candidate list as the final output. Otherwise, we will 
+
+choose the first.
+
+YIN et al.    |  505
+
+F I G U R E   3  House number difference ranking to select the best candidate
+
+4 |  E X PE R I M E NT S A N D R E S U LT S
+
+4.1 | Experimental setup
+
+Our evaluation primarily seeks to answer three specific questions: First, what is the match rate of our approach? 
+
+Second, to what degree can our approach reduce spatial error? Third, is the performance of our approach sensitive 
+
+to land‐use types?
+
+YIN et al.506  |    
+
+TA B L E   2  Match rates
+
+System
+
+DLRooftop
+
+DLRooftop
+
+Base Reference
+
+Base Reference
+
+Base Reference
+
+Google
+
+Google
+
+Google
+
+Match level
+
+Rooftop
+
+Unmatched
+
+Building
+
+Street
+
+Unmatched
+
+Rooftop
+
+Other
+
+Unmatched
+
+Match rate (%)
+
+82.18
+
+17.82
+
+80.83
+
+2.86
+
+16.31
+
+95.05
+
+4.87
+
+0.8
+
+The reference data used in the experiment included all three address models: address point, address polygon, 
+
+and  street  line.  Address  point  reference  data  were  extracted  from  Navteq  (https ://www.here.com/en/navteq). 
+
+Address polygon reference data were obtained from the Boundary Solutions parcel database. Street line refer‐
+
+ence  data  were  generated  from  the  US  Census  Bureau  TIGER/Lines  (https ://www.census.gov/geo/maps?data/
+
+data/tiger ?line.html).  These  reference  data  sources  were  chosen  because  they  represent  the  typical  types  and 
+
+qualities of reference data sources routinely used by researchers and organizations (Goldberg, 2008). The test 
+
+data set was obtained from the city of College Station, Texas, containing 22,481 building centroid coordinates 
+
+associated with address descriptions across three land‐use types: low‐density residential, high‐density residential, 
+
+and commercial.
+
+To conduct the evaluation, the proposed approach was implemented as a web service using Node.js (https :// 
+
+nodejs.org)  and  all  reference  data  were  indexed  in  the  Elasticsearch  (https ://www.elast ic.co/produ cts/elast ic‐
+
+search) NoSQL database framework. We geocoded the test data set using our approach (referred to as DLRooftop), 
+
+the Texas A&M Geocoding Services (http://geose rvices.tamu.edu/) (referred to as Base Reference) and Google’s 
+
+Geocoding  API  (https ://devel opers.google.com/maps/docum entat ion/geoco ding/start )  (referred  to  as  Google). 
+
+Then outputs produced by each system were compared in terms of match rate and spatial accuracy (i.e. the dis‐
+
+tance between geocoded data and the true value), which is consistent with other studies (Goldberg & Cockburn, 
+
+2010; Zimmerman & Li, 2010; Zimmerman, Fang, Mazumdar, & Rushton, 2007). It is worth noting that the pro‐
+
+posed approach and the Texas A&M Geocoding Services utilized the same reference data set, whereas Google 
+
+maintains its own reference data sets of unknown number, type, or quality, though these are typically assumed to 
+
+be numerous and of very high quality. Given the non‐normal distribution of spatial error and the relatively large 
+
+sample size (n > 30), a Wilcoxon signed‐rank test and a Student’s t‐test on the original and the log‐transformed 
+
+spatial error were performed to determine the significance of spatial error reduction, respectively (Goldberg & 
+
+Cockburn, 2012; Roongpiboonsopit & Karimi, 2010).
+
+4.2 | Results and discussion
+
+4.2.1 | Match rate
+
+Table 2 lists match rates from different geocoding systems. Google achieved the highest match rate. In comparison 
+
+to Base Reference, the proposed approach slightly reduced the overall match rate of 1.51%. The main reason for 
+
+this is that the proposed approach increases the granularity of match level. Each output produced by the approach 
+
+must match to a building rooftop, a higher spatial level, with matches at lower accuracy being thrown away. In 
+
+total, our approach produced 82.18% rooftop geocoded results, improving the building level match rate by 1.35% 
+
+from 80.83%. In contrast, there were 2.86% of geocodes in Base Reference which only matched to the street 
+
+YIN et al.level, a lower spatial accuracy level. Such trade‐offs between match rate and spatial accuracy have been shown in 
+
+previous studies as well (Zandbergen, 2008). Overall, our approach maintained a comparable match rate to that 
+
+of typical geocoding methods, even as it produced outputs with higher geographic levels of matches (rooftop vs. 
+
+    |  507
+
+street level).
+
+4.2.2 | Overall spatial accuracy
+
+Spatial accuracy is considered as a more important metric than match rate to demonstrate the quality of a geoco‐
+
+ding method (Grubesic & Murray, 2004; Zandbergen, 2008, 2009; Goldberg & Cockburn, 2010; Goldberg, 2011). 
+
+To assess spatial accuracy, we filtered out unmatched records from each system and grouped outputs by feature 
+
+matching scenarios, which refer to different typical geocoding methods. The descriptive statistics (Table 3) and 
+
+the cumulative distribution of spatial error (Figure 4) show that the proposed approach significantly reduced spa‐
+
+tial error compared to typical geocoding methods (i.e. Base Reference) in both feature matching scenarios.
+
+In  Table  3,  compared  to  Base  Reference  in  the  exact  feature  matching  scenario  (i.e.  address  point/polygon 
+
+geocoding  method),  our  approach  reduced  the  average  and  the  median  spatial  error  by  4.96  m  (from  16.76  to 
+
+11.80  m)  and  by  7.96  m  (from  9.54  to  1.58  m),  respectively.  Our  approach  also  outperformed  Google  in  this 
+
+scenario, producing outputs with smaller spatial error, even though we did not have access to their luxury ref‐
+
+erence data set. The spatial error reduction produced by our approach was shown to be statistically significant 
+
+in comparison to these two systems (p < .001). Such improvement was gained because our approach can place 
+
+the output closer to the true building location with the help of rooftop detection, as shown in Figure 5. Figure 5 
+
+TA B L E   3  Descriptive statistics for overall spatial error (m) in exact and fuzzy feature matching scenarios
+
+Exact feature matching
+
+Fuzzy feature matching
+
+Statistics
+
+DLRooftop
+
+Base Reference
+
+Google
+
+DLRooftop
+
+Base Reference
+
+Google
+
+0.96
+
+1.58
+
+2.60
+
+11.80
+
+25th percentile
+
+50th percentile
+
+75th percentile
+
+Average
+
+p (t‐test)
+
+p (Wilcoxon)
+
+6.49
+
+9.54
+
+13.45
+
+16.76
+
+<0.001
+
+<0.001
+
+16.31
+
+35.61
+
+94.51
+
+79.36
+
+1.60
+
+2.49
+
+3.69
+
+951
+
+<0.001
+
+<0.001
+
+47.98
+
+84.46
+
+180.56
+
+130.46
+
+<0.001
+
+<0.001
+
+2.94
+
+10.11
+
+39.73
+
+62.46
+
+<0.001
+
+<0.001
+
+F I G U R E   4  Cumulative distribution of spatial error in exact feature matching  (left) and fuzzy feature matching 
+(right) scenarios
+
+YIN et al.508  |    
+
+F I G U R E   5  Output for small‐size (left) and large‐size parcels (right) in exact matching scenarios
+
+(left) shows that our approach and Google can place the output at the rooftop centroid which is close to the true 
+
+location, whereas the Base Reference output was far away from the actual building location, depending on the 
+
+spatial accuracy of reference data. In Figure 5 (right), Base Reference output the centroid of the parcel, since an 
+address point reference data could not be found. However, the parcel centroid may not be the building’s location, 
+
+especially for a large size parcel, which is known to be a major drawback of address polygon interpolation methods 
+
+(Cayo & Talbot, 2003). Because our approach is able to detect the building rooftop, we do not need to conduct 
+
+this interpolation to generate an output.
+
+As can be seen in the fuzzy feature matching scenario of Table 3 Google produced the most accurate results 
+
+because it resulted in a rooftop match level for input addresses. These addresses could not be found in the ad‐
+
+dress point or address polygon reference data sets employed by our approach and Base Reference, therefore Base 
+
+Reference performed the street geocoding method. Unlike street geocoding, which conducts its linear interpola‐
+
+tion only on address ranges, our approach is able to estimate the input address location utilizing nearby buildings 
+
+(Algorithm 4). As shown in Figure 6 (left), for an input address 2820, two nearby house numbers (yellow triangles) 
+
+with the same parity as the input address were retrieved, and 2818 was determined as the benchmark address 
+
+due to the smaller numeric difference related to the input address. Since 2820 is only one magnitude away from 
+
+the benchmark address, we chose the nearest candidate as the final output. Figure 6 (right) demonstrates that this 
+
+method also applied to commercial addresses, even though only one nearby house number has been identified. In 
+
+contrast, Base Reference outputs (orange dots) were far away from the true data for these two cases due to the 
+
+limitations of street geocoding. Our approach reduced the average and the median spatial error of Base Reference 
+
+F I G U R E   6  Output for a low‐density residential address (left) and a commercial address (right) in fuzzy 
+feature matching scenarios
+
+YIN et al.    |  509
+
+by 51.10 m (from 130.46 to 79.36 m) and by 48.85 m (from 84.46 to 35.61 m), respectively. Such spatial error 
+
+reduction resulting from our approach was seen to be statistically significant (p < .001).
+
+These  examples  in  Figures  5  and  6  also  demonstrate  that  our  approach  has  the  potential  to  generate  new 
+
+address  point  level  reference  data,  when  the  original  reference  data  are  not  precise  enough  or  not  available. 
+
+However, it is worth noting that the quality of reference data could impact the output quality, as it may suggest 
+
+an incorrect searching zone. For example, the initial geographic context for the input address “901 Texas Ave” 
+
+resolved at the location of “901 S Texas Ave,” because this reference datum missed the directional component of 
+
+the input address. Thus, the final output was also pinpointed at the incorrect location. This may be one reason for 
+
+the large spatial error variance observed in Figure 4 and Table 3, namely, where the curves for each geocoding 
+
+system result overlap near the 100% mark and the large difference between the mean and the median spatial error 
+
+produced by our approach. The main reason for this phenomenon is the geocoding performance results varying by 
+
+different land‐use types, which is observed in previous studies as well (Zandbergen, 2008; Delmelle et al., 2017; 
+
+Cayo & Talbot, 2003).
+
+4.2.3 | Spatial accuracy for different land‐use types
+
+To further explore the performance variations seen in the results of this testing, we grouped geocoded results 
+
+by land‐use types. The descriptive statistics of spatial error for each land‐use type in the exact and fuzzy feature 
+
+matching scenarios were summarized in Tables 4 and 5, respectively. Both tables show a similar pattern for each 
+
+feature matching scenario: our approach performed better for low‐density residential and commercial addresses 
+
+than for high‐density addresses in terms of reducing spatial error from Base Reference. As can be seen from these 
+
+two tables, for low‐density residential addresses, our approach reduced the mean spatial error of Base Reference 
+
+by 4.95 m (from 13.42 to 8.47 m) in the exact feature matching scenario and by 45.57 m (from 81.71 to 36.14 m) 
+
+in the fuzzy feature matching scenario, respectively. For commercial addresses, our approach reduced the mean 
+
+spatial error of Base Reference by 9.40 m (from 85.59 to 76.19 m) in the exact feature matching and by 152.28 m  
+
+(from 215.64 to 63.36 m) in the fuzzy feature matching scenario, respectively. For high‐density residential ad‐
+
+dresses,  our  approach  delivered  output  with  the  similar  mean  spatial  error  to  Base  Reference  in  each  feature 
+
+matching scenario. The statistical analysis also showed that in comparison to Base Reference, the spatial error 
+
+reduction resulting from our approach for low‐density residential and commercial addresses was significant but 
+
+not for high‐density residential addresses in both feature matching scenarios.
+
+Such variation in performance can be explained by the building distribution and the detail of reference data 
+
+sets  for  different  land‐use  types.  The  reference  data  set  of  low‐density  residential  addresses  usually  contains 
+
+house  number  information  for  each  parcel  or  each  building.  Such  information  helps  our  approach  to  precisely 
+
+pinpoint to the correct parcel and detect the rooftop centroid without being affected by the parcel size or nearby 
+
+buildings  in  the  exact  feature  matching  scenario,  as  shown  in  Figure  5.  The  regular  distribution  of  low‐density 
+
+residential buildings, shown in Figure 6, helps to estimate the input address location using nearby house numbers 
+
+in  the  fuzzy  feature  matching  scenario.  Similarly  to  low‐density  residential  buildings,  commercial  buildings  are 
+
+aligned regularly in a large‐size parcel, and reference data sets for commercial addresses, known as POI data sets, 
+
+are often well detailed. Thus, the spatial error reduction for commercial addresses by our approach was compa‐
+
+rable to that for low‐density addresses. In contrast, reference data sets for high‐density residential addresses (i.e. 
+
+apartment complexes or multi‐unit buildings) are less detailed (i.e. they do not contain house number or unit num‐
+
+ber information for each building) (Zandbergen & Green, 2007), and the building distribution can be ambiguous.
+
+Even  though we  can  detect  the  number  of  buildings  in  a  complex,  it  is  difficult  to  assign  an  address  to  each 
+
+building in the parcel using a generic building distribution rule. Thus, our approach output the centroid (blue dot) of a 
+
+convex hull (red outline) composed from each of the detected rooftops, as shown in Figure 7‐(left). Even though this 
+
+centroid is weighted by building location, it still shares the same drawback of typical address polygon interpolated 
+
+methods. For multi‐unit apartments, a single building contains multiple addresses. As shown in Figure 7 (right), each 
+
+YIN et al.510  |    
+
+e
+
+l
+
+g
+o
+o
+G
+
+e
+c
+n
+e
+r
+e
+f
+e
+R
+e
+s
+a
+B
+
+ 
+
+p
+o
+t
+f
+o
+o
+R
+L
+D
+
+e
+
+l
+
+g
+o
+o
+G
+
+e
+c
+n
+e
+r
+e
+f
+e
+R
+e
+s
+a
+B
+
+ 
+
+p
+o
+t
+f
+o
+o
+R
+L
+D
+
+e
+
+l
+
+g
+o
+o
+G
+
+e
+c
+n
+e
+r
+e
+f
+e
+R
+e
+s
+a
+B
+
+ 
+
+p
+o
+t
+f
+o
+o
+R
+L
+D
+
+s
+c
+i
+t
+s
+i
+t
+a
+t
+S
+
+6
+9
+2
+
+.
+
+2
+8
+6
+
+.
+
+2
+6
+9
+1
+
+.
+
+.
+
+5
+8
+9
+0
+4
+
+1
+0
+0
+0
+<
+
+.
+
+0
+2
+0
+0
+
+.
+
+2
+4
+1
+1
+
+.
+
+4
+0
+2
+2
+
+.
+
+7
+3
+1
+4
+
+.
+
+.
+
+9
+5
+5
+8
+
+1
+0
+0
+0
+<
+
+.
+
+1
+0
+0
+0
+<
+
+.
+
+8
+1
+2
+
+.
+
+4
+6
+5
+
+.
+
+5
+2
+1
+2
+
+.
+
+.
+
+9
+1
+6
+7
+
+9
+8
+2
+
+.
+
+5
+9
+4
+
+.
+
+8
+8
+7
+
+.
+
+1
+0
+0
+0
+<
+
+.
+
+1
+0
+0
+0
+<
+
+.
+
+.
+
+2
+7
+0
+1
+
+2
+3
+4
+
+.
+
+6
+7
+7
+
+.
+
+.
+
+4
+1
+0
+2
+
+4
+0
+8
+8
+
+.
+
+3
+4
+0
+
+.
+
+3
+2
+0
+0
+
+.
+
+5
+3
+3
+
+.
+
+4
+9
+7
+
+.
+
+5
+8
+1
+2
+
+.
+
+1
+4
+9
+8
+
+.
+
+7
+5
+1
+
+.
+
+5
+4
+2
+
+.
+
+5
+5
+3
+
+.
+
+4
+8
+9
+
+1
+0
+0
+0
+<
+
+.
+
+1
+0
+0
+0
+<
+
+.
+
+9
+4
+6
+
+.
+
+7
+4
+9
+
+.
+
+.
+
+4
+1
+3
+1
+
+.
+
+2
+4
+3
+1
+
+1
+0
+0
+0
+<
+
+.
+
+1
+0
+0
+0
+<
+
+.
+
+4
+9
+0
+
+.
+
+3
+5
+1
+
+.
+
+5
+4
+2
+
+.
+
+7
+4
+8
+
+.
+
+e
+
+l
+i
+t
+n
+e
+c
+r
+e
+p
+h
+t
+5
+2
+
+ 
+
+e
+
+l
+i
+t
+n
+e
+c
+r
+e
+p
+h
+t
+0
+5
+
+ 
+
+e
+
+l
+i
+t
+n
+e
+c
+r
+e
+p
+h
+t
+5
+7
+
+ 
+
+)
+
+n
+o
+x
+o
+c
+
+l
+i
+
+W
+
+(
+ 
+p
+
+e
+g
+a
+r
+e
+v
+A
+
+)
+t
+s
+e
+t
+‐
+t
+(
+ 
+p
+
+)
+
+7
+8
+4
+=
+n
+(
+ 
+l
+
+a
+i
+c
+r
+e
+m
+m
+o
+C
+
+)
+
+3
+3
+3
+=
+n
+(
+ 
+l
+
+a
+i
+t
+n
+e
+d
+
+i
+s
+e
+r
+ 
+y
+t
+i
+s
+n
+e
+d
+‐
+h
+g
+H
+
+i
+
+)
+
+,
+
+8
+3
+1
+7
+1
+=
+n
+(
+ 
+l
+
+a
+i
+t
+n
+e
+d
+
+i
+s
+e
+r
+ 
+y
+t
+i
+s
+n
+e
+d
+‐
+w
+o
+L
+
+i
+
+ 
+
+o
+i
+r
+a
+n
+e
+c
+s
+ 
+g
+n
+h
+c
+t
+a
+m
+e
+r
+u
+t
+a
+e
+f
+ 
+t
+c
+a
+x
+e
+e
+h
+t
+ 
+n
+
+ 
+
+i
+ 
+s
+e
+p
+y
+t
+ 
+e
+s
+u
+‐
+d
+n
+a
+l
+ 
+s
+s
+o
+r
+c
+a
+ 
+)
+
+m
+
+(
+ 
+r
+o
+r
+r
+e
+
+ 
+l
+
+a
+
+i
+t
+a
+p
+s
+ 
+f
+o
+ 
+s
+c
+i
+t
+s
+i
+t
+a
+t
+s
+ 
+e
+v
+
+i
+t
+p
+i
+r
+c
+s
+e
+D
+ 
+4
+
+ 
+
+E
+L
+B
+A
+T
+
+YIN et al.    |  511
+
+e
+
+l
+
+g
+o
+o
+G
+
+e
+c
+n
+e
+r
+e
+f
+e
+R
+e
+s
+a
+B
+
+ 
+
+p
+o
+t
+f
+o
+o
+R
+L
+D
+
+e
+
+l
+
+g
+o
+o
+G
+
+e
+c
+n
+e
+r
+e
+f
+e
+R
+e
+s
+a
+B
+
+ 
+
+p
+o
+t
+f
+o
+o
+R
+L
+D
+
+e
+
+l
+
+g
+o
+o
+G
+
+e
+c
+n
+e
+r
+e
+f
+e
+R
+e
+s
+a
+B
+
+ 
+
+p
+o
+t
+f
+o
+o
+R
+L
+D
+
+s
+c
+i
+t
+s
+i
+t
+a
+t
+S
+
+7
+3
+3
+
+.
+
+5
+1
+6
+
+.
+
+.
+
+2
+9
+3
+1
+
+.
+
+9
+7
+0
+3
+
+1
+0
+0
+0
+
+.
+
+1
+0
+0
+0
+<
+
+.
+
+.
+
+9
+3
+9
+0
+1
+
+.
+
+1
+0
+1
+1
+2
+
+.
+
+4
+6
+5
+1
+2
+
+1
+0
+0
+0
+<
+
+.
+
+1
+0
+0
+0
+<
+
+.
+
+6
+8
+9
+6
+
+.
+
+8
+2
+1
+2
+
+.
+
+6
+3
+6
+5
+
+.
+
+7
+3
+9
+8
+
+.
+
+.
+
+6
+3
+3
+6
+
+.
+
+8
+9
+1
+8
+1
+
+9
+2
+
+.
+
+0
+8
+3
+
+.
+
+1
+6
+8
+2
+2
+
+.
+
+4
+1
+0
+4
+
+6
+0
+0
+0
+
+.
+
+7
+2
+0
+0
+
+.
+
+2
+5
+
+.
+
+8
+5
+1
+
+.
+
+5
+5
+1
+2
+2
+
+.
+
+3
+1
+3
+9
+2
+
+.
+
+3
+1
+7
+1
+2
+
+5
+9
+3
+0
+
+.
+
+4
+7
+2
+
+.
+
+.
+
+0
+1
+9
+0
+1
+
+.
+
+3
+8
+2
+7
+2
+
+.
+
+9
+0
+5
+0
+3
+
+.
+
+3
+3
+6
+2
+2
+
+7
+3
+2
+
+.
+
+6
+0
+6
+
+.
+
+2
+8
+9
+1
+
+.
+
+.
+
+4
+9
+6
+1
+
+1
+0
+0
+0
+<
+
+.
+
+1
+0
+0
+0
+<
+
+.
+
+6
+8
+6
+3
+
+.
+
+.
+
+3
+4
+3
+6
+
+5
+4
+9
+9
+
+.
+
+.
+
+1
+7
+1
+8
+
+1
+0
+0
+0
+<
+
+.
+
+1
+0
+0
+0
+<
+
+.
+
+.
+
+1
+1
+2
+1
+
+3
+6
+2
+2
+
+.
+
+8
+8
+0
+4
+
+.
+
+.
+
+4
+1
+6
+3
+
+e
+
+l
+i
+t
+n
+e
+c
+r
+e
+p
+h
+t
+5
+2
+
+ 
+
+e
+
+l
+i
+t
+n
+e
+c
+r
+e
+p
+h
+t
+0
+5
+
+ 
+
+e
+
+l
+i
+t
+n
+e
+c
+r
+e
+p
+h
+t
+5
+7
+
+ 
+
+)
+
+n
+o
+x
+o
+c
+
+l
+i
+
+W
+
+(
+ 
+p
+
+e
+g
+a
+r
+e
+v
+A
+
+)
+t
+s
+e
+t
+‐
+t
+(
+ 
+p
+
+)
+
+9
+5
+=
+n
+(
+ 
+l
+
+a
+i
+c
+r
+e
+m
+m
+o
+C
+
+)
+
+7
+7
+=
+n
+(
+ 
+l
+
+a
+i
+t
+n
+e
+d
+
+i
+s
+e
+r
+ 
+y
+t
+i
+s
+n
+e
+d
+‐
+h
+g
+H
+
+i
+
+)
+
+0
+4
+2
+=
+n
+(
+ 
+l
+
+a
+i
+t
+n
+e
+d
+
+i
+s
+e
+r
+ 
+y
+t
+i
+s
+n
+e
+d
+‐
+w
+o
+L
+
+i
+
+ 
+
+o
+i
+r
+a
+n
+e
+c
+s
+ 
+g
+n
+h
+c
+t
+a
+m
+e
+r
+u
+t
+a
+e
+f
+ 
+y
+z
+z
+u
+f
+ 
+e
+h
+t
+ 
+n
+
+i
+ 
+s
+e
+p
+y
+t
+ 
+e
+s
+u
+‐
+d
+n
+a
+l
+ 
+s
+s
+o
+r
+c
+a
+ 
+)
+
+m
+
+(
+ 
+r
+o
+r
+r
+e
+
+ 
+l
+
+a
+
+i
+t
+a
+p
+s
+ 
+f
+o
+ 
+s
+c
+i
+t
+s
+i
+t
+a
+t
+s
+ 
+e
+v
+
+i
+t
+p
+i
+r
+c
+s
+e
+D
+ 
+5
+
+ 
+
+E
+L
+B
+A
+T
+
+YIN et al.512  |    
+
+F I G U R E   7  Two examples of output for high‐density residential addresses
+
+address only occupied a small portion of a rooftop. However, the building centroid detection process output only one 
+
+centroid per rooftop, generalizing multiple address locations as one. These factors explain why the spatial error in the 
+
+output from our approach was similar to Base Reference in both scenarios for this land‐use type.
+
+4.2.4 | Sources of Uncertainty and Limitations
+
+To increase the transparency of our proposed approach, provide insight for studies which utilize our results, and 
+
+motivate future improvement, we summarize the uncertainties and limitations that exist in the workflow.
+
+First, building rooftop extraction played a critical role in determining the final output. This process relied on 
+
+an aerial image obtained from online map services. Thus, the uncertainty of the map source from the perspectives 
+
+of image quality and temporal accuracy would impact the quality of geocoded outputs, resulting in a lower match 
+
+rate and a larger spatial error. The detection process could be limited by the training data set. Arguably, our train‐
+
+ing data set was relatively small and we only labeled building rooftops, omitting other common objects appearing 
+
+in human‐housing areas such as swimming pools or vehicles. Even though the performance of the Faster R‐CNN 
+
+has been demonstrated in the past (He et al., 2014), it could not guarantee that all buildings on the input images 
+
+would be precisely detected. In addition, the output bounding box from the detection model resulted in a planar 
+
+surface being used to calculate the centroid coordinates, which may limit the coordinate accuracy.
+
+Second,  in  addition  to  the  reference  data  quality,  the  address  parsing  and  the  feature  matching  processes 
+
+could also lead to incorrect initial geographic context for building rooftop detection, eventually impacting the final 
+
+output. In this work we only employed the deterministic feature matching approach for the geographic context re‐
+
+trieval, and input addresses were well formatted. To deal with more sophisticated input addresses and to improve 
+
+the accuracy of the initial geographic context retrieval, more efforts should be made to develop address parsing 
+
+and feature matching algorithms.
+
+Third, while the candidate selection strategy is specific to land‐use types, it still has limitations. Since the refer‐
+
+ence data sets used here did not provide land‐use information, we differentiated land‐use types by the number of 
+
+buildings chosen from empirical testing. This may limit the accuracy of our judgment. For apartment complex ad‐
+
+dresses, without a rule to assign a house number to each building, we only can weight the output by nearby build‐
+
+ing location, which largely limits the output accuracy. When multiple candidates align on a street, we determined 
+
+the best candidate by candidate locations related to a benchmark address and the house number difference. Even 
+
+though this algorithm does not use assumptions that are made by street geocoding, it also relies on the distribu‐
+
+tions of buildings and house numbers. If the difference between input house number and the benchmark house 
+
+number is too large, or the building distribution is irregular, this method may lead to output of low spatial accuracy.
+
+YIN et al.    |  513
+
+5 |  CO N C LU S I O N S  A N D FU T U R E WO R K
+
+The output quality of geocoding systems has long been limited by typical geocoding interpolation methods and 
+
+reference data sets. In this work we present a novel geocoding approach utilizing object detection based on a 
+
+deep learning framework to generate rooftop geocoding output. Specifically, we introduce a method to obtain 
+
+coordinates of building rooftop centroids using the Faster R‐CNN model from aerial imagery and integrate this 
+
+method into a geocoding process. Then we develop a series of centroid candidate selection methods specific to 
+
+this workflow. Compared to typical geocoding methods, clear spatial error reduction resulting from our approach 
+
+is observed, while maintaining a comparable match rate. The variation in performance of our approach for differ‐
+
+ent land‐use types is found to be due to the building distributions and detail of reference data sets.
+
+One future work direction would be to increase the spatial accuracy of geocoded outputs. As discussed, the 
+
+spatial  accuracy  is  limited  by  the  availability  of  land‐use  information  and  a  generic  rule  that  describes  building 
+
+distributions. Thus, we plan to develop a better method to derive land‐use types from input imagery and incorpo‐
+
+rate available local knowledge into the geocoding process to deliver an optimal result. Also, we plan to evaluate 
+
+advanced  detection  models,  refine  address  parsing  and  feature  matching  algorithms,  and  adopt  them  into  the 
+
+present approach to further improve output quality. Another future direction would be to extend and apply this 
+
+approach to search the location of different objects and to generate highly accurate address or POI reference 
+
+data. This requires more efforts toward targeted training data set collections and model setup.
+
+Zhengcong Yin 
+
+ https://orcid.org/0000‐0001‐7199‐5517 
+
+O R C I D
+
+R E F E R E N C E S
+
+Bakshi, R., Knoblock, C. A., & Thakkar, S. (2004). Exploiting online sources to accurately geocode addresses. In Proceedings 
+of the 12th Annual ACM International Workshop on Geographic Information Systems (pp. 194–203). New York: ACM.
+Boscoe, F. P. (2008). The science and art of geocoding: Tips for improving match rates and handling unmatched cases in 
+analysis. In G. Rushton, M. P. Armstrong, J. Gittler, B. R. Greene, C. E. Pavlik, M. M. West, & D. L. Zimmerman (Eds.), 
+Geocoding health data: The use of geographic codes in cancer prevention and control, research and practice (pp. 95–110). 
+Boca Raton, FL: CRC Press.
+
+Cayo, M. R., & Talbot, T. O. (2003). Positional error in automated geocoding of residential addresses. International Journal 
+
+of Health Geographics, 2(1), 10.
+
+Chen, F., Ren, R., Van de Voorde, T., Xu, W., Zhou, G., & Zhou, Y. (2018). Fast automatic airport detection in remote sens‐
+
+ing images using convolutional neural networks. Remote Sensing 10(3), 443.
+
+Chen, X., Xiang, S., Liu, C.‐L., & Pan, C.‐H. (2014). Vehicle detection in satellite images by hybrid deep convolutional neural 
+
+networks. IEEE Geoscience and Remote Sensing Letters 11(10), 1797–1801.
+
+Delmelle, E., Tang, W., Zheng, M., Lan, Y., & Owusu, C. (2017). Geocoding fundamentals and associated challenges. In H. 
+A. Karimi & B. Karimi (Eds.), Geospatial data science techniques and applications (pp. 57–78). Boca Raton, FL: CRC Press.
+Girshick, R. (2015). Fast R‐CNN. In Proceedings of the IEEE International Conference on Computer Vision (pp. 1440–1448). 
+
+Piscataway, NJ: IEEE.
+
+Girshick, R., Donahue, J., Darrell, T., & Malik, J. (2014). Rich feature hierarchies for accurate object detection and se‐
+mantic segmentation. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognitionp. 580–587). 
+Piscataway, NJ: IEEE.
+
+Goldberg, D. W. (2008). A geocoding best practices guide. Springfield, IL: North American Association of Cancer Registries.
+Goldberg, D. W. (2011). Improving geocoding match rates with spatially‐varying block metrics. Transactions in GIS, 15(6), 
+
+Goldberg,  D.  W.  (2013).  Geocoding  techniques  and  technologies  for  location‐based  services.  In  H.  A.  Karimi  (Ed.), 
+
+Advanced location‐based technologies and services (pp. 75–106). Boca Raton, FL: CRC Press.
+
+Goldberg, D. W., & Cockburn, M. G. (2010). Improving geocode accuracy with candidate selection criteria. Transactions 
+
+829–850.
+
+in GIS, 14(s1), 149–176.
+
+YIN et al.514  |    
+
+Goldberg, D. W., & Cockburn, M. G. (2012). The effect of administrative boundaries and geocoding error on cancer rates 
+
+in California. Spatial and Spatio‐temporal Epidemiology, 3(1), 39–54.
+
+Goldberg, D. W., Jacquez, G. M., & Mullan, N. (2013). Geocoding and health. In F. P. Boscoe (Ed.), Geographic health data: 
+
+Fundamental techniques for analysis (pp. 51–71). Wallingford, Oxfordshire, UK: CAB International.
+
+Goldberg, D. W., Wilson, J. P., & Knoblock, C. A. (2007). From text to geographic coordinates: The current state of geoc‐
+
+oding. URISA Journal, 19(1), 33–47.
+
+Grubesic, T. H., & Murray, A. T. (2004). Assessing positional uncertainty in geocoded data. In Proceedings of the 24th Urban 
+
+Data Management Symposium. Delft, Netherlands: UDMS.
+
+He, K., Zhang, X., Ren, S., & Sun, J. (2014). Spatial pyramid pooling in deep convolutional networks for visual recogni‐
+tion. In D. Fleet, T. Pajdla, B. Schiele, & T. Tuytelaars (Eds.), Computer Vision—ECCV 2014: 13th European Conference, 
+Proceedings, Part III (pp. 346–361). Cham, Switzerland: Springer‐Verlag.
+
+He,  K.,  Zhang,  X.,  Ren,  S.,  &  Sun,  J.  (2016).  Deep  residual  learning  for  image  recognition.  In  Proceedings  of  the  IEEE 
+
+Conference on Computer Vision and Pattern Recognition (pp. 770–778). Piscataway, NJ: IEEE.
+
+Jacquez,  G.  M.  (2012).  A  research  agenda:  Does  geocoding  positional  error  matter  in  health  GIS  studies?  Spatial  and 
+
+Murray, A. T., Grubesic, T. H., Wei, R., & Mack, E. A. (2011). A hybrid geocoding methodology for spatio‐temporal data. 
+
+Spatio‐temporal Epidemiology, 3(1), 7–16.
+
+Transactions in GIS, 15(6), 795–809.
+
+Nuvolone, D., della Maggiore, R., Maio, S., Fresco, R., Baldacci, S., Carrozzi, L., ... Viegi, G. (2011). Geographical informa‐
+tion system and environmental epidemiology: A cross‐sectional spatial analysis of the effects of traffic‐related air 
+pollution on population respiratory health. Environmental Health, 10(1), 12.
+
+Roongpiboonsopit,  D.,  &  Karimi,  H.  A.  (2010).  Quality  assessment  of  online  street  and  rooftop  geocoding  services. 
+
+Cartography and Geographic Information Science, 37(4), 301–318.
+
+Rose, K. M., Wood, J. L., Knowles, S., Pollitt, R. A., Whitsel, E. A., Diez Roux, A. V., ... Heiss, G. (2004). Historical measures 
+of social context in life course studies: Retrospective linkage of addresses to decennial censuses. International Journal 
+of Health Geographics, 3(1), 27.
+
+Rushton, G., Armstrong, M. P., Gittler, J., Greene, B. R., Pavlik, C. E., West, M. M., & Zimmerman, D. L. (2006). Geocoding 
+
+in cancer research: A review. American Journal of Preventive Medicine, 30(2), S16–S24.
+
+Schultz,  A.,  Beyer,  K.,  &  Rushton,  G.  (2007).  Using  ZIP  codes  as  geocodes  in  cancer  research.  In  G.  Rushton,  M.  P. 
+Armstrong, J. Gittler, B. R. Greene, C. E. Pavlik, M. M. West, & D. L. Zimmerman (Eds.), Geocoding health data. The 
+use of geographic codes in cancer prevention and control, research and practice (pp. 37‐67). Boca Raton, FL: CRC Press.
+Vieira, V., Fraser, A., Webster, T., Howard, G. J., & Bartell, S. (2008). Accuracy of automated and E911 geocoding methods 
+
+for rural addresses. Epidemiology, 19(6), S352.
+
+Washburn, E. P., Orza, M. J., Berlin, J. A., Nicholson, M. J., Todd, A. C., Frumkin, H., & Chalmers, T. C. (1994). Residential 
+proximity  to  electricity  transmission  and  distribution  equipment  and  risk  of  childhood  leukemia,  childhood  lym‐
+phoma, and childhood nervous system tumors: Systematic review, evaluation, and meta‐analysis. Cancer Causes & 
+Control, 5(4), 299–309.
+
+Xu, T.‐B., Cheng, G.‐L., Yang, J., & Liu, C.‐L. (2016). Fast aircraft detection using end‐to‐end fully convolutional network. 
+In Proceedings of the 21st IEEE International Conference on Digital Signal Processing (pp. 139–143). Piscataway, NJ: IEEE.
+Zandbergen, P. A. (2008). A comparison of address point, parcel and street geocoding techniques. Computers, Environment 
+
+and Urban Systems, 32(3), 214–232.
+
+Zandbergen, P. A. (2009). Geocoding quality and implications for spatial analysis. Geography Compass, 3(2), 647–680.
+Zandbergen, P. A., & Green, J. W. (2007). Error and bias in determining exposure potential of children at school locations 
+
+using proximity‐based GIS techniques. Environmental Health Perspectives, 115(9), 1363.
+
+Zimmerman, D. L., Fang, X., Mazumdar, S., & Rushton, G. (2007). Modeling the probability distribution of positional errors 
+
+incurred by residential address geocoding. International Journal of Health Geographics, 6(1), 1.
+
+Zimmerman, D. L., & Li, J. (2010). The effects of local street network characteristics on the positional accuracy of auto‐
+
+mated geocoding for geographic health studies. International Journal of Health Geographics, 9(1), 10.
+
+How to cite this article: Yin Z, Ma A, Goldberg DW. A deep learning approach for rooftop geocoding. 
+
+Transactions in GIS. 2019;23:495–514. https ://doi.org/10.1111/tgis.12536 
+
+YIN et al.

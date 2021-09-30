@@ -1,0 +1,1419 @@
+Geoinformatica (2013) 17:325–352
+DOI 10.1007/s10707-012-0154-y
+
+STHist-C: a highly accurate cluster-based histogram
+for two and three dimensional geographic data points
+
+Hai Thanh Mai · Jaeho Kim · Yohan J. Roh · Myoung Ho Kim
+
+Received: 21 July 2011 / Revised: 20 November 2011 /
+Accepted: 23 January 2012 / Published online: 10 February 2012
+© Springer Science+Business Media, LLC 2012
+
+Abstract Histograms have been widely used for estimating selectivity in query
+optimization. In this paper, we propose a new histogram construction method for
+geographic data objects that are used in many real-world applications. The proposed
+method is based on analyses and utilization of clusters of objects that exist in
+a given data set, to build histograms with significantly enhanced accuracy. Our
+philosophy in allocating the histogram buckets is to allocate them to the subspaces
+that properly capture object clusters. Therefore, we first propose a procedure to
+find the centers of object clusters. Then, we propose an algorithm to construct the
+histogram buckets from these centers. The buckets are initialized from the clusters’
+centers, then expanded to cover the clusters. Best expansion plans are chosen based
+on a notion of skewness gain. Results from extensive experiments using real-life
+data sets demonstrate that the proposed method can really improve the accuracy
+of the histograms further, when compared with the current state of the art histogram
+construction method for geographic data objects.
+
+Keywords Spatial databases · Geographic Information Systems ·
+Query optimization · Histograms · Selectivity estimation
+
+H. T. Mai (B) · J. Kim · M. H. Kim
+
+Department of Computer Science, KAIST, 373-1 Guseong-Dong, Yuseong-Gu,
+Daejeon 305-701, South Korea
+e-mail: mhthanh@dbserver.kaist.ac.kr
+
+J. Kim
+e-mail: jaeho@dbserver.kaist.ac.kr
+
+M. H. Kim
+e-mail: mhkim@dbserver.kaist.ac.kr
+
+Y. J. Roh
+Samsung Advanced Institute of Technology, Samsung Electronics, Nongseo-dong, Giheung-gu,
+Yongin Si, Gyeonggi-Do 446-712, South Korea
+e-mail: yohan.roh@samsung.com
+
+326
+
+1 Introduction
+
+Geoinformatica (2013) 17:325–352
+
+In databases, estimating the selectivities of queries is an essential part of query
+optimization. Accurate selectivity estimates can help the query execution engine to
+choose the most efficient query plan. Therefore, over the last decades, the problem of
+selectivity estimation has been intensively investigated. Several selectivity estimation
+approaches have been proposed, such as histograms [5, 6, 9, 12, 14, 15, 25, 29, 30,
+32, 34], wavelet transformation [24, 35], singular value decomposition [29], discrete
+cosine transform [21], kernel estimators [8, 15], and sampling [16, 22]. Among these
+approaches, histograms have been shown to be one of the most popular and effective
+ways to obtain accurate estimates of selectivity [12, 15].
+
+Let D be a data set of our interest. A histogram H for D consists of a set of
+m buckets Bi (1 ≤ i ≤ m) where m is usually a system parameter. Each bucket Bi
+has its own data space Si and a frequency Fi indicating the number of data objects
+within Si. The data space Si is an interval, a rectangle, or a hyper-rectangle if the
+data objects have one, two, or higher than two dimensions, respectively. With these
+m buckets, H approximates the distribution of data in D. Now, suppose that a query
+Q on D is given by the user to retrieve data objects within a range SQ. An estimate
+of the selectivity of Q (i.e., the number of data objects in SQ) by using the histogram
+H, denoted by FQ(H), is typically computed as: FQ(H) =
+((|Si ∩ SQ|/|Si|) · Fi),
+under the intra-bucket uniform distribution assumption. Here, | | denotes the size of
+data space and (Si ∩ SQ) denotes the intersecting area of Si and SQ.
+
+m
+i=1
+
+(cid:2)
+
+In this work, we study the problem of constructing highly accurate histograms
+for selectivity estimation. We focus on the histograms for two or three-dimensional
+geographic points where updates do not frequently occur. Objects (i.e., points) in this
+form are generally used in Geographic Information Systems (GISs). The histogram
+must be constructed so that its estimated selectivity for the query must be close to
+the true selectivity of the query as much as possible. However, creating an accurate
+histogram for multi-dimensional data, including geographic data, is not an easy task.
+The number of buckets to be constructed, m, is often small due to the memory
+constraint and the aim of fast selectivity estimation. When the region of a query fully
+covers the region of a bucket B, we can use B’s object frequency directly. However,
+when the region of a query partially overlaps with or is fully contained in the region of
+B, the problem may arise. In these latter cases, the estimated selectivity value for the
+overlapping region between the query and B is computed in proportion to the size
+of this overlapping region. Here, if data objects are distributed uniformly within B,
+our estimation is close to the real object frequency. Otherwise, we are very likely to
+obtain wrong results. For instance, let us consider a bucket B and a query Q shown
+in Fig. 1. The size of the overlapping area between Q and B (i.e., the gray area in
+the figure) is 1/4 of the size of B. If uniform distribution of objects is assumed, the
+estimated selectivity of this overlapping region is 1/4 of the object frequency of B,
+i.e., 10. Nevertheless, since objects in B are not uniformly distributed and most of
+them group into a cluster of 35 objects whose region does not overlap with Q, the
+estimate 10 is far from the correct number 3.
+
+In real-life data sets, as the uniformity is rare and non-uniformity is naturally pop-
+ular, many histogram construction methods have addressed the skewness problem to
+some extent, e.g., MinSkew [6], GenHist [15], RkHist [12], STHist [30]. Among these
+methods, STHist [30] has been shown to be the most effective one for geographic
+
+Geoinformatica (2013) 17:325–352
+
+327
+
+Fig. 1 An example of the
+skewness problem in data
+distribution
+
+objects of two or three dimensions. In this paper, we propose a new histogram
+construction method, called Cluster-based STHist, shortly STHist-C, which is an
+improvement of the STHist method [30]. We use the same framework as that of
+STHist, but follow a new approach to overcome the data skewness problem more
+effectively. The main idea of this approach is to construct buckets from the clusters of
+objects in the given data set. Thus, in STHist-C, we first propose a procedure to find
+the centers of object clusters. Well-established statistical techniques are combined
+to determine the number of clusters in the data set. Then, a clustering algorithm
+is used to group objects into clusters and compute the clusters’ centers. Second,
+we propose an adaptive algorithm to construct the histogram buckets from these
+centers. The buckets are initialized from the centers, then expanded to all directions
+to properly cover the clusters. Best expansion plans are chosen based on a new
+notion of skewness gain. We conducted extensive experiments on real-life data sets.
+Two important results have been observed. First, both STHist and STHist-C provide
+significantly better performance than the other existing methods. Second, STHist-C
+further improves the performance of STHist by a considerable margin.
+
+The remainder of this paper is organized as follows. In Section 2, we discuss
+related work. In Section 3, we describe the proposed STHist-C method in detail.
+In Section 4, we present experimental results. Finally, in Section 5, we conclude the
+paper.
+
+2 Related Work
+
+Histograms have a rather long research history. A relatively full record of their
+history can be found in [18]. In the following, we review some important milestones
+and concentrate on the studies that are related to ours. Histograms were first
+investigated for one-dimensional data. Two early methods are the EquiWidth [20]
+and EquiHeight [28] histograms. In the EquiWidth histogram, a single dimensional
+point space is divided into a set of buckets so that the spread of values in each
+bucket is equivalent. In the EquiHeight histogram, buckets are constructed to
+represent equivalent frequency summations. The EquiHeight method was shown
+to provide significantly better selectivity estimation than the original EquiWidth
+
+328
+
+Geoinformatica (2013) 17:325–352
+
+method. Nevertheless, the performance of these methods when generalized for
+higher dimensional data, such as geographic data, is not satisfactory [6]. As a result,
+researchers began to investigate histograms for multi-dimensional data. The first
+multi-dimensional histogram method, named EquiDepth, was presented in [25]. It
+attempts to partition the data space, one dimension at a time, into a set of non-
+overlapping buckets. In the constructed histogram, each bucket contains the same
+number of data objects. Though the EquiDepth histograms can be constructed
+quickly, they seem to be not good at dealing with various cases of data skew when the
+data has multiple dimensions. Note that in using a histogram, uniform distribution of
+data objects in each bucket is a basic assumption. However, partitioning a multi-
+dimensional space into such buckets has been shown to be NP-hard [26]. Thus
+heuristics are often used to obtain approximately good answers.
+
+MHIST-2 [29] is an adaptive algorithm in which at each step, the most “critical”
+attribute is chosen for the partitioning of the data space. In a MaxDiff histogram, at
+each step MHIST-2 finds the attribute with the largest difference in source values
+(e.g., spread, frequency, or area) between adjacent values and places a bucket
+boundary between those values. Thus, when frequency is used as a source parameter,
+the resulting MaxDiff histogram approximately minimizes the variance of value
+frequencies within each bucket. In [6], a histogram construction method for spatial
+data, named MinSkew, was proposed. MinSkew initially approximates the original
+data set using a uniform grid. Then, it starts with a single bucket consisting of all
+data regions. For each bucket, it computes the spatial skew of the bucket and the
+split point along its dimensions that will produce the maximum reduction in spatial
+skew. Next, MinSkew picks the bucket whose split will lead to the greatest reduction
+in spatial skew, splits the bucket into two child buckets, and assigns data from the
+old bucket into the new buckets. However, the partitioning heuristics of MinSkew,
+for reducing the complexity of the optimal solution, is based on data skew in only
+one dimension at a time rather than considering the skew of multiple dimensions at
+once. In [15], the authors proposed a histogram technique named GenHist. The main
+difference between GenHist and the previously proposed methods is that GenHist
+allows buckets to overlap. This new method exploits the fact that, with the same
+number of bucket quota, the overlapping between buckets permits the data space
+to be partitioned into a higher number of regions. To build the histogram, GenHist
+uses multi-dimensional grids of various sizes. High-frequency grid cells are converted
+into buckets. More recently, a method named RkHist was introduced in [12]. RkHist
+builds histograms based on an R-tree space partitioning. It exploits the Hilbert space
+filling curve to generate an initial space partitioning, then uses a sliding window
+method, coupled with a new uniformity measure, to further improve the quality
+of the selectivity estimates. However, RkHist relies heavily on the Hilbert curve in
+partitioning the data space, which is rather rigid and is not flexible for a diversity of
+real-life data distribution.
+
+Besides statically computed histograms, such as those created by MinSkew [6],
+GenHist [15], and RkHist [12], there are dynamically generated histograms. For
+example, the Self-Tuning histogram [5] incrementally maintains buckets in response
+to feedback from the query execution engine about the actual selectivity of range
+selection operators. This approach can gracefully adapt buckets to the updates of
+the underlying data set. Nevertheless, the Self-Tuning histograms are not very good
+when the data skewness is high [5]. The StHoles method [9] also dynamically analyzes
+
+Geoinformatica (2013) 17:325–352
+
+329
+
+query results, instead of examining the data sets, to build histograms. Its philosophy
+is to allocate buckets only where needed the most as indicated by the query
+workload. The ISOMER algorithm [32] extends the basic StHoles model by using the
+information-theoretic principle of maximum entropy to refine the histogram based
+on query feedback. It automatically detects and eliminates inconsistent feedback
+information in an efficient manner and uses only the consistent ones. Besides, there
+are studies on maintenance of histograms in [13, 34]. Nonetheless, in this kind of
+histograms, because only the regions of queries that have been processed are used,
+only buckets related to those queries can be updated. Thus, updates in the other
+regions may not be reflected. Moreover, the feedback-based maintenance inevitably
+incurs additional overhead on the query processing.
+
+While the above histogram methods try to reduce the selectivity estimation error
+as much as possible, there are methods that aim at guaranteeing an upper bound on
+the estimation error [14, 19]. However, the error limit is available only for the case
+of one dimensional data.
+
+Beside histograms, there are alternative methods for selectivity estimation, such
+as wavelet transformation [24, 35], singular value decomposition [29], discrete cosine
+transform [21], kernel estimators [8, 15], and sampling [16, 22]. However, histograms
+have remained the most popular target for selectivity estimation due to their
+effectiveness and robustness across a wide variety of application domains [12, 15, 18].
+There are several types of geographic data in which points, regions (including
+bounding boxes), and lines are among the most popular ones. The STHist-C method
+proposed in this paper is designed to construct histograms for point data only.
+Although this method can construct histograms for regions if approximating a region
+by its center point is possible, we restrict the scope of STHist-C to point data. Note,
+however, that some other methods can be used to construct histograms for other
+types of geographic data beside points. For example, the MinSkew method [6] can
+handle both points and rectangular regions. We suppose that extending STHist-C for
+regions and line data is a promising future research direction.
+
+The STHist method It has been presented in [30] that the STHist method shows
+the best performance among the existing histogram methods for geographic data
+objects, i.e., objects of 2 or 3 dimensions, which are also target objects in our proposed
+method. Since our new STHist-C method is an improvement of STHist and shares
+some similarities with STHist, we review STHist in more detail here. Given a data
+
+Fig. 2 STHist’s bucket
+organization
+
+(a) Regions of buckets
+
+(b) The hotspot tree
+
+330
+
+Fig. 3 STHist’s hotspot
+detection
+
+Geoinformatica (2013) 17:325–352
+
+set together with the data space, STHist recursively detects hotspots, which are
+turned into histogram buckets. Here, a hotspot is a data region that satisfies certain
+conditions on the object frequency, the shape, and the size. These histogram buckets
+are hierarchically organized into a tree. The histogram is a collection of all these
+buckets. The authors of STHist also propose to construct more than one hotspot
+trees, each of which covers a different subregion of the entire data space. Figure 2
+shows an example of a hotspot tree where 6 buckets are used to capture the data
+distribution. Figure 2a shows the two-dimensional data space that is recursively
+partitioned into several subspaces by detecting hotspots. The tree-based organization
+of these hotspots is given in Fig. 2b.
+
+The most important part of STHist is the hotspot detection algorithm. Suppose
+that we want to find hotspots inside a bucket B to construct child buckets of B. The
+hotspot detection algorithm of STHist uses a sliding window which satisfies the shape
+and size conditions of a hotspot to scan the whole data space of B. Whenever this
+sliding window meets a region whose object frequency satisfies the object frequency
+condition of a hotspot, this region is picked as a hotspot and converted into a
+histogram bucket. When a hotspot is found, the sliding window is advanced to the
+remaining regions so that any two hotspots in the same nearest enclosing bucket, i.e.,
+any two sibling nodes in the bucket tree, are mutually exclusive. Figure 3 illustrates
+this hotspot detection algorithm where a sliding window is being used to scan the
+data space.
+
+STHist has been shown to be substantially more effective than the previous
+methods in constructing accurate histograms. However, STHist uses rather rigid
+conditions on the shape and size of a hotspot. Thus, even though the conditions of a
+hotspot are satisfied and a bucket is constructed correspondingly, this bucket might
+not capture the object clusters appropriately.
+
+3 The proposed method
+
+In this section, we present a new histogram construction method, called Cluster-based
+STHist (STHist-C), which is an improvement of the STHist method. STHist-C uses
+the same framework as that of STHist where buckets are recursively organized into
+trees.
+
+Geoinformatica (2013) 17:325–352
+
+331
+
+3.1 The framework
+
+We first sketch the basic idea of our method as follows.
+
+1. Suppose a set of data objects and their enclosing data space S are given. Let us
+
+create a root bucket that covers the entire data space S.
+
+2. Suppose in S, there are zero or more subspaces S1, . . . , Sn whose object densities
+
+are substantially higher than the average density of S.
+
+3. Let S(cid:4) be S − (S1 + . . . + Sn). That is, S(cid:4) is the remaining space of S after we take
+
+out S1, . . . , Sn from S. Then, it is very likely that
+a. The data uniformity of S1, . . . , Sn are better than that of S.
+b. The data uniformity of S(cid:4) is also better than that of S.
+We create a bucket for each S1, . . . , Sn.
+
+4. For each S1, . . . , Sn, we recursively apply the same idea until each of the
+
+subspaces are uniformly distributed.
+There are several ways to find such subspaces S1, . . . , Sn. In STHist, a sliding
+window is used to scan the data space S as we have mentioned in Section 2. In STHist-
+C, we find these subspaces by searching for the object clusters and then define the
+subspaces based on these clusters.
+
+Before describing STHist-C, we define two important notions, namely skewness
+and relative skewness of a data region, as follows. Note that, these definitions are the
+same as the ones in [30].
+
+Definition 1 (Skewness of a data region) Consider a data region B. Skew(B), which
+denotes the skewness of the data distribution in B, is computed as
+
+(cid:3)
+
+Skew(B) =
+
+(xr − ¯x)2
+
+(1)
+
+r
+where xr is the real object frequency at location r and ¯x is the estimate of the object
+frequency based on the uniform distribution assumption within B. In other words,
+Skew(B) is computed as the sum of squares of absolute errors for all the locations
+within B.
+
+Definition 2 (Relative skewness of a data region) Consider a set of data regions
+{B1, . . . , Bn}. The relative skewness of a data region Bi (i = 1, . . . , n) with respect
+to those in the set, denoted by RelSkew(Bi), is defined as follows.
+
+RelSkew(Bi) = Skew(Bi)/
+
+Skew(B j)
+
+(2)
+
+(cid:3)
+
+j=1..n
+
+For a bucket B, we will use Skew(B) and RelSkew(B) to denote “skewness of the
+data region of bucket B” and “relative skewness of the data region of bucket B”,
+respectively, if there is no ambiguity.
+
+Now, let D be the whole data set whose data space and object frequency are S
+and F, respectively. Let m be the total number of buckets that can be constructed.
+m is a system parameter and is often small [6]. Algorithm ConstructHistogram in
+Fig. 4 shows the main steps to construct an STHist-C histogram. These main steps
+are somewhat similar to those in STHist [30]. As in STHist, we initially partition
+
+332
+
+Geoinformatica (2013) 17:325–352
+
+Fig. 4 A histogram construction algorithm
+
+the entire data space S into m disjoint segments, i.e., data regions. These segments
+have approximately equal sizes. We combine two adjacent segments Si and S j if
+Skew(Si + S j) ≤ Skew(Si) + Skew(S j) where Si + S j denotes a segment that results
+from combining Si and S j. This process is repeated until no two adjacent segments are
+combined. Then, we remove segments that have no object. Let R = {G1, G2, . . . , Gk}
+be the set of the remaining segments. We apply the aforementioned basic idea to each
+of these segments. That is, for each segment Gi in R, we recursively find high-density
+subspaces and construct a tree of buckets to approximate the distribution of data
+objects in Gi. The collection of all these bucket trees then constitute our complete
+histogram.
+
+More specifically, for each data segment Gi in R, we initialize a root bucket Bi to
+cover all the objects in Gi (Line 4). A recursive algorithm ConstructBucketTree then
+will be called to construct descendant buckets within this root bucket and build Gi’s
+bucket tree (Line 7). Before the algorithm ConstructBucketTree is called, we have
+to determine the number of buckets that can be constructed in Gi. Let mr denote
+the total number of buckets that we still can use. We initialize mr = m − |R|, where
+|R| is the number of data segments (Line 2). This is because at least one bucket has
+already been reserved for the root node of each bucket tree. We compute the relative
+skewness RelSkew(Gi) of Gi with respect to all the segments in R (Line 5). Then, we
+assign NBi buckets to Gi out of mr buckets in proportion to Gi’s relative skewness as
+follows (Line 6):
+
+NBi = (cid:5)RelSkew(Gi) × mr(cid:6)
+
+(3)
+
+Here, NBi is the number of descendant buckets that can be constructed inside Bi.
+
+Finally, the bucket tree returned from the algorithm ConstructBucketTree is added
+to the histogram (Line 8). We also have to update mr and remove Gi from R. At the
+
+Geoinformatica (2013) 17:325–352
+
+333
+
+Fig. 5 A bucket tree construction algorithm
+
+end of Algorithm ConstructHistogram, the constructed histogram H is a collection
+of bucket trees of all data segments.
+
+Algorithm ConstructBucketTree shown in Fig. 5 constructs the bucket tree for Gi.
+The algorithm takes as input the root bucket B of this tree and the number of buckets
+to be constructed within B. We first find the centers of clusters of objects in B by
+using Algorithm FindClusterCenters, which will be described in Section 3.2. Then,
+we call Algorithm ConstructBucketsByExpansions, which will be introduced in Sec-
+tion 3.3, to construct child buckets of B by using these centers of clusters. When the
+number of child buckets of B returned by Algorithm ConstructBucketsByExpansions
+is less than the input quota (Line 5), the remaining quota is distributed to these child
+buckets which have just been constructed (Line 6–14). For each of the child buckets,
+the ConstructBucketTree algorithm is called recursively if the received bucket quota
+is greater than or equal to one (Line 9–12).
+
+3.2 Finding centers of clusters
+
+Buckets of the histogram should properly capture the object clusters. This is because
+the object frequencies of the regions covered by these clusters are intuitively higher
+than those of the remaining regions. To construct buckets that capture the object
+clusters properly, we first find the centers of these clusters, then from these centers,
+we construct the buckets. How to construct the buckets effectively will soon be
+discussed in Section 3.3. In this section, we present how to find the centers of the
+object clusters.
+
+334
+
+Geoinformatica (2013) 17:325–352
+
+Let k∗ denote the number of clusters of objects in a bucket B. Suppose that k∗ is
+known. Then, we can use a clustering algorithm with k∗ being an input parameter.
+When the resulting clusters are obtained, we can easily compute the centers of these
+clusters from the coordinates of their objects.
+
+To partition objects into clusters, various clustering algorithms can be used [31,
+36]. In this work, we choose to use the k-means clustering algorithm [23] since it is
+intuitive, fast, and gives relatively good clustering results. For the k-means algorithm
+to run, a number of seeds have to be chosen as the initial members of the k clusters.
+The cluster seeds can be chosen randomly among the objects. Here, we use the k-
+means++ algorithm [7, 27] to choose the cluster seeds. The k-means++ algorithm
+helps the k-means algorithm to find clusters much more consistently and quickly.
+
+Until now, we suppose that the value of k∗ is known. Nevertheless, in reality, we
+usually do not know the value of k∗ for any bucket B. We therefore needs a certain
+way to compute this number. Here, we propose to use two statistical techniques,
+namely Hartigan statistic [17] and Jump statistic [33] for this purpose. The common
+idea of these techniques is to try different value of k (i.e., the number of clusters).
+For each value of k, the resulting clusters done by a certain clustering algorithm are
+measured. Then, based on the measuring results, the best value of k will be chosen.
+
+–
+
+First, the Hartigan statistic is used to compute the value of k∗ as follows. Given
+a value K for the number of clusters, after applying a clustering algorithm, a
+result of K clusters {S1, S2, . . . , SK} is obtained. Let WK denote the within-cluster
+distances to centroids for this result. WK is computed as
+
+WK =
+
+d(oi, ck)
+
+K(cid:3)
+
+(cid:3)
+
+k=1
+
+oi∈Sk
+
+(4)
+
+(5)
+
+where ck is the centroid of cluster Sk (1 ≤ k ≤ K).
+Next, the Hartigan statistic for a value K of number of clusters is computed as
+
+HK = (WK/WK+1 − 1)(N − K − 1)
+
+where N is the number of objects.
+As a “crude rule of thumb”, while increasing K, the very first K at which HK
+is less than 10 should be taken as the best estimate of k∗ [17]. For finding the
+number of clusters in bucket B, we vary K from 1 to NB, where NB is the
+maximum number of buckets to be constructed inside B. For each value of K,
+we partition the objects in B into K clusters by using the k-means algorithm
+(enhanced by the k-means++ algorithm for choosing the cluster seeds). The
+Hartigan statistic HK for each value of K is calculated. While K is being
+increased, the first value of K that makes HK become smaller than 10 is taken
+as our estimate for k∗. If there is no such value of K, NB is taken as k∗. We call
+this estimated number of clusters, obtained by applying the Hartigan statistical
+technique, k∗
+
+Hart.
+
+– Beside the Hartigan statistic, we use the Jump statistic [33] to estimate the
+value of k∗. In this technique, we consider our data set as a p-dimensional
+random variable X, having a mixture distribution of some components, each with
+covariance (cid:2). Now, given a value of K, suppose that we partition this data set
+into K clusters. Let c1, c2, . . . , c K be the set of these clusters’ centers, with cX
+
+Geoinformatica (2013) 17:325–352
+
+335
+
+(6)
+
+(7)
+
+(8)
+
+the closest center to a given sample of X. Then, the minimum average distortion
+per dimension when fitting these K centers to the data is defined as:
+
+dK = 1
+p
+
+minc1,...,c K E[(X − cX )T (cid:2)−1(X − cX )]
+
+which is also the average Mahalanobis distance, per dimension, between X and
+cX [33]. In the case where (cid:2) is the identity matrix, the distortion becomes the
+mean squared error.
+Next, the Jump statistic for a certain clustering with K clusters is computed as
+
+JK = d
+
+− p/2
+K
+
+− d
+
+− p/2
+K−1
+
+For finding the number of clusters in bucket B, similar to the procedure used with
+Hartigan statistic, we vary K from 1 to NB. For each value of K, we partition the
+objects in B into K clusters by using the k-means algorithm. The Jump statistic
+JK for each value of K is calculated. Then, the value of K that results in the
+highest value of JK (i.e., highest “jump” in the distortion curve) is taken as our
+estimate for k∗. We call this estimated number of clusters, obtained by applying
+the Jump statistical technique, k∗
+
+Jump.
+
+Finally, we estimate the number of clusters in the data set as
+
+k∗ = Round((k∗
+
++ k∗
+
+Jump
+
+)/2)
+
+Hart
+
+Algorithm FindClusterCenters in Fig. 6 summarizes the described process. Input
+parameters include the bucket B and NB, i.e., the maximum number of child buckets
+to be constructed in B. The output result is a set of cluster centers. Note that, in
+general, any other clustering algorithm can be used.
+
+Discussion In STHist-C, we rely on the Hartigan statistic and the Jump statistic
+to determine the right number of clusters. The reason is that these two methods
+have been shown to provide very good performance when compared to other existing
+methods that determine the right number of clusters [10, 33]. Besides, as none of
+
+Fig. 6 An algorithm to find centers of object clusters
+
+336
+
+Geoinformatica (2013) 17:325–352
+
+these methods consistently outperforms the other, we use the average value of their
+predicted numbers as a prediction for the right number of clusters.
+
+3.3 Constructing histogram buckets
+
+We have described how to find the centers of object clusters in Section 3.2. In this
+section, we present how to construct the buckets from these centers so that the
+buckets can capture the object clusters properly. Our basic strategy is to start with
+very small buckets surrounding the cluster centers, then expanding these buckets
+gradually to all directions until when further expansions are no longer beneficial, in
+terms of data skewness.
+
+Consider a bucket B for which we are constructing child buckets. Let SetOfCenters
+denote the set of centers of object clusters, which we have found in the previous
+section by Algorithm FindClusterCenters. For each of these centers, we construct
+a bucket to cover the corresponding object cluster. Algorithm ConstructBuckets-
+ByExpansions in Fig. 7 shows the proposed process. For each cluster center ci in
+SetOfCenters, we start by initializing a bucket Hi for ci. Let Si denote the set of all
+objects which consider ci as their cluster center. Let θi denote the average distance
+from objects in Si to ci. Then, we greedily expand Hi to all directions until all objects
+θi are included in the data space of Hi.
+in Si whose distances to ci is less than 1
+3
+θi is a heuristic choice, justified from experimental
+Note that, this setting value of 1
+3
+results. During the expansion process, if a further expansion of Hi causes overlapping
+between Hi and any other sibling bucket or make the border of Hi touchs the border
+of B, Hi will not be expanded any further. After initialized and expanded, every
+created bucket Hi is added to the set of B’s child buckets, which is set empty at
+the beginning of the Algorithm ConstructBucketsByExpansions (Line 1 to 6). As we
+will describe soon, the buckets’ regions will be expanded further based on skewness
+gains. The synchronous expansion step above only has one purpose, that is to make
+
+Fig. 7 An algorithm to construct multiple buckets
+
+Geoinformatica (2013) 17:325–352
+
+337
+
+the regions of the buckets not too small. The reason is that, the skewness value of
+only one point or a very small region is not meaningful.
+
+Now, suppose that the greedy expansions have finished. We expand the regions
+of all child buckets of B further, continuously and gradually based on skewness
+gains. Intuitively, all clusters must have fair chances to construct their corresponding
+buckets, thus the expansion of all buckets are done in parallel. In Algorithm
+ConstructBucketsByExpansions, a do-until loop is used to schedule the expansion
+of all buckets (Line 7 to 12). In each iteration of this loop, an inner loop (i.e., a
+for loop) is used to traverse all child buckets of B in SetOfBuckets. For each child
+bucket Hi, an algorithm named ExpandOneBucketOneDirection is called to perform
+the expansion of Hi to one best direction (Line 10). When no bucket can expand
+more, i.e., the expanded and unexpanded versions of a bucket Hi are the same as each
+other for all child buckets Hi(s) of B, the do-until loop stops. Figure 8 illustrates how
+the buckets’ regions become larger to cover their corresponding object clusters after
+some iterations of the loop. The expanding direction of each bucket in an iteration is
+marked by an adjacent arrow. The additional region of each bucket after an iteration
+is presented in gray.
+
+Figure 9 shows Algorithm ExpandOneBucketOneDirection which is used to ex-
+pand one bucket to the best direction. Let H be the child bucket of B that we
+are going to expand. Let ChildBuckets be the set of child buckets of B except H.
+Buckets B, H, and the set ChildBuckets are the input parameters of the Algorithm
+ExpandOneBucketOneDirection. Let B(cid:4) be the region of B except H. In other words,
+B(cid:4) is the remaining region of B after we take out H from B. From the current region
+of H, we consider several possible choices for expansion. Let d denote the number
+
+Fig. 8 The growth of buckets by expansions
+
+338
+
+Geoinformatica (2013) 17:325–352
+
+Fig. 9 An algorithm to expand one bucket
+
+of dimensions of the data objects. Then, there are 2d directions (i.e., faces) of H
+we may expand. For example, in a two-dimensional space, the possible directions
+are North, South, East, and West. For each direction fi (1 ≤ i ≤ 2d), we examine a
+number of expansion trials. Let ηi be the number of expansion trials that we may
+ηi expansion trials. Now, let (cid:4)h
+examine in direction fi. Then, we will consider
+denote the minimum expanding distance in each trial. In each trial, we expand H
+to a direction by a distance which is a multiple of (cid:4)h. That is, for each direction fi,
+we perform ηi trials for H, namely {E1, E2, . . . , Eηi
+} whose expanding distances are
+{(cid:4)h, 2 · (cid:4)h, . . . , ηi · (cid:4)h}, respectively.
+
+2d
+i=1
+
+(cid:2)
+
+When we expand the region of H, the data skewness of H may increase or
+decrease and the data skewness of B(cid:4) may also increase or decrease. Clearly, an
+expansion is good or bad if it results in lower or higher skewness, respectively, in
+both H and B(cid:4). An expansion is also good if it reduces the skewness of only B(cid:4) or H
+and does not change the skewness of the other. Nonetheless, it is not always easy to
+say which expansion trial is the best.
+
+Example 1 An example is shown in Fig. 10a where we performs three expansion
+trials for H, namely E1, E2, E3. We can see that E1 is very useful while E2 and
+E3 are not. The reason is that E1 can reduce the skewness of B(cid:4) and keeping the
+skewness of H unchanged while both E2 and E3 may reduce the skewness of B(cid:4) a
+little but increase the skewness of H much larger.
+
+Geoinformatica (2013) 17:325–352
+
+339
+
+Example 2 Figure 10b demonstrates a more complicated situation where H per-
+forms four expansion trials, namely E1, E2, E3, and E4. In this situation, from the
+viewpoint of H, E1 and E2 are equally good because the skewness values of H after
+expanding are the same in both cases. However, from the viewpoint of the B(cid:4), E2
+is preferable since it can reduce the skewness of B(cid:4) further. Moreover, E4 is also
+relatively good, although it seems to be not as good as E2.
+
+Expansion based on skewness gains To choose the best expansion choice, for H and
+also for B(cid:4), among possible ones, we define a notion of skewness gain as follows. For
+an expansion E, the skewness gain of H, denoted by SkGainE(H), and the skewness
+gain of B(cid:4), denoted by SkGainE(B(cid:4)), are computed as.
+
+SkGainE(H) = Skew(H)before − Skew(H)after
+
+(9)
+
+Fig. 10 Two examples about
+possible choices to expand a
+bucket
+
+(a) Three expansion trials to the South
+
+(b) Four expansion trials to the East
+
+340
+
+Geoinformatica (2013) 17:325–352
+
+where Skew(H)before and Skew(H)after are the skewness of H before and after
+performing the expansion E, respectively. And,
+
+SkGainE(B(cid:4)) = Skew(B(cid:4))before − Skew(B(cid:4))after
+(10)
+where Skew(B(cid:4))before and Skew(B(cid:4))after are the skewness of B(cid:4) before and after
+performing the expansion E, respectively.
+
+Then, the skewness gain of the expansion E is defined as.
+
+Gain(E) = SkGainE(H) + SkGainE(B(cid:4))
+
+(11)
+
+Given the skewness gains of all expansion trials to all directions, our strategy
+for choosing the best expansion is to choose the expansion Ei where Gain(Ei) > 0
+and Gain(Ei) is the highest among the gains of all expansion trials. This strategy is
+reflected in Algorithm ExpandOneBucketOneDirection. The skewness gains of all
+expansion trials to all directions are computed. From these gains, the best one is
+kept track, together with its direction and expanding distance. Notice that, whenever
+we try to expand H, we have to check if H would go over B or overlap with any
+other sibling bucket in ChildBuckets after expansion. If so, this and further expansion
+trials to the same direction need not be considered any more. After considering all
+expansion trials, if we can find at least a good expansion choice, i.e., the best skewness
+gain is greater than 0, we really expand H to the best direction with the best distance,
+the ones attached to the expansion trial with best skewness gain.
+
+In Algorithm ExpandOneBucketOneDirection, an important parameter is (cid:4)h, i.e.,
+the minimum expanding distance in each expansion trial. We heuristically use the
+mean of distances to nearest neighbors of all objects in bucket B for the value of (cid:4)h.
+Specifically, for all objects oi in B, let D2N N(oi) be the distance from oi to its nearest
+neighbor. Then,
+
+(cid:4)h = meanoi∈B(D2N N(oi))
+
+(12)
+
+Figure 11 shows an example where H is performing two expansion trials for each
+direction. We can guess that the expansion EE2 is the best one among the possible
+choices in the figure.
+
+Fig. 11 Bucket expansions to
+all directions
+
+Geoinformatica (2013) 17:325–352
+
+341
+
+3.4 Estimating the selectivity using STHist-C
+
+Selectivity estimation using the histogram constructed by STHist-C can be done in
+the same way presented in [30] for the STHist method. Let Bc denote a child node of
+B and B(cid:4) denote the region of B except its children. Given a query Q, let ϕ(B)
+Q denote
+the selectivity estimate of Q using bucket B. Then,
+
+If B is a leaf node, ϕ(B)
+
+•
+• Otherwise, ϕ(B)
+
+Q
+(cid:2)
+n
+c=1
+
+=
+
+Q
+
+= SB∩SQ
+SB
+ϕ(Bc)
+Q
+
++
+
+· FB.
+(cid:4)
+SB
+
+(cid:4) ∩SQ
+SB
+(cid:4)
+
+(cid:5)
+.
+
+· FB(cid:4)
+
+Algorithm ComputeSelectivity in Fig. 12 computes the selectivity estimate of a
+given query Q using a bucket tree. If Q spreads more than one bucket tree, the
+selectivity estimate of Q is the total sum of estimates for all bucket trees in the
+constructed histogram.
+
+3.5 Running time complexity
+
+Let m be the maximum number of buckets to be constructed in the histogram and
+N be the number of all objects in the data set. STHist-C constructs at most m
+buckets. For each bucket, the time complexity of the procedure to find centers of
+data clusters depends on the time complexity of the clustering algorithm and the
+statistical techniques used to find the number of clusters. In our work, we use the
+k-means++ algorithm to choose cluster seeds and then use the k-means algorithm
+to cluster the data. The worst case time complexity of these techniques is super
+
+Fig. 12 An algorithm to estimate the query selectivity
+
+342
+
+Geoinformatica (2013) 17:325–352
+
+(cid:2)
+
+2d
+i=1
+
+polynomial [7, 27]. However, the k-means clustering algorithm, enhanced by the
+k-means++ seed selection algorithm, often runs very quickly in practice [7, 27].
+Note that any other clustering algorithm can also be used. After finding the centers
+of object clusters, STHist-C constructs the buckets from these centers. Consider
+the bucket construction algorithm based on skewness gains of STHist-C. For each
+ηi)
+expansion trial, O(N) time is needed to compute the skewness. Thus, O(N
+ηi trials in 2d directions. Since d and ηi(s) are small, the
+time is used for
+time complexity for one expansion of a bucket is O(N). Before a bucket finishes
+√
+expanding, O(2 · d · d
+) expansions are possible. As the mean of distances to
+nearest neighbors is used for (cid:4)h, there can be O(N) expansions. As a result, the
+bucket shape construction algorithm takes O(N2) time. To sum up, if the time
+complexity of the procedure to find centers of data clusters (let us call it procedure
+PL) is O(N2) or less, the time complexity of STHist-C is O(N2). Otherwise, the time
+complexity of STHist-C is bounded by the time complexity of this procedure PL,
+which in turn depends on the time complexity of the clustering algorithm and related
+techniques used.
+
+size(B)
+(cid:4)h
+
+2d
+i=1
+
+(cid:2)
+
+4 Performance evaluation
+
+4.1 Experimenal setup
+
+We conducted various experiments to compare the accuracy of STHist-C and other
+existing histogram methods, including MinSkew [6], GenHist [15], RkHist [12], and
+STHist [30]. We use the following 10 real-life data sets for the experiments: (i) The
+Sequoia data set [4] that contains 62,556 locations in California, (ii) The Digital Chart
+of the World data set 1 (DCW-UX) [4] that contains 19,499 populated places in the
+United States of America plus Mexico, (iii) The Digital Chart of the World data set
+2 (DCW-MX) [4] that contains 4,293 populated places in Mexico, (iv) The Greece
+Cities data set [4] that contains 5,922 cities and villages in Greece, (v) The Brazil
+data set [3] that contains 40,007 populated places in Brazil, (vi) The Vietnam data set
+[3] that contains 8,624 populated places in Vietnam, (vii) The Italy data set [3] that
+contains 10,881 populated places in Italy, (viii) The Public Libraries data set [2] that
+contains 17,013 locations of public libraries in the United States, (ix) The Geevor 3D
+data set [11] that contains 5,445 locations of tin mines in Cornwall, England and the
+grade of tin from each tin mine, (x) the Samples 3D data set [11] that contains 21,577
+locations of gold mines and the degree of gold from each gold mine.
+
+We use the average relative error as a performance metric that is commonly used as
+in [6, 15, 30], which is computed as follows. Given a query Q, let σ be the actual object
+frequency of Q, and let σ (cid:4) be the estimated object frequency of Q by a histogram.
+Then, the relative error (cid:7)rel of Q is defined as
+
+For a set of n queries {Q1, Q2, . . . , Qn}, the average relative error Erel is
+
+(cid:7)rel = |σ − σ (cid:4)|/max{1, σ }
+
+Erel = 1
+n
+
+·
+
+n(cid:3)
+
+i=1
+
+(cid:7)i
+rel
+
+(13)
+
+(14)
+
+where (cid:7)i
+
+rel is the relative error of query Qi.
+
+Geoinformatica (2013) 17:325–352
+
+343
+
+We used 100,000 random test queries (i.e., n = 100,000) and computed their
+average for each point of the graphs in the next section. The regions of the queries
+are randomly located within the data space. The values of ηi(s) are set at 3. In the
+partitioning of the input data set into data segments, similar to [15], we remove
+segments whose numbers of objects are less than 0.1% the average number of objects
+in a data segment. It means that if a segment has too few objects, we do not create
+a bucket tree for that segment. The regions represented by these segments are
+relatively too sparse compared with the regions of other segments. Although there
+are often only a few such segments, our purpose here is to use more buckets for the
+dense regions. It is because dense regions are often more important than sparse regions
+in terms of selectivity estimation (i.e., more queries are often issued on dense regions).
+
+4.2 Result analysis
+
+Figure 13 shows the impact of different number of buckets on the performance of
+the methods. The locations of the queries are randomly chosen and the sizes of the
+queries are randomly generated between 0% and 20% of the entire data region.
+Recall that the number of buckets for a histogram, denoted by m in this paper,
+is a system parameter. Typically, this number ranges from 50 to 200 in database
+management systems [6]. For instance, the default and maximum values of m for
+a histogram is 75 and 254, respectively, in Oracle databases [1]. Therefore, in this
+experiment, we vary m from 50 to 300 to cover all popular ranges of m. In general,
+the average relative errors tend to decrease in all the methods with the increasing
+number of buckets. It is because when the number of buckets rises, more accurate
+statistics can be obtained. Note that, STHist and STHist-C work significantly better
+than the other existing methods. The main reason for the noticeable improvement
+is that both STHist and STHist-C effectively handle highly dense areas that may
+significantly degrade the accuracy of the histograms. Figure 14 shows the same
+experimental results as in Fig. 13, but focuses on STHist and STHist-C only. We
+can see that the accuracy of STHist-C is better than that of STHist by up to 3 times
+in some cases and by almost 2 times on average. The improvement of STHist-C over
+STHist is because STHist-C uses more statistical analyses to find object clusters and
+then constructs the histogram buckets adaptively based on potential skewness gains.
+Figure 15 demonstrates the performance of STHist and STHist-C for different
+query sizes. Since the performance gaps between STHist/STHist-C and the other
+methods are too large as in Fig. 13, we show the results of only STHist and STHist-
+C. The number of buckets was set to 150. The query size was varied from 2–10%.
+A general observation from the graph is that the relative error decreases as the
+query size becomes larger. This is because the error in an estimation arises mainly
+from buckets that partially overlap with or completely contain the query region.
+Since each bucket stores the exact number of objects belonging to it, the buckets
+that fall entirely within the query region contribute no error. Since more buckets
+are completely covered with increasing sizes of queries, relatively fewer buckets
+contribute to the error when the query size is large. Thus, all the methods show better
+accuracy as we move to the right of the graph. Note that, although we do not show
+the results of other methods here, both STHist and STHist-C are considerably better
+than the other methods. With regard to only STHist and STHist-C, the latter method
+continues to show that it can enhance the accuracy of the former method for different
+query sizes.
+
+344
+
+Geoinformatica (2013) 17:325–352
+
+Fig. 13 Average relative
+errors for varying number of
+buckets (All methods)
+
+(a)  Sequoia data
+
+(b)  DCW-UX data
+
+(c)  DCW-MX data
+
+(d)  Greece Cities data
+
+(e)  Brazil data
+
+(f)  Vietnam data
+
+(g)  Italy data
+
+(h)  Public Libraries data
+
+(i)  Geevor data
+
+(j)  Samples data
+
+Geoinformatica (2013) 17:325–352
+
+345
+
+(a) Sequoia data
+
+(b) DCW-UX data
+
+(c) DCW-MX data
+
+(d) Greece Cities data
+
+(e) Brazil data
+
+(f) Vietnam data
+
+(g) Italy data
+
+(h) Public Libraries data
+
+(i) Geevor data
+
+(j) Samples data
+
+Fig. 14 Average relative errors for varying number of buckets (STHist and STHist-C)
+
+346
+
+Geoinformatica (2013) 17:325–352
+
+(a) Sequoia data
+
+(b) DCW-UX data
+
+(c) DCW-MX data
+
+(d) Greece Cities data
+
+(e) Brazil data
+
+(f) Vietnam data
+
+(g) Italy data
+
+(h) Public Libraries data
+
+(i) Geevor data
+
+(j) Samples data
+
+Fig. 15 Average relative errors for varying query sizes
+
+Geoinformatica (2013) 17:325–352
+
+347
+
+Figure 16 shows the impact of different number of buckets on the performance of
+STHist and STHist-C when the positions and sizes of the queries are generated based
+on the data distribution. Note that, in Fig. 14, we have shown similar experimental results
+when the positions and sizes of the queries are generated based on the uniform distri-
+bution. Here, for the experimental results in Fig. 16, we generate the queries as follows.
+Given a point P, let C(P) denote the circular region around P such that P is
+the center of C(P) and the size of C(P) is equal to 0.1% of the size of the entire
+data region. Before generating the queries, we generate 10,000 points uniformly
+in the entire data region and compute the object densities of the circular regions
+C(Pi) of every point Pi. Then, we compute the maximum object density, denoted
+by Dmax among the densities of all regions C(Pi)(s). Now, to generate the queries,
+we repeatedly generate location points uniformly in the entire data region. For
+each location point P j, we compute the object density of the circular region C(P j),
+denoted by D j. Then, the ratio D j/Dmax indicates the relative density of the region
+around P j. We use this ratio D j/Dmax as the probability to keep this location P j for
+a query, or not. In other words, with a probability of (1 − D j/Dmax), we ignore this
+location P j and generate a new location to consider. If P j is kept, it is considered
+as a central location for a query Q j. Now, we generate the rectangular shape of Q j
+by considering P j as the center of the rectangle. If D j < Dmax/2 , the size of Q j
+is randomly generated between 0% and 10% of the data region. Otherwise (i.e.,
+D j ≥ Dmax/2), the size of Q j is randomly generated between 0% and 20% of the
+data region. In this way, queries occur more in dense regions and the window size is
+also correlated with the density.
+
+From the results shown in Fig. 16, we can see that STHist-C still produces more
+accurate histograms than STHist. The improvement rate of STHist-C over STHist
+when the queries follow the data’s distribution is similar to the improvement rate of
+STHist-C over STHist when the queries follow the uniform distribution.
+
+In Table 1, we show the amounts of time that the proposed method needs to con-
+struct a histogram for various data sets. From the results, we have three observations.
+First, bigger data sets tend to require more time to construct a histogram. This is
+natural because more processing is needed when there are more objects in an input
+data set. Second, when the number of buckets increases, the histogram construction
+time gradually decreases. The reason is that, when there are more buckets to use
+for the same data space, the average size of a bucket, in general, becomes smaller.
+Therefore, a smaller number of objects need to be processed in a bucket when the
+proposed method finds the clusters of objects and then constructs the child buckets.
+Meanwhile, the time complexity of finding the number of clusters and doing the
+clustering is higher than linear, so when the data size decreases linearly, the time
+requirement decreases faster than linear. As a result, although more buckets need
+to be constructed, each bucket can be constructed much faster, and thus the total
+time needed to construct all buckets becomes smaller. Finally, we observe that the
+amounts of time to construct a histogram range from tens of seconds to a few minutes
+in our experiments, for different data sets and for different numbers of buckets.
+These amounts of time might be too long if the histogram must be reconstructed very
+frequently (e.g., due to the constant updates of the objects’ positions). Hence, we
+limit our target to geographic data points which are not frequently updated, such as
+the locations of stores, buildings, and villages. In these cases, histogram construction
+is not a frequent operation, thus the histogram construction time of the proposed
+method is acceptable.
+
+348
+
+Geoinformatica (2013) 17:325–352
+
+(a) Sequoia data
+
+(b) DCW-UX data
+
+(c) DCW-MX data
+
+(d) Greece Cities data
+
+(e) Brazil data
+
+(f) Vietnam data
+
+(g) Italy data
+
+(h) Public Libraries data
+
+(i) Geevor data
+
+(j) Samples data
+
+Fig. 16 Average relative errors for varying number of buckets (Locations and sizes of the queries
+are generated following the data’s distribution)
+
+Geoinformatica (2013) 17:325–352
+
+Table 1 Histogram construction time (minutes) for varying number of buckets
+
+50
+
+4.18
+0.61
+0.13
+0.16
+3.27
+0.31
+0.70
+1.14
+0.99
+1.02
+
+100
+
+2.83
+0.39
+0.14
+0.22
+6.27
+0.19
+0.43
+0.64
+0.99
+1.01
+
+150
+
+2.18
+0.31
+0.09
+0.15
+2.40
+0.22
+0.30
+0.62
+0.98
+1.00
+
+200
+
+1.25
+0.20
+0.14
+0.17
+2.83
+0.11
+0.24
+0.51
+1.00
+1.00
+
+250
+
+1.41
+0.23
+0.14
+0.13
+4.02
+0.14
+0.17
+0.54
+0.97
+0.99
+
+349
+
+300
+
+1.28
+0.17
+0.13
+0.15
+4.06
+0.15
+0.14
+0.36
+0.97
+1.00
+
+Number of buckets
+
+Sequoia
+DCW-UX
+DCW-MX
+Greece Cities
+Brazil
+Vietnam
+Italy
+Public Libraries
+Geevor
+Samples
+
+5 Conclusion
+
+Histograms have been widely used for selectivity estimation and constructing highly
+accurate histograms is an important problem. In this paper, we present STHist-C,
+a new histogram construction method for geographic data points of two or three
+dimensions. STHist-C is an improvement of the STHist method and uses the same
+framework as that of STHist. The STHist method uses rigid conditions on the shape
+and size in detecting dense areas. The reason is mainly for a relatively easy way of
+finding dense areas. However, because of these rigid conditions, the STHist method
+sometimes fails to properly capture the object clusters in data sets. The STHist-C
+method proposed in this paper attempts to overcome this problem. It can detect the
+dense areas with much relaxed size and shape conditions.
+
+STHist-C uses a new approach in detecting dense areas. To construct accurate
+histograms, STHist-C allocates buckets to the places of object clusters. First, a
+clustering algorithm and two statistical techniques are combined into a procedure to
+find the number and positions of object clusters. Then, a new algorithm is proposed
+to construct the buckets from the centers of these clusters. The buckets’ regions
+are expanded gradually from these centers to all directions. Each time expanding
+a bucket, among many possible choices of expansion, the best one is chosen based
+on a new notion of skewness gain. Extensive experimental results using real-life data
+sets show that STHist-C improves the accuracy of STHist by two times on average.
+
+Acknowledgements This work was supported by the National Research Foundation of Korea
+(NRF) grant funded by the Korea government (MEST) (No. 2011-0020415). The authors also thank
+anonymous reviewers for valuable comments to improve this work.
+
+References
+
+1. Oracle database 10g sql reference. http://www.oracle.com/pls/db102 (2011)
+2. The aggdata database. http://www.aggdata.com (2011)
+3. The geonames geographical database. http://www.geonames.org (2011)
+4. R-tree portal. http://www.rtreeportal.org (2011)
+5. Aboulnaga A, Chaudhuri S (1999) Self-tuning histograms: building histograms without looking
+
+at data. In: SIGMOD conference, pp 181–192
+
+350
+
+Geoinformatica (2013) 17:325–352
+
+6. Acharya S, Poosala V, Ramaswamy S (1999) Selectivity estimation in spatial databases. In:
+
+SIGMOD conference, pp 13–24
+
+7. Arthur D, Vassilvitskii S (2007) k-means++: the advantages of careful seeding. In: Proceedings
+
+of the 18th annual ACM-SIAM symposium on discrete algorithms, pp 1027–1035
+
+8. Blohsfeld B, Korus D, Seeger B (1999) A comparison of selectivity estimators for range queries
+
+on metric attributes. In: SIGMOD conference, pp 239–250
+
+9. Bruno N, Chaudhuri S, Gravano L (2001) Stholes: a multidimensional workload-aware his-
+
+togram. In: SIGMOD conference, pp 211–222
+
+10. Chiang MMT, Mirkin B (2010) Intelligent choice of the number of clusters in k-means clustering:
+
+an experimental study with different cluster spreads. J Classif 27(1):3–40
+
+11. Clark I, Harper WV (2000) Practical geostatistics 2000. Ecosse North America LLC
+12. Eavis T, Lopez A (2007) Rk-hist: an r-tree based histogram for multi-dimensional selectivity
+
+estimation. In: CIKM, pp 475–484
+
+13. Gibbons PB, Matias Y, Poosala V (2002) Fast incremental maintenance of approximate his-
+
+tograms. ACM Trans Database Syst 27(3):261–298
+
+14. Guha S, Shim K, Woo J (2004) Rehist: relative error histogram construction algorithms. In:
+
+VLDB, pp 300–311
+
+15. Gunopulos D, Kollios G, Tsotras VJ, Domeniconi C (2005) Selectivity estimators for multidi-
+
+mensional range queries over real attributes. VLDB J 14(2):137–154
+
+16. Haas PJ, Swami AN (1992) Sequential sampling procedures for query size estimation. In: SIG-
+
+MOD conference, pp 341–350
+
+17. Hartigan JA (1975) Clustering algorithms. John Wiley and Sons, New York
+18. Ioannidis YE (2003) The history of histograms (abridged). In: VLDB, pp 19–30
+19. Jagadish HV, Koudas N, Muthukrishnan S, Poosala V, Sevcik KC, Suel T (1998) Optimal
+
+histograms with quality guarantees. In: VLDB, pp 275–286
+
+20. Kooi RP (1980) The optimization of queries in relational databases. PhD thesis, Case Western
+
+Reserver University
+
+21. Lee JH, Kim DH, Chung CW (1999) Multi-dimensional selectivity estimation using compressed
+
+histogram information. In: SIGMOD conference, pp 205–214
+
+22. Lipton RJ, Naughton JF, Schneider DA (1990) Practical selectivity estimation through adaptive
+
+sampling. In: SIGMOD conference, pp 1–11
+
+23. MacQueen JB (1967) Some methods for classification and anlysis of multivariate observations.
+In: Proceedings of 5th Berkeley symposium on mathematical statistics and probability, pp 281–
+297
+
+24. Matias Y, Vitter JS, Wang M (1998) Wavelet-based histograms for selectivity estimation. In:
+
+SIGMOD Conference, pp 448–459
+
+25. Muralikrishna M, DeWitt DJ (1988) Equi-depth histograms for estimating selectivity factors for
+
+multi-dimensional queries. In: SIGMOD conference, pp 28–36
+
+26. Muthukrishnan S, Poosala V, Suel T (1999) On rectangular partitionings in two dimensions:
+
+algorithms, complexity, and applications. In: ICDT, pp 236–256
+
+27. Ostrovsky R, Rabani Y, Schulman LJ, Swamy C (2006) The effectiveness of Lloyd-type methods
+for the k-means problem. In: Proceedings of the 47th annual IEEE symposium on Foundations
+of Computer Science (FOCS), p 165–174
+
+28. Piatetsky-Shapiro G, Connell C (1984) Accurate estimation of the number of tuples satisfying a
+
+condition. In: SIGMOD conference, pp 256–276
+
+29. Poosala V, Ioannidis YE (1997) Selectivity estimation without the attribute value independence
+
+assumption. In: VLDB, pp 486–495
+
+30. Roh YJ, Kim JH, Chung YD, Son JH, Kim MH (2010) Hierarchically organized skew-tolerant
+
+histograms for geographic data objects. In: SIGMOD conference, pp 627–638
+
+31. Rokach L (2010) A survey of clustering algorithms. In: Data mining and knowledge discovery
+
+handbook, pp 269–298
+
+32. Srivastava U, Haas PJ, Markl V, Kutsch M, Tran TM (2006) Isomer: consistent histogram
+
+construction using query feedback. In: ICDE, p 39
+
+33. Sugar CA, James GM (2003) Finding the number of clusters in a data set: an information
+
+theoretic approach. J Am Stat Assoc 98(463):750–763
+
+34. Thaper N, Guha S, Indyk P, Koudas N (2002) Dynamic multidimensional histograms. In: SIG-
+
+35. Vitter JS, Wang M, Iyer BR (1998) Data cube approximation and histograms via wavelets. In:
+
+MOD Conference, pp 428–439
+
+CIKM, pp 96–104
+
+36. Xu R, Wunsch D II (2005) Survey of clustering algorithms. IEEE Trans Neural Netw 16(3):645–678
+
+Geoinformatica (2013) 17:325–352
+
+351
+
+is currently a Ph.D. candidate of the Department of Computer Science at KAIST,
+Hai Thanh Mai
+Daejeon, Korea. He received his B.S. degree in Computer Science from University of Sciences,
+Hochiminh, Vietnam, in 2005, and his M.S. degree in Computer Science from KAIST, Korea, in 2009,
+respectively. His research interests include database systems, sensor networks, and data mining.
+
+Jaeho Kim is currently a Ph.D. candidate of the Department of Computer Science at KAIST,
+Daejeon, Korea. He received his B.S. and M.S. degrees, both from KAIST, in 2008 and 2010,
+respectively. His research interests are database systems and histograms.
+
+352
+
+Geoinformatica (2013) 17:325–352
+
+Yohan J. Roh received his B.S. degree in Computer Science from Kyungpook National University,
+Daegu, Korea in 2002. Then, he received his M.S. and Ph.D. degrees in Computer Science from
+KAIST, Daejeon, Korea in 2004 and 2010, respectively. He is now a senior research scientist at
+Samsung Advanced Institute of Technology, Samsung Electronics, Korea. His research interests
+include histograms and data mining.
+
+Myoung Ho Kim received his B.S. and M.S. degrees in Computer Engineering from Seoul National
+University, Seoul, Korea in 1982 and 1984, respectively, and received his Ph.D. degree in Computer
+Science from Michigan State University, East Lansing, MI, in 1989. He joined the faculty of the
+Department of Computer Science at KAIST, Daejeon, Korea in 1989 where currently he is a full
+professor. His research interests include database and distributed systems, data stream processing,
+sensor networks, and XML.
+
+

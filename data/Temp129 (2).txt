@@ -1,0 +1,758 @@
+Geoinformatica (2013) 17:285–299
+DOI 10.1007/s10707-012-0152-0
+
+Footprint generation using fuzzy-neighborhood clustering
+
+Jonathon K. Parker & Joni A. Downs
+
+Received: 14 June 2010 / Revised: 13 November 2011
+Accepted: 23 January 2012 / Published online: 6 March 2012
+# Springer Science+Business Media, LLC 2012
+
+Abstract Geometric footprints, which delineate the region occupied by a spatial point pattern,
+serve a variety of functions in GIScience. This research explores the use of two density-based
+clustering algorithms for footprint generation. First, the Density-Based Spatial Clustering with
+Noise (DBSCAN) algorithm is used to classify points as core points, non-core points, or statistical
+noise; then a footprint is created from the core and non-core points in each cluster using convex
+hulls. Second, a Fuzzy-Neighborhood (FN)-DBSCAN algorithm, which incorporates fuzzy set
+theory, is used to assign points to clusters based on membership values. Then, two methods are
+presented for delineating footprints with FN-DBSCAN: (1) hull-based techniques and (2) con-
+touring methods based on interpolated membership values. The latter approach offers increased
+flexibility for footprint generation, as it provides a continuous surface of membership values from
+which precise contours can be delineated. Then, a heuristic parameter selection method is
+described for FN-DBSCAN, and the approach is demonstrated in the context of wildlife home
+range estimation, where the goal is to a generate footprint of an animal’s movements from
+tracking data. Additionally, FN-DBSCAN is applied to produce crime footprints for a county in
+Florida. The results are used to guide a discussion of the relative merits of the new techniques. In
+summary, the fuzzy clustering approach offers a novel method of footprint generation that can be
+applied to characterize a variety of point patterns in GIScience.
+
+Keywords Point pattern analysis . Clustering algorithms . Geometric footprints . Fuzzy logic
+
+1 Introduction
+
+A common task in spatial point pattern analysis in GIScience is to delineate the region
+occupied by a set of points [14]. These regions are termed geometric footprints but are also
+
+J. K. Parker
+Department of Computer Science, University of South Florida, Tampa, FL, USA
+e-mail: jkparker@mail.usf.edu
+
+J. A. Downs (*)
+Department of Geography, Environment, and Planning, University of South Florida, Tampa, FL, USA
+e-mail: downs@usf.edu
+
+286
+
+Geoinformatica (2013) 17:285–299
+
+referred to as hulls, shapes, outlines, or crusts. A footprint can be generated using a variety of
+methods depending on its desired properties, such as whether the boundary is completely
+connected or disconnected, whether the boundary coincides with known points or is
+extended to include a larger area of influence, and if the region contains all points in the
+set or excludes outliers [14]. Dupenois and Galton [10] provide a systematic review of types
+of footprints and their methods of generation. Popular examples in GIS include minimum
+convex hulls [6], alpha-hulls [11], and characteristic shapes [9], although no single method is
+preferred for all applications.
+
+Footprints serve a variety of functions in GIScience. The most widely noted is for
+cartographic generalization of points to regions for creating maps at multiple scales [14].
+Secondly, footprints are used to approximate imprecise areal regions from known point
+locations [17]. For example, Alani et al. [1] and Grothe and Schaube [18] used footprints for
+regional approximation in gazetteering applications, and Agosto et al. [2] reconstructed
+crime scenes from blood splatters represented as points using geometric footprints. Downs
+and Horner [7] used footprints to approximate areal home ranges of animals from point
+locations recorded periodically over time. Additionally, Harris and Johnston [19] used
+geometric footprints to delineate school catchment areas. Footprinting is also widely used
+for shape reconstruction. In this case, a sample of points from the boundary or surface of an
+object is extracted in order to reduce its complexity and data storage requirements, and then
+the sample points are later used to approximate the original shape of the object by creating a
+footprint [5]. Finally, footprints can be used to identify clusters of points within a larger
+pattern [14].
+
+Galton and Duckham [14] discuss the potential relationship between footprints and
+traditional methods of cluster analysis and note this linkage remains largely uninvestigated.
+The authors suggest that GIS-based methods for creating footprints can result in cluster
+formation if the region is disconnected, although the clusters produced may be suboptimal
+compared to those created by clustering algorithms. Duckham et al. [9] first illustrated a
+strategy where a clustering algorithm, such as the popular DBSCAN (Density-Based Spatial
+Clustering of Applications with Noise) [12], is used to identify clusters and then a footprint
+is generated based on the cluster assignments. Tang et al. [30] used such an approach to
+delineate migratory bird routes using a combination of the DBSCAN clustering algorithm
+and convex hulls. The advantage of this approach is that the clusters are determined
+algorithmically and that a footprint can be generated using whatever GIS-based technique
+is desired, whether a simple convex hull or a more sophisticated shape.
+
+The combined clustering and footprint approach shows promise for numerous applica-
+tions to spatial point patterns, although this area of research remains largely unexplored in
+GIScience. The choice of clustering algorithm is important; different clustering algorithms
+have different strengths and limitations [22]. One particular limitation imposed by most
+clustering algorithms, including DBSCAN, is the rigid nature of assigning a point to a
+cluster, i.e. there is no gradation in cluster membership. One solution to this problem is the
+application of fuzzy set theory to the clustering algorithm [33]. Nasibov and Ulutagay [27]
+developed a new clustering algorithm, FN (Fuzzy Neighborhood)-DBSCAN, that incorpo-
+rates a fuzzy neighborhood function to assign points to clusters based on membership
+values. However, FN-DBSCAN has not been applied in the context of footprint generation
+for spatial point patterns in GIScience.
+
+This research develops fuzzy neighborhood clustering techniques for generating foot-
+prints for spatial point patterns using FN-DBSCAN and contrasts them with similar
+approaches using traditional DBSCAN. Section 2 reviews the original DBSCAN algorithm
+in the context of footprint generation in order to provide the necessary background for the
+
+Geoinformatica (2013) 17:285–299
+
+287
+
+research. Then, Section 3 describes the FN-DBSCAN algorithm and presents two methods
+for delineating fuzzy footprints: (1) hull-based techniques and (2) contouring methods based
+on interpolated membership values. Section 4 describes a heuristic method for selecting
+input parameters for FN-DBSCAN, while Section 5 illustrates parameter selection using a
+sample dataset of Florida panther locations where the goal of the analysis to delineate a
+footprint of the animal’s space-use patterns or its ‘home range’. Section 6 further explores
+and compares the discrete and fuzzy neighborhood approaches in the context of generating a
+crime footprint for Hillsborough County, Florida. Finally, a discussion of the applicability of
+the footprint generation routines in GIScience is provided in Section 7.
+
+2 Footprint Generation using DBSCAN
+
+Density-Based Spatial Clustering of Applications with Noise (DBSCAN), a well known
+clustering algorithm, can be used for spatial point pattern analysis [12]. DBSCAN assigns
+points to particular clusters or designates them as statistical noise if they are not sufficiently
+close to other points. DBSCAN determines cluster assignments by assessing the local
+density at each point using two parameters: distance (epsilon) and minimum number of
+points (minPoints). A single point which meets the minimum density criterion, namely that
+there are minPoints located within distance epsilon, is designated a “core point”. All points
+within epsilon distance of a core point are considered non-core members of a cluster, while
+points that are not part of a cluster are considered noise (Fig. 1). When two core points are
+less than epsilon distance from each other, they are considered members of the same cluster
+(Fig. 2). Large, irregularly shaped clusters are formed when multiple core points, each
+located within epsilon distance of another, are chained together, as shown in Fig. 3, which
+illustrates core, non-core, and noise assignments for a point pattern.
+
+Once the cluster assignments have been generated using DBSCAN, a geometric footprint
+can be created using whatever GIS-based method the user chooses. The simplest method
+employs a minimum convex hull to enclose each cluster. Other possible techniques include
+alpha-hulls [11], characteristic shapes [9], and gift-wrapping algorithms [14], among others.
+For instance, in Fig. 4 minimum convex hulls are used to create a footprint for the points
+from the previous example. This figure illustrates the main advantages of the clustering
+approach. First, points within clusters are distinguished from ‘noise’, so only clustered
+points are included within the footprint. Second, rather than creating a single polygon about
+a set of points, unique clusters of points are delineated individually; in this case, the footprint
+includes three disjoint regions.
+
+The DBSCAN algorithm is designed to cluster points that meet the prescribed minimum
+density threshold, as defined by epsilon and minPts. However, a deficiency of DBSCAN is
+
+Fig. 1 Point p is a core point,
+defining a cluster, if
+minPoints ≤6 (after Ester 1996)
+
+288
+
+Fig. 2 Points p and q are both
+core points. Because they are less
+than epsilon distance from each
+other, they define a single cluster
+(Ester 1996)
+
+Geoinformatica (2013) 17:285–299
+
+that all points contribute equally to the density calculation for a core point, regardless of the
+distance. Consider a candidate core point, Cp. A point at a distance slightly less than epsilon
+from Cp contributes the same to the density calculation as a point coincident with Cp, which
+means that the algorithm does not quantify point density as precisely as might be possible.
+Examine the two core points illustrated in Fig. 5. The core point on the left is in a denser
+region than the one on the right, but the DBSCAN algorithm considers the points to be
+equally dense. Another deficiency in DBSCAN, as well as many other clustering algorithms,
+is that cluster membership is a discrete and binary affair. In other words, a point is either
+assigned to a specific cluster or it is not; partial membership to one or more clusters is not
+possible. However, in spatial point pattern analysis, it might be useful to assess the degree to
+which a point belongs in various clusters. Such an approach would give the user more
+flexibility in cluster definition and, therefore, footprint generation as well. These two
+limitations of DBSCAN can be partially rectified by application of fuzzy set theory to the
+clustering algorithm.
+
+3 Footprint Generation Using FN-DBSCAN
+
+Fuzzy set theory has been applied to a variety of problems in GIScience where a binary
+approach to measurement is undesirable [5, 23, 31]. A complete description of fuzzy set
+
+Fig. 3 Cluster assignments by
+the DBSCAN algorithm: core
+points (solid circle), non-core
+points (open circle), and noise (×)
+
+Geoinformatica (2013) 17:285–299
+
+Fig. 4 Footprint generated for a
+point pattern using a combined
+DBSCAN and minimum convex
+hull approach
+
+289
+
+theory is beyond the scope of this paper; the curious are referred to Zadeh’s seminal work on
+the subject [33]. Essentially, in fuzzy set theory, an object can have varying grades of
+membership in multiple sets. A membership function assigns set membership to candidate
+objects with a real number in the range [0, 1]. Thus, a single object can belong to multiple
+sets with different degrees of membership. In point pattern analysis, this could be analogous
+to each point having varying grades of membership in each cluster. The DBSCAN algorithm
+can be modified to utilize fuzzy set theory. Fuzzy Neighborhood Density-Based Spatial
+Clustering of Applications with Noise (FN-DBSCAN) uses a fuzzy neighborhood function
+to assess density rather than the rigid definition in DBSCAN [27]. FN-DBSCAN requires
+three parameters: the fuzzy membership function, a distance parameter epsilon (ε) and a
+minimum set cardinality (minCard). The fuzzy membership function must be based on
+distance for spatial point pattern analysis, but many types of functions are possible. The
+authors of FN-DBSCAN discuss several possible options, the simplest and most intuitive
+being the linear function [16], because a zero is assigned to any points beyond the specified
+epsilon distance. The fuzzy linear membership function is defined as:
+
+(cid:1)
+
+ð
+M x; y
+
+Þ ¼ 1 (cid:2) ðdðx; yÞ="Þ;
+
+0;
+
+if dðx; yÞ (cid:3) "
+otherwise
+
+;
+
+ð1Þ
+
+where M(x, y) is the membership function value for y with respect to x, and d(x, y) is the
+distance between x and y. Instead of using the sum of points within distance epsilon to
+
+Fig. 5 DBSCAN assesses points
+p and q as having the same
+density (after Nasibov and
+Ulutagay 2009)
+
+290
+
+Geoinformatica (2013) 17:285–299
+
+calculate minPts as in traditional DBSCAN, FN-DBSCAN uses the sum of the fuzzy
+neighborhood function calculations for each point to calculate the fuzzy set cardinality:
+
+FSCard ¼
+
+M ðx; yiÞ:
+
+Xn
+
+i¼1
+
+ð2Þ
+
+If the computed fuzzy set cardinality (FSCard) is greater than minCard for point x, the
+point is considered a “fuzzy core point”. In Eq. 2, the fuzzy set cardinality is calculated for
+point x in a system with n points (yi≠x). Besides the use of fuzzy set cardinality, FN-
+DBSCAN behaves identically to DBSCAN as described in the previous section, and it
+likewise designates each point as a core point, non-core point, or noise.
+
+One important result from fuzzy set theory that pertains to point pattern analysis is the
+definition of the union of fuzzy sets. Let us consider each core point in the point pattern to
+define its own fuzzy set, with its own membership function M(x,y). Once a subset of core
+points is grouped into the same cluster by FN-DBSCAN, let us consider this cluster the
+union of each core point’s fuzzy set. For a cluster with n core points (xi) and m non-core
+points (yj), the union operation is defined as [33]:
+
+M xið Þ ¼ 1
+
+(cid:3) (cid:4)
+M yj
+
+(cid:5)
+¼ Max M x1; yj
+
+(cid:3)
+
+(cid:4)
+
+(cid:3)
+; M x2; yj
+
+(cid:4)
+
+(cid:3)
+. . . M xn; yj
+
+(cid:4)
+
+(cid:6)
+
+:
+
+ð3Þ
+
+This means each core point is assigned maximal membership in the cluster and each non-
+core point is assigned the fuzzy neighborhood membership value based on the nearest core
+point. Figure 6 illustrates membership values for a sample point pattern computed using FN-
+DBSCAN. The algorithm itself was implemented in the WEKA Data Mining Software in
+Java [18] with O (n2) run time complexity.
+
+This quantification of cluster membership using fuzzy set theory can allow for greater
+flexibility when generating footprints for point patterns. Rather than bounding individual
+clusters according to a binary rule, as in the previous example using DBSCAN, footprints
+can be created based on any specified membership value. For instance, minimum convex
+hulls are used to delineate clusters for the point pattern used in previous examples based on
+
+Fig. 6 Fuzzy membership values
+for an FN-DBSCAN cluster
+
+Geoinformatica (2013) 17:285–299
+
+291
+
+minimum cluster membership values of 0.05 and 0.50 in Fig. 7. As with traditional
+DBSCAN, individual clusters are demarcated, although with the fuzzy approach there is
+increased flexibility about which non-core points are included in the footprint. In the case of
+membership values>0.05, nearly all non-core points are included in the footprint, while a
+greater number are excluded at the 0.5 level.
+
+While bounding polygons, like convex hulls, provide simple methods for footprint gener-
+ation, sometimes extended footprints, which include an area of influence beyond each point,
+might be desired. For such cases, the following contouring method is proposed for generating
+extended footprints from the fuzzy membership values assigned by FN-DBSCAN. First, fuzzy
+membership values at each point in the dataset are interpolated to a continuous raster surface.
+These values are determined by computing the fuzzy union of membership values for each
+raster cell in the map. In GIS, this can be accomplished by calculating the Euclidian distance
+from each cell to the nearest core point of a cluster. Then, the distance raster is reclassified using
+the membership function used in the FN-DBSCAN algorithm (Eq. 1) such that each cell holds a
+value in the range [0, 1]. The calculations must be performed over a sufficiently large area so
+that the buffer around all core points is greater than epsilon. This method of interpolation
+ensures that grid cells beyond epsilon distance of a core point do not receive membership values
+greater than zero, since a linear function is used in the calculations. Second, since the surface
+provides a continuous density map of the point pattern, a footprint can be generated at any
+specified membership value by creating contour lines. For example, contours might be drawn
+where the cell values equal 0.50 and 0.05 to create footprints at two different levels of
+membership (Fig. 8). Note in the figure that the inclusion of non-core points in clusters depends
+on their fuzzy membership values so not all are necessarily included in the footprint. A footprint
+created from membership values >0.0 would include all core and non-core points, while one
+delineated at 1.0 would only include core points.
+
+4 Parameter Selection
+
+Density-based clustering algorithms are sensitive to the specified input parameters. In
+DBSCAN, the parameters epsilon and minPoints define the minimum local density required
+for a set of points to be considered a cluster. Different settings for these parameters can result
+in very different cluster and noise assignments. The same observation is true for FN-
+
+Fig. 7 Cluster delineation based
+on minimum fuzzy membership
+values of 0.05 (dotted) and 0.50
+(solid)
+
+292
+
+Fig. 8 Footprint delineation
+using 0.05 (dotted) and 0.50
+(solid) fuzzy membership value
+contours
+
+Geoinformatica (2013) 17:285–299
+
+DBSCAN and its parameters [27]. As what constitutes a cluster is subjective [13], there
+exists no method for finding true optimal parameter values for either algorithm for all
+possible uses. However, heuristic methods are often used to select parameters such that
+the clusters will have a ‘natural’ density [28].
+
+For example, a useful heuristic for setting epsilon for a fixed value of minPoints for
+DBSCAN has been developed by Ester [12]. For example, let us assume that minPoints is set
+to a value of 6. This means that a point is a core point if there are 6 or more points within
+epsilon distance of it. The heuristic consists of calculating the distance from each point to the
+6th nearest point to it. Ester refers to this as “k-dist”, with k06 [12]. The choice of 6 for k-
+dist is arbitrary, although the authors, in subsequent work [27], report that they observed
+little difference in clusters when k is in the range of 2 to 10. Once the distances to the kth
+point are calculated for each point in the data set, they are plotted at equal intervals
+ascending in order as shown in Fig. 9. Note the sharp change in slope at point P at a
+
+Fig. 9 A 6-dist graph for a system of points
+
+Geoinformatica (2013) 17:285–299
+
+293
+
+distance of 3000m; this marks a significant change in density. Assigning epsilon this
+distance, with MinPoints06, will result in clusters that have a ‘natural’ density. The authors
+state that the point at which the slope changes abruptly is difficult to detect algorithmically
+but simple to do visually. They recommend use of a graph similar to Fig. 9 to find the change
+in slope and select epsilon [12].
+
+Ester’s heuristic selection method could also be used in conjunction with FN-DBSCAN.
+In the same manner, k is specified and distances from each point to the kth nearest point are
+calculated and plotted in ascending order. Once the change in slope is detected, the FN-
+DBSCAN algorithm can be applied using the appropriate distance for epsilon. In fact, this
+parameter selection method was used in generating Fig. 8 from the previous section. Based
+on these preliminary results, the k-dist graph provides at least a reasonable heuristic for
+selecting epsilon for FN-DBSCAN. The next sections explore the use of FN-DBSCAN with
+the k-dist graph for footprint generation in two practical applications—animal home range
+and crime analysis.
+
+5 Application to Home Range Estimation
+
+One of the more popular applications of spatial point pattern analysis in GIS is for wildlife
+home range estimation. In ecology, an animal’s home range is defined as the area physically
+occupied by an animal during its normal activities, excluding any unusual movements or
+atypical excursions [4]. Thus, the goal of home range analysis is to derive a geometric
+footprint from tracking data that delineates where an individual animal was typically located
+during a specified time period. In most studies, the ‘typical’ area is assumed to contain either
+90 or 95% of the animal’s activity [32]. A variety of GIS-based footprint techniques have
+been utilized to delineate home ranges, including minimum convex hulls [26], local nearest-
+neighbor convex hulls [15], and characteristic shapes [7]. However, kernel density estima-
+tion (KDE), a popular data smoothing technique [29], is by far the most widely applied
+method of home range estimation, since it generates a continuous density surface from
+which contours of relative intensity (e.g. 90 or 95%) can be derived and used as the footprint
+[24]. Despite its widespread usage, several authors recently document KDE’s poor perfor-
+mance as a home range estimator [8, 20, 25]. One disadvantage of KDE is that it is very
+sensitive to outlying points [29], and thus home ranges estimated using this method often
+inappropriately include areas visited very infrequently since all point locations are almost
+always included in the estimated home range. For this reason, the fuzzy-neighborhood
+footprint generation routine described in this research might offer a viable alternative for
+home range estimation as it could explicitly exclude any outlying areas.
+
+For illustration, both KDE and the new fuzzy-neighborhood approach were applied for
+home range estimation using tracking data for a Florida panther (Puma concolor). The
+dataset included 437 point locations that were obtained using radio-telemetry by the Florida
+Fish and Wildlife Conservation Commission. For the KDE analysis, a fixed bandwidth was
+selected using a least-squares cross-validation algorithm, a heuristic which chooses the best-
+fitting smoothing parameter for a given dataset [29]. From the resulting continuous density
+surface, the home range was delineated using the 95% contour, a value commonly applied in
+ecology [32]. For the fuzzy-neighborhood technique, parameter epsilon was selected from a
+6-dist distance graph, as described in Section 4 and illustrated in Fig. 9. The panther’s home
+range was then delineated using contours of 0.05 and 0.5 membership values. These values
+were arbitrarily selected as two possible options that include different numbers of non-core
+points within the footprint, as there are no established criteria for this application.
+
+294
+
+Geoinformatica (2013) 17:285–299
+
+The results for this application to animal tracking data highlight the advantages of the
+fuzzy neighborhood approach over traditional methods of KDE for footprint generation with
+regards to outlying point locations. While both methods produce continuous surfaces that
+characterize the relative density of points, the two methods produce very different results in
+terms of the delineated home range. The footprint generated by KDE includes all points
+within the animal’s home range, even if the areas were seldom visited or were the result of an
+uncharacteristic excursion (Fig. 10). Meanwhile, the fuzzy approach excludes outlying
+points from the home range, since those locations were identified by the FN-DBSCAN
+algorithm as noise (Fig. 11). Approximately 10% of the points were located outside the
+delineated home range based on the 0.05 membership contour and 15% for the 0.5 contour.
+While there is no ‘known’ home range for comparison, given the home range is defined as the
+area ‘typically’ occupied by an animal—encompassing 90–95% of the animal’s activity—these
+results suggest that the fuzzy-neighborhood approach produced more reasonable results using
+minimum membership values of 0.5 compared to KDE for this example since it excluded
+outlying points from the home range.
+
+6 Application for Crime Analysis
+
+Another popular application of spatial point pattern analysis in GIScience is crime hotspot
+analysis. Here, the goal is often to identify clusters of criminal activity or to delineate a crime
+footprint for a geographic region [3]. In this section, we illustrate how the fuzzy neighbor-
+hood clustering approach can be used to generate meaningful crime footprints. In this
+context, we analyzed patterns of crime for Hillsborough County, Florida. The crime dataset
+used in the analysis included 1240 narcotics trafficking arrests in Hillsborough County
+during the calendar years 2008 and 2009. First, we applied the FN-DBSCAN algorithm to
+the narcotics dataset using the k-dist parameter selection approach described in Section 4.
+Plotting the 6-dist graph for the dataset revealed a change in cluster density occurred at
+approximately 2.3 km or 1.5 miles. We applied FN-DBSCAN using this value for epsilon.
+Then, we generated footprints using both the minimum convex hull and contouring
+approaches previously described. For both methods, footprints were generated at minimum
+membership values (FSCard) of 0.01 and 0.5; the first value was specified such that all non-
+core points would be included in the footprint, while the latter only would only include a
+subset.
+
+The FN-DBSCAN algorithm identified nine clusters of narcotics arrests in Hillsborough
+County. The largest cluster contained 758 arrests, while the remaining clusters included
+
+Fig. 10 Home range of a Florida
+panther as delineated using kernel
+density estimation
+
+Geoinformatica (2013) 17:285–299
+
+Fig. 11 Home range of a Florida
+panther as delineated using a
+fuzzy-neighborhood approach.
+
+295
+
+between 14 and 58 points each. Just below 200 arrests were classified as noise and not
+included in any cluster. Figure 12 illustrates the narcotics footprints created using minimum
+convex hulls (12a, 12b) and contouring (12c, 12d). While all four examples are very similar,
+in that they highlight clusters of narcotics arrests, the footprints vary in size and shape.
+
+Fig. 12 Footprints of narcotics arrests in Hillsborough county using the FN-DBSCAN algorithm and
+delineated using: a minimum convex hulls where FSCARD ≥ 0.01, b minimum convex hulls with
+FSCARD≥0.5, c contouring with FSCARD≥0.01, and d contouring with FSCARD≥0.5
+
+296
+
+Geoinformatica (2013) 17:285–299
+
+Higher minimum membership values (12b, 12d) create relatively smaller regions since fewer
+points are used to generate the footprint. The most notable difference between the two
+approaches is that the contouring method produces extended footprints, while minimum
+convex hulls delineate clusters such that the boundary coincides with known points. While
+the choice between these two methods is left to the user’s discretion for a particular
+application, one consideration is whether it is desirable for footprints of individual clusters
+to overlap. Since contouring produces extended footprints, demarcations of individual
+clusters are more likely to overlap compared to minimum convex hulls. Overlap is possible,
+since individual non-core points can belong to multiple clusters. For example, a point might
+have a membership value of 0.7 to one cluster and 0.2 to another. In cases such as this, it is
+intuitive to map cluster overlap as it occurs, as in the case of Fig. 12a and c where minimum
+membership values are ≥0.01. If the user decides cluster overlap in the mapped footprint is
+undesirable, there are three potential solutions. One option is to dissolve the borders of any
+overlapping polygons, as was done in the case of Fig. 8 in the previous section. A second
+possibility is to use relatively high minimum membership values to generate the footprint,
+since overlap will be less likely as the delineated regions are smaller. An alternative solution
+would be to use characteristic shapes [14], which can have concave edges, to delineate non-
+overlapping clusters.
+
+7 Discussion and Conclusions
+
+The density-based clustering algorithms, DBSCAN and FN-DBSCAN, can serve as the
+cornerstone techniques for generating footprints from spatial point patterns in GIS-
+cience. The main advantage of the fuzzy approach is flexibility. Clusters of significant
+points can be determined algorithmically while footprints can still be delineated using
+whatever GIS-based techniques are desired. While Galton and Duckham [14] first
+suggested that using DBSCAN for footprint generation might be possible—with Duck-
+ham et al. [9] and Tang et al. [30] applying it in a limited context—this paper provides
+the theoretical background necessary to guide application of this algorithm, including
+this paper
+parameter selection, for footprint generation in GIScience. Specifically,
+provides a simple example of the use of DBSCAN in the creation of minimum convex
+hulls around clustered points. The main advantage of this approach is that it determines
+which points should be considered statistical noise in addition to assigning points to
+individual clusters. While footprints were created using minimum convex polygons,
+other techniques commonly used in GIScience could also be easily applied for the same
+purpose. For instance, a characteristic shape could be used to generate a footprint with
+concave edges such that
+individual clusters do not overlap [9], while a Voronoi
+tessellation might be utilized to create an extended footprint [14].
+
+In addition to providing an overview of footprint generation routines using the original
+DBSCAN, this paper is the first to apply the fuzzy-neighborhood version of DBSCAN in the
+context of spatial point pattern analysis and footprinting. As such, this research presents a
+novel set of techniques for generating fuzzy footprints in GIScience. Let us review the
+technique:
+
+1. Use Ester’s parameter selection technique to determine epsilon for a fixed minimum
+
+cardinality.
+
+2. Apply FN-DBSCAN to the set of points using the linear membership function.
+3. Plot the set of points, retaining cluster assignments and membership values.
+
+Geoinformatica (2013) 17:285–299
+
+297
+
+a.
+b.
+
+If extended footprints are desired, move to step 4.
+If extended footprints are not desired, delineate the footprint using minimum
+convex hulls or other polygonal method.
+
+4. Generate a Euclidean distance raster from the core points.
+5. Create a density map by reclassifiying the distance raster using Eq. 1. This creates a
+
+membership value density map scaled in the range [0, 1].
+
+6. Generate footprint using contours of the density map.
+
+By applying fuzzy set theory to assign membership values to each point, the approach
+offers more flexibility in footprint generation than existing methods and the DBSCAN
+approach. If a simple method is desired, steps 1–3 above can be completed, and a minimum
+convex hull can be used to generate a footprint from points that meet a specified minimum
+membership value. However, the real utility of this approach is when steps 4–5 are used to
+generate a continuous density map for the spatial point pattern and footprints are delineated
+based on interpolated membership values. In this paper, minimum membership values of
+0.50, 0.05, and 0.01 were specified as example contours, although other values would be
+equally appropriate depending on the desired outcome of the footprints. Additionally, the
+density surface offers a method for visualizing the relative density of points within the
+footprint itself.
+
+that
+
+In summary, this paper introduces the fuzzy-neighborhood footprinting approach and
+explores its applicability in the context of animal home range estimation and generating
+crime footprints. The limited application to animal tracking data suggests the fuzzy
+clustering approach may offer an improvement over existing methods, such as density
+likewise produce continuous density surfaces. Since kernel density
+estimation,
+estimation does not distinguish between points in clusters from outliers,
+the results
+often incorrectly include outlying areas and accordingly produce inaccurate home range
+estimates. As the fuzzy method explicitly excludes outlying points that should not be
+included in the animal’s home range,
+it may offer improvements for home range
+estimation. Furthermore, the density surface of fuzzy membership values might lend
+itself to a more detailed analysis of animal space use patterns through the identification
+of ‘core areas’ [32]. One possibility might be to delineate an animal’s core area using a
+footprint generated from only core points, although this is left
+to future research.
+Similarly, FN-DBSCAN was used to generate meaningful crime footprints for a county
+in Florida; this application further illustrates the flexibility of the approach in terms of
+generating footprints of different shapes and sizes.
+
+Furthermore, the method is also potentially applicable for analyzing numerous other
+types of point patterns, such as mapping disease patterns or plant distributions. Since
+footprints are used in GIScience for a variety of diverse applications, from regional
+approximation [1] to cartographic generalization [14] to shape reconstruction [16], this
+research contributes techniques that may be broadly applicable in the discipline. Future
+work might evaluate the utility of the fuzzy footprint approach in these diverse spatial
+contexts as well as evaluate other clustering approaches. For example, additional
+research might explore the applicability of other clustering algorithms for footprint
+generation such as DENCLUE [21] as well as adaptations of these algorithms to non-
+Euclidean spaces like networks.
+
+Acknowledgments The authors would like to thank Dave Onorato, Florida Fish and Wildlife Conservation
+Commission, for providing the panther locational data used in this paper and Mr. John Chaffin, Hillsborough
+County Sheriff’s Office, for his assistance in acquiring the arrest data.
+
+298
+
+References
+
+Geoinformatica (2013) 17:285–299
+
+113:19–36
+
+13:527–537
+
+72:1813–1818
+
+5756, pp. 227–244
+
+1. Alani H, Jones C, Tudhope D (2001) Voroni-based region approximation for geographical information
+
+retrieval with gazetteers. Int J Geogr Inf Sci 15:278–306
+
+2. Agosto E, Ajmar A, Boccardo P, Tonolo F, Lingua A (2008) Crime scene reconstruction using a fully
+
+geomatic approach. Sensors 8:6280–6302
+
+3. Bailey T, Gatrell A (1995) Interactive spatial data analysis. Longman Scientific and Technical, Essex
+4. Burt WH (1943) Territoriality and home range as applied to mammals. J Mammal 24:346–352
+5. Cross V, Firat A (2000) Fuzzy objects for geographical
+
+information systems. Fuzzy Set Syst
+
+6. de Berg M, Schwarzkopf O, van Kreveld M, Overmars M (2000) Computational geometry: Algorithms
+
+and applications, 2nd edn. Springer, Berlin
+
+7. Downs J, Horner M (2009) A characteristic-hull based method for home range estimation. Trans GIS
+
+8. Downs J, Horner W (2007) Effects of point pattern shape on home range estimates. J Wildl Manag
+
+9. Duckham M, Kulik L, Worboys M, Galton A (2008) Efficient generation of simple polygons for
+
+characterizing the shape of a set of points in the plane. Pattern Recogn 41:3224–3236
+
+10. Dupenois M, Galton A (2009) Assigning footprints to dot sets: an analytical survey. COSIT 2009, LNCS
+
+11. Edelsbrunner H, Kirkpatrick DG, Seidel R (1983) On the shape of a set of points in the plane. In:
+
+Computer Vision and Image Understanding, vol. IT-29, pp. 551–559. IEEE, Los Alamitos
+
+12. Ester M, Kriegel H, Sander J, Xu X (1996) A density-based algorithm for discovering clusters in large spatial
+databases with noise. Proceedings of the Second International Conference on Knowledge Discovery and Data
+Mining, pp. 2226–231
+
+13. Estivill-Castro V (2002) Why so many clustering algorithms: a position paper. ACM SIGKDD Explor
+
+Newslett 4(1):65–75
+
+4197:91–98
+
+14. Galton A, Duckham M (2006) What is the region occupied by a set of points? GIScience 2006, LNCS,
+
+15. Getz WM, Wilmers CC (2004) A local nearest-neighbor convex-hull construction of home ranges and
+
+utilization distributions. Ecography 27:489–505
+
+16. Gold C (1999) Crust and anti-crust: a one-step boundary and skeleton extraction algorithm. Proceedings
+
+of the ACM Conference on Computational Geometry, pp. 189–196
+
+17. Grothe C, Schaab J (2009) Automated footprint generation from geotags with kernel density estimation
+
+and support vector machines. Spat Cogn Comput 9:195–211
+
+18. Hall M, Frank E, Holmes G, Pfahringer B, Reutemann P, Witten IH (2009) The WEKA data mining
+
+software: an update; SIGKDD Explorations, 11(1)
+
+19. Harris RJ, Johnston RJ (2008) Primary schools, markets and choice: studying polarization and the core
+
+catchment areas of schools. Appl Spat Anal Policy 1:59–84
+
+20. Hemson G, Johnson P, South A, Kenward R, Ripley R, Macdonald D (2005) Are kernels the mustard?
+Data from global positioning system (GPS) collars suggests problems for kernel home-range analyses
+with least-squares cross-validation. J Anim Ecol 74:455–463
+
+21. Hinneberg A, Keim D (1998) An efficient approach to clustering in large multimedia databases
+with noise, Proc. 4th Int. Conf. on Knowledge Discovery & Data Mining, New York City, NY,
+pp. 58–65
+
+22. Jain A, Murty M, Flynn P (1999) Data clustering: a review. ACM Comput Surv 31:264–323
+23. Jiang H, Eastman J (2000) Application of fuzzy measures in multi-criteria evaluation in GIS. Int J Geogr
+
+Inf Sci 14:173–184
+
+24. Kernohan BJ, Gitzen RA, Millspaugh JJ (2001) Analysis of animal space use and movements. In:
+Millspaugh JJ, Marzluff JM (eds) Radio tracking animals and populations. Academic, San Diego, pp
+125–166
+
+25. Mitchell MS, Powell RA (2008) Estimated home ranges can misrepresent habitat relationships on patchy
+
+26. Mohr CO (1947) Table of equivalent populations of North American small mammals. Am Midl Nat
+
+27. Nasibov E, Ulutagay G. Robustness of density-based clustering methods with various neighborhood
+
+landscapes. Ecol Model 216:409–414
+
+37:223–249
+
+relations. Fuzzy Sets and Systems, in press
+
+28. Sander J, Ester M, Kriegel H, Xu X (1998) Density-based clustering in spatial databases: the algorithm
+
+GDBSCAN and its applications. Data Min Knowl Disc 2(2):169–194
+
+29. Silverman BW (1986) Density estimation for statistics and data analysis. Chapman Hall, London
+
+Geoinformatica (2013) 17:285–299
+
+299
+
+30. Tang M, Zhou Y, Cui P, Wang W, Li J, Zhang H, Hou Y, Yan B (2009) Discovery of migration habitats
+and routes of wild bird species by clustering and association analysis. Proceedings of the 5th International
+Conference on Advanced Data Mining and Applications, pp. 288–301
+
+31. Wang F, Hall G (1996) Fuzzy representation of geographical boundaries in GIS. Int J Geogr Inf Sci
+
+10:573–590
+
+32. White GC, Garrott RA (1990) Analysis of wildlife radio-tracking data. Academic, San Diego
+33. Zadeh L (1965) Fuzzy sets. Inf Control 8:338–353
+
+Jonathon Parker is a software developer who resides in Tampa, FL. He received a BS in Chemistry (Honors
+Course) from the University of Wisconsin (1988) and an MS in Computer Science from Bowie State
+University (1997). He is currently a Doctoral Candidate in Computer Science and Engineering at the
+University of South Florida. His interests include data mining, data clustering and designing applications.
+
+Joni Downs is an Assistant Professor in the Department of Geography, Environment, and Planning at the
+University of South Florida. She holds a PhD in Geography from the Florida State University and a MS in
+Natural Resources from the Ohio State University. Joni’s research interests include spatial point pattern
+analysis, time geography, and ecological modelling.
+
+

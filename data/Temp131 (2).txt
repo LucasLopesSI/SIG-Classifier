@@ -1,0 +1,3812 @@
+Geoinformatica
+https://doi.org/10.1007/s10707-018-00335-w
+
+Query rewriting for semantic query optimization in spatial
+databases
+
+Eduardo Mella1 · M. Andrea Rodr´ıguez1 · Loreto Bravo2 · Diego Gatica1
+
+Received: 26 January 2018 / Revised: 21 October 2018 / Accepted: 28 November 2018 /
+
+© Springer Science+Business Media, LLC, part of Springer Nature 2019
+
+Abstract
+Query processing is an important challenge for spatial databases due to the use of com-
+plex data types that represent spatial attributes. In particular, due to the cost of spatial joins,
+several optimization algorithms based on indexing structures exist. The work in this paper
+proposes a strategy for semantic query optimization of spatial join queries. The strategy
+detects queries with empty results and rewrites queries to eliminate unnecessary spatial
+joins or to replace spatial by thematic joins. This is done automatically by analyzing the
+semantics imposed by the database schema through topological dependencies and topolog-
+ical referential integrity constraints. In this way, the strategy comes to complement current
+state-of-art algorithms for processing spatial join queries. The experimental evaluation with
+real data sets shows that the optimization strategy can achieve a decrease in the time cost of
+a join query using indexing structures in a spatial database management system (SDBMS).
+
+Keywords Spatial databases · Semantic optimization · Spatial query rewriting ·
+Spatial integrity constraints
+
+Query processing in spatial databases can be very expensive due to the complex data
+types that represent spatial attributes. Indeed, spatial joins are one of the most expensive
+
+1 Introduction
+
+(cid:2) M. Andrea Rodr´ıguez
+
+andrea.rodriguez@udec.cl
+
+Eduardo Mella
+edumella@udec.cl
+
+Loreto Bravo
+bravo@udd.cl
+
+Diego Gatica
+dgatica@udec.cl
+
+1
+
+Computer Science Department, Millenium Institute for Foundational Research on Data,
+Universidad de Concepci´on, Concepci´on, Chile
+
+2 Data Science Institute, Universidad del Desarrollo, Santiago, Chile
+
+Geoinformatica
+
+operations in spatial databases, which involve a selection based on a spatial relation, in most
+cases, a topological relation such as overlap or intersect. Due to the increasing use of geo-
+graphic data in different domains, there exists a large effort to design optimization methods
+as part of the spatial database management systems. These methods typically rely on a pre-
+filtering step using spatial indexing and the approximation of geometries in terms of their
+minimum bounding boxes upon which the index partitions the data and performs internal-
+memory spatial joins. Then, a refinement step verifies the exact spatial relation between
+objects [2, 5, 14, 16]. The work in this paper proposes a method for semantic query opti-
+mization [8, 13] that uses integrity constraints to rewrite a query that generates the same
+answer set in a more efficient way. In this sense, this strategy comes to complement current
+state-of-art algorithms for spatial joins.
+
+Semantic query optimization complements existing methods for query processing by
+using knowledge that is application dependent. It requires the specification of integrity con-
+straints or other types of knowledge by the database designers who are not necessarily the
+final users of the database. We argue that users (i.e., persons or systems) who are not the
+designers of the databases may write queries that do not exploit the semantics of the data to
+reduce the processing cost and, in consequence, providing automatic mechanisms for semantic
+query optimization contributes to the development of more efficient information systems.
+
+Several strategies for semantic query optimization exist: join elimination if the value is
+known in advance, join addition if the result is highly selective, predicate elimination if
+the predicate is always true, and predicate addition if the indexed attributes produce faster
+access plan [6, 7, 15]. For relational databases, a method of query optimization based on
+query rewriting is the Chase and Backchase [8]. The Chase rewrites the original query
+into a query that integrates alternative pathways that are allowed by the constraints. Then,
+the Backchase produces new queries by eliminating various combinations of redundancies
+according to constraints [7].
+
+For extended relational databases, the work in [17] investigates a general approach for
+semantic query optimization. They use integrity constraints to partition the process of con-
+junctive queries in order to reduce the number of tests on expensive conditions. The basic
+idea of this work is that when a query q can be partially answered by another q(cid:2) that is con-
+siderably cheaper than q, then it can be useful to divide the process of q in three steps: (i)
+answering q(cid:2) and ignoring the tuple combinations in this answer from the original base rela-
+tions, (ii) checking possible answers in the tuple combinations that are left, and then (iii)
+combining answers.
+
+A recent work [3] proposes to use an ontology and semantic integrity constraints to
+reduce the number of spatial relations for knowledge discovery. The basic idea is to avoid
+the computation of relations which are irrelevant to the discovery process. For example, if
+an island by definition is surrounded by water, their spatial relation is explicitly specified
+by the ontology or integrity constraints and does not need to be computed.
+
+Inspired by the Chase and Backchase strategy [8], we propose in this paper a strategy that
+rewrites queries, which can then be processed with efficient algorithms. Indeed, our work does
+not provide a new algorithm for spatial joins, but rather algorithms that preprocess integrity
+constraints and rewrite queries. The basic assumption of this work is that spatial joins are
+more costly than traditional thematic joins, and therefore, by eliminating unnecessary joins
+and replacing them by thematic joins, we can improve the performance of query processing.
+We show in this paper that this process can be done automatically based on integrity con-
+straints. Consequently, we validate our proposal with an experimental evaluation that uses a
+real data set on a real SDBMS. This evaluation compares the temporal cost of join queries
+with and without rewriting, and with a partition-based strategy for query optimization.
+
+Geoinformatica
+
+Although the theories behind previous strategies can be applicable to not only relational
+databases, to the best of our knowledge, there has been no attempt to use spatial semantic
+integrity constraints with optimization purposes in spatial databases. The work in this paper
+uses topological dependency and topological referential constraints [4] in addition to key
+constraints to optimize spatial join queries. It describes algorithms for the query rewriting
+and provides an experimental evaluation to validate the usefulness of the proposed strategy.
+The organization of this paper is as follows. Section 2 revises preliminary concepts that
+are needed to understand the optimization method defined in Section 3. The experiments
+are in Section 4 followed by conclusions and future research directions in Section 5.
+
+In this section, we provide a brief formalization of spatial databases and the integrity constraints
+used in this work.
+
+2 Preliminary
+
+2.1 Spatial database model
+
+A spatial database is seen as an extension of a relational database that contains both the-
+matic and spatial attributes. Formally, a spatio-relational database schema is a finite set R
+of relational predicates, each predicate with a finite and ordered set of attributes. We use
+R(B1, . . . , Bl) to represent the predicate R with its attributes B1, . . . , Bl. To simplicity the
+presentation, we will use single-spatial schemas where every R ∈ R contains at most one
+spatial attribute that represents regions, lines or points.
+
+Example 1 Consider a spatial database that stores information of places and administrative
+boundaries of counties. The schema of the spatio-relational database R is composed of
+a set of relational predicates R = { St(I ds, N ame, Gs), Co(I dc, I ds, N ame, Gc), and
+Pl(I dp, I dc, N ame, Gp)}. Predicate St stores information of states, where the thematic
+attributes are Ids and Name, and the only spatial attribute that stores the states’ boundaries
+is Gs. Predicate Co stores information of counties with thematic attributes Idc, Ids, and
+Name, and a spatial attribute Gc that stores the boundaries of counties. Predicate Pl stores
+information of places and has thematic attributes Idp, Name, andId c, and a spatial attribute
+Gp. Figure 1 shows an instance of this schema, in which thick lines represent boundaries of
+states, dashed lines represent counties, and gray rectangles represent places.
+
+Spatial objects are related by spatial relations, which are usually classified into distance,
+orientation, or topological relations [21, 22]. Among these spatial relations, topological rela-
+tions have gained much interest [10, 19], and are currently implemented in Spatial SQL
+Languages (SSQLs) [18].
+
+Topological relations and composition Topological relations are invariant under con-
+tinuous transformations such as translation, rotation, and scaling. There exist eight base
+topological relations between two non-empty regions x and y: Overlap(x, y), Equal(x, y),
+Inside(x, y), Includes(x, y), Covers(x, y), CoveredBy(x, y), Meet(x, y), and Disjoint(x, y)
+[9]1. These are called base relations because only one of them relates two given regions and,
+
+1The names given in [9] have their equivalence in the relations in [19].
+
+Geoinformatica
+
+Fig. 1 A spatial database instance
+
+therefore, these relations can be used to represent in an unambiguous way the topological
+relations between regions.
+
+A derived topological relation is a set of base topological relations that is satisfied if
+any of its base relations is true. Commonly used derived relations are Contains and Within.
+Contains(x, y) holds if either Equal(x, y), Includes(x, y), or Covers(x, y) is true. Likewise,
+object x is Within object y if either Equal(x, y), Inside(x, y) or CoveredBy(x, y) is true.
+Using set notation, we write Contains = {Equal, Includes, Covers} and Within = {Equal,
+Inside, CoveredBy}. In addition, it is also possible to distinguish topological relations
+depending on the type of spatial feature (i.e., points, lines, or polygons) [11].
+
+Current Spatial Database Systems, such as PostGIS, implement relations as defined by
+the Open Geospatial Consortium [18]. They have languages with relations Overlap, Equal,
+Disjoint, Meet2, and the derived relations Contains and Within. Derived relations that are
+singletons correspond to their base relation, e.g., for a derived relation Tt = {Overlap},
+it holds that Tt (x, y) if and only if Overlap(x, y). In this specification, these topological
+relations may apply over different types of geometries depending on its realizability. For
+example, the relation Equal does not apply between lines and polygons.
+
+Table 1 contains the definitions of the topological relations currently used by PostGIS
+and useful for the purpose of the work in this paper, where x and y are non-empty regions.
+In the experimental evaluation we use the names of topological relations as used in current
+query languages and defined in [18].
+
+Because we define topological relations as a set of base relations, we can natu-
+rally define inclusion (⊆) and intersection (∩) between them. For example, {Disjoint} ⊆
+{Disjoint, Overlap} and {Disjoint} ∩ {Disjoint, Overlap} = {Disjoint}.
+
+It is worth to notice that each topological relation has its converse relation. In particu-
+lar, Disjoint, Meet, Equal, and Overlap are symmetric relations such that they are also their
+converse relations. Within and Contains, however, are the converse relation to each other.
+
+An important concept used later for semantic query optimization is the notion
+of the composition of topological relations (see [9] for a complete description of
+the composition of topological relations). The composition of two topological rela-
+
+2Note that PostGIS uses the name Touches instead of relation Meet.
+
+Geoinformatica
+
+Relation
+
+Disjoint(x, y)
+
+Meet(x, y)
+
+Overlaps(x, y)
+
+Equal(x, y)
+
+Within(x, y)
+
+Contains(x, y)
+
+Table 1 Definition of topological relations by the Open Geospatial Consortium [18]
+
+Is true if . . .
+
+The intersection of x and y is the empty set
+
+The only points in common between x and y lie in the union of the
+boundaries of x and y
+
+The intersection of x and y results in a value of the same dimension as
+x and y that is different from both x and y
+
+x and y are equal
+
+x is completely contained in y
+
+x is completely inside of y
+
+tions T1(x, y) and T2(y, z) over a common object y, denoted by T1(x, y) ⊗ T2(y, z),
+enables the derivation of the topological relation between objects x and z. For exam-
+ple, Overlap(x, y) ⊗ CoveredBy(y, z)=T⊗(x, z), where T⊗={Overlap, CoveredBy, Inside}
+and thus, if Overlap(a, b) and CoveredBy(b, c) are true, we know that either Overlap(a,
+c), CoveredBy(a, c), or Inside(a, c) is also true. Table 2 shows the composition of base
+topological relations between regions [12].
+
+We complement the definition of the database schema with a set of integrity constraints that
+define the valid states of the database instances. The work in this paper concentrates and
+generalizes a subset of spatial semantic constraints as defined in [4].
+
+2.2 Integrity constraints
+
+Table 2 Composition of basic
+topological relations [12]
+
+Geoinformatica
+
+In what
+
+follows, we denote x1, . . . , xn, u, z variables
+
+in thematic attributes;
+¯x1, . . . , ¯xn, ¯u, ¯z, possible empty, sequences of distinct variables in thematic attributes;
+g, g1, . . . , gn variables in spatial attributes; and when necessary for space, ∀ and ¯∃ are
+universal and existential quantifications, respectively, over all variables (e.g., ∀x1y1z1...).
+
+Given a database schema R, P and R two, not necessarily different, relational predicates
+in R, and a topological relation T, a spatial semantic integrity constraint (SSIC) is one of
+the following:
+
+Topological Dependencies (TDs)
+
+∀ ¯x ¯yg1g2(P( ¯x, g1) ∧ R( ¯y, g2) ∧ ϕ → T(g1, g2)),
+
+where ¯x ∩ ¯y = ∅ and ϕ is a possibly empty CNF formula of equalities or inequalities
+between variables in ¯x and/or ¯y.
+
+Example 2 (Example 1 cont.) Possible TDs for the schema in Example 1 are:
+
+∀( St(x1, y1, g1) ∧ St(x2, y2, g2) ∧ x1 = x2 → Equal(g1, g2))
+∀( Co(x1, y1, z1, g1) ∧ Co(x2, y2, z2, g2) ∧ x1 = x2 → Equal(g1, g2))
+∀( Pl(x1, y1, z1, g1) ∧ Pl(x2, y2, z2, g2) ∧ x1 = x2 → Equal(g1, g2))
+
+∀( Co(x1, y1, z1, g1) ∧ Co(x2, y2, z2, g2) ∧ x1 (cid:12)= x2 → Meet(g1, g2) ∨ Disjoint(g1, g2))
+∀( St(x1, y1, g1) ∧ St(x2, y2, g2) ∧ x1 (cid:12)= x2 → Meet(g1, g2) ∨ Disjoint(g1, g2))
+
+(1)
+(2)
+(3)
+(4)
+(5)
+
+The first three TDs are classical dependency constraints applied over spatial attributes, that
+is, they express that two tuples of states, counties, or places with the same identification
+must have the same geometry. The last two TDs express that two different counties or states
+must have geometries that are disjoint or meet to each other.
+
+Spatial Referential Dependencies (RDs)
+
+∀ ¯u ¯xg1(P( ¯u, ¯x, g1) → ∃ ¯v ¯yg2(R( ¯v, ¯y, g2) ∧ ¯u = ¯v ∧ T(g1, g2))),
+
+where ¯u, ¯x, ¯v and ¯y are all disjoint, and where if ¯u = [u1, u2, . . . , un] and ¯v =
+[v1, v2, . . . , vn], then ¯u = ¯v denotes the conjunction (u1 = v1)∧. . .∧(u n = vn).
+
+For the purpose of the optimization strategy, we assume that the referencing attributes of
+
+every foreign and referential dependency is set to be not null.
+
+Example 3 (Example 1 cont.) Possible RDs for the schema in Example 1 are:
+
+∀x1y1z1g1( Pl(x1, y1, z1, g1) → ∃x2y2z2g2( Co(x2, y2, z2, g2) ∧ y1 = x2 ∧ Within(g1, g2))) (6)
+∀x1y1z1g1( Co(x1, y1, z1, g1) → ∃x2y2g2( St(x2, y2, g2) ∧ y1 = x2 ∧ Within(g1, g2))) (7)
+
+The first RD expresses that for every place, there must be a county that contains it. Simi-
+larly, the second RD expresses that for every county, there must exist a state that contains it.
+(cid:2)
+
+Relational key constraints In addition to the spatial integrity constraints, we also have the
+well-known primary-key and foreign-key constraints provided by the relational database
+model. Recall that primary keys satisfy functional dependencies and foreign keys satisfy
+referential dependencies over thematic attributes.
+
+Geoinformatica
+
+Example 4 (Example 1 cont.) Given the schema in Example 1, for each predicate the
+following thematic attributes are the corresponding primary and foreign keys.
+
+Predicate
+
+Primary key
+
+Foreign key
+
+St
+Co
+Pl
+
+I ds
+I dc
+I dp
+
+–
+I ds
+I dc
+
+Remark 1 When identifying primary keys, it is possible to automatically derive TDs.
+Indeed, the first three TDs of Example 2 are constraints derived from primary-key con-
+straints. Also, if we have spatial semantics for foreign-key constraints between predicates
+with spatial reference, we can express spatial referential dependencies. For example, by
+knowing that foreign-key constraints imply an inclusion relationship, we could express
+constraints of Example 3.
+
+2.3 Spatial join queries
+
+We concentrate on join queries, which are conjunctive queries of the form:
+
+q( ¯x) : ∃¯z(P( ¯y1, g1) ∧ R( ¯y2, g2) ∧ ψq ∧ Tq (g1, g2)),
+
+where ¯x are free variables, this is, ¯x = ( ¯y1 ∪ ¯y2 ∪ {g1, g2}) \ ¯z, and ψq is a possibly empty
+formula of equalities or inequalities of variables in ¯y1 ∪ ¯y2.
+
+Example 5 (Example 1 cont.) A possible join query in the schema of Example 1 is:
+
+q(x1, x2, g1, g2) : ∃y1z1y2z2( Co(x1, y1, z1, g1) ∧ Co(x2, y2, z2, g2) ∧ Meet(g1, g2)).
+
+This query requests the identification and geometries of counties that meet each other.
+
+A join query compares the spatial attributes from two tuples in order to find the pairs of
+spatial attributes where the topological search condition T(g1, g2) holds true. The execution
+cost of queries that involve search conditions over spatial attributes is high in comparison
+with queries using search conditions on thematic attributes.
+
+3 Semantic query optimization
+
+Given a spatial join query over a database instance that satisfies a set of TDs and RDs, we
+propose an optimization strategy that:
+
+(i)
+(ii)
+
+detects if the answer to the query is the empty set, or
+generates a new query, which is equivalent to but less expensive than the original
+query, what we call rewriting.
+
+The method detects an empty answer by finding a contradiction between the spatial
+restriction (i.e, restriction expressed by the topological relation) of the query with respect
+to the spatial restriction imposed by the integrity constraints. When rewriting the query,
+the main idea is to derive the topological relation that exists between spatial attributes and
+reformulate the query to remove the spatial condition (i.e., spatial join). In case we cannot
+
+Geoinformatica
+
+remove the spatial condition the method tries to create a more selective query by adding a
+new thematic condition what will filter tuples over which to check topological relations.
+
+As it was stated before, a well-known strategy for query rewriting is the Chase and
+Backchase [8], which basically expands and then refines the query in terms of integrity con-
+straints. In principle, because our constraints are expressions in first order logic, we could
+apply the same strategy by using the spatial constraints and composition of topological rela-
+tions in the Backchase step. In what follows, we present an implementation of the semantic
+optimization that precomputes the knowledge about topological relations derived from con-
+straints and composition, and that can be applied to any query. This avoids the process of
+Chase and Backchase for each query. We argue that this is a good approach because the
+number of constraints is usually much less than the number of queries imposed to a database.
+The basic idea is to match relational predicates and the topological relation of a query
+with the predicates and the topological relation of spatial integrity constraints which are
+known to be satisfied by the database instance. Because we assume that the data satisfies
+the topological relations imposed by the constraints, we can simplify queries by removing
+conditions that are known to be satisfied. This is a simple idea, but the challenge is to create
+a systematic way to apply it.
+
+To apply a matching process between constraints and queries, we first want to obtain
+the knowledge that can be used in this process. In consequence, we apply an inference
+process described in the next subsection that takes the original constraints and derives
+all possible additional constraints. This process includes combinations of TDs, RDs, and
+foreign-key conditions as we show below. Thus, given an original set of TDs and RDs, we
+first infer additional TDs and a generalization of TDs, called extended topological depen-
+dencies (ETDs). ETDs are a generalization of TDs as defined in [4] that can have more than
+two relational predicates. This step can be done as an off-line preprocess before processing
+any query.
+
+3.1 Inference over spatial integrity constraints
+
+In this section, we describe different types of inferences over combinations of RDs, TDs,
+and key constraints.
+
+A) A first type of inference is possible when combining RDs and foreign-key conditions.
+
+Consider a RD of the form
+
+∀ ¯u ¯xg1(P( ¯u, ¯x, g1) → ∃ ¯v ¯yg2R( ¯v, ¯y, g2) ∧ ¯x = ¯v ∧ T(g1, g2)),
+
+which expresses that if there exists a tuple in the relational predicate P, there must be a tuple
+in R where the thematic condition ¯x = ¯v and the topological relation T(g1, g2) hold.
+
+The RD alone does not ensure that the tuple in R such that ¯x = ¯v holds is unique.
+However, combining the RD with the foreign-key (FK) condition such that attributes in ¯v
+are a super key of R, we can derive a new TD that imposes that, whenever ¯x = ¯v holds, the
+topological relation T(g1, g2) between geometries in tuples P( ¯u, ¯x, g1) and R( ¯v, ¯y, g2) will
+also hold. This is formalized with the following proposition.
+
+Proposition 1 Given a database schema R, a set of SSICs (cid:4) and a topological relation T, if
+the RD ∀ ¯u ¯xg1(P( ¯u, ¯x, g1) → ∃ ¯v ¯yg2R( ¯v, ¯y, g2) ∧ ¯x = ¯v ∧ T(g1, g2)) ∈ (cid:4) and ¯v is a super
+key of R, then the TD ¯∀(P( ¯u, ¯x, g1) ∧ R( ¯v, ¯y, g2) ∧ ¯x = ¯v → T(g1, g2)) is implied by (cid:4).
+
+Geoinformatica
+
+Proof ∀ ¯u ¯xg1(P( ¯u, ¯x, g1) → ∃ ¯v ¯yg2R( ¯v, ¯y, g2) ∧ ¯x = ¯v ∧ T(g1, g2)) with ¯v a super key of
+R. Assume now that ∀ ¯u ¯xg1 ¯v ¯yg2(P( ¯u, ¯x, g1) ∧ R( ¯v, ¯y, g2) ∧ ¯x = ¯v → T(g1, g2)) is not
+true. Then, there must be tuples in P and R with ¯x = ¯v such that T(g1, g2) doesn’t hold.
+However, because ¯v is a super key of R, there is only one tuple in R that holds ¯x = ¯v and
+satifies T(g1, g2). We reach a contradiction.
+
+Notice that if we derive a TD involving predicates P and R from a RD as in Proposition 1
+with thematic conditions ¯x = ¯v, and we have another TD with the negation of ¯x = ¯v,
+expressed as ¬( ¯x = ¯v), we have the complete knowledge about the topological relation
+between spatial attributes in any pair of tuples of P and R.
+
+Example 6 (Example 3, 4 cont.) Considering the RD (6) in Example (3), primary key of
+Co in Example (4), and Proposition 1, we can infer the following constraint:
+∀x1y1z1g1x2y2z2g2( Pl(x1, y1, z1, g1) ∧ Co(x2, y2, z2, g2) ∧ y1 = x2 → Within(g1, g2)).
+Similarly, from the RD (7), the primary key of St, it is possible to infer:
+∀x1y1z1g1x2y2z2g2( Co(x1, y1, z1, g1) ∧ St(x2, y2, g2) ∧ y1 = x2 → Within(g1, g2)).
+
+B) A second type of inference extends the notion of composition of topological rela-
+tions [9] to the composition of TDs, which is formalized in the following axiom.
+
+Proposition 2 Given a database schema R, a set of SSICs (cid:4) and topological relations
+T1 and T2, if the TDs∀ ¯x ¯yg1g2(P( ¯x, g1) ∧ Q( ¯y, g2) ∧ ϕ1 → T1(g1, g2)) ∈ (cid:4) and
+∀ ¯y ¯zg2g3(Q( ¯y, g2)∧R(¯z, g3)∧ϕ2 → T2(g2, g3)) ∈ (cid:4), then the TD ¯∀(P( ¯x, g1)∧Q( ¯y, g2)∧
+R(¯z, g3) ∧ ϕ1 ∧ ϕ2 → T(g1, g3)), with T = T1 ⊗ T2 is implied by (cid:4).
+
+Proof Direct from the composition of topological relations.
+
+Notice that the result of the composition produces a rule with more than two predicates
+and, therefore, we refer to this constraint as an extended topological dependency (ETD).
+This additional predicate is necessary to keep the conditions on the thematic attributes that
+involve all three predicates.
+
+Given an ETD or RD φ, we will denote by TP(φ) the pair of atoms whose spatial
+attributes are compared by the topological relation in φ. For example, for φ1:(P(x1, x2, g1)∧
+Q(y1, y2, y3, g2) ∧ R(z1, g3)∧ x1 = y1 ∧ y2 (cid:12)= z1 → Overlap(g1, g3)), and φ2 :
+P(x1, x2, g1) → ∃y1, y2, y3, g2(Q(y1, y2, y3, g2) ∧ x2 = y1 ∧ Within(g1, g2)) we have
+TP(φ1) = [P(x1, x2, g1), R(z1, g3)] and TP(φ2) = [P(x1, x2, g1), Q(y1, y2, y3, g2)]. Note
+that for a RD φ, TP(φ) is exactly the only two atoms of φ.
+
+Example 7 (Example 6 cont.) Let us consider the TDs inferred in Example 6.
+∀x1y1z1g1x2y2z2g2( Pl(x1, y1, z1, g1) ∧ Co(x2, y2, z2, g2) ∧ y1 = x2 → Within(g1, g2)).
+∀x1y1z1g1x2y2z2g2( Co(x1, y1, z1, g1) ∧ St(x2, y2, g2) ∧ y1 = x2 → Within(g1, g2)).
+Based on Proposition 2 and the composition of topological relation shown in Table 2, a new
+ETD φ that constraints the topological relation between geometries in Pl and St through
+predicate Co is:
+
+∀x1y1z1g1x2y2z2g2x3y3z3g3( Pl(x1, y1, z1, g1) ∧ Co(x2, y2, z2, g2) ∧ St(x3, y3, g3)
+∧y1 = x2 ∧ y2 = x3 → Within(g1, g3)).
+
+Geoinformatica
+
+In this case, TP(φ) = [ Pl(x1, y1, z1, g1), St(x3, y3, g3)].
+
+We can generalize the previous derivation to consider the composition of a sequence of
+
+topological dependencies, which is formalized with the following proposition.
+
+Proposition 3 Given a database schema R and a set of SSICs (cid:4) if all the following hold:
+
+∀ ¯x1 ¯x2g1g2(P1( ¯u1 ¯x1, g1) ∧ P2( ¯x2, g2) ∧ ϕ1 → T1(g1, g2)) ∈ (cid:4)
+
+...
+∀ ¯xi ¯xi+1gigi+1(Pi( ¯ui ¯xi, gi) ∧ Pi+1( ¯xi+1, gi+1) ∧ ϕi → Ti(gi, gi+1)) ∈ (cid:4)
+...
+∀ ¯xn−1 ¯xngn−1gn(Pn−1( ¯xn−1, gn−1) ∧ Pn( ¯xn, gn) ∧ ϕn−1 → Tn−1(gn−1, gn)) ∈ (cid:4)
+
+then the ETD ∀(P1( ¯x1, g1) ∧ . . . ∧ Pn( ¯xn, gn) ∧ ϕ1 ∧ . . . ∧ ϕn−1 ∧ T(g1, gn), with T =
+
+T1 ⊗ . . . ⊗ Ti ⊗ . . . ⊗ Tn−1 implied by (cid:4).
+
+The proof is a straight forward extension of the proof for Proposition 2.
+It is easy to see that this proposition can be also generalized to consider the composition
+
+of ETDs.
+
+C) Because RDs can infer TDs (see Proposition 1), and from this TDs we can infer ETDs,
+it is also possible to have propositions to infer ETDs from the composition of RDs.
+We are particularly interested in these ETDs because we can ensure that they can be
+applied to tuples that are enforced to exist due to the referential dependencies. This is
+better explained with the following example.
+
+Example 8 Let us consider example 7 where the following ETD is implied:
+
+∀x1y1z1g1x2y2z2g2x3y3z3g3( Pl(x1, y1, z1, g1) ∧ Co(x2, y2, z2, g2) ∧ St(x3, y3, g3)
+∧y1 = x2 ∧ y2 = x3 → Within(g1, g3)).
+
+This constraint is relevant to optimize join queries over predicates Pl and St. However, only
+if there exists a tuple in Co that satisfies the given thematic conditions y1 = x2 ∧ y2 = x3,
+the topological relation can be used to optimize the query. The existence of RDs (6) and (7)
+in Example 3 makes it possible to ensure that such tuple does indeed exist.
+
+As the previous example shows, we will be particularly interested in ETDs that are
+derived from a sequence of RDs so that we can be sure there exist tuples for each atom in
+the ETDs. Keeping this in mind, and using the propositions described in this section, we
+now introduce the notion of a composition-dependency graph in a constructive fashion. This
+graph is an operational structure that stores the information of the TDs and ETDs that are
+derived during the preprocess of constraints and are useful for the optimization process.
+
+3.2 Composition-dependency graph
+
+Definition 1 Given a schema R and a set of SSICs (cid:4), let :
+(i) (cid:6)P K = {ψ (cid:2)
+(ii) (cid:6)RD = {φ1, φ2, . . . , φn} be the set of RDs in (cid:4) of the form ∀ ¯u ¯xg1(P( ¯u, ¯x, g1) →
+∃ ¯v ¯yg2(Q( ¯v, ¯y, g2) ∧ ¯x = ¯v ∧ T(g1, g2))), with ¯v a super key of Q and P (cid:12)= Q;
+
+} be the set of TDs in (cid:4) derived from primary keys.
+
+2, . . . , ψ (cid:2)
+
+1, ψ (cid:2)
+
+k
+
+Geoinformatica
+
+keys.
+
+(iii) (cid:6)T D = {ψ1, ψ2, . . . , ψm} be the set of TDs in (cid:4) that are not derived from primary
+
+Without loss of generality we will assume that for every predicate P ∈ R its atoms in
+
+(cid:6)P K ∪ (cid:6)RD ∪ (cid:6)T D use the same variables.
+
+The composition-dependency graph (CDG) (cid:15)V , E, λr , λp, λs, λc, λt (cid:16) contains the rela-
+tional predicates in (cid:4) as vertices in set V , a set E of directed edges that represent TDs/ETDs
+between those vertices, and four labeling functions for the edges. Given an edge e, λr (e)
+returns the ordered pair of endpoints in V including their variables, λp(e) returns the con-
+junction of predicates in V that form part of the TD/ETDs excluding the endpoints (or True
+if there is no such predicates or conditions), λs(e) labels the edge with the way in which
+the edge was created, which is codified by colors in the following description, λc(e) returns
+the thematic conditions under which the constraint is triggered (or True if there is no such
+condition), and λt (e) returns the topological relation associated with the edge.
+
+The CDG is constructed iteratively with the following steps.
+
+(G1) For every φ ∈ (cid:6)(cid:2)
+
+P K with φ : ∀ ¯x1 ¯y1 ¯x2 ¯y2g1g2(P( ¯x1, ¯y1, g1) ∧ P( ¯x2, ¯y2, g2) ∧ ϕ →
+Equal(g1, g2)), lete φ ∈ E with λr (eφ) = TP(φ) = [P( ¯x1, ¯y1, g1), P( ¯x2, ¯y2, g2)],
+λp(eφ) = True, λs(eφ) = red (solid line), λc(eφ) = ϕ and λt (eφ) = Equal(g1, g2).
+(G2) For every φ ∈ (cid:6)RD with φ : ∀ ¯x1 ¯x2g1g2(P1( ¯x1, g1) → ∃ ¯x2, g2(P2( ¯x2, g2) ∧ ϕ1 ∧
+T1(g1, g2))) and ϕ1 a condition of the primary key of P2, we can deduce by Propo-
+sition 1 a TD φ(cid:2)
+: ∀ ¯x1 ¯x2g1g2(P1( ¯x1, g1) ∧ P2( ¯x2, g2) ∧ ϕ1 → T1(g1, g2)). For
+each of these φ(cid:2), lete φ(cid:2) ∈ E with λr (e(cid:2)
+φ) = TP(φ(cid:2)) = [P1( ¯x1, g1), P2( ¯x2, g2)],
+λp(e(cid:2)
+φ) = T1(g1, g2)
+(G3) For every φ ∈ (cid:6)T D with φ : ∀ ¯x1 ¯x2g1g2(P1( ¯x1, g1) ∧ P2( ¯x2, g2) ∧ ϕ → T(g1, g2)),
+let eφ ∈ E with λr (eφ) = TP(φ) = [P1( ¯x1, g1), P2( ¯x2, g2)], λp(eφ) = True,
+λs(eφ) = blue (dotted line), λc(eφ) = ϕ and λt (eφ) = T(g1, g2).
+
+φ) = green (dashed line), λc(e(cid:2)
+
+φ) = ϕ1 and λt (e(cid:2)
+
+φ) = True, λs(e(cid:2)
+
+(G4) For every e1, e2 ∈ E such that λs(e1) = green, λs(e2) = green, λr (e1) =
+[P1( ¯x1, g1), P2( ¯x2, g2)], λr (e2) = [P2( ¯x2, g2), P3( ¯x3, g3)], and using Proposition 3
+add, if it does not exist, an edge e3 to E such that λr (e3)=[P1( ¯x1, g1), P3( ¯x3, g3)],
+λp(e3) = λp(e1) ∧ P2( ¯x2, g2) ∧ λp(e2), λs(e3) = green, λc(e3) = λc(e1) ∧ λc(e2)
+and λt (e3) = λt (e1) ⊗ λt (e2).
+
+Do this step until no new green edges are added.
+
+(G5) For every e1, e2 ∈ E such that λs(e1) = green, λs(e2) = blue, λr (e1) =
+[P1( ¯x1, g1), P2( ¯x2, g2)], λr (e2) = [P2( ¯x2, g2), P3( ¯x3, g3)] and P1 (cid:12)= P3, using
+Proposition 2 add e3 to E with λr (e3) = [P1( ¯x1, g1), P3( ¯x3, g3)], λp(e3) =
+λp(e1) ∧ P2( ¯x2, g2) ∧ λp(e2), λs(e3) = red, λc(e3) = λc(e1) ∧ λc(e2), λt (e3) =
+λt (e1) ⊗ λt (e2).
+
+Do this until no more red edges can be added
+
+(G6) Do the following until no more changes can be made:
+
+(a)
+(b)
+
+If an edge e ∈ E has an inconsistent λp(e) ∧ λc(e), then remove e from E.
+If two parallel edges e1, e2 ∈ E are such that λc(e1) → λc(e2) then let
+λt (e1) := λt (e1) ∩ λt (e2).
+If two edges have the same labels λr , λp, λs, λc and λt , remove one of the edges.
+(c)
+(d) For each edge, we eliminate redundancy in the conditions and predicates that
+
+are not used in both thematic and topological conditions.
+
+The CDG as defined above includes a set of edges that represent: (i) TDs derived from
+primary key constraints (as red edges). (ii) Original TDs (as blue edges). (ii) TDs derived
+
+Geoinformatica
+
+Fig. 2 Example of a composition-dependency graph (Red edges as solid lines, green edges as dashed lines
+and blue edges as dotted lines)
+
+from RDs by Proposition 1 (as green edges). (iii) ETDs derived from composition of edges
+(Proposition 3) derived from (ii) (as green edges). (iv) ETDs derived from the composition
+of edges derived from (ii) plus an original TD (as red edges). When deriving new edges,
+red edges are not used for any further composition because they represent primary-key
+constraints that can lead to undesirable loops or because they are TDs whose composition
+with other edges cannot guarantee the existence of tuples that make possible the composition
+as we explained in the previous section.
+
+Even though the composition-dependency graph does not have all
+
+the possible
+TDs/ETDs we can infer from a set of SSICs (cid:4), it includes the ones that are useful for the
+optimization process detailed in the next section.
+
+Example 9 (Example 6 cont.) Figure 2 illustrates the composition-dependency graph
+derived from the constraints in Examples 2, 3, and 4. The graph is complemented with the
+Table 3 to describe the edges of the graph.
+
+In this example, edges e1 to e3 can be automatically derived from primary-key conditions.
+Edges e4 and e5 add a spatial semantics to foreign-key constraints. Edges e6 and e7 are
+
+Table 3 Description of edges of graph in Fig. 4
+
+λr
+
+[ Pl(u, n, c, gp), Pl(u(cid:2), n(cid:2), c(cid:2), g(cid:2)
+p)]
+[ Co(v, m, s, gc), Co(v(cid:2), m, s(cid:2), g(cid:2)
+c)]
+[ St(w, e, gs ), St(w(cid:2), e(cid:2), g(cid:2)
+[ Pl(u, c, n, gp), Co(v, m, s, gc)]
+[ Co(v, s, n, gc), St(w, e, gs )]
+[ St(v, s, gc), St(w, e, gs )]
+
+s )]
+
+λp
+
+True
+
+True
+
+True
+
+True
+
+True
+
+True
+
+E
+
+e1
+e2
+e3
+e4
+e5
+e6
+
+e7
+
+e8
+e9
+
+[ Co(v, s, n, gc), Co(w, e, s, gs )]
+
+True
+
+blue
+
+[ Pl(u, c, n, gp), St(w, e, gs )]
+[ Co(v, s, m, gc), St(w, e, gs )]
+
+Co(v, n, s, gc)
+True
+
+green
+
+red
+
+e10
+
+[ Pl(u, c, n, gp), St(w, e, gs )]
+
+Co(v, s, n, gc)
+
+red
+
+λs
+
+λc
+
+λt
+
+red
+
+red
+
+red
+
+u = u(cid:2)
+v = v(cid:2)
+w = w(cid:2)
+c = v
+green
+green w = s
+v (cid:12)= w
+blue
+
+Equal(gp, g(cid:2)
+p)
+Equal(gc, g(cid:2)
+c)
+Equal(gs , g(cid:2)
+s )
+Within(gp, gc)
+Within(gp, gc)
+Meet(gc, gs )∨
+Disjoint(gc, gs )
+Meet(gc, gs )∨
+Disjoint(gc, gs )
+(c = v) ∧ (s = w) Within(gp, gs )
+Meet(gc, gs )∨
+s (cid:12)= w
+Disjoint(gc, gs )
+(c = v) ∧ (s (cid:12)= w) Meet(gc, gs )∨
+Disjoint(gc, gs )
+
+v (cid:12)= w
+
+Geoinformatica
+
+semantic constraints that should be specified by the database designer. Edges e8 to e10 are
+derived automatically from our strategy.
+
+Among the derived edges, a further process to eliminate redundancy was applied to edge
+
+e9. Originally, by applying (G5) we obtain a ETD of the form:
+(cid:2)
+s ) ∧ St(w, e, gs ) ∧ s = u ∧ u (cid:12)= w → Meet(gc, gs ) ∨ Disjoint(gc, gs )).
+∀( Co(v, s, m, gc) ∧ St(u, p, g
+However, this ETD can be simplified by having that s = u ∧ u (cid:12)= w → s = w and
+topological conditions applied to attributes of only two predicates. So, we finally obtain:
+∀( Co(v, s, m, gc) ∧ St(w, e, gs) ∧ s (cid:12)= w → Meet(gc, gs) ∨ Disjoint(gc, gs)).
+
+3.3 Semantic query preprocessing
+
+We describe the proposed optimization strategy based on a semantic query preprocessing in
+terms of a join query of the form
+
+q( ¯x) : ∃¯z(P( ¯y1, g1) ∧ R( ¯y2, g2) ∧ ψq ∧ Tq (g1, g2)),
+where ¯x are free variables, this is ¯x = ( ¯y1 ∪ ¯y2 ∪ {g1, g2}) \ ¯z, and ψq is a possibly empty
+formula of equalities or inequalities of variables in ¯y1 ∪ ¯y2.
+
+Given a set of constraints (cid:4) that are satisfied by the data, the strategy works by matching
+the relational predicates in the query q with respect to relational predicates in TDs or ETDs
+in (cid:4). When the match occurs, the strategy analyzes query conditions (i.e., equalities or
+inequalities of thematic attributes and topological relations) to conclude if a query has empty
+results or it can be rewritten. The rewritten of a query can eliminate spatial-join conditions
+(i.e., topological relations) or add thematic conditions to reduce the number of tuples over
+which to check topological relations.
+
+The optimization strategy uses integrity constraints to derive possible topological rela-
+tions between spatial attributes and reduce, therefore, the computation cost of spatial joins.
+As we described in the previous section, if we have a TD of the form ∀(P( ¯x, g1)∧Q( ¯y, g2)∧
+(cid:2)(g1, g2)),
+ϕ1 → T(g1, g2)) and another TD of the form ∀(P( ¯x, g1) ∧ Q( ¯y, g2) ∧ ϕ2 → T
+where ϕ2 = ¬ϕ1, we can completely characterize the topological relation between the
+geometry of any pair of tuples in P and Q.
+
+In general terms, an ETD can be seen as a formula of the form (cid:8) ∧ ψ → T (g, g(cid:2)), where
+(cid:8) is a conjunction of relational predicates and thematic conditions, g and g(cid:2) are variables
+of spatial attributes in predicates of (cid:8), andψ is a equality or inequality of variables in (cid:8).
+Notice that there is a mapping from this expression to edges in a CDG G, such that for
+an edge e ∈ G, (cid:8) is a conjunction of the predicates in λ(e) and predicates and condition
+in λp(e), ψ is λc(e), andT (g, g (cid:2)) is λt (e). Now, if we have two ETDs of the formφ 1 :
+(cid:6) ∧ ψ → T (g, g(cid:2)) and φ2 : (cid:6) ∧ ¬ψ → T (cid:2)(g, g(cid:2)), where(cid:6) is known to be true, then φ1
+and φ2 cover all possible cases to derive the topological relation between g and g(cid:2).
+
+We are now in condition to introduce the semantic preprocessing to rewrite join queries.
+Let us also consider a schema R, a set of SSICs (cid:4),
+the CDG G =
+(cid:15)V , E, λr , λp, λs, λc, λt (cid:16) derived from (cid:4), and a join query q( ¯x) : ∃¯z(P( ¯y1, g1)∧R( ¯y2, g2)∧
+ψq ∧ Tq (g1, g2)). If there exists an edge e ∈ E such that λr (e) = [P( ¯y1, g1), R( ¯y2, g2)], it
+is possible to rewrite the query based on the three following cases, which are summarized
+in Table 4:
+(C1) λt (e) ∩ Tq = ∅:
+
+This means that under the condition imposed by λp(e) and λc(e), the topological
+relation of any pair of tuples does not satisfy Tq and, therefore, under this condition,
+
+Geoinformatica
+
+Table 4 TD/ETD-based optimization
+
+Condition
+
+Rewritting
+
+Case
+
+(C1)
+
+(C2)
+
+(C3)
+
+λt (e) ∩ Tq = ∅
+
+λt (e) ⊆ Tq
+
+Otherwise
+
+q∅
+¯∃P(x, g1) ∧ R(y, y2) ∧ λp(e) ∧ λc(e) ∧ ψq
+
+¯∃P(x, g1) ∧ R(y, y2) ∧ λp(e) ∧ λc(e) ∧ ψq ∧ Tq
+
+the result is empty, i.e., q∅. Consequently, we have to check for pairs of tuples that
+satisfy ψq and λp(e), but not λc(e), that is, tuples that satisfy ¬λc(e). As we stated
+in the previous section, ETDs included in the CDG guarantees that there exist tuples
+that satisfy λp(e), which makes possible to evaluate conditions in λc(e) or ¬λc(e).
+
+(C2) λt (e) ⊆ Tq :
+
+This means that under the condition imposed by λp(e) and λc(e), pairs of tuples
+satisfy not only λt (e) but also Tq . Consequently, tuples that satisfy λp(e) and λc(e)
+and also ψq will satisfy the topological relation Tq . Notice, however, that λc(e) and
+ψq may be in contradiction, (e.g., ψq : a = b and ψq : a (cid:12)= b), in which case, the
+answer to this query will be empty. In addition, we have to check for those pairs of
+tuples that satisfy ¬λc(e) but still may satisfy Tq .
+
+(C3) Otherwise, this is, if λt (e) ∩ Tq (cid:12)= ∅:
+
+In this case and because none of the previous conditions are satisfied, we run the
+query by adding λp(e) and λc(e), if any, to have a possibly more selective query
+with additional conditions that reduce the tuples over which to check topological
+relations. In this process, redundant conditions are eliminated.
+
+We can describe the query preprocessing as a sequence of steps for a join query q( ¯x) :
+
+∃¯z(P( ¯x1, g1) ∧ R( ¯x2, g2) ∧ ψq ∧ Tq (g1, g2)).
+
+(S1) Construct the CDG G from integrity constraints. This is an off-line preprocessing.
+(S2) Search for an edge e in G such that λr (e) = [P( ¯x1, g1), R( ¯x2, g2)]. If such edge e
+exists, go to the following step (3). If such edge does not exist, then check if there
+exists e(cid:2) in G such that λr (e(cid:2)) = [R( ¯x2, g2), P( ¯x1, g1)]. Ife (cid:2) exists, go to the follow-
+ing step (S3) making the query q( ¯x) : ∃¯z(R( ¯x2, g2) ∧ P( ¯x1, g1) ∧ ψq ∧ Tc
+q (g2, g1)),
+where Tc
+
+q is the converse of Tq . If there is no such e(cid:2), then return the original q.
+(S3) Rewrite q into q1 based on the comparison between λt (e) and Tq using Table 4.
+(S4) Check if there exists another e(cid:2) in G such that λr (e) = λr (e(cid:2)) and λc(e) = ¬(λc(e(cid:2))).
+If this e(cid:2) exists, then create a new query q2 based on the comparison between λt (e(cid:2))
+¯∃P(x, g1) ∧ R(y, y2) ∧
+and Tq using Table 4. Ife (cid:2) does not exist, then make q2 :
+λp(e) ∧ ¬(λc(e)) ∧ ψq ∧ Tq .
+
+(S5) Create query qo as the union of q1 and q2. This is equivalente to a disjunction of q1
+
+and q2.
+
+(S6) Eliminate possible duplication of thematic conditions in qo and detect any possible
+contradiction between thematic conditions. If there is any contradiction or if there is
+condition False in a subquery of qo, the result of the subquery is the empty set.
+
+This iterative process will result in a new query that can add relational predicates and the-
+matic conditions as it happens when using a Chase and Backchase technique [1]. As we
+will see in the experimental evaluation, adding these conditions produces a query that can
+be processed more efficiently.
+
+Geoinformatica
+
+In the process described above, there may be many possible ETDs or TDs to apply in
+the query preprocessing. In such case, one could analyze which of the possible rewritings
+will produce queries whose process is more efficient and where the priority is to void the
+computation of the topological condition of the query.
+
+Example 10 Let us consider the schema and constraints in Examples 2, 3, and 4, upon which the
+CDG G in Example 9 is derived. Also, let us have query q(x1, x2) : ∃y1g1y2g2 St(x1, y1, g1)∧
+St(x2, y2, g2) ∧ Meet(g1, g2), with ψq : True (i.e., an empty thematic condition). Edge e3
+matches predicates and, because {Meet} ∩ λt (e3) = ∅, we can apply case (C1) in Table 4
+giving as a first result q∅. Following step (S4) of the methodology, we find edge e6 such that
+λr (e6) = λr (e3) and apply case (C3) in Table 4. Then a second result q2 is:
+
+q2(x1, x2) : ∃y1g1y2g2( St(x1, y1, g1) ∧ St(x2, y2, g2) ∧ ¬(x1 = x2) ∧ Meet(g1, g2)).
+
+Then, q(x1, x2) is rewritten into qo(x1, x2) by making the union of q∅ ∪ q2(x1, x2), which
+doesn’t have contradictions, resulting in:
+
+qo(x1, x2) : ∃y1g1y2g2( St(x1, y1, g1) ∧ St(x2, y2, g2) ∧ ¬(x1 = x2) ∧ Meet(g1, g2)).
+
+: ∃y1z1g1y2g2 Pl(x1, y1, z1, g1) ∧
+Let us consider now a second query q(x1x2)
+St(x2, y2, g2) ∧ Meet(g1, g2), with ψq(cid:2) : True. From CDGG, we get the edge e8 such that
+{Meet} ∩ λt (e8) = {Meet} ∩ {Within} = ∅ and a first result q∅. In (S4) the methodology
+finds a second edge e10 that matches relation predicate in query q(cid:2) and satisfies case (C3)
+in Table 4, which produces a second query q2:
+
+q2(x1x2) : ∃y1z1g1y2g2x3y3z3g3( Pl(x1, y1, z1, g1) ∧ Co(x3, y3, z3, g3) ∧ St(x2, y2, g2) ∧
+y1 = x3 ∧ y3 (cid:12)= x2 → Meet(g1, g2)).
+
+Then, q(x1, x2) is rewritten into qo(x1, x2) by making the union of q∅ ∪q2(x1, x2) resulting in:
+qo(x1x2) : ∃y1z1g1y2g2x3y3z3g3( Pl(x1, y1, z1, g1) ∧ Co(x3, y3, z3, g3) ∧ St(x2, y2, g2) ∧
+y1 = x3 ∧ y3 (cid:12)= x2 → Meet(g1, g2)).
+
+The preprocessing as defined above terminates. This can be guaranteed because there is
+
+a finite number of useful TDs and ETDs, and a finite number of cases in Table 4.
+
+3.4 Algorithms
+
+This section gives the algorithms for constructing a CDG and algorithms for the query rewriting.
+Algorithm 1 constructs a CDG as described in Definition 1. The algorithm starts by
+creating nodes and adding edges derived from the set of topological dependencies (cid:6)T D,
+a set denoted by (cid:6)(cid:2)
+T D, and referential dependencies (cid:8)RD; that is, adding loop edges on a
+single predicate of TDs in (cid:6)(cid:2)
+T D and edges between different relational predicates in TDs
+and RDs in (cid:6)T D and (cid:8)RD, respectively. Then, the algorithm derives new edges by the
+composition of topological relations as it is described in steps (G4) and (G5) of Definition 1.
+Recall that by Definition 1, an iterative process can expand the composition of several green
+edges, but a composition between green and blue edges will end with a single composed
+red edge. We apply this composition in a breadth-search fashion, adding new green edges
+to the queue of previously existing edges.
+
+Geoinformatica
+
+Let n1, n2 and n3 the number of constraints in (cid:6)RD, (cid:6)T D, and (cid:6)P K , respectively. The
+complexity of the Algorithm 1 is divided into three steps: (i) Add the initial edges from
+(cid:6)P K , (cid:6)T D and (cid:8)RD. (ii) Add edges from the composition of green edges or between
+green and blue (Algorithm edgeComposition). (iii) Eliminate redundancies on thematic
+conditions. Step (i) has a cost of O(n1 + n2 + n3), assuming no duplication of constraints.
+For the step (ii), only constraints in (cid:6)RD and (cid:6)T D are used. In the first part, the Algo-
+rithm edgeComposition creates new green edges from the composition of TDs derived
+from (cid:6)RD. In the worse case, the algorithm will complete a graph, which has initially a
+
+Geoinformatica
+
+single path between any pair of nodes and, at the end, it has edges between any pair of
+nodes. For n1 number of constraints, there are in the worse case, n1 initial green edges.
+A first set of green edges is created by composing two adjacent edges in the initial graph.
+Using adjacency-matrix representation of the CDG with direct access to adjacent nodes, this
+implies O(n1 − 1) checks, producing at most (n1 − 1) edges. Notice that the nodes of these
+edges already exist in the graph. The new derived edges in the worst can then be composed
+with an original green, producing (n1 − 2), following a breadth search. Thus, the process
+is upper bound by (cid:4)n1−1
+1). For the second part of Algorithm
+edgeComposition, the composition needs just one iteration over green edges to find a blue
+edge with whom to be composed, given a cost equal to the total number of possible green
+edges, which in the worst case, it is in O(n2
+1). Consequently, the total cost of (ii) is upper
+bound by O(n2
+
+i=1 (n1 − i), which is in O(n2
+
+Finally, the step (iii) refines the CDG by checking edges for redundancy. Using a struc-
+ture with direct access to edges over the same pair of nodes gives us a linear cost with respect
++n2 +n3). Notice
+to the number of edges, which in the worst case it is upper bound by O(n2
+1
+that in practice, this upper bound does not affect the cost of query processing because values
+of n1, n2, and n3 are much lower than the number of tuples in the database instance.
+
+Algorithm 3 applies the query preprocessing following the strategy defined in Section 3.3
+using Table 4. In this algorithm, q∅ is a query with empty results and ψq is, a possible empty,
+conjunction of thematic equalities or inequalities in the join query. Finally, the Algorithm 3
+calls a subroutine cleanQuery to eliminate redundant conditions and to check contradiction
+of thematic conditions, in which case, the algorithm returns q∅. Using direct access to edges
+in the CDG between two specific predicates, the algorithm run in linear time with respect
+to the number of edges in the CDG that match the predicates.
+
+1).
+
+Geoinformatica
+
+4 Experimental evaluation
+
+We run an experiment to compare the time cost of processing join queries with and without
+rewriting. The experimental evaluation uses a real data set extracted from the TIGER/ Line
+Shapefile of the U.S. Census Bureau.3 The data set consists of tables about states ( St),
+counties ( Co), places ( Pl), landmarks ( Lm), census tracks ( Ct), census blocks ( Cb),
+urban areas ( Ua), and primary roads ( Rd) of U.S.A, which cover data of the benchmark
+of spatial database performance in [20]. Table 5 shows the details of the data used in the
+experimental evaluation, where underlined attributes are primary keys, FKey are foreign
+keys, Size is the size of the tables in Postgres, and Index refers to the size of the indexed
+spatial attributes using R-tree. Note that in this table, the relation schema Pl has a foreign
+key to St and not to Co as in Example 1.
+
+We include data about administrative boundaries in tables St and Co and spatial features
+of Pl and Lm, which have a hierarchical structure represented through foreign keys. The
+spatial semantics of these relations is then formally expressed by topological dependency
+and referential constraints.
+
+We use subset of queries and data from an existing benchmark [20] to make the experi-
+mental evaluation replicable with respect to a benchmark found in the literature. In addition,
+we add Ct, Cb, Ua, and Rd to use larger data sets and features of type lines. As the exper-
+imental evaluation will show, using such common constraints as topological dependencies
+for primary keys results in a query rewritten that reduces the cost of processing spatial join
+queries.
+
+To run the preprocessing, the data set is complemented with the set of spatial integrity
+constraints. Besides the traditional dependency constraints on thematic attributes that arise
+from primary and foreign key constraints, there are also topological dependencies that
+enforce primary keys on spatial attributes and topological and referential dependencies that
+capture the spatial semantics of the data.
+
+For this experimental evaluation, the topological dependency constraints are:
+(i) ∀( St(x1, y1, z1, g1) ∧ St(x2, y2, z2, g2) ∧ x1 = x2 → Equal(g1, g2))
+(ii) ∀ Co(x1, y1, z1, g1) ∧ Co(x2, y2, z2, g2) ∧ x1 = x2 → Equal(g1, g2))
+(iii) ∀ Pl(x1, y1, z1, g1) ∧ Pl(x2, y2, z2, g2) ∧ x1 = x2 → Equal(g(cid:2), g))
+(iv) ∀( Lm(x1, y1, z1, g1) ∧ Lm(x2, y2, z2, g2) ∧ x1 = x2 → Equal(g1, g2))
+
+3http://www.census.gov/geo/maps-data/data/tiger.html
+
+Geoinformatica
+
+Table 5 Data of the experimental evaluation
+
+Schema
+
+FKeys
+
+Tuples
+
+Size (Mb)
+
+Index (Mb)
+
+St(sid,name,division,geom)
+
+Co(cid,sid,name,geom)
+
+Pl(pid, sid,name,geom)
+
+Lm(lid,sid,name,geom)
+
+Ct(ctid,sid,cid,name,geom)
+
+Cb(cbid,ctid,sid,cid,name,geom)
+
+Ua(uid,name,geom)
+
+Rd(prid,name,geom)
+
+−
+
+sid
+
+sid
+
+sid
+
+cid,sid
+
+ctid,cid,sid
+−
+
+−
+
+56
+
+3234
+
+28556
+
+902664
+
+74133
+
+3601
+
+11574
+
+15
+
+129
+
+206
+
+141
+
+650
+
+139
+
+51
+
+11709632
+
+13000
+
+15
+
+128
+
+134
+
+51
+
+469
+
+2801
+
+132
+
+20
+
+(v) ∀( Ct(x1, y1, z1, w, 1, g1) ∧ Ct(x2, y2, z2, w2, g2) ∧ x1 = x2 → Equal(g1, g2))
+(vi) ∀( Cb(x1, y1, z1, w,1, v 1g1) ∧ Cb(x2, y2, z2, w2, v2, g2) ∧ x1 = x2 →
+
+(vii) ∀( Ua(x1, y1, g1) ∧ Ua(x2, y2, g2) ∧ x1 = x2 → Equal(g1, g2))
+(viii) ∀( Rd(x1, y1, g1) ∧ Rd(x2, y2, g2) ∧ x1 = x2 → Equal(g1, g2))
+(ix) ∀( St(x1, y1, z1, g1) ∧ St(x2, y2, z2, g2) ∧ x1
+
+(cid:12)= x2 → Disjoint(g1, g2) ∨
+
+(x) ∀( Co(x1, y1, z1, g1) ∧ Co(x2, y2, z2, g2) ∧ x1
+
+(cid:12)= x2 → Disjoint(g1, g2) ∨
+
+(xi) ∀( Ct(x1, y1, z1, w1, g1) ∧ Ct(x2, y2, z2, w2, g2) ∧ x1 (cid:12)= x2 →
+
+Disjoint(g1, g2)
+
+(xii) ∀( Cb(x1, y1, z1, w1, v1, g1) ∧ Cb(x2, y2, z2, w2, v2, g2)∧ x1 (cid:12)= x2 →
+Disjoint(g1, g2)
+
+∨
+
+∨
+
+Equal(g1, g2))
+
+Meet(g1, g2))
+
+Meet(g1, g2))
+
+Meet(g1, g2))
+
+Meet(g1, g2))
+
+Several of these constraints can be automatically derived from primary key conditions.
+Indeed, constraints (i) to (viii) are automatically derived. The designer is in charge of
+expressing additional topological constraints as the application requires, such as constraints
+(ix) to (xii).
+
+Topological referential constraints are then used to impose a spatial semantics to the for-
+eign key constraints. For example, if there is a county, then there exists a state that spatially
+contains the county. This also applies for places and landmarks with respect to states, and
+for census blocks with respect to census tracks, as the following constraints express:
+(ix) ∀x1y1z1g1( Co(x1, y1, z1, g1) → ∃x2y2z2g2( St(x2, y2, z2, g2) ∧ y1 = x2 ∧
+
+(x) ∀x1y1z1g1( Pl(x1, y1, z1, g1) → ∃x2y2z2g2( St(x2, y2, g2) ∧ y1 = x2 ∧
+
+(xi) ∀x1y1z1g1( Lm(x1, y1, z1, g1) → ∃x2y2z2g2( St(x2, y2, g2) ∧ y1 = x2 ∧
+
+(xii) ∀x1y1z1g1( Cb(x1, y1, z1, w1, v1, g1) → ∃x2y2z2g2( Ct(x2, y2, z2, w2, g2) ∧ y1 =
+
+(xiii) ∀x1y1z1g1( Ct(x1, y1, z1, w1, g1) → ∃x2y2z2g2(Co(x2, y2, z2, w2, g2)∧z1 = x2 ∧
+
+Within(g1, g2)))
+
+Within(g1, g2)))
+
+Within(g1, g2)))
+
+x2 ∧ Within(g1, g2)))
+
+Within(g1, g2)))
+
+Geoinformatica
+
+Fig. 3 The composition-dependency graph for the experimental evaluation (Red edges as solid lines, green
+edges as dashed lines and blue edges as dotted lines)
+
+Figure 3 and Table 6 show the CDG with the useful TDs and ETDs derived from the
+constraints, where the first eight edges can be automatically derived from primary key con-
+ditions, edges e9 to e17 are the 9 constraints that required to be specified and the last edges
+e18 to e25 are derived from the algorithm.
+
+We use 15 join queries, where queries q1 to q8 are basic queries to analyze scalability
+in terms of number of tuples, and queries q9 to g15 are queries that exploit different cases
+where the optimization process may have an effect. Because the data satisfy the integrity
+constraints, there should be no answers to q11 and q12. Table 7 shows the original queries qi
+and how they are rewritten into qo
+i using the preprocessing based on the integrity constraints
+and the derived CDG.
+
+The experiments compared the time cost of processing the original query and the query
+after preprocessing or rewritten on a database management system. To distinguish the effect
+of spatial indexing used by the DBMS, we also tested processing cost with and without indexing.
+In addition, and following a partition-based optimization [17], we compared our
+approach with a strategy that partitions a unique table in tables by states such that join
+queries apply over smaller number of tuples. This strategy can add additional cost by apply-
+ing queries to several tables, but as we will see with the experimental results, it provides a
+basic optimization useful in several queries.
+
+Notice that, although the time cost depends on the algorithm for join queries used by the
+SDBMS, by comparing the cost of answering the query with and without preprocessing we
+are just evaluating the effect of rewritten, where the spatial joins are solved by the same
+algorithm for the original and modified query.
+
+The experiments ran in a computer with Intel Intel Xeon E3-1220 v5, 64GB DDR4
+
+memory, and PostgreSQL 9.5.12 extended with PostGIS 2.2.1.
+
+Table 8 shows the cost of processing queries in Table 7, whereRW is the time of prepro-
+cessing plus query rewriting in ms, qi is the time in ms of solving the original query, qirw is
+the time used to solve the rewritten query qi, andq ipart is the time to solve the query qi by
+the strategy of data partition to process the query.
+
+To clarify how well the optimization strategy works with respect to the original query,
+Fig. 4 shows a graph of the time ratio between a query optimized by rewritten (qi{rew} ) and
+by partitioning (qi{part} ) with respect to the original query (qi), without (no index) or with
+(index) spatial indexing.
+
+Geoinformatica
+
+j
+
+i
+
+j
+
+i
+
+i
+
+i
+
+j
+
+i
+
+j
+
+i
+
+i
+
+)
+(cid:2)p
+g
+,
+p
+g
+(
+t
+n
+o
+s
+D
+∨
+)
+(cid:2)c
+g
+,
+c
+g
+(
+t
+e
+e
+M
+
+)
+(cid:2)p
+g
+,
+p
+g
+(
+t
+n
+o
+s
+D
+∨
+)
+(cid:2)s
+g
+,
+s
+g
+(
+t
+e
+e
+M
+
+)
+(cid:2)p
+g
+,
+p
+g
+(
+t
+n
+o
+s
+D
+∨
+)
+(cid:2)s
+g
+,
+s
+g
+(
+t
+e
+e
+M
+
+)
+(cid:2)p
+g
+,
+p
+g
+(
+t
+n
+o
+s
+D
+∨
+)
+(cid:2)s
+g
+,
+s
+g
+(
+t
+e
+e
+M
+
+i
+
+)
+(cid:2)s
+g
+,
+s
+g
+(
+l
+a
+u
+q
+E
+
+)
+(cid:2)c
+g
+,
+c
+g
+(
+l
+a
+u
+q
+E
+
+)
+(cid:2)p
+g
+,
+p
+g
+(
+l
+a
+u
+q
+E
+
+)
+(cid:2) l
+
+)
+(cid:2) l
+
+)
+(cid:2) l
+
+)
+(cid:2) l
+
+)
+(cid:2) l
+
+g
+,
+l
+
+g
+(
+l
+a
+u
+q
+E
+
+g
+,
+l
+
+g
+(
+l
+a
+u
+q
+E
+
+g
+,
+l
+
+g
+(
+l
+a
+u
+q
+E
+
+g
+,
+l
+
+g
+(
+l
+a
+u
+q
+E
+
+g
+,
+l
+
+g
+(
+l
+a
+u
+q
+E
+
+t
+
+λ
+
+)
+s
+g
+,
+c
+g
+(
+n
+h
+t
+i
+
+i
+
+W
+
+)
+t
+
+g
+,
+b
+g
+(
+n
+h
+t
+i
+
+i
+
+W
+
+)
+c
+g
+,
+t
+
+g
+(
+n
+h
+t
+i
+
+i
+
+W
+
+)
+s
+g
+,
+c
+g
+(
+n
+h
+t
+i
+
+i
+
+W
+
+)
+s
+g
+,
+c
+g
+(
+n
+h
+t
+i
+
+i
+
+W
+
+)
+s
+g
+,
+t
+
+g
+(
+n
+h
+t
+i
+
+i
+
+W
+
+)
+c
+g
+,
+t
+
+g
+(
+n
+h
+t
+i
+
+i
+
+W
+
+)
+s
+g
+,
+b
+g
+(
+n
+h
+t
+i
+
+i
+
+W
+
+j
+
+i
+
+i
+
+)
+s
+g
+,
+c
+g
+(
+t
+n
+o
+s
+D
+∨
+)
+s
+g
+,
+c
+g
+(
+t
+e
+e
+M
+
+j
+
+i
+
+i
+
+)
+s
+g
+,
+p
+g
+(
+t
+n
+o
+s
+D
+∨
+)
+s
+g
+,
+p
+g
+(
+t
+e
+e
+M
+
+)
+s
+g
+,
+l
+
+j
+
+i
+
+i
+
+g
+(
+t
+n
+o
+s
+D
+∨
+)
+s
+g
+,
+l
+
+g
+(
+t
+e
+e
+M
+
+)
+t
+
+j
+
+i
+
+i
+
+g
+,
+c
+g
+(
+t
+n
+o
+s
+D
+∨
+)
+b
+g
+,
+c
+g
+(
+t
+e
+e
+M
+
+)
+c
+g
+,
+t
+
+j
+
+i
+
+i
+
+g
+(
+t
+n
+o
+s
+D
+∨
+)
+c
+g
+,
+t
+
+g
+(
+t
+e
+e
+M
+
+(cid:2)
+
+w
+=
+w
+
+(cid:2)
+
+(cid:2)
+
+v
+=
+v
+
+u
+=
+u
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+w
+=
+w
+
+w
+=
+w
+
+w
+=
+w
+
+w
+=
+w
+
+w
+=
+w
+
+(cid:2)
+
+v
+=
+v
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+w
+=
+w
+
+w
+=
+w
+
+w
+=
+w
+
+w
+=
+
+v
+=
+
+w
+=
+
+w
+=
+
+(cid:2)
+
+u
+=
+
+w
+
+c
+λ
+
+s
+
+t
+
+s
+
+s
+
+t
+
+t
+
+s
+
+s
+
+s
+
+s
+
+s
+
+∧
+c
+=
+b
+∧
+v
+=
+
+c
+=
+b
+∧
+v
+=
+
+w
+=
+
+s
+∧
+c
+=
+b
+
+c
+=
+
+(cid:2)
+
+p
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+s
+
+s
+
+s
+
+s
+
+=
+
+=
+
+=
+
+=
+
+t
+
+t
+
+t
+
+t
+
+∧
+
+∧
+
+∧
+
+∧
+
+(cid:2)
+
+s
+
+=
+q
+∧
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+s
+
+s
+
+s
+
+s
+
+s
+
+=
+
+=
+
+=
+
+=
+
+=
+
+s
+λ
+
+d
+e
+r
+
+d
+e
+r
+
+d
+e
+r
+
+d
+e
+r
+
+d
+e
+r
+
+d
+e
+r
+
+d
+e
+r
+
+d
+e
+r
+
+e
+u
+l
+b
+
+e
+u
+l
+b
+
+e
+u
+l
+b
+
+e
+u
+l
+b
+
+n
+e
+e
+r
+g
+
+n
+e
+e
+r
+g
+
+n
+e
+e
+r
+g
+
+n
+e
+e
+r
+g
+
+n
+e
+e
+r
+g
+
+n
+e
+e
+r
+g
+
+n
+e
+e
+r
+g
+
+n
+e
+e
+r
+g
+
+e
+u
+l
+b
+
+e
+u
+l
+b
+
+e
+u
+l
+b
+
+d
+e
+r
+
+d
+e
+r
+
+p
+λ
+
+e
+u
+r
+T
+
+e
+u
+r
+T
+
+e
+u
+r
+T
+
+e
+u
+r
+T
+
+e
+u
+r
+T
+
+e
+u
+r
+T
+
+e
+u
+r
+T
+
+e
+u
+r
+T
+
+e
+u
+r
+T
+
+e
+u
+r
+T
+
+e
+u
+r
+T
+
+e
+u
+r
+T
+
+e
+u
+r
+T
+
+e
+u
+r
+T
+
+e
+u
+r
+T
+
+e
+u
+r
+T
+
+e
+u
+r
+T
+
+∧
+)
+t
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+)
+c
+g
+,
+n
+,
+p
+,
+
+c
+(
+o
+C
+
+g
+,
+q
+,
+b
+,
+
+m
+
+,
+v
+(
+t
+C
+
+)
+c
+g
+,
+q
+,
+b
+,
+
+m
+
+,
+v
+(
+t
+C
+
+)
+c
+g
+,
+
+m
+
+,
+s
+,
+c
+(
+o
+C
+
+)
+(cid:2)s
+g
+,
+
+)
+(cid:2)s
+g
+,
+
+)
+(cid:2)s
+g
+,
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+m
+
+,
+p
+,
+
+s
+(
+t
+S
+
+m
+
+,
+p
+,
+
+s
+(
+t
+S
+
+m
+
+,
+p
+,
+
+s
+(
+t
+S
+
+)
+(cid:2)t
+
+g
+,
+
+v
+,
+
+m
+
+,
+p
+,
+
+s
+(
+t
+C
+
+)
+(cid:2)c
+g
+,
+
+(cid:2)
+
+m
+
+,
+p
+,
+
+s
+(
+o
+C
+
+]
+
+)
+(cid:2) l
+
+g
+,
+
+]
+
+)
+(cid:2) l
+
+]
+
+)
+(cid:2)s
+g
+,
+
+(cid:2)
+
+¯m
+
+(cid:2)
+
+,
+
+w
+(
+t
+S
+
+]
+
+)
+(cid:2)c
+g
+,
+¯s
+,
+
+(cid:2)
+
+(cid:2)
+
+v
+(
+o
+C
+
+(cid:2)
+
+¯m
+
+(cid:2)
+
+,
+
+w
+(
+m
+L
+
+]
+
+(cid:2)
+
+)
+(cid:2)p
+g
+,
+¯c
+,
+u
+(
+l
+P
+
+(cid:2)
+
+g
+,
+
+(cid:2)
+
+¯m
+
+(cid:2)
+
+,
+
+w
+(
+t
+C
+
+,
+)
+s
+g
+,
+
+¯m
+
+,
+
+w
+(
+t
+S
+[
+
+,
+)
+c
+g
+,
+¯s
+,
+v
+(
+o
+C
+
+[
+
+,
+)
+p
+g
+,
+¯c
+,
+u
+(
+l
+P
+[
+
+,
+)
+l
+
+g
+,
+
+¯m
+
+,
+
+w
+(
+m
+L
+
+,
+)
+l
+
+g
+,
+
+¯m
+
+,
+
+w
+(
+t
+C
+
+]
+
+]
+
+)
+(cid:2) l
+
+)
+(cid:2) l
+
+]
+
+)
+(cid:2) l
+
+g
+,
+
+g
+,
+
+g
+,
+
+(cid:2)
+
+(cid:2)
+
+¯m
+
+¯m
+
+(cid:2)
+
+¯m
+
+,
+
+,
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+]
+
+)
+(cid:2)s
+g
+,
+
+(cid:2)
+
+¯m
+
+]
+
+)
+(cid:2)s
+g
+,
+
+(cid:2)
+
+¯m
+
+,
+
+(cid:2)
+
+]
+
+)
+(cid:2)s
+g
+,
+
+(cid:2)
+
+¯m
+
+,
+
+(cid:2)
+
+(cid:2)
+
+]
+
+)
+(cid:2)c
+g
+,
+¯s
+,
+
+(cid:2)
+
+(cid:2)
+
+w
+(
+b
+C
+
+w
+(
+d
+R
+
+,
+)
+l
+
+g
+,
+
+,
+)
+l
+
+g
+,
+
+,
+
+w
+(
+a
+U
+
+,
+)
+l
+
+g
+,
+
+¯m
+
+¯m
+
+¯m
+
+,
+
+w
+(
+b
+C
+
+,
+
+w
+(
+d
+R
+
+,
+
+w
+(
+a
+U
+
+,
+
+w
+(
+b
+C
+
+w
+(
+t
+C
+
+,
+)
+s
+g
+,
+
+¯m
+
+,
+)
+s
+g
+,
+
+¯m
+
+,
+
+w
+(
+t
+C
+
+,
+
+w
+(
+b
+C
+
+v
+(
+o
+C
+
+,
+)
+c
+g
+,
+¯s
+,
+v
+(
+o
+C
+
+w
+(
+t
+S
+
+,
+)
+s
+g
+,
+
+¯m
+
+,
+
+w
+(
+t
+S
+[
+
+]
+
+(cid:2)
+
+)
+(cid:2)c
+g
+,
+¯c
+,
+u
+(
+o
+C
+
+(cid:2)
+
+,
+)
+t
+
+g
+,
+¯c
+,
+
+w
+
+,
+v
+,
+u
+(
+t
+C
+
+]
+
+]
+
+)
+s
+g
+,
+
+¯m
+
+,
+
+w
+(
+t
+S
+
+,
+)
+c
+g
+,
+¯v
+,
+s
+,
+c
+(
+o
+C
+
+)
+t
+
+g
+,
+¯n
+,
+v
+(
+t
+C
+
+,
+)
+b
+g
+,
+¯v
+,
+t
+
+,
+
+w
+(
+b
+C
+
+]
+
+)
+s
+g
+,
+
+¯m
+
+,
+
+w
+(
+t
+S
+
+,
+)
+c
+g
+,
+n
+,
+s
+,
+p
+(
+m
+L
+
+]
+
+)
+s
+g
+,
+
+¯m
+
+,
+
+w
+(
+t
+S
+
+,
+)
+c
+g
+,
+n
+,
+s
+,
+p
+(
+l
+P
+[
+
+]
+
+]
+
+)
+c
+g
+,
+n
+,
+p
+,
+c
+(
+o
+C
+
+,
+)
+t
+
+g
+,
+k
+,
+
+w
+
+,
+s
+,
+t
+
+,
+u
+(
+b
+C
+
+)
+s
+g
+,
+n
+,
+p
+,
+c
+(
+t
+S
+
+,
+)
+b
+g
+,
+k
+,
+
+w
+
+,
+s
+,
+t
+
+,
+u
+(
+b
+C
+
+]
+
+)
+s
+g
+,
+d
+,
+n
+,
+
+w
+(
+t
+S
+
+,
+)
+t
+
+q
+,
+t
+
+,
+b
+,
+v
+,
+u
+(
+t
+C
+
+]
+
+)
+t
+
+g
+,
+v
+,
+
+m
+
+,
+p
+,
+s
+(
+t
+C
+
+,
+)
+b
+g
+,
+u
+,
+q
+,
+n
+,
+t
+
+,
+c
+(
+b
+C
+
+]
+
+)
+c
+g
+,
+
+m
+
+,
+p
+,
+s
+(
+o
+C
+
+,
+)
+t
+
+g
+,
+q
+,
+n
+,
+t
+
+,
+c
+(
+t
+C
+
+]
+
+]
+
+]
+
+)
+s
+g
+,
+
+m
+
+,
+p
+,
+s
+(
+t
+S
+
+,
+)
+c
+g
+,
+n
+,
+t
+
+,
+c
+(
+o
+C
+
+)
+s
+g
+,
+
+m
+
+,
+p
+,
+s
+(
+t
+S
+
+,
+)
+p
+g
+,
+n
+,
+t
+
+,
+c
+(
+l
+P
+[
+
+)
+s
+g
+,
+
+m
+
+,
+p
+,
+s
+(
+t
+S
+
+,
+)
+l
+
+g
+,
+n
+,
+t
+
+,
+c
+(
+m
+L
+
+r
+λ
+
+[
+
+[
+
+[
+
+[
+
+[
+
+[
+
+[
+
+[
+
+[
+
+[
+
+[
+
+[
+
+[
+
+[
+
+[
+
+[
+
+[
+
+[
+
+[
+
+E
+
+1
+e
+
+2
+e
+
+3
+e
+
+4
+e
+
+5
+e
+
+6
+e
+
+7
+e
+
+8
+e
+
+9
+e
+
+0
+1
+e
+
+1
+1
+e
+
+2
+1
+e
+
+3
+1
+e
+
+4
+1
+e
+
+5
+1
+e
+
+6
+1
+e
+
+7
+1
+e
+
+8
+1
+e
+
+9
+1
+e
+
+0
+2
+e
+
+1
+2
+e
+
+2
+2
+e
+
+3
+2
+e
+
+4
+2
+e
+
+5
+2
+e
+
+3
+
+.
+g
+i
+F
+n
+i
+h
+p
+a
+r
+g
+
+f
+o
+s
+e
+g
+d
+e
+
+f
+o
+n
+o
+i
+t
+p
+i
+r
+c
+s
+e
+D
+
+6
+e
+l
+b
+a
+T
+
+(cid:12)
+(cid:12)
+(cid:12)
+(cid:12)
+(cid:12)
+(cid:12)
+(cid:12)
+(cid:12)
+(cid:12)
+Geoinformatica
+
+Table 7 Reformulation of queries for experiments
+
+Original qi and final qo
+
+i queries
+
+q1(i, i(cid:2), g, g(cid:2)) : ∃( St(i, n, d, g) ∧ St(i(cid:2), n(cid:2), d(cid:2), g(cid:2)) ∧ Meet(g(cid:2), g))
+1 (i, i(cid:2), g, g(cid:2)) : ∃( St(i, n, d, g) ∧ St(i(cid:2), n(cid:2), d(cid:2), g(cid:2)) ∧ i (cid:12)= i(cid:2) ∧ Meet(g(cid:2), g))
+qo
+q2(i, i(cid:2), g, g(cid:2)) : ∃( Rd(i, n, g) ∧ Rd(i(cid:2), n(cid:2), g(cid:2)) ∧ Meet(g(cid:2), g))
+2 (i, i(cid:2), g, g(cid:2)) : ∃( Rd(i, n, g) ∧ Rd(i(cid:2), n(cid:2), g(cid:2)) ∧ i (cid:12)= i ∧ Meet(g(cid:2), g))
+qo
+q3(i, i(cid:2), g, g(cid:2)) : ∃( Co(i, n, d, g) ∧ Co(i(cid:2), n(cid:2), d(cid:2), g(cid:2)) ∧ Meet(g(cid:2), g))
+3 (i, i(cid:2), g, g(cid:2)) : ∃( Co(i, n, d, g) ∧ Co(i(cid:2), n(cid:2), d(cid:2), g(cid:2)) ∧ i (cid:12)= i(cid:2) ∧ Meet(g(cid:2), g))
+qo
+q4(i, i(cid:2), g, g(cid:2)) : ∃( Ua(i, n, g) ∧ Ua(i(cid:2), n(cid:2), g(cid:2)) ∧ Meet(g(cid:2), g))
+4 (i, i(cid:2), g, g(cid:2)) : ∃( Ua(i, n, g) ∧ Ua(i(cid:2), n(cid:2), g(cid:2)) ∧ i (cid:12)= i(cid:2) ∧ Meet(g(cid:2), g))
+qo
+q5(i, i(cid:2), g, g(cid:2)) : ∃( Lm(i, n, d, g) ∧ Lm(i(cid:2), n(cid:2), d(cid:2), g(cid:2)) ∧ Meet(g(cid:2), g))
+5 (i, i(cid:2), g, g(cid:2)) : ∃( Lm(i, n, d, g) ∧ Lm(i(cid:2), n(cid:2), d(cid:2), g(cid:2)) ∧ i (cid:12)= i(cid:2) ∧ Meet(g(cid:2), g))
+qo
+q6(i, i(cid:2), g, g(cid:2)) : ∃( Pl(i, n, d, g) ∧ Pl(i(cid:2), n(cid:2), d(cid:2), g(cid:2)) ∧ Meet(g(cid:2), g))
+6 (i, i(cid:2), g, g(cid:2)) : ∃( Pl(i, n, d, g) ∧ Pl(i(cid:2), n(cid:2), d(cid:2), g(cid:2)) ∧ i (cid:12)= i(cid:2) ∧ Meet(g(cid:2), g))
+qo
+q7(i, i(cid:2), g, g(cid:2)) : ∃( Ct(i, n, d, e, g) ∧ Ct(i(cid:2), n(cid:2), d(cid:2), e(cid:2), g(cid:2)) ∧ Meet(g(cid:2), g))
+7 (i, i(cid:2), g, g(cid:2)) : ∃( Ct(i, n, d, e, g) ∧ Ct(i(cid:2), n(cid:2), d(cid:2), e(cid:2), g(cid:2)) ∧ i (cid:12)= i(cid:2) ∧ Meet(g(cid:2), g))
+qo
+q8(i, i(cid:2), g, g(cid:2)) : ∃( Cb(i, n, d, e, f, g) ∧ Cb(i(cid:2), n(cid:2), d(cid:2), e(cid:2), f (cid:2)g(cid:2)) ∧ Meet(g(cid:2), g))
+8 (i, i(cid:2), g, g(cid:2)) : ∃( Cb(i, n, d, e, f, g) ∧ Cb(i(cid:2), n(cid:2), d(cid:2), e(cid:2), f (cid:2), g(cid:2)) ∧ i (cid:12)= i(cid:2) ∧ Meet(g(cid:2), g))
+qo
+q9(i, i(cid:2), g, g(cid:2)) : ∃( St(i, n, d, g) ∧ Co(i(cid:2), s, n(cid:2), g(cid:2)) ∧ Within(g(cid:2), g))
+9 (i, i(cid:2), g, g(cid:2)) : ∃( St(i, n, d, g) ∧ Co(i(cid:2), s, n(cid:2), g(cid:2)) ∧ i = s)
+qo
+q10(i, i(cid:2), g, g(cid:2)) : ∃( St(i, n, d, g) ∧ Pl(i(cid:2), c, n(cid:2), g(cid:2)) ∧ Within(g(cid:2), g))
+10(i, i(cid:2), g, g(cid:2)) : ∃i(cid:2)(cid:2)sn(cid:2)(cid:2)g(cid:2)(cid:2)( St(i, n, d, g) ∧ Pl(i(cid:2), c, n(cid:2), g(cid:2)) ∧ Co(i(cid:2)(cid:2), s, n(cid:2)(cid:2), g(cid:2)(cid:2)) ∧ i = s ∧ i(cid:2)(cid:2) = c)
+qo
+q11(i, i(cid:2), g, g(cid:2)) : ∃( Co(i, s, n, g) ∧ Co(i(cid:2), s(cid:2), n(cid:2), g(cid:2)) ∧ Overlap(g(cid:2), g))
+11(i, i(cid:2), g, g(cid:2)) : q∅ (empty result)
+qo
+q12(i, i(cid:2), g, g(cid:2)) : ∃( St(i, n, d, g) ∧ Pl(i(cid:2), n(cid:2), d(cid:2), g(cid:2)) ∧ Overlap(g(cid:2), g))
+12(i, i(cid:2), g, g(cid:2)) : q∅ (empty result)
+qo
+q13(i, i(cid:2), g, g(cid:2)) : ∃( St(i, n, d, g) ∧ Ct(i(cid:2), n(cid:2), d(cid:2), g(cid:2)) ∧ Within(g(cid:2), g))
+13(i, i(cid:2), g, g(cid:2)) : ∃( St(i, n, d, g) ∧ Ct(i(cid:2), n(cid:2), d(cid:2), g(cid:2)) ∧ Co(i(cid:2)(cid:2), s(cid:2), n(cid:2)(cid:2), g(cid:2)(cid:2)) ∧ i(cid:2)(cid:2) = n(cid:2) ∧ s(cid:2) = i)
+qo
+q14(i, i(cid:2), g, g(cid:2)) : ∃( St(i, n, d, g) ∧ Ct(i(cid:2), n(cid:2), d(cid:2), e(cid:2), g(cid:2)) ∧ Meet(g(cid:2), g))
+14(i, i(cid:2), g, g(cid:2)) : ∃( St(i, n, d, g) ∧ Ct(i(cid:2), n(cid:2), d(cid:2), e(cid:2), g(cid:2)) ∧ Co(i(cid:2)(cid:2), s(cid:2), n(cid:2)(cid:2), g(cid:2)(cid:2)) ∧ i(cid:2)(cid:2) = n(cid:2) ∧ s(cid:2) = i
+qo
+
+∧Meet(g, g(cid:2)(cid:2)))
+
+q15(i, i(cid:2), g, g(cid:2)) : ∃( Co(i, n, d, g) ∧ Cb(i(cid:2), n(cid:2), d(cid:2), e(cid:2), f (cid:2), g(cid:2)) ∧ Within(g(cid:2), g))
+15(i, i(cid:2), g, g(cid:2)) : ∃( Co(i, n, d, g) ∧ Cb(i(cid:2), n(cid:2), d(cid:2), e(cid:2), f (cid:2), g(cid:2)) ∧ Ct(i(cid:2)(cid:2), s(cid:2), n(cid:2)(cid:2), d(cid:2)(cid:2), g(cid:2)(cid:2))
+qo
+
+∧n(cid:2)(cid:2) = i ∧ n(cid:2) = i(cid:2)(cid:2) ∧ Meet(g, g(cid:2)(cid:2)))
+
+The experiments show that by replacing the spatial by classical joins reduces signifi-
+cantly the processing cost of the query. The use of a spatial indexing structure plus the
+preprocessing strategy improves, or at least keeps, the same time cost for query processing.
+The experimental evaluation also shows that query rewriting outperforms the partition-based
+strategy in most cases. In cases when this does not happen (queries 7 and 8), both strategies
+outperform the cost of the original query. In these cases, the thematic constraints introduced
+by the query rewriting (x (cid:12)= y) are not able to filter out enough tuples to compensate the
+optimization of running spatial joins with less number of tuples.
+
+From queries 9 to 15, the results highlight the advantage of the proposal. In these cases
+there is a direct or indirect relationship through composition that makes possible to filter out
+tuples based on a thematic constraint and an additional relational predicate. For example,
+
+qi
+
+qirew
+
+qipart
+
+qirew
+
+qipart
+
+Geoinformatica
+
+Table 8 Cost of query processing in ms
+
+Query
+
+RW No Index
+
+i
+
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+
+7
+7
+8
+7
+8
+9
+6
+8
+9
+9
+6
+6
+43
+45
+44
+
+15987
+205846
+205205
+141440
+44721400
+1947167
+9425922
+164417336
+15808
+163767
+192828
+207481
+302827
+386505
+17460515
+
+8152
+172898
+171200
+71530
+37469442
+1512667
+7260801
+125269852
+1
+24
+0
+0
+389
+251329
+3715014
+
+15987
+172898
+220445
+141440
+44721400
+1746215
+6421350
+90314947
+13
+30
+201346
+201647
+106
+380547
+13004515
+
+Index
+
+qi
+
+14782
+82391
+123878
+103548
+71884
+144913
+662093
+84006668
+14390
+10378
+36825
+203621
+39617
+388283
+14745648
+
+7512
+63851
+69189
+31316
+65321
+60884
+377368
+26882090
+1
+28
+0
+0
+416
+255221
+3715647
+
+14782
+82391
+130798
+103548
+70648
+99955
+302666
+19421200
+10
+41
+40379
+203004
+107
+374017
+10220999
+
+the query that relates census blocks with counties, which can be optimized by introducing an
+additional condition that relates a census block with its census tract that is also related to a
+county. The original foreign-key constraints relate census blocks with census tracts, and cen-
+sus tracts with counties. Then, by composition of these constraints, we introduce additional
+conditions that reduce the tuples over which to apply spatial joins. This is a simple strategy
+that can be systematically applied without consideration of the data itself in the tables.
+
+Fig. 4 Time ratio between rewritten- and partitioning-based optimization strategies with respect to the
+original query without and with spatial indexing
+
+It is also worth to notice that using spatial indexing is not always the best option. In
+particular, when using a spatial join with overlap (queries 11 and 12), where the index is not
+able to filter out tuples and make the query more selective.
+
+Geoinformatica
+
+5 Conclusions
+
+The work in this paper presents a strategy for rewriting spatial join queries in terms of
+the semantic information given by integrity constraints. The goal was to avoid the com-
+putation of spatial joins when possible by using topological dependencies and topological
+referential constraints to extract the topological relations that spatial attributes satisfy in a
+consistent database. This strategy can complement state-of-the-art methods for spatial joins
+using indexing structures. The work shows that a strategy like this can be useful even for
+case with simple constraints defined by primary and foreign keys.
+
+As future work, we would like to study the effect of null values in the query processing
+and include new integrity constraints, as check constraints defined in [4]. The consideration
+of other types of spatial queries is also possible; however, our preliminary results show that
+for range queries most of the optimization can be done within the algorithm of searching
+using the existing indexing structures.
+
+Acknowledgements This work has been funded by Fondecyt 1170497 and by the Millennium Institute for
+Foundational Research on Data, Chile.
+
+Publisher’s note
+and institutional affiliations.
+
+Springer Nature remains neutral with regard to jurisdictional claims in published maps
+
+References
+
+1. Popa L, Deutsch A, Tannen V (2005) Query Reformulation with Constraints
+2. Aref WalidG, Samet Hanan (1991) Optimization for spatial query processing. In: 17th international
+conference on very large data bases, september 3-6, 1991, barcelona, catalonia, spain, proceedings, pp 81–90
+3. Bogorny V, Engel PM, Alvares LOC (2005) Towards the reduction of spatial join for knowledge dis-
+covery in geographic databases using geo-ontologies and spatial integrity constraints. In: Proc of the
+ECML/PKDD second workshop on knowledge discovery and ontologies (KDO’2005), pp 51–58
+
+4. Bravo L, Rodr´ıguez AM (2012) Formalization and reasoning about spatial semantic integrity constraints.
+
+Data Knowl Eng 72:63–82
+
+5. Clementini E, Sharma J, Egenhofer MJ (1994) Modelling topological spatial relations: strategies for
+
+query processing. Comput Graph 18(6):815–822
+
+6. Deutsch A, Lud¨ascher B, Nash A (2007) Rewriting queries using views with access patterns under
+
+integrity constraints. Theor Comput Sci 371(3):200–226
+
+7. Deutsch A, Popa L, Tannen V (1999) Physical data independence, constraints, and optimization with
+
+universal plans. In: VLDB, pp 459–470
+
+8. Deutsch A, Popa L, Tannen V (2006) Query reformulation with constraints. SIGMOD Rec 35(1):65–73
+9. Egenhofer M, Al-Taha K (1992) Reasoning about gradual change of topological relationships. In: Frank
+A, Campari I, Formentini U (eds) Theories and methods of spatio-temporal reasoning in geographic
+space, LNCS 636, Springer, pp 196–219
+
+10. Egenhofer MJ, Franzosa RD (1991) Point-set topological spatial relations. Int J Geogr Inf Syst 5:161–174
+11. Egenhofer MJ, Herring J (1990) Categorizing binary topological relations between regions, lines and
+points in geographic databases, the 9-intersection. Formalism and its Use for Natural Language Spatial
+Predicates Santa Barbara CA National Center for Geographic Information and Analysis Technical Report
+94:1–28
+
+12. Egenhofer MJ (1994) Deriving the composition of binary topological relations. J Vis Lang Comput
+
+5(2):133–149
+
+Geoinformatica
+
+13. Grant J, Gryz J, Minker J, Raschid L (2000) Logic-based query optimization for object databases. IEEE
+
+Trans Knowl Data Eng 12(4):529–547
+
+14. Jacox EH, Samet H (2007) Spatial join techniques. ACM Trans Database Syst 32(1):7
+15. Lee SG, Henschen LJ, Chun J, Lee T (2000) Identifying relevant constraints for semantic query
+
+optimization. Inf Softw Technol 42(13):899–914
+
+16. Mamoulis N, Theodoridis Y, Papadias D (2005) Spatial joins: algorithms, cost models and optimiza-
+tion techniques. In: Manolopoulos Y, Papadopoulos A, Vassilakopoulos M (eds) Spatial databases:
+technologies, techniques and trends, idea group, pp 155–184
+
+17. Maher MJ, Wang J (2000) Optimizing queries in extended relational databases. In: DEXA, vol 1873 of
+
+lecture notes in computer science. Springer, pp 386–396
+
+18. OpenGis (1999) Opengis simple features specification for sql. Technical report Open GIS Consortium
+19. Randell DA, Cui Z, Cohn AG (1992) A spatial logic based on regions and connection. In: KR, pp 165–176
+20. Ray S, Simion B, Brown AD (2011) Jackpine: a benchmark to evaluate spatial database performance.
+In: Proceedings of the 27th international conference on data engineering. ICDE 2011, April 11-16, 2011,
+Hannover, Germany, pp 1139–1150
+
+21. Stock O (1997) Spatial and temporal reasoning. Kluwer Acaddemic Publishers
+22. Worboys M (1992) A geometric model for planar geographical objects. Int J Geogr Inf Syst 6(5):353–372
+
+Eduardo Mella received his MSc in Computer Science from the Universidad de Concepci´on in 2016. He
+now works as a software engineer for Woodtech MS Company, Chile.
+
+M. Andrea Rodr´ıguez is a full professor at the Department of Computer Science, Faculty of Engineering
+of the Universidad de Concepci´on, Chile. She received a MSc and PhD in Spatial Information Science and
+Engineering from the University of Maine in 1997, and 2000, respectively. Her research interests include
+spatio-temporal databases and information retrieval.
+
+Geoinformatica
+
+Loreto Bravo received her Engineering Degree in 2000 from P. Universidad Cat´olica de Chile and PhD in
+Computer Science from Carleton University in 2007. She was a research fellow of the Database Group at
+University of Edinburgh from 2007 to 2008. She is currently director of the Institute of Data Science of
+the Universidad del Desarrollo in Santiago, Chile. Her research interests include database theory, database
+consistency, XML Databases and logic programming.
+
+Diego Gatica is a student of the MSc in Computer Science of the Universidad de Concepci´on.
+
+

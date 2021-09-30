@@ -1,0 +1,3140 @@
+Geoinformatica (2015) 19:747–798
+DOI 10.1007/s10707-015-0228-8
+
+The CASE histogram: privacy-aware processing
+of trajectory data using aggregates
+
+Maryam Fanaeepour1,2
+Egemen Tanin1,2 · Benjamin I. P. Rubinstein1
+
+· Lars Kulik1,2 ·
+
+Received: 31 January 2014 / Revised: 15 March 2015 /
+Accepted: 22 April 2015 / Published online: 14 July 2015
+© Springer Science+Business Media New York 2015
+
+Abstract Due to the high uptake of location-based services (LBSs), large spatio-temporal
+datasets of moving objects’ trajectories are being created every day. An important task in
+spatial data analytics is to service range queries by returning trajectory counts within a
+queried region. The question of how to keep an individual user’s data private whilst enabling
+spatial data analytics by third parties has become an urgent research direction. Indeed, it is
+increasingly becoming a concern for users. To preserve privacy we discard individual tra-
+jectories and aggregate counts over a spatial and temporal partition. However the privacy
+gained comes at a cost to utility: trajectories passing through multiple cells and re-entering
+a query region, lead to inaccurate query responses. This is known as the distinct counting
+problem. We propose the ConnectionAwareSpatialEuler(CASE)histogram to address this
+long-standing problem. The CASE histogram maintains the connectivity of a moving object
+path, but does not require the ID of an object to distinguish multiple entries into an arbitrary
+query region. Our approach is to process trajectories offline into aggregate counts which are
+sent to third parties, rather than the original trajectories. We also explore modifications of
+
+(cid:2) Maryam Fanaeepour
+
+maryamf@student.unimelb.edu.au
+
+Lars Kulik
+lkulik@unimelb.edu.au
+
+Egemen Tanin
+etanin@unimelb.edu.au
+
+Benjamin I. P. Rubinstein
+brubinstein@unimelb.edu.au
+
+1 Department of Computing and Information Systems, University of Melbourne,
+
+Parkville, VIC 3010, Australia
+
+2 National ICT Australia (NICTA), Sydney, Australia
+
+748
+
+Geoinformatica (2015) 19:747–798
+
+our aggregate counting approach that preserve differential privacy. Theoretically and exper-
+imentally we demonstrate that our method provides a high level of accuracy compared to
+the best known methods for the distinct counting problem, whilst preserving privacy. We
+conduct our experiments on both synthetic and real datasets over two competitive Euler
+histogram-based methods presented in the literature. Our methods enjoy improvements to
+accuracy from 10 % up to 70 % depending on trip data and query region size, with the great-
+est increase seen on the Microsoft T-Drive real dataset, representing a more than tripling of
+accuracy.
+
+Keywords Aggregate data · Count information · Differential privacy · Distinct counting
+problem · Euler histograms · Location privacy · Spatial databases · Spatial data analytics
+
+1 Introduction
+
+The proliferation of location-based services (LBSs) has led to an ever-increasing amount of
+spatio-temporal data, and a growing need to process and analyse this data. A wide range of
+applications benefit from spatio-temporal data such as: finding a service in the vicinity of a
+user’s location; determining the best site to set up a new facility such as a caf´e, i.e., facility
+location planning; and traffic planning by monitoring the number of vehicles in a specific
+region [7]. However, significant concerns regarding an individual’s data privacy can limit
+adoption [11]. Users naturally prefer privacy even when they grant third parties access to
+their data. Recent studies demonstrate that with growing usage of LBSs, individuals are
+becoming increasingly concerned about their privacy and shared information [25].
+
+Even with only GPS trajectories, it is possible to track and identify a person via a reverse
+look-up inference attack [20]. In particular, many trips start or end at a user’s persistent
+location e.g., home or work. Therefore, a trajectory ID is nearly as revealing as a person’s ID.
+Aggregation is a promising solution for privacy-aware trajectory analytics, as each indi-
+vidual user’s trajectory need not be retained. There are two privacy models to address
+aggregate queries: the interactive and non-interactive settings [14]. In the non-interactive
+model, the database is sanitized and then released, to be used arbitrarily by any parties with-
+out limitation. In contrast, in the interactive setting, queries are submitted by users to the
+data provider, which acts as an intermediary between users and database. In order to pro-
+tect the users’ privacy, queries and/or the responses may be modified by the curator [13].
+As discussed in [26], ‘Non-interactive data release has been pursued aggressively in recent
+years because it avoids the costs and delays of implementing manual privacy safeguards’.
+As mentioned in the literature [9], ‘histograms are natural candidates for privacy-preserving
+data sanitization’. The main contribution of this paper is a pair of non-interactive algorithms
+that compute sanitised histograms offline, and release these to a third party for answering
+subsequent range queries.
+
+Our approach provides a qualitatively similar privacy guarantee to k-anonymity [37]. We
+introduce and bound the confusion level provided by our method in Section 6, formalising
+the idea that the trajectories consistent with our histograms should be numerous and indis-
+tinguishable. Moreover, we discuss attacker knowledge, as well as possible attacks and how
+to mitigate their success. We argue that the level of aggregation needs to be sufficient to
+provide a high level of privacy.
+
+Fortunately a number of critical application scenarios require only aggregated trajectory
+data as a sufficient statistic. For example, aggregates are sufficient to answer the most com-
+mon queries in traffic monitoring, i.e., “the number of cars passing through a specific query
+
+Geoinformatica (2015) 19:747–798
+
+749
+
+region during a specific time”. In this paper, we focus on count information, i.e., the number
+of trajectories. Counting is one instance of several aggregate functions that are applicable to
+spatio-temporal data [39, 40].
+
+Figure 1 depicts a typical data sharing scenario for privacy-aware data analytics, that
+is typical in applications such as quantified-self fitness apps, traffic monitoring, etc. Here
+three parties are involved: the intermediary party, which acts as service/data provider that
+collects the data, the user that generates the data, and the third party that requires a view on
+the user data to perform data analytics. Our core goal is to develop algorithms that supply
+aggregate statistics from historical location data to third parties while keeping user’s data
+private. Our approach is for the service/data provider to release historical count histograms
+to third parties, who may then run range queries on this sanitized aggregated data.
+
+An example that illustrates this scenario is mobile network operators, their customers and
+a business looking to open up a new retail space. Owing to the developments in technology
+and its ease of access, the increasing number of smartphone users can act as potential real-
+time data generators. The mobile network operator, acting as the service provider, could
+collect smartphone data and provide gathered statistics to the third party business. The most
+attractive locations from the business’s perspective would be those places that are visited
+by considerable number of users. The core question of this paper is to find a solution to
+satisfy the needs of all parties: ensuring data quality for third parties while keeping users’
+data private.
+
+1.1 The distinct counting problem
+
+A well-established spatial aggregate query is the distinct counting problem [7, 17, 23, 28],
+which is also known as the double counting problem. In this problem, space is partitioned
+into a set of pairwise-disjoint cells with each cell maintaining a count histogram data struc-
+ture that counts objects intersecting with the corresponding cell. Given a query region, the
+goal of the distinct counting problem is to respond with a count of the distinct objects
+intersecting the query region. The challenge arises when objects exiting and re-entering the
+query region multiple times form a disconnected intersection with the query region. In such
+situations, cell-based counts may multiple count the number of distinct objects. The diffi-
+culty in maintaining counts for such objects, is that linking object segments is impossible
+without storing an ID per object. This challenge motivates us to propose a new technique
+that addresses this problem by introducing a notion of virtual counts. This challenge is of
+particular importance as there are many significant applications of aggregate trajectory data
+where privacy is a limiting concern.
+
+Example 1 Figure 2 shows a moving object trajectory (e.g., a mobile phone user or a
+GPS-enabled car) that exemplifies the challenge of the distinct counting problem. This
+object traverses 9 grid cells—with solid lines representing cell boundaries on the map.
+
+Receives desired service
+
+Receives aggregated data
+
+Service provider 
+(Data provider)
+
+Sends individual data
+
+Pays for collected data
+
+Third party
+
+Data generator; 
+e.g. GPS enabled devices
+
+Fig. 1 A typical scenario for privacy-aware data analytics, where count information of privacy-sensitive data
+generators is collected by a service provider; the service provider then releases privacy-preserving aggregate
+counts to third parties
+
+750
+
+Geoinformatica (2015) 19:747–798
+
+Fig. 2 An example of the distinct counting problem caused by a moving object trajectory visiting points of
+interest in the central business district of Melbourne, Australia. Each circled one indicates an increment to
+the corresponding cell count
+
+Circular points on the boundaries of grid cells demonstrate that the connectivity of the
+object path will be lost as it enters a neighbouring grid cell. As each cell independently
+maintains its own count, each segment contributes a count increment as shown by the high-
+lighted “1”s. The query rectangle (QR), which is shown as a bold boundary, is covering
+6 grid cells. As shown, the number of moving objects inside the query rectangle is erro-
+neously computed as 6 instead of 1 since cell-based counts have no way to distinguish
+objects or share information (e.g., via an ID). The distinct counting problem is further com-
+pounded by the aggregation of many moving objects’ trajectories common in real-world
+scenarios.
+
+Where simple histograms suffer from double counting at the cell-count level, the Euler
+characteristic from the mid-1700s [41] serves as the basis for a series of more sophisti-
+cated data structures that eliminate this problem [3, 36, 46]. The general intuition is one of
+the inclusion-exclusion principle whereby the double counting of an object falling on two
+adjoining cells is corrected by an edge-crossing count; edge-crossing counts can also be
+corrected via vertex counts, and so on (for dimensions higher than 2). These techniques are
+usually designed for planar representations or entities such as polygons. The state-of-the-
+art today, is the Distributed Euler Histogram (DEH) which counts trajectories of moving
+objects [46]. DEH correctly answers a simple question: how many distinct entries do tra-
+jectories make into a query region? However, DEH can still suffer from distinct counting
+in response to queries. In particular, the scenario in Fig. 2 poses a challenge for DEH
+which calculates an incorrect answer of 2 (this holds for all other existing approaches; see
+Section 3.2 for more details on DEH). Next, we define these two related problems, studied
+extensively in the literature.
+
+Definition 1 Given a partition of the plane, a set of objects, and a query region, the distinct-
+entry counting problem is to compute the number of distinct connected components (or
+
+Geoinformatica (2015) 19:747–798
+
+751
+
+segments), of the objects intersected with the region. Distinct entry responses may only
+depend on aggregate cell-based counts.
+
+In Fig. 2, the number of distinct segments in the displayed query region is 2, while there
+is only one object. The difficulty in counting distinct planar objects can arise when the
+objects are not convex or are not completely covered by the query region. In this paper
+we aim to solve the challenging task of counting distinct objects which is often referred to
+as the “distinct counting problem”. In particular we focus on counting trajectories and on
+rectangular partitions and query regions.
+
+Definition 2 Given a partition of the plane, a set of objects, and a query region, the distinct-
+object counting problem is to compute the number of distinct objects intersecting with the
+query region. Distinct object responses may only depend on aggregate cell-based counts.
+
+In real-world examples, trajectories are not limited to simple lines but can be self-
+intersecting paths, loops that return to their origin, or paths containing multiple cycles. A
+variety of trip patterns are possible, with several provided in an experimental study in Sec-
+tion 8.2. Consequently it is of the utmost importance to address the general distinct-object
+counting problem.
+
+1.2 Contributions
+
+In this paper, we discuss a privacy-aware trajectory data processing method using count
+information. We propose ConnectionAwareSpatialEulerHistograms(CASEHistograms)
+to solve the distinct-object counting problem. In CASE histograms, we preserve connec-
+tivity of a trajectory across cells without sharing any individual information between cell
+counts. The key insight is to planarize trajectories and then convert concave objects to being
+convex through the use of virtual counts. Our proposed method achieves a high level of
+accuracy, often-times releasing exact responses.
+
+The main contributions of this work are as follows:
+
+– We address the distinct-object counting problem by maintaining the connectivity of a
+trajectory without storing individual trajectory data. We propose the CASE histogram
+algorithm that counts the trajectories in query regions by applying a virtual count
+technique;
+The CASE algorithm preserves individual privacy through tunable aggregation. We
+provide the first theoretical analysis of privacy for Euler histogram-based methods
+including CASE;
+
+–
+
+– When users pre-process their trajectories into histogram deltas prior to submitting to
+the service provider, our approach achieves pan privacy—full access to the inner-state
+of our algorithm reveals no additional private information;
+
+– Our approach provides third parties with highly accurate aggregated data, where no
+
+noise gets added to counts;
+
+– We consider how differential privacy can be combined with Euler histograms in general,
+to further strengthen privacy against powerful attackers hoping to breach privacy by
+exploiting accurate responses to carefully crafted query regions; and
+
+– We evaluate our techniques through extensive experimental studies on Melbourne,
+Manhattan and Beijing road networks as real-world examples. In addition, we test our
+
+752
+
+Geoinformatica (2015) 19:747–798
+
+technique on a real dataset, T-Drive. Our technique achieves a high level of accuracy
+and significantly outperforms the state-of-the-art.
+
+The rest of the paper is organized as follows: the related work is reviewed in Section 2.
+In Section 3, we discuss background on Euler histograms for counting planar objects and
+an extension for counting trajectories of moving objects. Next, in Section 4, we develop our
+approach to solve the distinct-object counting problem. In Sections 5 and 6, we analyse the
+accuracy and privacy of CASE; and we develop variants of CASE that are alternatively more
+accurate and equally private (CASE+ algorithm) or less accurate but preserve differential
+privacy. In Section 7, we discuss practical guidelines for selecting the partition grid cell size.
+We analyse and compare our approach with the best competitive techniques in Section 8.
+Finally, Section 9 concludes the paper.
+
+2 Related work
+
+The demand for location-based services (LBSs) has been increasing due to the advances in
+spatial-aware technologies such as GPS, RFID and GSM networks [11, 16, 17, 19, 48–50].
+There exists a variety of applications that require spatial and spatio-temporal data analytics [6, 33].
+Chow & Mokbel [10] discuss the state-of-the-art in privacy-preserving techniques for
+spatial trajectory data, where applications require access to individual data. By contrast, sev-
+eral applications such as facility location planning [44] and traffic monitoring [7, 30, 38, 40]
+do not need to work with individual data. In fact, in order to meet the third-party requirement
+and the user’s privacy concerns, aggregation techniques [8, 32] as a privacy-aware method
+could be applied [7, 38]. In these types of examples, moving objects’ trajectories need to
+be pre-processed. Privacy-aware trajectory data processing using aggregates is the focus of
+this paper. Both storage space and privacy requirements motivate aggregation methods [7].
+Xie et al. [45] propose a privacy-preserving system for traffic monitoring that aggregates
+vehicle IDs into partial IDs. Their idea is based on k-anonymity [37] in which every record
+released shares identifying information with at least k −1 other individuals. Higher levels of
+anonymity incur degraded accuracy in a trade-off controlled by the number of trajectories
+sharing a partial ID. Although partial IDs may not always breach privacy, requirements of
+higher accuracies lead to partial IDs that do effectively act as pseudo IDs. Our work does
+not require storage of IDs, and offers two settings: in one, users transmit trajectories to a
+trusted service provider who only retains (and releases) aggregated count data; in the other,
+users may transmit count increments only. This second setting constitutes a form of privacy
+known as pan privacy [15] in which even a full audit of the service provider would not
+uncover additional privacy-sensitive data.
+
+We argue that map-matching attacks [43] are mitigated by count-based approaches.
+Indeed each cell in our approach acts like a mix zone [4, 5] (a region in which location
+data is not transmitted), since counts of many trajectories crossing cells are combined with-
+out identification. Section 6 discusses the relationship between level of aggregation and our
+notion of ‘confusion level’—the number of indistinguishable trajectories consistent with our
+histograms. This guarantee is very similar to k-anonymity, which is a leading privacy frame-
+work popular due to its usable balance of privacy and utility. We discuss in Sections 6.1
+and 6.4 that cell size and the duration of data gathering must be sufficiently large to guar-
+antee large confusion levels (i.e., large k in k-anonymity). Differential privacy is a strong
+notion of privacy that guarantees released statistics do not depend significantly on any indi-
+vidual datum—an attacker with access to almost all other data cannot use released statistics
+
+Geoinformatica (2015) 19:747–798
+
+753
+
+to determine an unknown individual’s datum [14]. Our approaches are complementary to
+differential privacy. Without any aggregation, randomised query responses that preserve
+differential privacy suffer higher degradation to accuracy, while differential privacy can add
+a stronger level of privacy guarantee on top of aggregation. We propose for the first time the
+(optional) combination of differential privacy with Euler histogram methods in general, in
+Section 6.5.
+
+While map-matching attacks [43] are mitigated by count-based approaches, these tech-
+niques suffer a common challenge: the distinct counting problem (known as the double
+counting problem) [23, 24, 28, 29, 42]. This problem occurs when a spatial or spatio-
+temporal object, e.g., trajectory, remains in a query region for several time stamps in the
+query interval and is counted multiple times. Traffic monitoring, for example, could be
+seriously impacted by inaccuracies due to multiple counting.
+
+The distinct counting problem has been discussed in the literature for spatial data since
+the late 1990s [3, 31]. Papadias et al. [30] propose the aRB-tree (aggregate RB-tree) to index
+spatial data, where the count of cars related to the area of a tree node is stored. Queries
+are answered by summing up these counts while traversing the data structure. However, the
+approach still suffers from the distinct counting problem.
+
+Tao et al. [38] identify this problem as coming from the use of the aRB-tree, and they
+discuss the difficulty with providing accurate answers for distinct counting queries. They
+opt not to focus on exact counts and propose using sketches as an approximation method
+to address this problem. This approach is based on probabilistic counting which is approxi-
+mate. Our goal in this paper is to develop approaches that can produce accurate aggregated
+responses (cf. Sections 5 and 8.4) for certain queries (cf. Section 3, Remark 2).
+
+Yaagoub et al. [51] propose an approach similar to the aRB-tree approach of Papadias
+et al. [30]. As well as using a Quadtree-based index, their approach considers materialized
+views for the internal nodes in contrast to [30]. However, unlike the work in this paper the
+object ID is retained, which posses a threat to privacy.
+
+Loo [22] explores buffer zones in road network databases, to define standardized regions
+that encompass roads and highways for the purposes of linking road network data with
+vehicle accident reports. While their work is not motivated by privacy, the use of a buffer
+zone causes problems of double counting. In particular, for those areas that have narrow and
+dense roads, and are near junctions. In this setting, the geometry of the object is the primary
+cause of double counting.
+
+All of the aforementioned works differ fundamentally from our aim: to answer coarse
+range queries accurately while preserving the privacy of users. Our approach is to maintain
+the connectedness of trajectories or objects that are disconnected by cell boundaries.
+
+Our work builds on the Euler histogram which was first introduced by Beigel & Tanin
+[3] to address the distinct counting problem for rectangular objects, using the Euler charac-
+teristic [41]. We describe Euler histograms in Section 3. Sun et al. [35, 36] further develop
+histograms as an approach to answering range queries, and contribute lower bounds on stor-
+age and efficient approximation algorithms for a range of query types. Distributed Euler
+Histograms (DEHs) have been proposed more recently to address aggregate queries on
+moving object data in distributed settings [46]; the distinct entries problem is proposed and
+tackled rather than distinct-object counting problem. Recently, Leonardi et al. [21] con-
+sider a count-based approach and demonstrate accuracy results that can outperform others.
+Their approach is similar to DEH [46], as they also consider crossing and overlapping
+of trajectories with the edges and faces of grid cells to compute the number of distinct
+objects. The experimental comparison [21] between their Euler histogram-like approach and
+sketches (probabilistic counting) [38] shows that count-based histograms outperforms the
+
+754
+
+Geoinformatica (2015) 19:747–798
+
+randomised technique. Our approach can outperform DEH and consequently other existing
+techniques, as is demonstrated experimentally in Section 8. We have in parallel explored
+combining the approach developed first in this present paper with tree data structures to
+reduce the storage requirements of histograms in [47].
+
+3 Background
+
+In this section, we review the Euler histogram as a technique to count convex planar objects
+[3] and its extension DEH for moving objects’ trajectories [46]. We offer a summary and
+new insight into the limitations of these existing approaches to distinct counting.
+
+As we restrict our attention to rectangular partitions and query regions, without loss of
+generality, we can fully represent a range query in terms of its minimum and maximum
+row and column numbers. These choices are discussed in Remark 2, including extensions
+to other geometries (See also Section 7 for further analysis regarding the grid cell size and
+query rectangle shapes).
+
+3.1 Counting planar bodies: Euler histograms
+
+Beigel & Tanin [3] extended Euler’s characteristic to count the number of objects in a cell-
+partitioned space. The Euler histogram is composed of three types of counts as follows:
+
+–
+
+–
+
+–
+
+Face counts represent object counts associated with each cell. A cell’s face count is
+equal to the number of objects intersecting with that cell;
+Edge counts represent object counts associated with each edge between two neighbour-
+ing cells. An edge’s edge count is equal to the number of objects crossing that edge;
+and
+Vertex counts are the number of objects intersecting with a vertex incident to four cells
+(and four edges).
+
+Example 2 Figure 3 demonstrates the concept of Euler histogram with a 4 × 4 partition and
+one rectangular object occupying the bottom-right 3 × 3 cells. Rather than a single count
+per cell, as in a simple histogram, the Euler histogram maintains counts for all faces, edges
+and vertices. The faces, edges and vertices impacted by the object are highlighted in Fig. 3b
+and the resulting counts are displayed in Fig. 3c. In total 9 cells have face count 1, 12 edges
+
+Face   Edge  Vertex
+
+Object
+
+(a)
+
+(b)
+
+Fig. 3 An example a partition with one object from Example 2; b the faces, edges and vertices overlapping
+with the object; and c the resulting counts in the Euler histogram
+
+1
+1
+1
+1
+1
+
+1
+1
+1
+1
+1
+
+1
+1
+1
+1
+1
+
+1
+1
+1
+1
+1
+
+1
+1
+1
+1
+1
+
+(c)
+
+Geoinformatica (2015) 19:747–798
+
+755
+
+have count 1 (6 horizontal edges and 6 vertical edges), and 4 vertices have count 1. All other
+counts in the histogram are zero.
+
+Given a rectangular query region that is a union of cells, we respond to the query with
+the number of objects in the region, by combining up relevant face, edge and vertex counts:
+
+–
+–
+
+–
+
+Total face count F is the sum of face counts of those cells contained in the query region;
+Total edge count E is the sum of edge counts of those edges whose two incident cells
+are contained in the query region; and
+Total vertex count V is the sum of the vertex counts of those vertices whose four
+incident cells are contained in the query region.
+
+With these three counts in hand, the object count is calculated for response, as:
+
+N = F − E + V .
+
+(1)
+
+This is a form of the inclusion-exclusion principle, whereby an overall count has a first-
+order estimate given by the sum of face counts. However objects that overlap multiple cells
+are thus multiple counted. Edge counts bound the degree of this double counting, however
+correcting by subtracting edge counts is still not exact: F − E also needs to be corrected
+by vertex counts as objects that overlap intersecting edges are multiple counted by the edge
+count E. This is very similar to correcting the union bound in probability theory with prob-
+abilities of event intersections. In higher dimensions the expression involves an alternating
+series of corrections [3].
+
+Example 3 Returning to Example 2, consider now a query region equal to the entire space.
+Applying the rules of combining face, edge and vertex counts yields F = 9, E = 12,
+V = 4. Equation 1 then leads to the correct object count of N = F − E + V = 9 − 12 + 4 =
+1. However, a simple histogram, that would only consider the face counts, would give an
+erroneous count of 9.
+
+3.1.1 Accuracy of Euler histograms
+
+In many circumstances Euler histograms produce accurate counts. However they are known
+to multiple count in certain settings.
+
+Remark 1 A sufficient condition for correctness of Eq. 1, is that all objects are convex
+planar bodies. We demonstrate in the following example that convexity is not necessary
+however. In general, objects being disconnected leads to inaccurate counts. Note that con-
+nected objects can become disconnected e.g., a concave object not contained by a query
+region (cf. Example 4).
+
+Example 4 Figure 4 shows a concave object and a query rectangle (QR) intersecting only
+part of the object. As a result, within the region the object is disconnected (cf. Fig. 4a). Note
+that by the rules of combining vertex and edge counts, there are no such counts inside the
+query rectangle and F = 2 (cf. Fig. 4c) yielding an erroneous count of N = F − E + V =
+2 − 0 + 0 = 2. If the query region were expanded to contain the concave object, it is easy to
+see that F = 8, E = 9, V = 2 yielding N = 1. This proves that convexity is not necessary
+for correctness.
+
+756
+
+Geoinformatica (2015) 19:747–798
+
+1
+1
+1
+1
+1
+
+1
+1
+1
+
+1
+1
+1
+
+1
+1
+1
+
+1
+1
+1
+1
+1
+
+QR
+
+(a)
+
+(b)
+
+(c)
+
+Fig. 4 Euler histograms from Example 4 with: a a concave object not contained by the query region (QR)
+becomes disconnected; b the impacted faces, edges and vertices; and c the corresponding counts
+
+It is clear that trajectories behave very differently to convex bodies in general, and so
+could lead to inaccuracies without further modification to the Euler histogram data structure.
+We explore trajectories in the next section.
+
+Remark 2 In this paper we have chosen to focus on 1. rectangular partitions (having a con-
+vex partition is sufficient), 2. convex query regions (rectangles) that are unions of cells,
+and 3. to sum only those counts that are “fully covered”. Regarding Assumption 2, query
+region convexity is a necessary condition for accurate Euler histogram counting of convex
+planar bodies. While we can service arbitrary convex query regions with minor modifica-
+tions to the count-summing rules (Assumption 3): if a cell is contained in the query region
+or partially overlaps it, then its counts contribute to the sums. Therefore the effective query
+region is in fact a union of cells overlapping the given convex query region. Moreover the
+rectangular cell partition, Assumption 1, can also be relaxed to any convex partition. Indeed
+previous work applying Euler histograms [46] have considered Voronoi partitions induced
+by centroids at sensor locations, and query rectangles that are unlikely to be unions of such
+cells. However, like the case of non-rectangular convex query regions, such partitions are
+unlikely to overlap completely with given query regions. None of the results in this paper
+are limited to the regular partitions and regions discussed. However, when the assumptions
+are relaxed, responses to a given query region do not only count objects falling within the
+query region, but rather count objects in cells that overlap the query region—the effective
+query region is still a union of cells. Our treatment avoids the need to consider effective
+query regions as distinct from given query regions, thus simplifying our exposition while
+restricting the source of errors to be only from multiple counting.
+
+3.2 Counting trajectories: distributed Euler histograms
+
+The principles of counting planar objects can also be applied to moving points represented
+as trajectories, which we discuss in this section. Distributed Euler Histograms (DEHs)
+[46] service aggregate queries on moving object data in distributed settings. This approach
+applies (1) with one main modification: there are no vertex counts. DEH supports distributed
+query responses by having each cell store its own associated face and edge counts.
+
+In DEH, each cell’s face and edge counts are incremented every time a trajectory enters
+a cell: a trajectory that passes through a cell and then re-enters once more through the same
+edge, contributes 2 to both face and edge counts. The rules for summing face and edge
+counts for a given query region produces F and E in the same way as for Euler histograms.
+No vertex counts are maintained in DEH however, since a trajectory is merely a poly-line
+that “does not cover” any vertex [46].
+
+Geoinformatica (2015) 19:747–798
+
+757
+
+1
+
+1
+
+1
+
+1
+
+1
+
+(a)
+
+(b)
+
+(c)
+
+Fig. 5 A a moving object’s trajectory; b an equivalent concave body corresponding to cells covered; and c
+the histogram counts for both objects
+
+Example 5 Figure 5a presents the Euler histogram for a moving object’s trajectory on a 2×2
+grid. Due to the rules of incrementing counts, the trajectory shown and the concave planar
+body in Fig. 5b are indistinguishable: in both cases the histogram counts of Fig. 5c result.
+
+The following expression represents the response of DEH for a given query region:
+
+N = F − E .
+
+(2)
+
+3.2.1 Accuracy of distributed Euler histograms
+
+The intuition behind Eq. 2 is that whenever a trajectory enters a grid cell, we increase one
+count for that the cell’s face, and when it leaves we decrement the related edge count. As
+each trajectory ultimately finishes in a grid cell, then only the last visited grid cell will have
+an edge-uncorrected face count of one. However, depending on the shape of the trajectory
+and the query rectangle, this expression cannot always provide an accurate response.
+
+Example 6 Figure 6 demonstrates the key limitation of DEH, when a trajectory re-enters a
+query region; i.e., the intersection of the trajectory with the query region is disconnected.
+In Fig. 6a, there is one trajectory which is completely inside the query region, and therefore
+connected. Equation 2 computes a correct count of N = F − E = 5 − 4 = 1. However, as
+depicted in Fig. 6b, once only segments of the trajectory lie inside the QR, DEH no longer
+solves the distinct-object counting problem. Although there is only one object inside the
+QR, the algorithm estimates N = F − E = 3 − 1 = 2.
+
+Example 7 Consider again Example 1 from Section 1.1, with a single object—a similar
+setting but more complex than the previous example. Figure 7a repeats the pertinent details
+of the example, showing the partition, trajectory and query region only. Recall that under
+
+QR
+
+QR
+
+(a)
+
+(b)
+
+Fig. 6 An example that demonstrates a when DEH can correctly count trajectories; and b when the response
+is inaccurate
+
+758
+
+Geoinformatica (2015) 19:747–798
+
+a simple histogram that considers only face counts, we get 6 as the reported number of
+objects in the query region. By applying Eq. 2, with F = 6 andE = 4, we arrive at
+N = F − E = 6 − 4 = 2, which is closer to the correct count, however still suffers from
+double counting. In fact, DEH addresses the distinct-entry counting problem rather than
+the distinct-object counting problem (Definitions 1 and 2). As in the limitation discussed
+above for Euler histograms, the problem for DEH here occurs as the query region does not
+fully cover the trajectory. This trajectory loses its connectivity within the query region (cf.
+Remark 1). Figure 7b shows the faces and edges of the cells involved with this trajectory. As
+depicted in Fig. 7b, cell (2, 3) is different from the others as the trajectory traverses this cell
+twice and it accordingly receives a count of two. As discussed in Example 5 and depicted
+in Fig. 5, a simple trajectory corresponds to a (possibly concave) planar body. Since the
+rules of updating face and edge counts in DEH recounts a trajectory that re-enters a cell,
+such cases correspond to superposing multiple (possibly concave) bodies, one per segment
+within the query region. This is apparent in Fig. 7b where the affected cells shown in grey
+correspond to the union of the two segments’ cells; the only overlapping cell being (2, 3).
+
+4 Algorithm: CASE histograms
+
+We now propose the Connection Aware Spatial Euler (CASE) histogram to address the
+distinct-object counting problem. In CASE histograms, we preserve the connectivity of
+trajectories that may be disconnected by a query region, and in so doing achieve higher
+accuracy for the same level of privacy. CASE histograms leverage several key ideas:
+
+Planarization. In DEH, trajectories and the corresponding planar union of intersect-
+ing cells are indistinguishable from counts alone. In CASE, we make this connection
+explicit by planarizing trajectories;
+Processing entire trajectories. In DEH a trajectory is processed by segment, and
+so there can be multiple superposed planar bodies contributing to counts—any cells
+belonging to the bodies of multiple trajectory segments will suffer double counting.
+
+1
+
+2
+
+3
+
+4
+
+5
+
+1
+
+2
+
+5
+
+4
+
+1
+
+1
+
+1
+
+1
+
+1
+
+3
+
+1
+
+1
+
+2
+
+1
+
+1
+
+1
+
+1
+
+1
+
+1
+
+1
+
+1
+
+1
+
+1
+
+1
+
+2
+
+3
+
+4
+
+QR
+
+QR
+
+(a) A trajectory on a 4 × 5 grid
+
+(b) Faces and edges covered
+
+Fig. 7 A sample trajectory that causes the distinct counting problem and the application of Euler histograms
+that does not address it
+
+–
+
+–
+
+1
+
+2
+
+3
+
+4
+
+Geoinformatica (2015) 19:747–798
+
+759
+
+(a)
+
+(b)
+
+Fig. 8 a Extracting the minimum and maximum grid cells of a trajectory to compute its MBR and converting
+it to a convex planar object. b CASE histograms; Virtual Face, Virtual Edge and Virtual Vertex
+
+CASE processes a trajectory in its entirety, and so only a single planarized body is
+produced;
+
+– Convexity. To avoid having concave planarized bodies that become disconnected by
+pathological query regions, we grow the planarized bodies to their convex minimum
+bounding rectangle (MBR) [34]. Convexity is sufficient for Euler histogram correctness
+(cf. Remark 1); and
+
+– Completing virtual counts. Finally, the expanded MBR containing a trajectory may
+include cells that do not intersect with the trajectory. These cell counts are not incor-
+porated in the counts from the trajectory alone, and so we introduce virtual counts to
+complete them. Since the object being counted is a planar body, we include virtual
+vertex counts, but no real vertex counts for the non-planar trajectory.
+
+Given an observed moving object’s trajectory we carefully increment our CASE his-
+tograms. The following represents a sketch of the algorithm. Some additional steps are taken
+to improve accuracy and efficiency—the full details are given in Section 4.1 and in the
+accompanying Algorithms 1 and 2.
+
+(a)
+
+(b)
+
+Fig. 9 a CASE histograms; and b virtual counts, for Fig. 8
+
+760
+
+Geoinformatica (2015) 19:747–798
+
+Fig. 10 “Virtual lines” (the dashed lines) that preserve the connectedness of an object
+
+–
+
+Identify the MBR of the trajectory, in particular the min/max rows and columns
+specifying the rectangle;
+
+– Consider the MBR as a planar object to be counted by the Euler histograms: any faces,
+edges, vertices that would be counted in the Euler histograms for the MBR, but have
+not been counted for the trajectory (previous step) should be counted by virtual face,
+edge and vertex counts; and
+Process the observed trajectory/object by incrementing each intersecting cell’s face and
+edge counts following the rules of Euler histograms (not the segment-wise rules of DEH).
+To compute the response value, we incorporate the counts F, E and virtual counts F (cid:2), E(cid:2)
+
+–
+
+and V (cid:2) as:
+
+N = (F + F
+
+) − (E + E
+
+) + V
+
+(cid:2)
+
+(cid:2)
+
+(cid:2)
+
+.
+
+(3)
+
+It is apparent, that the virtual counts are completing face/edge/vertex crossings that are not
+counted in F, E.
+
+Example 8 As an example consider Fig. 8a which revisits our running example of the Mel-
+bourne central business district. The figure shows the MBR and its representative min/max
+cells. Next, Fig. 8b depicts the cells of the planarized MBR that intersect with the trajec-
+tory (dark faces) and do not intersect (light virtual faces); also shown are the corresponding
+edges, virtual edges and virtual vertices. These are again highlighted in Fig. 9a. Finally,
+Fig. 9b displays a query rectangle alongside the histogram counts. Note we have F = 5,
+F (cid:2) = 1, E = 4, E(cid:2) = 3 , V (cid:2) = 2. Then applying Eq. 3, we arrive at the correct distinct
+object count of N = (F + F (cid:2)) − (E + E(cid:2)) + V (cid:2) = (5 + 1) − (4 + 3) + 2 = 6 − 7 + 2 = 1.
+
+Virtual lines (cf. Fig. 10) can be drawn horizontally/vertically throughout an MBR
+to determine which cells are impacted by the MBR and therefore are included in count
+calculations for any given query region. In future work, if we were to planarize trajectories
+to non-rectangular bodies, virtual lines would prove useful in computing convex hulls.
+
+4.1 Algorithm details
+
+In this section, we discuss details of the CASE histogram approach (cf. Algorithms 1 and 2).
+We use the following basic structures in our algorithms.
+
+•
+
+•
+
+Trajectory T : A full trajectory of a moving object is a sequence of n visited nodes
+T = (n1, . . . , nn), for somen;
+Link (cid:2)j : Every two consecutive nodes, nj and nj +1, of a trajectory induces a link
+composed of two lists: (cid:2)j = ((c1, . . . , cs), (e1, . . . , es−1)):
+
+Geoinformatica (2015) 19:747–798
+
+761
+
+– Cell ID ck: The ID of a grid cell corresponds to the row and column index of
+the cell, e.g., ck = (2, 3) means row 2, column 3. A link contains all IDs of
+cells intersecting with that link; and
+Edge ID ek: The ID of a cell’s boundary edge corresponds to the pair
+of incident cell IDs. A link contains the IDs of all cell edges crossed by
+that link.
+
+–
+
+Both construction and query response algorithms deviate from the above design, in ways
+that can boost efficiency and accuracy. For example, during construction, we only concern
+ourselves with virtual counts if it is determined that the trajectory will indeed cause double
+counting problem without them.
+Stage 1: cell and edge retrieval In CASE histogram construction (Algorithm 1), we take
+every trajectory path as a list of node IDs (input to the algorithm) and retrieve the related
+cell IDs and cell boundary edge IDs. If the current extracted cell ID exists in the cell ID
+list, it will not be added to the list to avoid repetition. This happens if two consecutive
+links are located in the same cell or the trajectory re-enters a cell. In both cases, the related
+cell ID should be considered only once. Furthermore, two consecutive links could cross
+the same edge of a cell. Here, we need to consider only one edge ID in the extracted edge
+ID list. In the case of a vertex crossing, we slightly perturb the trajectory so that the link
+crosses to one side of the vertex. This perturbation to the retrieval process can lead to small
+off-by-one errors in counts, for certain QRs. However this case does not occur in any of
+our datasets or range of experimental partitions, and so we deem resulting errors to be
+negligible.
+
+Stage 2: detecting the distinct counting problem While we may assume we will
+always suffer from the distinct counting problem, it is more efficient to detect when this is
+the case and otherwise not expend resources maintaining virtual counts. For this, we check
+the cell IDs in the extracted cell ID list. If there is a cell ID that has the same row or column
+number with another cell ID, but they are not neighbours and no connection link exists in
+the edge ID list, then the distinct counting problem occurs.
+
+Stage 3: planarization In this final stage, the poly-line trajectory will be converted to a
+“planar” object if the distinct counting problem has been detected. That means, in addition to
+adding more cell IDs and edge IDs as virtual faces and virtual edges, vertex IDs associated
+with the cell IDs will also be added to the list as virtual vertices. In a nutshell, we have a
+list of cell IDs and edge IDs that this trajectory is intersecting with. Moreover, virtual faces,
+virtual edges and virtual vertices need to be added if the distinct counting problem occurs.
+For all of the extracted and computed cell IDs, edge IDs and possibly virtual counts, we will
+add one count to their related face, edge histograms, virtual face, virtual edge and virtual
+vertex histograms [lines 27 − 37]. If the distinct counting has not occurred we do not need
+virtual counts [Stage3, lines 39 − 42].
+
+In Algorithm 2, we elaborate on the range query procedure based on CASE histograms.
+The face count will be computed using the QR coordinates. If there is no real count
+inside the QR, then we do not need to consider further count histograms, either real or
+virtual. The total number of objects will be zero, [lines 1 − 3]. Otherwise, the number
+of rows and columns corresponding to the requested QR will be checked. If the QR has
+only one row or one column, the sum of edge counts will be calculated as well as the
+total number of counts for virtual faces and edges [line 5 − 9]. Since there is no ver-
+tex constructing the QR, then there is no vertex count, so this parameter in Eq. 3 will
+
+762
+
+Geoinformatica (2015) 19:747–798
+
+Geoinformatica (2015) 19:747–798
+
+763
+
+be zero. Thus, there are only real and virtual faces and edges counts to be considered. If
+there is any vertex, the sum of virtual vertices will be computed and Eq. 3 will be applied
+[line 11 − 13].
+
+4.2 Computational complexity analysis
+
+Regarding the query computation, the cost O(n × m) in the worst case corresponds to the
+number of grid cells covering the selected area, n × m, in whichn is the number of rows
+in the partitioned map and m is the number of columns. The number of grid cells does not
+change with respect to the input number of trajectories, it only changes when the grid cell
+size changes. In regard to the pre-computational process, the complexity O(T × n × m) is
+also related to the number of trajectories T . In an offline procedure, the service provider
+executes a pre-computation once and sends it to a third party to run range queries over an
+extended period. In this way the cost of pre-computation is amortized. In general, the size
+of the dataset (number of trajectories), the length of a trajectory, and the number of grid
+cells are those factors that can affect the running time of this algorithm. However, the two
+latter factors will be constant and limited to the grid size and in the worst case if a trajectory
+passes all the grid cells would be n × m, n as the number of rows in the partitioned map and
+m as the number of columns.
+
+5 Accuracy analysis
+
+The principle behind the CASE histogram is to reduce trajectory counting to convex planar
+body counting: as discussed in Section 3.1 (cf. Remark 1), convexity is sufficient for the
+
+764
+
+Geoinformatica (2015) 19:747–798
+
+accuracy of Euler histograms. On the other hand trajectories can be highly non convex, and
+become disconnected when restricted to a relatively small query region. The set of real and
+virtual counts, the rules for updating and summing them, culminating in Eq. 3, form this
+reduction. As such, it is clear that where a query region does not only intersect virtual cells
+for an object, the CASE count is correct by the same argument as for Euler histograms.
+Virtual counts complete the bookkeeping of the planarized body.
+
+As we have seen for the running Melbourne example, CASE accurately solves the
+distinct-object counting problem while state-of-the-art DEH solves only the simpler
+distinct-entry counting problem (cf. Example 8). We will supply additional experimental
+evidence in the sequel. However, the basic CASE algorithm can still suffer from inaccurate
+counts.
+
+Example 9 Figure 11 demonstrates a case in which virtual counts may lead to an error
+for a smaller QR: all three trajectories T 1, T 2 and T 3 in the figure can suffer from
+the distinct counting problem. Therefore, we convert them to a polygonal object via vir-
+tual counts. As discussed in Section 4.1, when the grid cells of a range query have only
+virtual counts, those counts are not considered. It is possible for smaller query rectan-
+gles to intersect with virtual counts of an object that is completely outside of the QR.
+In this case, we have real counts inside the query rectangle in addition to the virtual
+counts. Therefore, we will get an extra count of the object. This is the detected source of
+error for CASE histograms. As shown, Trajectory T 2 is completely outside the QR but
+its related virtual counts are inside the QR. The dotted lines inside the QR are the vir-
+tual lines corresponding to trajectory T 2. Since we have the full trajectory of T 1 and a
+part of T 3, we need to consider both real and virtual counts. Therefore, we will have one
+more object in the reported result: From grid cell (3, 4) to (6, 6), we can extract one vir-
+tual object to address the identified problem: we have 9 virtual faces, 17 virtual edges
+and 9 virtual vertices related to trajectory T 2. Therefore, the number of virtual objects is
+N = F (cid:2) − E(cid:2) + V (cid:2) = 9 − 17 + 9 = 1.
+
+1
+
+2
+
+3
+
+4            5             6             7            8
+
+T2
+
+4
+
+5
+
+6
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+T3
+
+3
+
+4
+
+5
+
+6
+
+Fig. 11 Virtual counts for smaller QRs in CASE histograms can lead to double counting
+
+Geoinformatica (2015) 19:747–798
+
+765
+
+As this particular error occurs for specific trajectory shapes and the very small query
+regions, the CASE histogram overall provides a very high level of accuracy regardless of
+various parameter settings (see Section 8). We propose CASE+ in the next section, designed
+to remove some unnecessary virtual objects. While we have provided one rule, further rules
+may be possible and can be developed in future research.
+
+5.1 Eliminating unnecessary virtual counts: CASE+
+
+As shown in Fig. 11, some virtual counts are not necessary, and lead to errors for smaller
+QRs. To address a special-case problem with virtual counts demonstrated in the previ-
+ous section, we propose a rule to remove the virtual counts related to objects which are
+completely outside the QR and fully cover the QR.
+
+Given a Query Rectangle (QR) that is an m × n grid, the number of grid cells (faces)
+inside the QR equals to mn, the number of vertices is (m − 1)(n − 1), and the number of
+edges m(n − 1) + n(m − 1). As discussed earlier, CASE checks all mn grid cells of the QR.
+If there are only virtual counts in the requested query rectangle, i.e., there is no real count,
+then the returned number of objects is 0.
+
+The above rule means that all the object(s) causing the distinct counting problem are
+outside the QR. Thus, we do not consider the virtual counts and report no object inside the
+QR. However, if inside the requested QR there are real counts as well as virtual counts, we
+need to compute the number of objects based on the CASE expression, (3). In the CASE+
+algorithm (cf. Algorithm 3), we check if we have at least 1 virtual count per grid cell and
+grid edge in the QR. If all the (m − 1)(n − 1) vertices have at least 1 virtual count as well,
+then we compute the number of virtual object(s) that we can extract by deducting 1 from
+the F (cid:2), E(cid:2) and V (cid:2) histograms per cell, edge and vertex, to produce N (cid:2). This means that the
+number of virtual objects that we can remove from the total reported result is the minimum
+amount between the minimum of virtual histograms, F (cid:2), E(cid:2) and V (cid:2):
+
+(cid:2) = min(min(F
+
+(cid:2)
+
+N
+
+), min(E
+
+), min(V
+
+))
+
+(cid:2)
+
+(cid:2)
+
+(4)
+
+In other words, for each planar object superimposed by an m × n grid, we have the
+
+Geoinformatica (2015) 19:747–798
+
+766
+
+following:
+
+– No. of vertices V = (m − 1)(n − 1);
+– No. of faces (cells) F = mn; and
+– No. of edges E = m(n − 1) + n(m − 1).
+
+If we compute any F − E + V , the result will be 1, which satisfies Eq. 1—i.e., the Euler
+histogram for planar objects. If we have N objects superimposed by grid partitions, then
+this equation becomes:
+
+N(cid:2)
+
+i=1
+
+N(cid:2)
+
+i=1
+
+N(cid:2)
+
+i=1
+
+Fi −
+
+Ei +
+
+Vi = (1 + 1 + ... + 1) − (1 + 1 + ... + 1) + (1 + 1 + ... + 1)
+
+= N − N + N
+= N .
+
+Therefore, the number of virtual objects is equal to min(min(F ), min(E), min(V )).
+As demonstrated, each planar object (trajectory here, to be converted to a planar object)
+needs to have all face, edge and vertex counts computed correctly. Therefore, to com-
+pute the number of virtual objects, we need to have at least 1 face, 1 edge and 1 vertex
+count. In order to compute the number of virtual objects, we need to compute the mini-
+mum among these values to safely remove unnecessary counts related to virtual object(s)
+(cf. Eq. 4). However, when the row numbers or column numbers of a QR equal one,
+there will be only virtual lines. This implies that, there are only virtual faces and edges
+inside the QR and we need to find the minimum value of face and edge counts to
+compute the number of unnecessary virtual objects. As a result, the total number of
+objects, T , will be computed as: T = N − N (cid:2). These rules are each represented in the
+CASE+ algorithm.
+
+Example 10 We demonstrate our technique via a detailed example. Figure 12 shows the
+procedure to compute the count for Fig. 11. As it is depicted in Fig. 11, we have 3 objects
+inside the whole area (partitioned to 6 by 8 grid cells). One of the objects (T1) is com-
+pletely inside the QR, the second (T3) is partially inside the QR and the last one (T2) is
+not inside the QR at all. However, since all three trajectories are causing the distinct count-
+ing problem, we need to planarize them into convex objects. Therefore, we will definitely
+have some virtual counts which are not related to any object inside the QR (and coming
+from T2). Based on the aforementioned rule, we compute the total number of objects inside
+the QR by considering real and virtual counts, CASE (3). Then, we compute the num-
+ber of unnecessary virtual objects as N (cid:2) and eventually the total number of objects, T , via
+Eq. 4. Specifically, in Fig. 11, the QR has values m = 4, n = 3. The number of objects
+N = (F + F (cid:2)) − (E + E(cid:2)) + V (cid:2) = (13 + 17) − (11 + 30) + 14 = 3; per each virtual face,
+virtual edge and virtual vertex, we have at least 1 as their values, therefore, we can deduct 1
+from all of them to extract one virtual object; i.e., the minimum value for virtual histograms
+is 1. That is, N (cid:2) = min(min(F (cid:2)), min(E(cid:2)), min(V (cid:2))) = (1, 1, 1) = 1. And the total number
+of objects T = N − N (cid:2) = 3 − 1 = 2 is now corrected.
+
+Geoinformatica (2015) 19:747–798
+
+767
+
+Fig. 12 Detailed computation of real and virtual face/edge/vertex counts for Fig. 11
+
+5.1.1 Summary
+
+In a nutshell, some virtual counts are not necessary and can potentially yield errors for small
+query regions. CASE+ is proposed to detect this source of error and rule out unnecessary
+virtual counts related to those objects, which are outside the QR, but their virtual counts are
+inside. As depicted in Fig. 12, all the real or virtual counts related to the provided example
+in Fig. 11 are computed. Then, based on the proposed CASE+ algorithm (cf. Algorithm 3),
+minimum value of each virtual histogram can be extracted, [lines 1 − 3]. Consequently, the
+number of virtual lines/objects, which can be deducted from the total counts, are calculated,
+[lines 4 − 8].
+
+Example 11 Other cases are possible, as demonstrated in Fig. 13, in which an object is
+outside the QR but its virtual lines (counts) are not fully covered by the QR, e.g., trajectory
+T 4. In order to get perfect accuracy for the smaller QRs, these kinds of virtual objects must
+be removed as well. However, since we do not keep any identification to distinguish between
+trajectories, there is no guarantee that we can completely detect all these unnecessary virtual
+counts.
+
+In our experimental study we implement CASE+ and demonstrate improvements over
+CASE (and DEH), especially under smaller QRs where vanilla CASE can multiple count.
+
+768
+
+Geoinformatica (2015) 19:747–798
+
+1
+
+2
+
+3
+
+4            5             6             7            8
+
+T2
+
+4
+
+5
+
+6
+
+T4
+
+T3
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+5
+
+6
+
+Fig. 13 Virtual counts for smaller QRs in CASE histograms may cause additional counts. QR does not fully
+cover the virtual counts related to T4
+
+6 Privacy analysis
+
+A goal of this paper is to preserve the privacy of individuals while releasing aggregate statis-
+tics. In this section, we quantify the ambiguity in reconstructing trajectories from count
+histograms, thereby bounding the privacy of our approaches. After describing our privacy
+model in Section 6.1, we present in Section 6.2 two worst-case settings where we enu-
+merate the number of reconstructions possible from small histograms—it is exactly these
+histograms that pose the greatest risk to privacy. We then establish bounds on the privacy
+of more general histograms and consider the effect of spatial and temporal aggregation, in
+Sections 6.3 and 6.4. In Section 6.5, we explore the combination of Euler histograms with
+the Laplace additive noise mechanism of differential privacy. Our results bounds hold for
+all existing Euler histogram-based approaches [3, 36, 46, 47]. We provide the first formal
+privacy analysis in this line of work.
+
+6.1 Privacy model
+
+In our privacy analysis we consider the general setting of histogram-based counting of
+objects or trajectories. Referring to Fig. 1, we consider two related models.
+
+•
+
+Service provider sanitizes
+
+provider.
+
+– Users transmit their trajectories (or observed objects) to a trusted service
+
+– The service provider processes each incoming datum into increments of its
+stored histogram counts relative to a fixed partition—the trajectories/objects
+are never stored by the 3rd party, nor are their IDs stored in any form. The
+service provider makes public the histogram counts.
+
+Geoinformatica (2015) 19:747–798
+
+769
+
+–
+
+3rd parties have full access to the histogram counts, and full knowledge
+of the service provider’s mechanism including the partition used (following
+Kerckhoffs’s principle [1])
+
+• User sanitizes
+
+– Users process their own trajectories (or observed objects) into increments
+to the histogram counts, and transmit only these increments. Users have
+possession of the partition to perform this computation.
+
+– The service provider simply adds the delta’s to their stored histograms, and
+
+publishes as above.
+3rd parties act as above.
+
+–
+
+Non-interactive vs interactive privacy Two privacy models have been studied for
+releasing datasets or their statistics: the interactive and non-interactive models [14]. In
+the non-interactive model, the database is sanitized and then released while the interac-
+tive model considers mechanisms that respond to queries by releasing approximate query
+responses. Our CASE-based approaches are naturally non-interactive, as we release the
+entire set of histograms. However, given a non-interactive mechanism it is trivial to derive
+an interactive mechanism: our architecture could instead require 3rd parties to submit query
+regions which the service provider responds to—we explore this scenario in Section 6.5.
+
+Background knowledge and strength of privacy guarantee Our target applications
+require only the occasional release of data to a traffic authority. Therefore we have implic-
+itly assumed that the data gathering period of a dataset is significantly longer than the
+duration of individuals’ trips, and that cells are sufficiently large to encompass multiple
+users. With sufficiently coarse spatio-temporal partitioning, correlations between collected
+datasets can be reduced. This significantly mitigates the level of background knowledge
+possessed by an attacker, and so limits the likelihood of successful location inference attacks
+[18]. It is well known that histograms are a natural approach to aggregation for preserv-
+ing privacy [9]. In Section 6.5 we consider settings where stronger guarantees of privacy
+are required, e.g., if temporal or spatial aggregation is too fine-grained, if the attacker has
+background knowledge, or if the users collude maliciously. We demonstrate that Euler-
+histogram-based approaches are complementary to differential privacy, which is a general
+family of techniques guaranteeing that released statistics themselves do not breach privacy.
+
+Pan privacy While both of our above models retain no individual information, e.g., tra-
+jectories/objects or IDs, the service provider sanitizes setting must hold trajectories in
+memory temporarily. From the user’s point of view, they must trust the service provider,
+as the provider may not actually remove the trajectory. There is no need for the submitted
+trajectory to be accompanied by any form of ID—e.g., the trajectory could be submitted
+anonymously via Tor [12]. Our second user sanitizes model eliminates this weakness by
+having the user herself process the trajectory, so that the service provider is never granted
+access to the raw data. As a result, even if an attacker had complete access to the service
+provider (e.g., if the provider were audited by a government), then no additional information
+is leaked other than what is published already. Therefore the second model is pan private
+[15].
+
+To quantify the level of privacy preserved by histograms we propose the following
+notion, which formalizes the idea that reconstructing correct trajectories from counts should
+be difficult.
+
+770
+
+Geoinformatica (2015) 19:747–798
+
+Definition 3 Define a possibility as a multi-set of trajectories and objects in space, and
+let h(P ) represent the histogram induced by possibility P . Given histogram counts H , we
+define the confusion level C (H ) of the histogram as the number of possibilities that induce
+histogram H , i.e., C (H ) = |h−1(H )|.
+
+Intuitively, C (H ) represents the ambiguity inherent in corresponding possibilities with a
+histogram; the more possibilities that map to a histogram, the more privacy is preserved by
+that histogram. This definition applies to all existing approaches based on Euler histograms.
+
+6.2 Privacy in worst-case settings
+
+We first consider the confusion level of a specific scenario where histogram counts are
+exceedingly small. Such settings represent the worst-case for the defender (the users and
+service provider): when counts are small there is little to no aggregation occurring. Under-
+standing such settings provides a handle on worst case privacy. In Section 6.3 we establish
+a theoretical result that can lift the calculations of confusion level of this section to larger
+histograms. In Section 6.5 we discuss strategies for dealing with these worst cases.
+
+6.2.1 Enumerating trajectory types
+
+Before exploring the worst-case scenario, we build up a complete enumeration of trajectory
+types. We consider a grid of m rows and n columns (cf. Fig. 14), where a cell (i, j ) has four
+neighbouring cells—at its North, South, West and East sides, denoted N, S, W, E—and four
+edges in common with these neighbouring cells.
+
+To build up our understanding of the possible types of trajectories, we focus on a single
+grid cell. In Fig. 15, we show all the possible cases that can occur for cell (i, j ) in terms of a
+trajectory’s path, direction and origin/destination. The subset of possible cases depends on
+histograms of the cells surrounding cell (i, j ).
+
+For trajectories originating/ending in the cell, there are 4 possible undirected cases and
+8 possible directed cases (cf. Fig. 15a). For trajectories passing through the cell without
+turning, there are 2 and 4 cases respectively (cf. Fig. 15b). Finally, there are 4 and 8 cases
+
+Fig. 14 Typical grid, cell and cell neighbours
+
+Geoinformatica (2015) 19:747–798
+
+771
+
+(a) A trajectory path which may end or start.
+
+(b) A trajectory path which passes the cell.
+
+(c) A trajectory path that turns by passing the cell.
+
+Fig. 15 All the possible cases for a trajectory path that can occur through a cell
+
+respectively, of paths that pass through the cell and turn (cf. Fig. 15c). In general, direction
+doubles the number of cases, and is the typical default for road network applications.
+
+When analysing a histogram for privacy, we wish to count the number of possibilities that
+lead to the histogram counts. In general this confusion level is increased when trajectories
+can be bidirectional (multiple trajectories lead to exponentially more possibilities), or when
+the histogram counts are large.
+
+6.2.2 A worst-case histogram on the line
+
+The simplest case for the attacker to track a trajectory is to have m = 1 (a linear grid)
+with all edge and face counts equal to 1. If trajectories are undirected then there is only
+one possibility inducing this histogram: a single trajectory passing through each cell. With
+direction, the confusion level becomes 2.
+
+While this is an absolute worst-case, it is similar to having a cell with count 1 surrounded
+by zero cells, in a 2-dimensional grid. The former linear grid is somewhat contrived since
+applications tend to involve 2-dimensional grids; we address the latter case in Section 6.5.
+
+6.2.3 A worst-case histogram in the plane
+
+Consider now the case where the face count of cell (i, j ) is 2, cells N, W, E and S have
+counts of 1, the edges shared with cell (i, j ) have also counts of 1, and all other counts
+are zero. As illustrated in Fig. 16a, without considering the directions there are 3 possible
+reconstructions of trajectory paths. With two directions the confusion level grows quickly
+to 12 (cf. Fig. 16b). Even with exceedingly small counts, the difficulty of reconstructing
+trajectories, as given by the confusion level, is high.
+
+6.3 A lower bound on privacy
+
+In general, the more counts we have, the more possibilities are feasible. The confusion of a
+histogram is at least linear in the counts, and it is expected to grow exponentially in some
+
+772
+
+Geoinformatica (2015) 19:747–798
+
+1
+1
+
+1
+
+1
+
+1 2 1
+1
+
+1
+
+(a) A simple Euler histogram and the undirected possibilities that induce it.
+
+(b) The directed possibilities that induce the Euler histogram.
+
+Fig. 16 A worst-case example with high confusion level
+
+cases. We contribute the following theorem for any count histogram. Our result holds for
+histograms produced by any of the approaches based on Euler histograms [3, 36, 46, 47] as
+they all satisfy the following property.
+
+Definition 4 A histogram construction algorithm A that maps possibilities to histograms
+is additive if for any possibilities P , Q it holds that A (P ∪ Q) = A (P ) + A (Q), where
++ represents elementwise addition of the histogram counts and ∪ represents the multiset
+union of possibilities.
+
+Theorem 1 For any histogram H produced by an additive histogram construction algo-
+rithm, and natural number k, the histogram k · H formed by elementwise multiplication of
+the counts of H by k, satisfies C (k · H ) ≥ k · C (H ) − (k − 1).
+
+Geoinformatica (2015) 19:747–798
+
+773
+
+Proof Let P = h−1(H ) be the set of all possibilities with histogram H . Then by definition
+of confusion, |P | = C (H ). Select any possibility p0 from P , and construct a new set of
+possibilities
+
+P
+
+(cid:2) = {p0 ∪ p : p ∈ P , p (cid:6)= p0} ∪ {p ∪ p : p ∈ P } .
+Since for all p, q ∈ P (H ), p (cid:6)= q implies p ∪ p (cid:6)= q ∪ q, it follows that each choice of p in
+the two components making up P (cid:2) constructs distinct possibilities and so |P (cid:2)| = 2|P | − 1.
+By the additivity of the histogram construction algorithm, we have that h(p) = 2 · H for all
+p ∈ P (cid:2). In other words,
+
+2C (H ) − 1 = |P
+
+(cid:2)| ≤ C (2 · H ) .
+
+This proves the case for k = 2.
+
+The case for general k > 2 is similar: the first component of P (cid:2) is now made by taking
+unions of k possibilities total, with some number d of repeats of p0 and k − d many p (cid:6)=
+p0. Each of these constructed possibilities is distinct as before, and induces the desired
+k · H histogram. The second component making up P (cid:2) is formed by simply taking kth
+d
+i=1 p for any p ∈ P
+powers of each possibility p ∈ P . In particular if we define pd =
+we have
+(cid:5)
+
+(cid:3)
+
+(cid:5)
+
+(cid:4)
+
+(cid:4)
+
+(cid:2) =
+
+P
+
+pd
+0
+
+∪ pk−d : p ∈ P , p (cid:6)= p0, d ∈ {1, . . . , k − 1}
+
+∪
+
+pk : p ∈ P
+
+.
+
+Again, we have that h(p) = k · H for all p ∈ P (cid:2), and now k · C (H ) − (k − 1) = |P (cid:2)| ≤
+C (k · H ).
+
+This result demonstrates that larger counts lead to more confusion and greater privacy.
+
+In particular, we can apply the bound to generalise our worst-case examples.
+
+Corollary 1 Let Hk be a histogram with face count of cell (i, j ) equals to 2k, cells N, W,
+E and S of (i, j ) having counts of k, the edges shared with cell (i, j ) having counts k, and
+with all other counts zero. Then C (H ) is at least 11k + 1 for directed trajectories or 2k + 1
+for undirected trajectories.
+
+6.4 The effect of aggregation on privacy
+
+It is intuitively clear that larger confusion is achieved by increasing aggregation, either in
+the temporal or spatial dimensions. We quantify this effect, for simple settings that apply
+for all existing Euler histogram-based approaches, which are all additive.
+
+First for increasing temporal aggregation, we have immediately from additivity:
+
+Lemma 1 Consider any temporal partition [t0, t1), [t1, t2), . . ., where ti+1 > ti, and
+histograms Hi computed in each period [ti−1, ti) by an additive histogram construction
+algorithm. Then for any i, the algorithm run over the aggregate interval [ti−1, ti+1) would
+have produced the histogram Hi + Hi+1.
+
+From this and Theorem 1 it follows that
+
+Corollary 2 Consider the same setting as Lemma 1. If for any i, histograms Hi = Hi+1
+then the histogram produced over aggregate interval [ti−1, ti+1) is 2 · Hi, and has confusion
+level at least 2 · C (Hi) − 1.
+
+774
+
+Geoinformatica (2015) 19:747–798
+
+Fig. 17 A regular partition with counts f, e, v. Region QR(cid:2) is the aggregation of QR1 and QR2
+
+And from the lemma and linearity of expectation we have
+
+Corollary 3 Consider the same setting as Lemma 1, where possibility pi observed in time
+interval [ti−1, ti) is random according to some distribution. Where pi ∪ pi+1 represents the
+possibility recorded for the aggregated interval [ti−1, ti+1), then the expectation1 E[h(pi ∪
+pi+1)] = E[h(pi)] +E [h(pi+1)]. In particular, if both intervals have expected histogram
+H then E[h(pi ∪ pi+1)] = 2 · H.
+
+Roughly speaking, doubling time of data collection yields double the histogram counts,
+and increased privacy due to the increased confusion level. We can also analyse the effect
+of increasing spatial aggregation in an idealised setting.
+
+Definition 5 We call an unbounded partition regular if all face counts are identically f , all
+edge counts are identically e, and all vertex counts are identically v, for some f, e, v.
+
+We have chosen to define regular partitions as unbounded, so as to simplify the feasibility
+of taking identical face counts (and also edge, vertex counts) across cells. We use such
+symmetrical counts to simplify the discussion in the next proposition, however regularity is
+not necessary nor is unboundedness. Indeed the next result concerns only a local collection
+of cells.
+
+Proposition 1 Consider a regular partition with counts f, e, v obtained from observing
+convex bodies, Fig. 17—whereby all Euler histogram derived approaches calculate objects
+correctly via Eq. 1. If all2 × 2 groups of cells are aggregated into a new partition of larger
+cells, then the face, edge, vertex counts obtained from rerunning histogram construction
+with the new partition become
+
+(cid:2) = 4f − 4e + v
+(cid:2) = 2e − v
+(cid:2) = v
+
+f
+
+e
+
+v
+
+1This expectation is taken with respect to the random possibilities.
+
+Geoinformatica (2015) 19:747–798
+
+775
+
+Proof The proof involves two applications of Eq. 1 for estimating f (cid:2) and e(cid:2). Consider a
+2 × 2 region QR1 that covers a 2 × 2 block of cells. The number of objects in QR1 is
+exactly 4f − 4e + v, and this number corresponds to the face count f (cid:2) of the new 2 × 2
+aggregate cell establishing the first part. Consider again 2 × 2 QR1, a neighbouring 2 × 2
+QR2, and finally QR(cid:2) that is the 4 × 2 union of QR1 andQR 2. By an inclusion-exclusion
+argument, it is easy to see that |QR(cid:2)| = |QR1| + |QR2| − |QR1 ∩ QR2| where | · | refers to
+the object count and the intersection term corresponds to the count of objects lying in both
+regions. Then |QR(cid:2)| can be found by a second application of Eq. 1 to be 8f − 10e + 3v.
+Noting that |QR1 ∩ QR2| = e(cid:2), and that |QR1| + |QR2| = 2f (cid:2), we can solve for e(cid:2) to
+yield e(cid:2) = 2e − v. Finally regarding a vertex in the new partition, it is clear that its count
+remains the same.
+
+Intuitively this spatial aggregation result is similar in spirit to the temporal results: larger
+cells can result in larger histograms (and therefore also privacy). The degree to which his-
+tograms grow, depends on the relative size of observed objects compared to grid cells. More
+trajectories that span multiple cells implies higher edge counts, which dampen the growth
+of histograms when aggregating. Small trajectories mostly contained in cells implies small
+edge counts.
+
+Example 12 Consider an idealised regular partition in which e = 4v, f = 8v. Proposition 1
+yields that doubling the grid cell sizes leads to new counts e(cid:2) = 7v, f (cid:2) = 17v; an almost
+doubling.
+
+6.5 Protecting against background knowledge: differential privacy
+
+While sufficient aggregation leads to high levels of privacy, pathological counts can reveal
+sensitive information.
+
+6.5.1 Sanitizing specific pathological counts
+
+The case of a single face count of 1 with neighbouring edge counts of 0 may reveal infor-
+mation about a user living in a sparsely-populated area: e.g., an attacker may find that this
+observation in the specified time period, belongs to a private house through map-matching.
+A defence against such pathological cases is to test for their presence in the current state
+of histograms, and zero them out. For example, we could test for a face count of 1 with
+adjoining edge counts of 0, and set the face count to 0 (or refuse to release the count at all).
+
+6.5.2 Differential privacy
+
+More generally, the service provider may be required to guarantee a strong notion of pri-
+vacy: that the released counts reveal nothing significant about users not already known to a
+powerful attacker. Such a requirement is the focus of differential privacy [14].
+
+Definition 6 Let D be a database of individuals’ records. We say that D and another
+database D(cid:2) are neighbours if they differ on exactly one record. If T denotes the space
+of possible statistics that could be released to summarise aspects of D, then a mapping
+M : D (cid:9)→ t ∈ T that outputs such a response given data is called a mechanism. Mecha-
+nisms can be either deterministic, or randomised (outputting each possible response t ∈ T
+with some probability).
+
+776
+
+Geoinformatica (2015) 19:747–798
+
+Definition 7 Let (cid:3) be a positive real, and M some randomised mechanism. If for all
+neighbouring databases D, D(cid:2) and measurable sets of responses T ⊆ T ,
+
+Pr(M (D) ∈ T ) ≤ exp((cid:3)) · Pr(M (D
+
+) ∈ T ) ,
+
+(cid:2)
+
+then we say that M preserves (cid:3)-differential privacy.
+
+Differential privacy exactly states that the mechanism’s response distributions on D and
+D(cid:2) are pointwise, multiplicatively, close: the probability of outputting each response is
+insignificantly influenced by the input data. The measure of closeness is given by parameter
+(cid:3). Smaller (cid:3), the greater the level of insensitivity of the mechanism to small perturbations
+to the data.
+
+To understand why differential privacy provides a strong, semantic notion of privacy, we
+may consider a powerful attacker wishing to uncover the last record in true database D,
+given
+– Complete knowledge of M up to randomness;
+– Access to a number of responses sampled from M (D), limited to O(|D|);
+– Knowledge of D except for the target record; and
+– Unlimited computational resources.
+
+Such an omnipotent and omniscient attacker could
+1. Query M (D) a total of O(|D|) times to construct a histogram ˆP approximating the
+
+true distribution P (D) of M (D);
+
+2. Simulate all possible databases D(cid:2) by filling in the missing record. For each:
+
+(a) Simulate the exact distribution P (D(cid:2)) and compare it with ˆP
+
+3. Output the D(cid:2) with P (D(cid:2)) most closely matching ˆP .
+
+Even against this incredibly powerful attack, differential privacy guarantees that all the
+P (D(cid:2)) are exceedingly close to each other, and in particular to the true P (D). Since the
+ˆP approximating
+number of queries to the mechanism is limited, the estimation error of
+P (D) is larger than the distances between the P (D(cid:2))s, for sufficiently small (cid:3). As a result
+it is impossible for the attacker to distinguish which database D induced the mechanism’s
+responses.
+
+Put another way, an attacker can not detect arbitrary changes of a single datum made by
+
+a user; or indeed, could not detect if the user removes their datum altogether.
+
+6.5.3 Global sensitivity and the Laplace mechanism
+
+We now introduce a popular approach to converting deterministic mechanisms into ran-
+domised mechanisms that preserve differential privacy. First we provide a definition that
+quantifies the influence of data perturbations to a mechanism’s output.
+
+Definition 8 We say that a deterministic mechanism M has L1-global sensitivity (cid:4) >0 if
+for every pair of neighbouring databases D, D(cid:2) we have
+
+(cid:6)
+(cid:6)M (D) − M (D(cid:2))
+
+(cid:6)
+(cid:6) ≤ (cid:4).
+
+This definition generalises to vector-valued mechanisms, in which case the difference
+between responses is measured by the L1 norm which generalises absolute distance.
+Observing that under the hamming distance, the distance between neighbouring databases
+
+Geoinformatica (2015) 19:747–798
+
+777
+
+is 1, it follows that global sensitivity corresponds to a Lipschitz condition on the mechanism
+with L1-norm in the response space and hamming (or L1-norm) in the input database space.
+
+Lemma 2 ([14]) For any (cid:3) > 0, if deterministic mechanism M has L1-global sensitivity
+(cid:4) >0, then randomised Laplace mechanism given by
+
+M (cid:2)
+
+(D) = M (D) + Z ,
+
+where Z is distributed as zero-mean Laplace noise with scale (cid:4)/(cid:3), preserves (cid:3)-differential
+privacy.
+
+The proof is a straightforward application of the triangle inequality, with the definition
+of the Laplace pdf, and the definition of global sensitivity. The power of this mechanism
+and others in the differential privacy literature, is that provided global sensitivity can be
+measured, then we immediately have an applicable mechanism whose differential privacy
+is already established.
+
+6.5.4 Differentially-private range queries
+
+We now explore the combination of differential privacy with Euler histogram based
+approaches such as CASE. While a non-interactive model that releases the entire his-
+togram may be possible [2], we focus on an interactive model in which a 3rd party queries
+the service provider with a specific QR. Under such a model, we have the following
+differentially-private mechanism
+
+Theorem 2 For a given query region R, let N (R) denote an object count calculated from
+the current histogram. Then the randomised interactive mechanism NDP (R) = N (R) +
+Laplace(0, 1/(cid:3)) is (cid:3)-differentially private for any (cid:3) > 0.
+
+Proof The result follows from the global sensitivity of a count being 1: if a single entry of
+the database (a trajectory) is perturbed, the count N (R) can change by at most 1. Together
+with Lemma 2 the result follows.
+
+This result demonstrates that differential privacy and Euler histograms are not at odds
+and indeed complement each other. While we do not consider NDP (·) further in this paper,
+future work could focus on non-interactive mechanisms.
+
+7 Setting grid and query region sizes
+
+Grid cell size can affect accuracy as well as privacy: the larger the grid cell size, the smaller
+the amount of double-counting and granularity of counts possible, and the higher the level
+of privacy. Selecting grid cell size can be accomplished in several ways, here we explore
+one possible approach that a traffic authority might follow.
+Initially the authority may have the following known
+
+–
+
+–
+
+The bounding dimensions of the city to be analysed, we assume without loss of
+generality to be n × n km2;
+The number of road links in the city L; and
+
+778
+
+Geoinformatica (2015) 19:747–798
+
+– A target average number of links per cell A.
+
+The average links per cell could come from discussions or policy on privacy, and links could
+be replaced by population density without any change to the algorithm for setting grid size.
+Once the authority selects a grid size for one city, perhaps arbitrarily, they may also want
+to achieve the same average links per cell in subsequent cities, in which case the following
+process would apply also.
+
+An efficient process for selecting square cell size length m (km) is the following binary
+
+search:
+
+Initialise cell size m;
+Initialise achieved links-per-cell a (cid:12) A
+
+1.
+2.
+3. Repeat until a ≈ A:
+
+(a) Calculate achieved links-per-cell a for current m
+(b)
+
+If a < A double m; otherwise halve m
+
+The initial grid size m can be estimated assuming that links are evenly distributed across
+the city. For a given grid size m, the number of cells C in the partition created corresponds
+to
+
+And noting that the average links-per-cell achieved under the uniformity assumption is L/C,
+we can set this fraction to be equal to target A, and solve for m:
+
+C =
+
+(cid:7)
+
+(cid:8)
+2
+
+n
+m
+
+.
+
+(cid:9)(cid:10)
+
+(cid:11)
+
+2
+
+n
+m
+
+A = L/C = L
+(cid:12)
+
+⇔ m = n
+
+A
+L
+
+.
+
+(5)
+
+Example 13 For example consider Beijing, targeting A = 6 links per cell, city dimensions
+of n = 20 km squared, and total number of links L = 57, 553. Then the initial grid size m
+is estimated at 204.2 (m) which rounds to 200 (m).
+
+It is shown in the experimental study, Section 8, how m affects the level of accuracy
+
+especially for smaller QRs e.g., when the grid cell size m = 1 %× QR.
+
+Theoretically, we would expect that when the query rectangle size increases so too does
+the accuracy. However, the shape of the query rectangle also affects accuracy, e.g., when the
+QR is thin or is not a square. For this reason we sometimes see inconsistencies of increasing
+accuracy for smaller QRs. In our experimental study, we explore a variety of QR shapes
+included in an average over accuracy results. To further study diverse QR, we randomise
+QR positions.
+
+Larger QRs are applicable in several cases. For instance, the Beijing road network con-
+sists of several rectangular-shaped ring roads around the same centre. These areas have been
+defined as the city’s inner, middle, and outer areas based on the rings. Therefore, the Bei-
+jing traffic authority may want to run queries on correspondingly large rectangular areas.
+Similarly, in Melbourne, VicRoads collects the length of roads travelled by vehicles in three
+zones (inner, middle, outer). Each of the zones is quite a large area. In terms of QR size,
+
+Geoinformatica (2015) 19:747–798
+
+779
+
+our algorithm provides 100 % accuracy for larger QRs experimentally and a high level of
+accuracy for smaller ones through the use of virtual counts.
+
+8 Experimental study
+
+We perform experiments on the road networks of three major cities, Melbourne 10km ×
+10km, Manhattan 4.7km × 14.7km, and Beijing 20km × 20km (cf. Figs. 18, 19 and 20).
+For the latter, we also experiment on a real dataset, T-Drive, in Section 8.6.1. For every city,
+we compute the initial size of the grid cell so that the number of links per grid cell remains
+approximately constant by applying Eq. 5. We target≈ 6 links per cell. Consistent links
+per cell is natural in terms of privacy, and also leads to consistent accuracies across cities.
+According to this setting, the default (rounded) grid cell sizes for Melbourne, Manhattan and
+Beijing are 100, 150 and 200 meters respectively. These values could also be driven from
+the distance between road junctions on average, which is of interest to traffic authorities.
+
+8.1 Setting up the environment
+
+In order to set up the environment to run our experiments, we create moving object paths for
+the Melbourne, Manhattan and Beijing city road networks. We have generated our road net-
+work graph for a populated area of the Melbourne city by using real road data available from
+the OpenStreetMap (OSM) [27] website, which was also used for Manhattan and Beijing.
+We created a graph based on the node list and the adjacency list extracted by an OSM parser.
+We cleaned the extracted data in order to have a strongly connected graph. Our created
+graph is directed, i.e., we consider actual street directions. Figure 18a shows the selected
+area of the Melbourne city map of our experimental study. This area covers Melbourne’s
+central business district (CBD) and surrounding suburbs that are the most populated (e.g.,
+
+(a) Map of the selected area.
+
+(b) Created graph of the selected area.
+
+Fig. 18 Map and graph of the selected area of the city of Melbourne
+
+780
+
+Geoinformatica (2015) 19:747–798
+
+(a) Map of the area.
+
+(b) Created graph of the area.
+
+Fig. 19 Map and graph of the rotated Manhattan city
+
+high traffic volume) areas of Melbourne. We then created the graph of this selected area (cf.
+Fig. 18b). Our pre-study parameter values are a grid cell size of 100 meters and the number
+of trips, 1000 (1k), 5k and 10k. Figure 19 demonstrates Manhattan and Fig. 20 depicts the
+selected area of Beijing together with their related graphs.
+
+For each trajectory, we define various trip patterns on each road network. To create each
+trip we i.i.d. uniformly randomly select source and destination or destinations depending on
+the trip types (cf. Section 8.2). We generate the shortest path between each pair of randomly
+selected points to create the trajectory, simulating a real road user. To prepare the experi-
+mental environment, in Sections 8.2 and 8.3 we discuss different trajectory trip patterns and
+baseline techniques. Section 8.4 shows the experimental results regarding many configura-
+tions of the parameters. We compare our two algorithms, CASE and CASE+, in Section 8.4
+against the baseline methods.
+
+As described in Section 3, there are a variety of trip patterns for moving objects. In the
+next section, we define typical trips happening during the day to set up our experimental
+study.
+
+8.2 Trajectory trip patterns
+
+Various types of trips result in different moving object trajectories. For instance, a user
+can start a journey from home to a shopping centre and then return back to home. In this
+case, there is one stop between the source and destination. There could be k stops between
+
+Geoinformatica (2015) 19:747–798
+
+781
+
+(a) Map of the selected area.
+
+(b) Created graph of the selected area.
+
+Fig. 20 Map and graph of the selected area of the city of Beijing
+
+a source and a destination in any created trajectory. Hence, we define some trip patterns
+created every day by moving objects. We will now discuss different trip types and especially
+those causing the distinct counting problem.
+
+A one-way trip, is a single trip which has no stop en route, k = 0. Therefore, we have only
+a source (S) and a destination (D). An example of this trip is travel from home to an airport.
+
+8.2.1 One-way trip
+
+8.2.2 Return trip
+
+As a special case of k-stop shortest path, we define a return trip when we have 1 or more
+stops between the source and the destination, k (cid:2) 1. Therefore, if k = 1 (one stop in
+between) implies S, D1 and D = S are the visited stops. If k = 2 (two stops in between)
+implies S, D1, D2 and D = S are the visited stops. A shopping trip is an example of this
+trip pattern which is travel from home to a shopping centre and then return back to home.
+A postal delivery could create this trip type as well, usually with more than one stop in
+between.
+
+8.2.3 Circling trip with n-cycles
+
+In trips with n cycles, a moving object starts a journey from a source and then after visiting
+at least four stops, D1, D2, D3, D4, it still needs to return back to the first stop and repeats
+its journey, k (cid:2) 4 . In a typical grid-aligned road network we need to have four stops to
+create a cycle, but technically three nodes can create a cycle in some road networks.
+
+For example: S, D1, D2, D3, D4, D1, D2, D3, D4, D1, . . . could be the visited stops.
+For instance, taxi cabs looking for customers or drivers looking for a parking space create
+trips with n cycles.
+
+782
+
+Geoinformatica (2015) 19:747–798
+
+Circling trips with n cycles may lead to a reduced accuracy in the calculated number
+of the trajectories. We define them as follows: any set of stop points in which a trajectory
+revisits them more than once is called a cycle. The source and the destination of any cycle
+should be same and the other stop points will be revisited depending on the number of
+cycles. If the number of cycles equals to 1, every stop point is visited twice.
+
+The common feature in return trips and circling trips with n cycles is the shape of these
+trips. The shape of the trajectories as created in these trip patterns are returning back to the
+source in return trips, or any other stops in circling trip.
+
+8.2.4 Mixed trip
+
+For mixed trips, we assign a uniform portion for each of the above-mentioned trip patterns.
+In other words: 25 % one-way trips, 25 % return trips with 1 stop, 25 % return trips with
+2 stops and 25 % trips with 1 cycle. However, in a realistic scenario, return trips have the
+higher possibility to occur.
+
+In our experiments, we study three techniques as our baseline approaches (cf.
+Section 8.3), to evaluate the CASE algorithm. We change various parameters such as query
+rectangle size, grid cell size, number of trips and type of trips to show that the CASE
+histogram can always achieve a high level of accuracy that often outperforms alternate
+approaches.
+
+8.3 Baseline approaches
+
+In addition to Euler histograms and DEH [46], we have also implemented Euler(cid:5) which is
+an enhanced version of the Euler histogram for moving object trajectories, so that it is a
+more fair comparable with CASE (cf. Section 8.3.2 for details).
+
+8.3.1 Euler/DEH
+
+In the Euler histogram, in order to compute the distinct count of the moving object trajectory
+as a list of node IDs, it is necessary to retrieve the related cell IDs and edge IDs of every
+
+Table 1 Experimental settings for Melbourne City with respect to Grid cell size, No. of trips, Trip types,
+and QR size
+
+Grid cell size
+
+No. of trips
+
+Trip types
+
+QR size
+
+1K
+
+1K
+
+1K
+
+1K
+
+100 m
+
+100 m
+
+100 m
+
+100 m
+
+100 m
+
+100 m
+
+100 m
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+100, 500, 1000 m
+
+100, 500, 1000 m
+
+One-way (O)
+
+Return 1-Stop (R1)
+
+Return 2-Stops (R2)
+
+1K, 5K, 10K
+
+Mixed (M)
+
+1K, 5K, 10K
+
+Mixed (M)
+
+1K
+
+1K, 5K
+
+1K, 5K
+
+O, R1, R2, C, M
+
+Mixed
+
+Mixed
+
+1-10 % 10-100 %
+
+1-10 % 10-100 %
+
+1-10 % 10-100 %
+
+1-10 % 10-100 %
+
+1-10 % 10-100 %
+
+1-10 % 10-100 %
+
+1-10 % 10-100 %
+
+1-10 % 10-100 %
+
+Circling with n Cycles (C) 1-Cycles
+
+1-10 % 10-100 %
+
+In each row, the bolded items are varied, while the non-bolded items are held fixed
+
+Geoinformatica (2015) 19:747–798
+
+783
+
+trajectory link. Before appending the current cell ID to the list we check if two consecutive
+links are located in the same cell. If that is the case, this extracted cell ID is not added.
+Furthermore, two links which are consecutive could cross the same edge. Here, we need to
+consider only one edge ID in the extracted edge ID list. For all of the cell IDs and edge
+IDs in this extracted list, we will add one count to their related face and edge histograms.
+Finally, Eq. 2 will be applied.
+
+8.3.2 Euler(cid:5)
+
+To supply existing Euler-based approaches with the same information available to CASE
+histograms—so as to conduct a fair comparison—we extend DEH with an approach we
+term Euler(cid:5). Euler(cid:5), by contrast to DEH, considers the full trajectory in the first step to
+compute face and edge counts. This implies that when we have two counts in a cell that
+belong to the same trajectory, Euler(cid:5) considers only one. Therefore, the technique receives
+every trajectory path as a list of node IDs, then retrieves the related cell IDs and edge IDs
+of every trajectory link. Here, if the current extracted cell ID exists in the cell ID list, it
+will not be re-added. This happens if two consecutive links are located in the same cell or
+a trajectory re-enters a cell. In both cases, the related cell ID should be considered only
+once. Whether an edge ID should be added to the edge ID list or not, depends on another
+rule which avoids repetition: if a cell has already been visited by the current trajectory, then
+the current edge ID is not considered. For all of the cell IDs and edge IDs in the extracted
+list, we will add one count to their related face and edge histograms. Finally, Eq. 2 is
+applied.
+
+8.3.3 SID
+
+We consider the Simple ID (SID) technique as a baseline providing an accurate answer to
+evaluate our approach. This method receives every trajectory path as a list of node IDs, then
+retrieves the related cell IDs of every link. Here, as above, the IDs in the cell ID list are
+unique. In these retrieved cells we keep the trajectory ID instead of the count. Thus, SID is
+always 100 % accurate.
+
+Table 2 Runtime measurement
+of histogram construction for
+Melbourne City with respect to
+Grid cell size, and No. of trips
+
+No. of Trips
+
+Grid Cell Size
+
+Histogram Construction Time
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+1 K
+
+1 K
+
+1 K
+
+5 K
+
+5 K
+
+5 K
+
+10 K
+
+10 K
+
+10 K
+
+100 m
+
+500 m
+
+1000 m
+
+100 m
+
+500 m
+
+1000 m
+
+100 m
+
+500 m
+
+1000 m
+
+9.665 s
+
+2.505 s
+
+2.393 s
+
+40.99 s
+
+8.879 s
+
+7.704 s
+
+63.376 s
+
+15.019 s
+
+12.586 s
+
+784
+
+Geoinformatica (2015) 19:747–798
+
+(a) One-way Trip, 1-10% QR Size.
+
+(b) One-way Trip, 10-100% QR Size.
+
+(c) Return Trip with 1-Stop, 1-10% QR Size.
+
+(d) Return Trip with 1-Stop, 10-100% QR Size.
+
+(e) Return Trip with 2-Stops, 1-10% QR Size.
+
+(f) Return Trip with 2-Stops, 10-100% QR Size.
+
+(g) Circling Trip with 1-Cycle, 1-10% QR Size.
+
+(h) Circling Trip with 1-Cycle, 10-100% QR Size.
+
+Fig. 21 Accuracy per query size in Melbourne, trip types
+
+Geoinformatica (2015) 19:747–798
+
+785
+
+8.4 Results
+
+Table 1 summarises our parameter values for Melbourne city that we applied for our exper-
+imental settings. The selected map is an area of 10 km × 10 km. We selected 100m grid cell
+size and 1K trip numbers as our parameter values for the pre-study. We run 100 randomly
+selected QRs for each experiment to report an average for range query accuracy results.
+We compare all the baseline approaches with CASE in terms of accuracy in Section 8.4
+with respect to query rectangle size, trip types, number of trips, and grid cell size as our
+experimental study parameters.
+
+Table 2 illustrates a summary of running time for the histogram construction related to the
+city of Melbourne with respect to various dataset and grid cell sizes. As shown, the larger
+
+No. of Trips
+
+Grid Cell Size
+
+QR Size
+
+Query Response Time
+
+8.4.1 Running time
+
+Table 3 Runtime measurement
+of range query response time for
+Melbourne City with respect to
+grid cell size, no. of trips, and qr
+size
+
+1 K
+
+1 K
+
+1 K
+
+1 K
+
+1 K
+
+1 K
+
+1 K
+
+1 K
+
+1 K
+
+1 K
+
+1 K
+
+5 K
+
+5 K
+
+5 K
+
+5 K
+
+5 K
+
+5 K
+
+5 K
+
+5 K
+
+5 K
+
+10 K
+
+10 K
+
+10 K
+
+10 K
+
+10 K
+
+10 K
+
+10 K
+
+10 K
+
+10 K
+
+100 m
+
+100 m
+
+100 m
+
+100 m
+
+100 m
+
+500 m
+
+500 m
+
+500 m
+
+1000 m
+
+1000 m
+
+1000 m
+
+100 m
+
+100 m
+
+100 m
+
+500 m
+
+500 m
+
+500 m
+
+1000 m
+
+1000 m
+
+1000 m
+
+100 m
+
+100 m
+
+100 m
+
+500 m
+
+500 m
+
+500 m
+
+1000 m
+
+1000 m
+
+1000 m
+
+1 %
+
+5 %
+
+10 %
+
+50 %
+
+100 %
+
+1 %
+
+10 %
+
+100 %
+
+1 %
+
+10 %
+
+100 %
+
+1 %
+
+10 %
+
+100 %
+
+1 %
+
+5 %
+
+10 %
+
+1 %
+
+10 %
+
+100 %
+
+1 %
+
+10 %
+
+100 %
+
+1 %
+
+10 %
+
+100%
+
+1 %
+
+10 %
+
+100 %
+
+0.001 s
+
+0.005 s
+
+0.032 s
+
+0.247 s
+
+0.448 s
+
+0.001 s
+
+0.003 s
+
+0.074 s
+
+0.0 s
+
+0.002 s
+
+0.034 s
+
+0.01 s
+
+0.57 s
+
+9.926 s
+
+0.001 s
+
+0.099 s
+
+1.636 s
+
+0.0 s
+
+0.005 s
+
+0.764 s
+
+0.035 s
+
+1.245 s
+
+36.8 s
+
+0.01 s
+
+0.275 s
+
+5.64 s
+
+0.005 s
+
+0.04 s
+
+2.62 s
+
+786
+
+Geoinformatica (2015) 19:747–798
+
+grid cell size, the faster histograms will be constructed. The maximum time is related to 10K
+trips and 100m grid cell size, which is 63.376 seconds. As depicted, the pre-computational
+process is quite fast.
+
+In regard to the range query, Table 3 demonstrates the measurement for the query
+response time of various dataset, grid cell, and QR sizes of Melbourne road network. As
+illustrated, given 10 K dataset size of Melbourne city, 100 m grid cell size, and running a
+range query on the whole area, it will only take 36.8 seconds, which is still fast.
+
+8.4.2 Query Rectangle Sizes and Trip Types
+
+Given a grid cell size of 100 meters, we run range queries for various sizes of the selected
+region, from 1 % to 10 % and 10 % to 100 %, and for different types of trips. These cor-
+respond to Fig. 21a–h. Rows 1–4 of Table 1 show the parameter values for this part of the
+experiment. In the pre-study, we also experimented with larger numbers of trips with no
+significant difference identified (cf. also Section 8.4.3 and Fig. 23). We selected three sizes
+for the trip numbers, 1K, 10K and 50K as our pre-study evaluation. We selected the best
+competitive methods Euler and Euler(cid:5) for our evaluation results. The only case where Euler
+and Euler(cid:5) can outperform the CASE histogram is for QRs less than 5 % for one-way trips,
+Fig. 21a, which is due to virtual counts, (cf. Examples 10 and 11 in Section 5). This implies
+that since one-way trips are created randomly, it may happen that the shape of a trip has a
+returning shape, which leads to creating virtual counts and inaccuracy in small QRs. Euler(cid:5)
+is expected to provide answers with a greater level of accuracy than Euler. Euler indeed has
+lower accuracy than Euler(cid:5), since Euler(cid:5) leverages additional information, i.e., the full tra-
+jectory in the pre-processing phase. As depicted in Fig. 21, overall, CASE provides a higher
+level of accuracy whereas CASE+ outperforms CASE for smaller QR.
+
+As discussed in Section 8.2, we have considered different trip patterns to make simulate
+a more realistic scenario. In Fig. 21, the accuracy level of the various trip types is depicted.
+Except for the one-way trip and QRs smaller than 5 % (discussed in the previous paragraph),
+CASE outperforms other techniques for both small and large QRs across all experiments.
+As expected and shown in Fig. 21, for those types of trips that cause the distinct counting
+problem, return trips, circling trips with n cycles and mixed trips (cf. Section8.2), CASE
+significantly outperforms Euler and Euler(cid:5). This implies that the concept of using virtual
+lines improves the accuracy level in range query close to 100 % for smaller QRs; for larger
+
+(a) 1-10% QR Size.
+
+(b) 10-100% QR Size.
+
+Fig. 22 Accuracy per query size for 1 K mixed trips in Melbourne, small and large QRs
+
+Geoinformatica (2015) 19:747–798
+
+787
+
+QRs we have 100 % accuracy. In order to examine the effect of having one or more cycles
+in trips, we have studied this parameter further (cf. Fig. 21g and h). The number of cycles
+in this figure is 1 and the results are shown for different techniques. As depicted, Euler
+suffers low accuracy. Euler(cid:5) does not change considerably in comparison with return trips,
+however, the accuracy for the 1-10 % query sizes is lower than CASE, ≈ 50 % accuracy.
+This is exactly related to our discussion about having a cycle or returning path in a trip which
+leads to the distinct counting problem (cf. Section 8.2.3). Figure 22, shows the accuracy per
+query size for 1 K mixed trips. As explained in Section 8.2, a mixed trip is a combination
+of one-way, return (with 1-stop and 2-stops) and circling trips with 1 cycle. This trip is
+a realistic trip for every day trip patterns. Figure 22 demonstrates that CASE outperforms
+other techniques even if in 25 % of the trips (one-way trip) virtual counts lead to inaccuracy
+for the smaller QRs.
+
+8.4.3 Number of trips
+
+We experiment with varying numbers of trips which shows that the pattern in larger number
+of trips does not change overall. Figures 23a and b show the results for 5k mixed trips
+for small and large query rectangle sizes. We also experimented with 10K mixed trips of
+
+(a) 5K Mixed Trips, 1-10% QR Size.
+
+(b) 5K Mixed Trips, 10-100% QR Size.
+
+(c) 10K Mixed Trips, 1-10% QR Size.
+
+(d) 10K Mixed Trips, 10-100% QR Size.
+
+Fig. 23 Accuracy per query size, large trip numbers in Melbourne, small and large QRs
+
+788
+
+Geoinformatica (2015) 19:747–798
+
+small and large query rectangle sizes (Figs. 23c and d). For the larger query rectangle sizes,
+there is not a considerable change in the pattern. However, as depicted in Figs. 23a and c,
+CASE+ has a slightly higher level of accuracy in smaller QRs for larger number of trips in
+comparison with CASE and Euler(cid:5) (cf. Fig. 22a). This advantage of CASE+, for smaller
+QRs, is explored in detail in Section 8.7.
+
+In order to have a realistic evaluation we selected mixed trips as default trip type to run
+
+the rest of the experiments (cf. Section 8.2.4).
+
+8.4.4 Grid cell sizes
+
+In this part of the experiment we study the result of changing the granularity of the grid. We
+have considered various sizes of the grid cell, 100, 500, and 1000m for Melbourne city. In
+Figs. 24 and 25 the accuracy results for 1K and 5K mixed trips and two larger cell sizes,
+500, and 1000m are shown. Considering the variety of the grid cells, the CASE histogram is
+independent of the changes to the grid cell size and always provides a high level of accuracy.
+However, other techniques perform better in larger grid cell sizes. The only setting that
+CASE and CASE+ have an accuracy of 100 % or ≈ 100 % for smaller QRs, is when the
+grid cell size is aligned with 1 % QR size, (cf. Figs. 24c and25c).
+
+(a) 1-10% QR Size.
+
+(b) 10-100% QR Size.
+
+(c) 1-10% QR Size.
+
+(d) 10-100% QR Size.
+
+Fig. 24 Accuracy per query size, various grid cell sizes in Melbourne for 1 K trips
+
+Geoinformatica (2015) 19:747–798
+
+789
+
+(a) 1-10% QR Size.
+
+(b) 10-100% QR Size.
+
+(c) 1-10% QR Size.
+
+(d) 10-100% QR Size.
+
+Fig. 25 Accuracy per query size, various grid cell sizes in Melbourne for 5 K trips
+
+All experiments show the same trend for the other techniques, Euler and Euler(cid:5), that they
+cannot achieve a high level of accuracy until we increase the size of the grid cell. When it
+is equal to an extreme size of 1000m, i.e., 1 % of the deployment area, Euler(cid:5) significantly
+improves. Euler and Euler(cid:5) histograms are increasing with the query rectangle size. The
+reason for this observation is that the smaller grid cell size increases the probability of the
+distinct counting problem as each moving object passes more partitions. We show various
+cases for the QR size in Figs. 24a, 25c, 25a, and 25c (see also Figs. 22 and 23 that use the
+100m grid cell size).
+
+Table 4 Experimental settings for Manhattan
+
+Grid cell size
+
+No. of trips
+
+Trip types
+
+QR size
+
+1
+
+2
+
+3
+
+100 m
+
+150 m
+
+200 m
+
+5 K
+
+5 K
+
+5 K
+
+Mixed
+
+Mixed
+
+Mixed
+
+1-10 % 10-100 %
+
+1-10 % 10-100 %
+
+1-10 % 10-100 %
+
+The bold items in a row are varied, while the non-bold items are held fixed
+
+790
+
+Geoinformatica (2015) 19:747–798
+
+All these experiments show that the CASE histogram achieves near perfect accuracy
+except for very small query rectangle size ranging between 1-5 %. CASE still typically
+achieves a high accuracy in excess of 90 % for the rest of the QR sizes and clearly
+outperforms comparable methods.
+
+(a) 1-10% QR Size, Cell Size 100m.
+
+(b) 10-100% QR Size, Cell Size 100m.
+
+(c) 1-10% QR Size, Cell Size 150m.
+
+(d) 10-100% QR Size, Cell Size 150m.
+
+(e) 1-10% QR Size, Cell Size 200m.
+
+(f) 10-100% QR Size, Cell Size 200m.
+
+Fig. 26 Accuracy per query size for 5K mixed trips in Manhattan, small and large QRs
+
+Geoinformatica (2015) 19:747–798
+
+791
+
+(a) 1-10% QR Size.
+
+(b) 10-100% QR Size.
+
+Fig. 27 Accuracy per query size for 5K mixed trips in Beijing, small and large QRs
+
+8.5 Manhattan
+
+8.6 Beijing
+
+Table 4 summarises our selected parameter values for Manhattan. Figure 26 illustrates accu-
+racy percentages for three different grid cell sizes, 100, 150 and 200m per query size for
+small and large QRs in Manhattan for 5K mixed trips.0
+
+Figure 26 depicts similar accuracy results for a different spatial layer, on the Manhattan
+road network, for CASE and CASE+. Regarding the different grid cell sizes, as expected by
+increasing the grid cell size from 100m, 150 to 200m, Euler(cid:5) performs better, (see Figs. 26a,
+26c and 26e). However, the accuracy level does not change for our proposed approach.
+
+Figures 27 and 28 illustrate accuracy percentages per query size for small and large QRs
+in Beijing for mixed and circling trips. The circling trips have also been selected for our
+comparison on the real dataset. Table 5 summarises our selected parameter values for this
+city. As illustrated in Fig. 27, we see similar results to our previous road networks. Figure 28
+shows that having a cycle in a trip reduces the accuracy for Euler(cid:5) and Euler. The accuracy
+
+(a) 1-10% QR Size.
+
+(b) 10-100% QR Size.
+
+Fig. 28 Accuracy per query size for 5K circling trips in Beijing, small and large QRs
+
+792
+
+Geoinformatica (2015) 19:747–798
+
+Table 5 Experimental settings for Beijing
+
+Grid cell size
+
+No. of trips
+
+Trip types
+
+QR size
+
+1
+
+2
+
+200m
+
+200m
+
+5K
+
+1K
+
+Mixed
+
+1-10 % 10-100 %
+
+Circling with n Cycles (C) 1-Cycles
+
+1-10 % 10-100 %
+
+Bold items in a row are varied, while non-bold items are held fixed
+
+will be dramatically reduced when we have different shapes of circling, returning, self-
+intersecting in a trip, (see Fig. 30), which is the case in our real dataset to be discussed in
+the next section.
+
+8.6.1 Real-world dataset: T-Drive
+
+We also compare our algorithm with other competitive methods on the T-Drive dataset
+which is publicly available on Microsoft’s website [52, 53]. Since the dataset refers to taxi
+drivers, the trajectories are mostly circling trips with a large number of self-intersecting
+patterns. This dataset confirms the importance of return and circling trips investigated in
+Section 8.2. The area size is 20 km ∗ 20 km and we consider the same grid cell size of 200m
+for synthetic Beijing trajectories, to determine differences in terms of accuracy. Fig. 29
+demonstrates the results for the selected grid cell size 200m, with CASE outperforming
+Euler approaches since it considers vertex counts. Regarding the smaller QRs, especially for
+a QR that is 1 % of the total area, CASE+ is more accurate than CASE, because it removes
+some unnecessary virtual counts. Both Euler and Euler(cid:5) techniques are significantly more
+inaccurate because of the trajectories’ shape. Our technique CASE achieves high accuracy
+exceeding 90 % once the QR is greater than 5 %.
+
+Figure 30 illustrates two sample trajectories from the T-Drive dataset, which shows their
+trip shapes. As depicted, this dataset consists of various shapes of trajectories, e.g., return-
+ing, circling and self-intersecting trips. As a result, applying virtual counts in the CASE
+method to improve the accuracy of the results are confirmed, and CASE+ can merely
+outperform CASE for a very small QR like 1 %.
+
+(a) 1-10% QR Size.
+
+(b) 10-100% QR Size.
+
+Fig. 29 Accuracy per query size for T-Drive dataset of Beijing City. A real example of trajectory trip patterns
+
+Geoinformatica (2015) 19:747–798
+
+793
+
+Fig. 30 Sample trajectory visualization for T-Drive dataset
+
+8.7 CASE versus CASE+
+
+CASE and CASE+ both perform well overall. CASE+ can outperform CASE for the smaller
+QRs whereas CASE is better when the ratio of the grid cell size of the monitored area is large
+and QR is large as well. We run a suite of experiments to confirm this. All the experiments
+demonstrate the CASE+ evaluation, for smaller QR sizes.
+
+We study CASE+ for the smaller QRs to demonstrate accuracy in Sections 8.4.2
+and 8.4.4, which shows the result for the CASE+ algorithm which aims to improve accuracy
+level. As discussed earlier, the error in the CASE approach occurs when we have a smaller
+QR. Therefore we run the experiment for the smaller QR starting from 1 % of the QR to
+see the difference between CASE and CASE+ in the result. As shown in Fig. 21, CASE+
+could achieve a better accuracy level than CASE. CASE and CASE+ can complement each
+other for various settings. As depicted in Fig. 29, CASE has a better accuracy when the QR
+is larger or for coarse grid cell sizes.
+
+9 Conclusion
+
+In this paper, we propose CASE as a connectivity aware spatial Euler histogram to solve
+the distinct-object counting problem. In CASE histograms, the connectivity of trajectory
+paths is preserved while privacy is maintained through the use of count information. The
+key idea of CASE is to use virtual counts to address the distinct counting problem. Our
+technique outperforms the best known methods in terms of maintaining a high-level of
+accuracy in the provided answers. We provide a new analysis of Euler histogram based
+approaches demonstrating worst-case privacy, and general lower bounds on privacy. We
+
+794
+
+Geoinformatica (2015) 19:747–798
+
+also contribute a wrapper mechanism that operates with Euler histogram approaches to
+answer interactive range queries with preserving the strong notion of differential privacy.
+In the experimental study, we test our approach over a range of realistic scenarios by
+considering different types of moving object patterns as well as using a real trajectory
+dataset, T-Drive. The results show that CASE significantly outperforms other approaches.
+Our results demonstrate that CASE histograms can always achieve a high level of accu-
+racy and are accurate for larger query regions whereas Euler histograms suffer lower
+accuracy.
+
+An important feature of CASE is that its performance is independent of the cell size. This
+observation implies that whatever the grid cell size the application designer requires, CASE
+will always provide a high level of accuracy. Although in this paper we focused on trajectory
+data, our method is applicable to other type of objects, e.g., polygons. We have identified the
+source of error in the CASE approach for smaller query sizes and have initiated an approach
+to improving accuracy towards 100 % with CASE+.
+
+Interesting questions for future work coming out of this paper, include: deriving fur-
+ther bounds on confusion level given histogram counts, non-interactive approaches to
+differential privacy for Euler histograms, deriving bounds on accuracy under some data
+assumptions, and performing experimental evaluation of the effect of query region and
+partition geometries on accuracy.
+
+Acknowledgments We thank Dr. Hairuo Xie for his helpful comments regarding the experimental study.
+
+References
+
+1. Kerckhoffs A (1883) Journal des sciences militaires IX:5–38
+2. Barak B, Chaudhuri K, Dwork C, Kale S, McSherry F, Talwar K (2007) Privacy, accuracy, and consis-
+tency too: a holistic solution to contingency table release. In: Proceedings of the Twenty-Sixth ACM
+SIGACT-SIGMOD-SIGART Symposium on Principles of Database Systems, June 11-13, 2007, Beijing,
+China, pp 273–282
+
+3. Beigel R, Tanin E (1998) The geometry of browsing. In: LATIN ’98: Theoretical Informatics, Third
+
+Latin American Symposium, pp 331–340
+
+4. Beresford AR, Stajano F (2003) Location privacy in pervasive computing. IEEE Pervasive Comput
+
+2(1):46–55
+
+5. Beresford AR, Stajano F (2004) Mix zones: User privacy in location-aware services. In: 2nd IEEE
+Conference on Pervasive Computing and Communications Workshops (PerCom 2004 Workshops),
+pp 127–131
+
+6. Bogorny V, Shekhar S (2010) Spatial and spatio-temporal data mining. In: ICDM 2010, The 10th IEEE
+
+International Conference on Data Mining, p 1217
+
+7. Braz F, Orlando S, Orsini R, Raffaet`a A, Roncato A, Silvestri C (2007) Approximate aggregations in
+trajectory data warehouses. In: Proceedings of the 23rd International Conference on Data Engineering
+Workshops, ICDE 2007, pp 536–545
+
+8. Buchin K, Buchin M, van Kreveld MJ, L¨offler M, Luo J, Silveira RI (2012) Processing aggregated data:
+
+the location of clusters in health data. GeoInformatica 16(3):497–521
+
+9. Chawla S, Dwork C, McSherry F, Talwar K (2005) On the utility of privacy-preserving histograms. In:
+
+Proceedings of the 21st Conference on Uncertainty in Artificial Intelligence
+
+10. Chow CY, Mokbel MF (2011) Privacy of spatial trajectories. In: Computing with Spatial Trajectories,
+
+11. Chow CY, Mokbel MF (2011) Trajectory privacy in location-based services and data publication.
+
+pp 109–141
+
+SIGKDD Explorations 13(1):19–29
+
+12. Dingledine R, Mathewson N, Syverson PF (2004) Tor: The second-generation onion router. In: Pro-
+ceedings of the 13th USENIX Security Symposium, August 9-13, 2004, San Diego, CA, USA, pp
+303–320
+
+Geoinformatica (2015) 19:747–798
+
+795
+
+13. Dwork C (2008) Differential privacy: A survey of results. In: Theory and Applications of Models of
+Computation, 5th International Conference, TAMC 2008, Xi’an, China, April 25-29, 2008. Proceedings,
+pp 1–19
+
+14. Dwork C, McSherry F, Nissim K, Smith A (2006) Calibrating noise to sensitivity in private data anal-
+ysis. In: Theory of Cryptography, Third Theory of Cryptography Conference, TCC 2006, New York,
+NY, USA, March 4-7, 2006, Proceedings, Lecture Notes in Computer Science, vol 3876, pp 265–284.
+Springer
+
+15. Dwork C, Naor M, Pitassi T, Rothblum GN, Yekhanin S (2010) Pan-private streaming algorithms. In:
+Innovations in Computer Science - ICS 2010, Tsinghua University, Beijing, China, January 5-7, 2010.
+Proceedings, pp 66–80
+
+16. Giannotti F, Nanni M, Pinelli F, Pedreschi D (2007) Trajectory pattern mining. In: Proceedings of the
+13th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining, pp 330–
+339
+
+17. G´omez LI, Kuijpers B, Moelans B, Vaisman AA (2011) A state-of-the-art in spatio-temporal data
+warehousing, OLAP and mining. In: Integrations of Data Warehousing, Data Mining and Database
+Technologies, pp 200–236
+
+18. Gruteser M, Liu X (2004) Protecting privacy in continuous location-tracking applications. IEEE Secur
+
+Priv 2(2):28–34
+
+pp 143–177
+
+19. Jeung H, Yiu ML, Jensen CS (2011) Trajectory pattern mining. In: Computing with Spatial Trajectories,
+
+20. Krumm J (2007) Inference attacks on location tracks
+21. Leonardi L, Orlando S, Raffaet`a A, Roncato A, Silvestri C, Andrienko GL, Andrienko NV (2014)
+A general framework for trajectory data warehousing and visual OLAP. GeoInformatica 18(2):273–
+312
+
+22. Loo BP (2006) Validating crash locations for quantitative spatial analysis: A GIS-based approach. Accid
+
+23. L´opez IFV, Snodgrass RT, Moon B (2005) Spatiotemporal aggregate computation: a survey. IEEE Trans
+
+Anal Prev 38(5):879–886
+
+Knowl Data Eng, TKDE 17(2):271–286
+
+24. Marketos G, Frentzos E, Ntoutsi I, Pelekis N, Raffaet`a A, Theodoridis Y (2008) Building real-world
+trajectory warehouses. In: Seventh ACM International Workshop on Data Engineering for Wireless and
+Mobile Access, Mobide 2008, pp 8–15
+
+25. MicrosoftNewsCenter
+
+location-based services
+grow in popularity. Accessed: 2013-09-15. http://www.microsoft.com/en-us/news/features/2011/jan11/
+01-26dataprivacyday.aspx
+
+(2011) Data privacy day tackles concerns as
+
+26. Narayanan A (2009) Data privacy: The non-interactive setting. Ph.D. thesis, Austin, TX, USA.
+
+AAI3368859
+
+27. OpenStreetMap The free wiki world map. Accessed: 2013-05-10. http://www.openstreetmap.org/
+28. Orlando S, Orsini R, Raffaet`a A, Roncato A, Silvestri C (2007) Spatio-temporal aggregations in trajec-
+tory data warehouses. In: Data Warehousing and Knowledge Discovery, 9th International Conference,
+DaWaK 2007, pp 66–77
+
+29. Orlando S, Orsini R, Raffaet`a A, Roncato A, Silvestri C (2007) Trajectory data warehouses: Design and
+
+implementation issues. J Comput Sci Eng, JCSE 1(2):211–232
+
+30. Papadias D, Kalnis P, Zhang J, Tao Y (2001) Efficient OLAP operations in spatial data warehouses.
+In: Advances in Spatial and Temporal Databases, 7th International Symposium, SSTD 2001, pp 443–
+459
+
+31. Pedersen TB, Tryfona N (2001) Pre-aggregation in spatial data warehouses. In: Advances in Spatial and
+
+Temporal Databases, 7th International Symposium, SSTD 2001, pp 460–480
+
+32. Phillips P, Lee I (2011) Crime analysis through spatial areal aggregated density patterns. GeoInformatica
+
+15(1):49–74
+
+33. Sakr MA, G¨uting RH (2011) Spatiotemporal pattern queries. GeoInformatica 15(3):497–540
+34. Samet H (2006) Foundations of multidimensional and metric data structures. Morgan Kaufmann
+35. Sun C, Agrawal D, El Abbadi A (2002) Exploring spatial datasets with histograms. In: Proceedings of
+
+the 18th International Conference on Data Engineering, ICDE, pp 93–102
+
+36. Sun C, Bandi N, Agrawal D, El Abbadi A (2006) Exploring spatial datasets with histograms. Distrib
+
+37. Sweeney L (2002) k-anonymity: A model for protecting privacy. Int J Uncertainty Fuzziness Knowledge
+
+Parallel Databases 20(1):57–88
+
+Based Syst 10(5):557–570
+
+38. Tao Y, Kollios G, Considine J, Li F, Papadias D (2004) Spatio-temporal aggregation using sketches.
+In: Proceedings of the 20th International Conference on Data Engineering, ICDE 2004, pp 214–
+225
+
+796
+
+Geoinformatica (2015) 19:747–798
+
+39. Tao Y, Papadias D, Zhang J (2002) Aggregate processing of planar points. In: Advances in Database
+Technology - EDBT 2002, 8th International Conference on Extending Database Technology, pp 682–700
+40. Timko I, B¨ohlen MH, Gamper J (2009) Sequenced spatio-temporal aggregation in road networks. In:
+
+EDBT 2009, 12th International Conference on Extending Database Technology, pp 48–59
+
+41. Trudeau R (1993) Introduction to Graph Theory. Dover Books on Mathematics Series. Dover Pub
+42. Viswanathan G, Schneider M (2011) On the requirements for user-centric spatial data warehousing and
+SOLAP. In: Database Systems for Adanced Applications - 16th International Conference, DASFAA
+2011, International Workshops, pp 144–15
+
+43. Wernke M, Skvortsov P, D˙urr F, Rothermel K (2014) A classification of location privacy attacks and
+
+approaches. Pers Ubiquit Comput 18(1):163–175
+
+44. Willer DJ (1990) A spatial decision support system for bank location: A case study. Tech. rep., University
+of New York at Buffalo, Department of Geography State, National Center for Geographic Information
+and Analysis
+
+45. Xie H, Kulik L, Tanin E (2010) Privacy-aware traffic monitoring. IEEE Trans Intell Transp Syst
+
+11(1):61–70
+
+46. Xie H, Tanin E, Kulik L (2007) Distributed histograms for processing aggregate data from moving
+objects. In: 8th International Conference on Mobile Data Management (MDM 2007), pp 152–157
+47. Xie H, Tanin E, Kulik L, Scheuermann P, Trajcevski G, Fanaeepour M (2014) Euler histogram tree:
+A spatial data structure for aggregate range queries on vehicle trajectories. In: 7th ACM SIGSPATIAL
+International Workshop on Computational Transportation Science, IWCTS 2014
+
+48. Xue AY, Qi J, Xie X, Zhang R, Huang J, Li Y (2015) Solving the data sparsity problem in destination
+
+prediction. The International Journal on Very Large Data Bases, VLDB J. 24(2):219–243
+
+49. Xue AY, Zhang R, Zheng Y, Xie X, Huang J, Xu Z (2013) Destination prediction by sub-trajectory
+synthesis and privacy protection against such prediction. 29th IEEE International Conference on Data
+Engineering, ICDE 2013, pp 254–265
+
+50. Xue AY, Zhang R, Zheng Y, Xie X, Huang J, Xu Z (2013) Destination prediction by sub-trajectory
+synthesis and privacy protection against such prediction. In: 29th IEEE International Conference on Data
+Engineering, ICDE 2013, pp 254–265
+
+51. Yaagoub A, Liu X, Trajcevski G, Tanin E, Scheuermann P (2012) Materialized views for count
+aggregates of spatial data. In: Advances in Databases and Information Systems - 16th East European
+Conference, ADBIS 2012, pp 427–440
+
+52. Yuan J, Zheng Y, Xie X, Sun G (2011) Driving with knowledge from the physical world. In: Proceedings
+of the 17th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining, pp
+316–324
+
+53. Yuan J, Zheng Y, Zhang C, Xie W, Xie X, Sun G, Huang Y (2010) T-drive: driving directions based
+on taxi trajectories. In: 18th ACM SIGSPATIAL International Symposium on Advances in Geographic
+Information Systems, ACM-GIS 2010, pp 99–108
+
+Maryam Fanaeepour is currently a Ph.D. candidate in the Department of Computing and Information Sys-
+tems at the University of Melbourne. Her research interests include spatial and temporal data management,
+spatial data analytics and location privacy. She received her M.Sc. in Computer Engineering - Software from
+the Iran University of Science and Technology (IUST), School of Computer Engineering, Tehran. She is a
+student member of the ACM and the IEEE.
+
+Geoinformatica (2015) 19:747–798
+
+797
+
+Lars Kulik received his PhD in 2002 from the Department of Informatics at the University of Hamburg,
+Germany. He is currently an Associate Professor in the Department of Computing and Information Systems
+at the University of Melbourne, where he also serves since 2013 as Deputy Head of the department. His
+expertise is in mobile and spatial computing. His overall goal is to develop a theory of spatial information for
+building pervasive and mobile computing systems that anticipate, adapt and respond to the needs of users,
+and provide services based on the user’s location and context.
+
+Egemen Tanin is an Associate Professor at the Department of Computing and Information Systems at the
+University of Melbourne. Before joining Melbourne, he has finished his PhD at the University of Maryland at
+College Park in 2001. His areas of research are Spatial Databases, Information Visualization, and GIS. He is
+an Associate editor of ACM TSAS and he served as a PC Chair of ACM SIGSPATIAL in 2011 and 2012. He
+is also the co-founder of ACM SIGSPATIAL Australia as well as the founding editor of ACM SIGSPATIAL
+Special.
+
+798
+
+Geoinformatica (2015) 19:747–798
+
+Benjamin I. P. Rubinstein joined the University of Melbourne in 2013 as a Senior Lecturer in Computing
+and Information Systems. Previously he gained four years of US industry experience in the research divisions
+of Microsoft, Google, Intel and Yahoo!; followed by IBM Research Australia. As a full-time Researcher at
+Microsoft Research, Silicon Valley for close to 3 years, Rubinstein shipped production systems for entity
+resolution in Bing and the Xbox360; he has a PhD (2010) from UC Berkeley. Rubinstein actively researches
+topics in machine learning, security, privacy, and databases, and has served on the leading PCs in these areas
+including KDD, ICML, IJCAI, CSF and SIGMOD.
+
+

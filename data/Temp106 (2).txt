@@ -1,0 +1,940 @@
+Geoinformatica (2008) 12:21–36
+DOI 10.1007/s10707-006-0017-5
+
+Approximating the Visible Region of a Point
+on a Terrain
+
+Boaz Ben-Moshe · Paz Carmi · Matthew J. Katz
+
+Received: 17 February 2005 / Revised: 29 December 2005 /
+Accepted: 29 March 2006 / Published online: 27 March 2007
+© Springer Science + Business Media, LLC 2007
+
+Abstract Given a terrain and a point p on or above it, we wish to compute the region
+R p that is visible from p. We present a generic radar-like algorithm for computing
+an approximation of R p. The algorithm interpolates the visible region between two
+consecutive rays (emanating from p) whenever the rays are close enough; that is,
+whenever the difference between the sets of visible segments along the cross sections
+in the directions speciﬁed by the rays is below some threshold. Thus the density of the
+sampling by rays is sensitive to the shape of the visible region. We suggest a speciﬁc
+way to measure the resemblance (difference) and to interpolate the visible region
+between two consecutive rays. We also present an alternative algorithm, which uses
+circles of increasing radii centered at p instead of rays emanating from p. Both
+algorithms compute a representation of the (approximated) visible region that is
+especially suitable for is-visible-from- p queries, i.e., given a query point q on the
+terrain determine whether q is visible from p. Finally, we report on the experiments
+that we performed with these algorithms and with their corresponding ﬁxed versions,
+using a natural error measure. Our main conclusion is that the radar-like algorithm
+is signiﬁcantly better than the others.
+
+Keywords algorithms · triangulated irregular networks · visibility
+
+B. Ben-Moshe
+Department of Computer Science, College of Judea & Samaria, Ariel 44837, Israel
+e-mail: benmo@yosh.ac.il
+
+Department of Computer Science, Ben-Gurion University, Beer-Sheva 84105, Israel
+e-mail: matya@cs.bgu.ac.il
+
+P. Carmi · M. J. Katz (B)
+
+P. Carmi
+e-mail: carmip@cs.bgu.ac.il
+
+22
+
+1 Introduction
+
+Geoinformatica (2008) 12:21–36
+
+Let T be a triangulation representing a terrain (i.e., there is a height (z-coordinate)
+associated with each triangle vertex, and any vertical line intersects T at a single point
+(if at all)). T is sometimes called a triangulated irregular network (or TIN for short).
+We are interested in the following basic problem. Given a point p on (or above) T,
+compute the region R p of T that is visible from p. A point q on T is visible from p if
+and only if the line segment pq lies above T (in the weak sense). Thus R p consists of
+all points on T that are visible from p.
+
+The problem of computing the visible region of a point on a terrain arises as a
+subproblem in numerous GIS-based applications. For example, the coverage area of
+an antenna for which line of sight is required may be approximated by clipping the
+region that is visible from the tip of the antenna with an appropriate disk centered at
+the antenna. In [16], Sharir considered the related shortest watchtower problem: Find
+the shortest vertical segment that has to be erected from the surface of the terrain
+T, so that its top endpoint can see the entire terrain. He presented an O(n log2 n)-
+time algorithm for this problem, where n is the number of triangular faces of T. An
+improved O(n log n)-time algorithm was subsequently presented by Zhu [19]. See,
+e.g., [3], [5], [9], [10], [12], [17] for more examples, such as guarding and siting of air
+defense missile batteries.
+
+These and other applications motivate the study of visibility problems on terrains;
+see, e.g., [4]–[7], [9], [10], [14], [15]. De Floriani and Magillo [6] present two solutions
+to the discrete version of our problem, i.e., compute all vertices of T that are visible
+from p. Their more sophisticated solution is based on a data structure supporting
+ray shooting queries from p, due to Cole and Sharir [5], and its running time is
+O(n log2 n). Katz et al. [14] present an output-sensitive algorithm for computing
+the visibility map of T from any ﬁxed point; the running time of their algorithm is
+O((nα(n) + k) log n), where α(n) is the inverse of Ackermann’s function and k is the
+combinatorial complexity of the actual visibility map.
+
+Since the combinatorial complexity of R p might be (cid:3)(n2) [5], [8], it is desirable
+to also have fast approximation algorithms, i.e., algorithms that compute an approxi-
+mation of R p. Such algorithms may have sublinear running time in practice and may
+be simpler to implement. Moreover, a good approximation of the visible region is
+often sufﬁcient, especially when the triangulation itself is only a rough approximation
+of the underlying terrain. Note that in this paper we are assuming that the terrain
+representation (i.e., the triangulation T) is ﬁxed and cannot be modiﬁed. Simplifying
+the triangulation can of course result in a signiﬁcant decrease in the actual running
+time of any algorithm for computing the visible region. This approach was studied in
+a previous paper [1]. See, e.g., [11] for more information on terrain simpliﬁcation.
+
+We present a generic radar-like algorithm for computing an approximation of
+R p. The algorithm computes the visible segments along two rays ρ1, ρ2 emanating
+from p where the angle between the rays is not too big. (I.e., each of the rays
+speciﬁes a direction, i.e., azimuth, and the algorithm computes the (projections of
+the) visible portions of the cross section of T in this direction.) It then has to decide
+whether the two sets of visible segments (one per ray) are close enough so that it can
+interpolate the visible region of p within the wedge deﬁned by ρ1 and ρ2, or whether
+an intermediate ray is needed. In the latter case the algorithm will now consider the
+smaller wedge deﬁned by ρ1 and the intermediate ray. Thus a nice property of the
+
+Geoinformatica (2008) 12:21–36
+
+23
+
+algorithm is that the density of the sample rays varies and depends on the shape
+of R p.
+
+In order to use this generic algorithm one must provide (a) a measure of re-
+semblance for two sets of visible segments, where each set consists of the visible
+segments along some ray from p, and (b) an algorithm to interpolate the visible
+region between two rays whose corresponding sets were found similar enough. In
+Section 2 we describe in more detail the generic algorithm and provide the missing
+ingredients.
+
+The running time of the radar-like algorithm is proportional to the sum of the
+sizes of the cross-sections that are computed. For a “typical” terrain, the algorithm
+only computes a constant number c of cross-sections and the expected size of a cross-
+section is O(
+n). Thus the expected running time of the radar-like algorithm on a
+typical terrain is only O(c
+
+n).
+
+√
+
+√
+
+In Section 3 we present several other algorithms for computing the visible region
+R p. The ﬁrst algorithm computes R p exactly. Since we need such an algorithm for
+the experimental evaluation of our approximate algorithms, we decided to devise
+one that is based on the general structure of the radar-like algorithm. Our exact
+algorithm is rather simple and is based on known results; nevertheless it seems useful.
+Speciﬁcally, the algorithm repeatedly computes the portion of R p within a slice,
+deﬁned by a pair of rays passing through consecutive vertices of the terrain (so that
+the slice does not contain a vertex of T in its interior). This computation can be done
+efﬁciently as is shown in [7].
+
+The second algorithm (called the expanding circular-horizon algorithm or ECH
+for short) is in some sense orthogonal to the radar-like algorithm; it uses circles
+of increasing radii centered at the view point p instead of rays emanating from p.
+It is inﬂuenced by the exact algorithm described by De Floriani and Magillo [7].
+The algorithm approximates the visible region R p by maintaining the (approximate)
+viewing angles corresponding to a set of sample points on the expanding circular
+front (see Section 3). This allows us to partition the current front into maximal
+visible and invisible arcs. We now examine the sets of visible arcs on the current and
+previous fronts. If they are close enough, then the portion of R p within the annulus
+deﬁned by the two circles is approximated. Otherwise, we compute the visible arcs
+on a circle of intermediate radius and repeat.
+
+Both the radar-like algorithm and the expanding circular-horizon algorithm have
+corresponding ﬁxed versions, that play an important role in the experiments that
+were performed, see below. In the ﬁxed version of the radar-like algorithm, the angle
+between two consecutive rays is ﬁxed and we approximate the portion of R p in the
+sector deﬁned by the rays in any case, even if they are not close enough. In the ﬁxed
+version of the expanding circular-horizon algorithm, the increase in radius between
+two consecutive circles is ﬁxed and again we approximate the portion of R p in the
+annulus deﬁned by the circles in any case.
+
+In Section 4 we suggest a natural way to measure the error in an approximation
+R(cid:3)
+p of R p produced by one of our algorithms. Let l denote the range of sight that
+is in use. If the disk of radius l centered at p does not contain the underlying
+terrain, then we only consider the portion of the terrain that is contained in this
+disk when computing R p and R(cid:3)
+p. The error associated with R(cid:3)
+p is the area of the
+XOR of R(cid:3)
+p and R p, divided by the area of the disk of radius l centered at p.
+Using this error measure (and the exact algorithm), we performed a collection of
+
+24
+
+Geoinformatica (2008) 12:21–36
+
+experiments (described in Section 4) with the radar-like and expanding circular-
+horizon algorithms and their corresponding ﬁxed versions. Our main conclusions
+from these experiments are that (a) the sensitive versions are signiﬁcantly better
+than their corresponding ﬁxed versions (when the total number of slices / annuli
+composing the ﬁnal approximation is the same in both versions), and (b) the radar-
+like algorithm is signiﬁcantly better than the expanding circular-horizon algorithm.
+In Section 4 we offer some explanations to these ﬁndings.
+
+2 The radar-like algorithm
+
+In this section we ﬁrst present our radar-like generic algorithm. Next we describe the
+measure of resemblance and the interpolation algorithm that we devised, and that
+are needed in order to transform the generic algorithm into an actual algorithm.
+
+The generic algorithm is presented in the frame below. The basic operation
+that is used is the cross-section operation, denoted cross-section(T, p, θ), which
+computes the visible segments along the ray emanating from p and forming an
+angle θ with the positive x-axis. More precisely, cross-section(T, p, θ) computes the
+(projections of the) visible portions of the cross section of T in the direction (i.e.,
+azimuth) speciﬁed by this ray. Roughly speaking, the generic algorithm sweeps the
+terrain T counterclockwise with a ray ρ emanating from p, performing the cross-
+section operation whenever the pattern of visible segments on ρ is about to change
+signiﬁcantly with respect to the pattern that was found by the previous call to cross-
+section. The algorithm then interpolates, for each pair of consecutive patterns, the
+visible region of p within the wedge deﬁned by the corresponding locations of ρ.
+
+Given a triangulation T representing a terrain (i.e., with heights associated with
+the triangle vertices), and a view point p on or above T:
+θ ← 0 .
+α ← some constant angle, say, π/45 .
+S1 ← cross-section(T, p, θ) .
+S2 ← cross-section(T, p, θ + α) .
+while (θ ≤ 360)
+
+if (S1 is close-enough to S2)
+interpolate(S1, S2);
+θ ← S2.angle;
+S1 ← S2;
+S2 ← cross-section(T, p, min(θ + α, 360));
+
+else
+
+μ ← (S1.angle + S2.angle)/2;
+S2 ← cross-section(T, p, μ);
+
+In order to obtain an actual algorithm we must provide precise deﬁnitions of close-
+
+enough and interpolate.
+
+Close-enough: A threshold function that checks whether two patterns S1, S2 are
+similar, where each of the patterns corresponds to the set of visible segments on
+
+Geoinformatica (2008) 12:21–36
+
+25
+
+(a)
+
+(b)
+
+Fig. 1 Grey marks visible and black marks invisible. a The close-enough threshold function: δ times
+the relative length of the XOR of S1 and S2. b The interpolate function
+
+some ray from p. There are of course many ways to deﬁne close-enough. We chose
+the following deﬁnition. In practice, the rotating ray is actually a rotating segment of
+an appropriate length. Let l denote this length. We refer to l as the range of sight. Now
+rotate the ray containing S2 clockwise until it coincides with the ray containing S1.
+See Fig. 1a. Next compute the length of the XOR of S1 and S2, that is, the total length
+covered by only one of the sets S1, S2. This length is then divided by l. Denote by v
+the value that was computed, and let δ be the angle between S1 and S2. If δ · v ≤ C,
+where C is some constant, then return TRUE else return FALSE. The role of δ in
+the above formula is to force close-enough to return TRUE when the angle between
+the rays is small, even if the patterns that are being compared still differ signiﬁcantly.
+
+Interpolate: Given two patterns S1, S2 which are close-enough, we need to compute
+an approximation of the portion of the visible region of p that is contained in the
+corresponding wedge. We do this as follows. Consider Fig. 1b. For each ‘event point’
+(i.e., start or end point of a visible segment) on one of the two rays, draw a segment
+that connects it with the corresponding point on the other ray. For each rectangle that
+is obtained color it as follows, where grey means visible and black means invisible.
+If the horizontal edges of a rectangle are either both visible from p or both invisible
+from p, then, if both are visible, color it grey, else color it black. If, however, one
+of the horizontal edges is visible and the other is invisible, divide the rectangle into
+four pieces by drawing the two diagonals. The color of the upper and lower pieces is
+determined by the color of the upper and lower edges, respectively, and the color of
+the left and right pieces is determined by the color of the rectangles on the left and
+on the right, respectively. Assuming there are no two event points such that one of
+them is exactly above the other, the coloring procedure is well deﬁned. That is, the
+odd numbered rectangles will be colored with a single color, and the even numbered
+rectangles will be divided.
+
+Remark 1 One can think of alternative deﬁnitions for close-enough and interpolate.
+However, it seems reasonable to require the following two properties: (a) A small
+
+26
+
+Geoinformatica (2008) 12:21–36
+
+change in the set of visible segments along a ray should only cause small changes in
+the close-enough measure and in the visible region computed by interpolate (within
+the appropriate wedge), and (b) If there are no “surprises” between two close enough
+rays, then the visible region computed by interpolate within the wedge should be very
+similar to the real visible region. In addition, the deﬁnitions should remain simple and
+easy to implement.
+
+Both the running time of the radar-like algorithm and the combinatorial com-
+plexity of the computed region R(cid:3)
+p are proportional to the sum of the sizes of
+the cross-sections that are computed during the execution of the algorithm. For a
+“typical” terrain, the algorithm only issues a constant number c of calls to cross-
+section(T, p, θ), and the expected size of a cross-section is O(
+n). Thus, for a
+typical terrain, the expected running time of the radar-like algorithm, as well as
+the expected combinatorial complexity of R(cid:3)
+n). Note that if the
+underlying terrain was obtained from a regular grid sampling, then the size of any
+cross-section is O(
+n). In the worst case, though, the size of a cross-section is O(n),
+implying a bound of O(cn) on both the running time and combinatorial complexity.
+Moreover, the combinatorial complexity of the (approximated) visible region R(cid:3)
+p can
+be signiﬁcantly smaller than O(c
+n), since the number of visible segments along a
+ray is usually much smaller than the size of the corresponding cross-section.
+
+p, is only O(c
+
+√
+
+√
+
+√
+
+√
+
+Is-visible-from-p queries. The representation of the (approximated) visible region
+R(cid:3)
+p that is computed by the radar-like algorithm is especially suitable for queries of
+the form: Given a query point q on T, determine whether q is visible from p, or, more
+precisely, determine whether (the projection of) q lies in R(cid:3)
+P. We ﬁrst verify that q
+is within the range of sight l, i.e., that q lies within the disk of radius l centered at p.
+Next we determine whether q lies in R(cid:3)
+p, in logarithmic time, by two binary searches.
+The ﬁrst search locates the sector of the disk in which q lies, and the second locates
+the ‘rectangle’ within the sector in which q lies. Finally, it remains to check in which
+of the at most four triangles corresponding to this rectangle q lies.
+As noted above, the expected size of the data structure is O(c
+
+n) or even less.
+Moreover, in comparison with point location in general triangulations (see, e.g., [2]),
+it is, in practice, much simpler to preprocess R(cid:3)
+p for visibility queries and less extra
+storage space is required.
+
+√
+
+3 Other algorithms
+
+In this section we present several other algorithms for computing the visible region.
+The ﬁrst algorithm computes the visible region exactly; its general structure is similar
+to that of the radar-like algorithm. The second algorithm (called the expanding
+circular-horizon algorithm or ECH for short) is inﬂuenced by the exact algorithm of
+De Floriani and Magillo [7]. It computes an approximation of the visible region using
+circles of increasing radii (instead of rays) and similar deﬁnitions of close-enough
+and interpolate. Towards the end of this section we mention the ﬁxed versions of the
+radar-like and expanding circular-horizon algorithms.
+
+Geoinformatica (2008) 12:21–36
+
+27
+
+The algorithms presented in this section are part of our testing environment for
+the radar-like algorithm. However, we believe that the exact algorithm and the
+expanding circular-horizon algorithm are of independent interest.
+
+3.1 The exact algorithm
+
+Since we need an exact algorithm (i.e., an algorithm that computes the visible
+region R p exactly) for the experimental evaluation of our approximate algorithms,
+we decided to devise one that is based on the general structure of the radar-like
+algorithm, instead of using one of the known algorithms. Our exact algorithm is
+rather simple. It repeatedly computes the (exact) portion of R p within a slice that is
+deﬁned by a pair of rays passing through vertices of the terrain T, and that does not
+contain a vertex of T in its interior; see Fig. 2. This can be done in time O(m log m),
+where m is the number of edges of the terrain that cross the slice, as is shown in [7].
+
+Remark 2 The radar-like algorithm can be modiﬁed accordingly, so that whenever
+the slice under consideration does not contain a vertex of T in its interior, the portion
+of R p within the slice is computed exactly, rather than calling close-enough (possibly
+more than once) and then interpolate.
+
+3.2 The expanding circular-horizon algorithm
+
+This algorithm is in some sense orthogonal to the radar-like algorithm; it uses circles
+of increasing radii centered at the view point p instead of rays emanating from p.
+
+For a point q on T, let ψq be the minimum viewing angle (with respect to the
+horizontal plane through p) at which a vertical pole of inﬁnite height based at q
+can be seen from p; ψq is the viewing angle corresponding to q. Our algorithm
+approximates the visible region R p, by maintaining the (approximate) viewing angles
+corresponding to the points on the expanding circular horizon. More precisely, the
+algorithm only considers the points on the circular horizon at direction (i.e., azimuth)
+
+Fig. 2 Left: the exact algorithm draws a ray through each vertex of T; Right: a slice that is deﬁned by
+two consecutive rays, the corresponding cross sections, and the exact portion of R p within the slice
+
+28
+
+Fig. 3 Left: ψq = φq = ∠qpt
+and q is visible; Right:
+ψq = ψq(cid:3) > φq and q is
+invisible
+
+Geoinformatica (2008) 12:21–36
+
+q
+
+t
+
+q 
+
+q
+
+t
+
+p
+
+q
+
+p
+
+α, 2α, 3α, . . . with respect to p, where α is a parameter of the algorithm. Initially, the
+circular horizon is the point p itself, and the corresponding viewing angle is −π/2.
+
+The (approximate) viewing angles for the current circular horizon are computed
+from those of the previous circular horizon (by resolve-viewing-angles) as follows
+(see Fig. 3). Let q be a point on the current horizon at direction iα with respect to p,
+and let q(cid:3) be the point on the previous horizon at the same direction. Let φq be the
+angle between pq and the horizontal plane through p, then ψq ← max{ψq(cid:3) , φq}, and
+q is said to be visible from p if and only if ψq = φq.
+
+After applying resolve-viewing-angles to the current horizon C, we partition C into
+maximal visible and invisible arcs as follows. An arc of C between two consecutive
+sample points (i.e., points at direction iα and (i + 1)α with respect to p) is called a
+primitive arc. We ﬁrst consider each of the primitive arcs a. If both endpoints of a are
+visible (resp., invisible), then we assume all points in a are visible (resp., invisible). If
+however one of the endpoints qi is visible and the other qi+1 is invisible, we assume
+all points in the half of a adjacent to qi are visible and all points in the half adjacent
+to qi+1 are invisible. We now can partition C into maximal visible and invisible arcs.
+
+Given a triangulation T representing a terrain (i.e., with heights associated with
+the triangle vertices), and a view point p on or above T:
+
+α ← some constant angle, say π/180.
+d ← some constant distance, say, 10 meters.
+r1 ← rmin.
+C1 ← determine the viewing angles corresponding
+to the 2π/α sample points on the circle of radius r1.
+C2 ← resolve-viewing-angles(T, p, C1, r1 + d).
+while (r1 ≤ rmax)
+
+if (C1 is close-enough to C2)
+
+interpolate(C1, C2);
+r1 ← C2.radius;
+C1 ← C2;
+r ← min(r1 + d, rmax);
+C2 ← resolve-viewing-angles(T, p, C1, r);
+
+else
+
+r ← (C1.radius + C2.radius)/2;
+C2 ← resolve-viewing-angles(T, p, C1, r);
+
+Geoinformatica (2008) 12:21–36
+
+29
+
+Fig. 4 The visible region computed by the radar-like algorithm (left) and by its corresponding ﬁxed
+version (right), each composed of 72 slices
+
+We consider the current and previous horizons C2 (of radius r2) and C1 of radius
+(r1), respectively. As in the radar-like algorithm, we must decide whether the two sets
+of visible arcs are close-enough. If yes, we call interpolate to approximate the portion
+of R p that is contained in the annulus deﬁned by C1 and C2. If no, we generate the
+intermediate horizon C of radius (r1 + r2)/2, and repeat for the pair C1, C. We use
+similar deﬁnitions of close-enough and interpolate as in the radar-like algorithm.
+
+3.3 The corresponding ﬁxed versions
+
+Both the radar-like algorithm and the expanding circular-horizon algorithm have
+corresponding ﬁxed versions. In the ﬁxed version of the radar-like algorithm the
+
+Fig. 5 The visible region computed by the expanding circular-horizon algorithm (left) and by its
+corresponding ﬁxed version (right)
+
+30
+
+Geoinformatica (2008) 12:21–36
+
+Fig. 6 Left: the exact region R p; Middle: the region R(cid:3)
+XOR(R(cid:3)
+p
+
+, R p)
+
+p computed by the radar-like algorithm; Right:
+
+angle between two consecutive rays is ﬁxed and we approximate the portion of R p
+in the sector deﬁned by the rays in any case, even if they are not close-enough; see
+Fig. 4.1 In the ﬁxed version of the expanding circular-horizon algorithm, the increase
+in radius between two consecutive circles is ﬁxed and again we approximate the
+portion of R p in the annulus deﬁned by the circles in any case, see Fig. 5.
+
+4 Experimental results
+
+In this section we report on the experiments that we performed with the approxima-
+tion algorithms described in Sections 2 and 3. Namely, the radar-like algorithm, the
+expanding circular-horizon algorithm (ECH), and their corresponding ﬁxed versions.
+We have also implemented the exact algorithm (Section 3.1), which is needed for the
+error computation.
+
+4.1 The error measure
+
+In our experiments we use the following natural error measure. Let R(cid:3)
+p be an
+approximation of R p obtained by some approximation algorithm, where R p is the
+region visible from p. Then the error associated with R(cid:3)
+p is the area of the XOR of
+
+Table 1 Average error (in percents) for sampling level 80
+
+Sampling level: 80
+
+1,000
+
+1,500
+
+2,500
+
+3,500
+
+Fixed ECH
+ECH
+Fixed radar-like
+Radar-like
+
+500
+
+4.53
+3.71
+2.09
+1.37
+
+3.97
+3.49
+1.36
+0.91
+
+3.87
+3.40
+1.19
+0.78
+
+3.88
+3.29
+1.08
+0.65
+
+3.75
+3.35
+0.97
+0.62
+
+1Each of the Figs. 4, 5, and 6 involves a different data set.
+
+Geoinformatica (2008) 12:21–36
+
+Table 2 Average error (in percents) for sampling level 140
+
+Sampling level: 140
+
+1,000
+
+1,500
+
+2,500
+
+3,500
+
+Fixed ECH
+ECH
+Fixed radar-like
+Radar-like
+
+500
+
+2.71
+2.30
+1.21
+0.89
+
+2.35
+2.09
+0.97
+0.71
+
+2.12
+1.88
+0.91
+0.62
+
+2.16
+1.88
+0.81
+0.59
+
+31
+
+2.12
+1.94
+0.72
+0.53
+
+p and R p, divided by the area of the disk of radius l, where l is the range of sight
+
+R(cid:3)
+that is in use. See Fig. 6.
+
+4.2 The experiments
+
+Ten input terrains representing ten different and varied geographic regions were
+used. The terrains were downloaded from the “Geographic Data Download” page
+of the U.S. Geological Survey (USGS) web site [18]. Each input terrain (Delaunay
+triangulation) covers a rectangular area of approximately 15 × 10 km2, and consists
+of approximately 5,000–10,000 vertices. For each terrain we picked several view
+points (x, y coordinates) randomly. For each view point p we applied each of the
+four approximation algorithms (as well as the exact algorithm) 20 times: once for
+each combination of height (either 1, 10, 20, or 50 m above the surface of T) and
+range of sight (either 500, 1,000, 1,500, 2,500, or 3,500 m). For each (approximated)
+region that was obtained, we computed the associated error, according to the error
+measure above. All this was repeated three times; once for each of the three levels
+of sampling (see below).
+
+The level of sampling is determined by the number of calls to interpolate that are
+issued during the execution of an algorithm. We used three levels of sampling: 80,
+140, and 220. Since the interpolation between two consecutive rays is comparable
+to the interpolation between two circular horizons, this seems a fair basis for
+comparison. (In order to achieve a speciﬁc level of sampling when running one of
+the non-ﬁxed versions, we repeated the computation several times, with different
+values of the constant C, until the desired level of sampling was reached.)
+
+4.3 The results
+
+Our results are presented in the following two sets of tables. The ﬁrst three tables
+show the error for each of the four algorithms as a function of the sampling level
+and the range of sight. Consider, for example, the ﬁrst table. This table contains
+
+Table 3 Average error (in percents) for sampling level 220
+
+Sampling level: 220
+
+1,000
+
+1,500
+
+2,500
+
+3,500
+
+Fixed ECH
+ECH
+Fixed radar-like
+Radar-like
+
+500
+
+1.36
+1.22
+0.79
+0.53
+
+1.30
+1.15
+0.63
+0.41
+
+1.18
+1.13
+0.59
+0.37
+
+1.19
+1.09
+0.51
+0.29
+
+1.20
+1.13
+0.40
+0.28
+
+32
+
+Geoinformatica (2008) 12:21–36
+
+Table 4 Average number of calls to cross-section (alternatively, resolve-viewing-angles) by accu-
+racy level
+
+Error:
+
+Fixed ECH
+ECH
+Fixed radar-like
+Radar-like
+
+1.00
+
+263
+231
+80
+61
+
+0.75
+
+616
+522
+140
+103
+
+0.50
+
+1,009
+893
+220
+174
+
+our results for sampling level 80. The ﬁrst line in this table corresponds to the ﬁxed
+version of the expanding circular-horizon algorithm (ECH). The ﬁrst entry in this line
+(4.53) is the average error (in percents) obtained when running ECH with accuracy
+level 80 and range of sight 500 for each of the view points (over all terrains) and each
+of the four possible heights.
+
+Tables 4 and 5 show the amount of work needed in order to reach a certain
+level of accuracy (i.e., error). We use two different cost models. In Table 4 the
+amount of work is measured by the number of calls to cross-section (alternatively,
+resolve-viewing-angles), and in Table 5 the amount of work is measured by the total
+running time. For example, using the ﬁxed radar-like algorithm, the average number
+of calls to cross-section needed to obtain an error of 1% was 80, and, using the ECH
+algorithm, the average running time needed to obtain an error of 0.5% was 1,648 ms.
+All experiments were performed on the following platform: Pentium 4, 2.4 GHz,
+512 MB, Linux 8.1, Java 1.4.
+
+4.4 Conclusions
+
+Based on the results above the radar-like approach is signiﬁcantly better than the
+expanding circular-horizon approach. For each of the sampling levels, the regions
+computed by the two radar-like algorithms were more accurate than those computed
+by the two ECH algorithms for any range of sight (see Tables 1, 2, 3). Moreover, for
+each level of accuracy, the ECH algorithms had to work much harder than the radar-
+like algorithms (according to both measures) in order to reach the desired level of
+accuracy (see Tables 4 and 5).
+
+A possible explanation for the better performance of the radar-like algorithms
+is that in the ECH algorithms the computation of the visible arcs on a circular
+horizon is only an approximation—both the viewing angles ψq and the partition of
+the circular horizon into visible and invisible arcs that is based on these angles might
+be inaccuare. While in the radar-like algorithms the visible segments on a ray are
+
+Table 5 Average running time (in milliseconds) by accuracy level
+
+Error:
+
+Fixed ECH
+ECH
+Fixed radar-like
+Radar-like
+
+1.00
+
+597
+579
+112
+101
+
+0.75
+
+1,045
+1,012
+192
+168
+
+0.50
+
+1,648
+1,591
+301
+274
+
+Geoinformatica (2008) 12:21–36
+
+33
+
+Fig. 7 ECH vs. the
+radar-like algorithm
+
+computed exactly. Referring to Fig. 7, if the ECH algorithms miss a ridge like the one
+in the left picture (drawn as a narrow rectangle), then all subsequent circles will miss
+it and therefore might conclude that the corresponding arcs are visible while they
+are not. On the other hand, a ridge like the one in the right picture that is missed by
+the radar-like algorithms does not affect subsequent computations leading to smaller
+errors.
+
+The way in which the viewing angles ψq are computed also explains why the
+error of the ECH algorithms tends to be single-sided. That is, the area of the
+(approximated) visible regions computed by the ECH algorithms is usually larger
+that the area of the corresponding (exact) visible regions. The error of the radar-like
+algorithms, on the other hand, consists usually of both ‘optimistic’ and ‘pessimistic’
+decisions.
+
+Another clear conclusion is that the adaptive (i.e., non-ﬁxed) versions are more
+accurate than their corresponding ﬁxed versions. For each sampling level, the regions
+computed by the adaptive versions were signiﬁcantly more accurate than those of the
+ﬁxed versions (see Tables 1, 2, 3).
+
+Of course, in the worst case, the error of all suggested algorithms is unbounded,
+since, even for relatively ﬂat terrains with very moderate slopes, one can construct
+artiﬁcial examples, similar to the one in Fig. 7, where the interpolated visibility
+between consecutive rays or circular horizons is completely wrong.
+
+As expected, the adaptive versions are somewhat slower than the corresponding
+ﬁxed versions for a given sampling level, since the adaptive versions perform more
+cross-section (alternatively, resolve-viewing-angles) operations. Actually, we found
+that on average the radar-like algorithm issues about 9% more calls to cross-section
+than the ﬁxed radar-like algorithm. However, when taking into consideration the
+improved accuracy of the adaptive version, we see (Table 5) that the adaptive version
+is on average about 10% faster than the corresponding ﬁxed version.
+
+Finally, we recently performed some experiments with the two radar-like algo-
+rithms using larger terrains, each consisting of 106 − 1.6 · 107 vertices and covering
+a rectangular area of 100 × 100 km2. Using several levels of sampling and ranges of
+up to 50 km, the adaptive version remained more accurate than the ﬁxed version.
+Also, as one might expect, the accuracy level of the radar-like algorithms improved
+when a higher resolution map of the same region was used (keeping the sampling
+level and range ﬁxed). Moreover, since the running time of the radar-like algorithms
+is often sublinear, the gap between the running times of the radar-like algorithms
+and any exact algorithm becomes very signiﬁcant as the size of the underlying terrain
+increases, and as long as the required error is not extremely small.
+
+34
+
+Geoinformatica (2008) 12:21–36
+
+Acknowledgements The authors wish to thank Oﬁr Ganani and Maor Mishkin who implemented
+the radar-like and the expanding circular-horizon algorithms.
+
+Research by Ben-Moshe and Katz was partially supported by grant no. 2000160 from the U.S.-
+Israel Binational Science Foundation, and by the MAGNET program of the Israel Ministry of
+Industry and Trade (LSRT consortium). Research by Carmi is partially supported by a Kreitman
+Foundation doctoral fellowship.
+
+References
+
+1. B. Ben-Moshe, M.J. Katz, J.S.B. Mitchell, and Y. Nir. “Visibility preserving terrain simpliﬁca-
+
+tion,” in Proc. 18th ACM Sympos. Comput. Geom., pp. 303–311, 2002.
+
+2. M. De Berg, M. van Kreveld, M. Overmars, and O. Schwarzkopf. Computational Geometry,
+
+Algorithms and Applications. 2nd Edition, Springer: Berlin Heidelberg New York, 2000.
+
+3. P. Bose, T. Shermer, G. Toussaint, and B. Zhu. “Guarding polyhedral terrains,” Computational
+
+Geometry Theory Application, Vol. 7:173–185, 1997.
+
+4. D. Cohen-Or and A. Shaked. “Visibility and dead-zones in digital terrain maps,” Computer
+
+5. R. Cole and M. Sharir. “Visibility problems for polyhedral terrains,” Journal of Symbolic Com-
+
+Graphics Forum, Vol. 14(3):171–179, 1995.
+
+putation, Vol. 7:11–30, 1989.
+
+6. L. De Floriani and P. Magillo. “Visibility algorithms on triangulated digital terrain models,”
+
+International Journal of GIS, Vol. 8(1):13–41, 1994.
+
+7. L. De Floriani and P. Magillo. “Representing the visibility structure of a polyhedral terrain
+
+through a horizon map,” International Journal of GIS, Vol. 10(5):541–562, 1996.
+
+8. F. Devai. “Quadratic bounds for hidden line elimination,” in Proc. 2nd ACM Sympos. Comput.
+
+9. W.R. Franklin. “Siting observers on terrain” Symp. Spatial Data Handling, 2002.
+10. W.R. Franklin, C.K. Ray, and S. Mehta. “Geometric algorithms for siting of air defense missile
+
+Geom., pp. 269–275, 1986.
+
+batteries,” Tech. Report, 1994.
+
+11. P.S. Heckbert and M. Garland. Fast polygonal approximation of terrains and height ﬁelds.
+
+Report CMU-CS-95-181, Carnegie Mellon University, 1995.
+
+12. M.F. Goodchild and J. Lee. “Coverage problems and visibility regions on topographic surfaces,”
+
+Annals of Operation Research, Vol. 18:175–186, 1989.
+
+13. N. Greene, M. Kass, and G. Miller. “Hierarchical z-buffer visibility,” Computer Graphics Proc.,
+
+Annu. Conference Series, pp. 273–278, 1993.
+
+14. M.J. Katz, M.H. Overmars, and M. Sharir. “Efﬁcient hidden surface removal for objects with
+
+small union size,” Computational Geometry Theory Application, Vol. 2:223–234, 1992.
+
+15. J. Reif and S. Sen. “An efﬁcient output-sensitive hidden surface removal algorithm and its
+
+parallelization,” in Proc. 4th ACM Sympos. Comput. Geom., pp. 193–200, 1988.
+
+16. M. Sharir. “The shortest watchtower and related problems for polyhedral terrains,” Information
+
+Processing Letters, Vol. 29:265–270, 1988.
+
+17. A.J. Stewart. “Fast horizon computation at all points of a terrain with visibility and shading
+applications,” IEEE Transanctions Visualization Computer Graphics, Vol. 4(1):82–93, 1998.
+18. U.S. Geological Survey (USGS) web site, Geographic Data Download page http://edc.usgs.gov/
+
+geodata/.
+
+19. B. Zhu. “Computing the shortest watchtower of a polyhedral terrain in O(n log n) time,” Com-
+
+putational Geometry Theory Applications, Vol. 8:181–193, 1997.
+
+Geoinformatica (2008) 12:21–36
+
+35
+
+Boaz Ben Moshe is a faculty member in the Department of Computer Science at the College of
+Judea & Samaria, Israel. He received the B.Sc., M.Sc., and Ph.D. degrees in Computer Science
+from Ben-Gurion University, Israel. During the academic year 2004–2005 he was a post-doctoral
+fellow at Simon Fraser University, Vancouver, Canada. His main area of research is GIS algorithms
+and simulation. His research includes terrain simpliﬁcation, layout design and simulation of wireless
+networks, the study of visibility graphs, and vehicle routing problems.
+
+Paz Carmi is a post-doctoral fellow at the School of Computer Science, Carleton University, Ottawa,
+Canada. He received the B.Sc., M.Sc., and Ph.D. degrees in Computer Science from Ben-Gurion
+University, Israel. His main area of research is computational geometry – theory and applications.
+Within computational geometry his research is focused on approximation algorithms, optimization
+problems, facility location, radio and sensor networks, and spanners.
+
+36
+
+Geoinformatica (2008) 12:21–36
+
+Matthew Katz is Associate Professor and Chair in the Department of Computer Science at Ben-
+Gurion University, Israel. He received the B.Sc. and M.Sc. degrees in Mathematics and Computer
+Science from the Hebrew University of Jerusalem, and the Ph.D. in Computer Science from Tel-
+Aviv University. His main area of research is computational geometry – theory and applications.
+Within computational geometry his research is focused on optimization problems, devising efﬁcient
+geometric data structures and algorithms for input models tailored to real-world data, and geometric
+problems involving terrains. He studies applications in computer graphics, GIS, robotics, facility
+location, radio and sensor networks, and layout of VLSI circuits.
+
+

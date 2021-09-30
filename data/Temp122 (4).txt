@@ -1,0 +1,1984 @@
+This article was downloaded by: [University of Sydney]
+On: 28 April 2013, At: 12:38
+Publisher: Taylor & Francis
+Informa Ltd Registered in England and Wales Registered Number: 1072954 Registered
+office: Mortimer House, 37-41 Mortimer Street, London W1T 3JH, UK
+
+International Journal of Geographical
+Information Science
+Publication details, including instructions for authors and
+subscription information:
+http://www.tandfonline.com/loi/tgis20
+
+A parallel computing approach to fast
+geostatistical areal interpolation
+Qingfeng Guan a , Phaedon C. Kyriakidis b & Michael F. Goodchild b
+a Center for Advanced Land Management Information
+Technologies, School of Natural Resource, University of Nebraska-
+Lincoln, Lincoln, NE, USA
+b Department of Geography, University of California Santa
+Barbara, Santa Barbara, CA, USA
+Version of record first published: 26 Sep 2011.
+
+To cite this article: Qingfeng Guan , Phaedon C. Kyriakidis & Michael F. Goodchild (2011): A parallel
+computing approach to fast geostatistical areal interpolation, International Journal of Geographical
+Information Science, 25:8, 1241-1267
+
+To link to this article:  http://dx.doi.org/10.1080/13658816.2011.563744
+
+PLEASE SCROLL DOWN FOR ARTICLE
+
+Full terms and conditions of use: http://www.tandfonline.com/page/terms-and-
+conditions
+
+This article may be used for research, teaching, and private study purposes. Any
+substantial or systematic reproduction, redistribution, reselling, loan, sub-licensing,
+systematic supply, or distribution in any form to anyone is expressly forbidden.
+
+The publisher does not give any warranty express or implied or make any representation
+that the contents will be complete or accurate or up to date. The accuracy of any
+instructions, formulae, and drug doses should be independently verified with primary
+sources. The publisher shall not be liable for any loss, actions, claims, proceedings,
+demand, or costs or damages whatsoever or howsoever caused arising directly or
+indirectly in connection with or arising out of the use of this material.
+
+International Journal of Geographical Information Science
+Vol. 25, No. 8, August 2011, 1241–1267
+
+A parallel computing approach to fast geostatistical areal interpolation
+Qingfeng Guana∗, Phaedon C. Kyriakidisb and Michael F. Goodchildb
+
+aCenter for Advanced Land Management Information Technologies, School of Natural Resource,
+University of Nebraska-Lincoln, Lincoln, NE, USA; bDepartment of Geography, University of
+California Santa Barbara, Santa Barbara, CA, USA
+
+(Received 5 October 2010; ﬁnal version received 31 January 2011)
+
+Areal interpolation is the procedure of using known attribute values at a set of
+(source) areal units to predict unknown attribute values at another set of (target) units.
+Geostatistical areal interpolation employs spatial prediction algorithms, that is, variants
+of Kriging, which explicitly incorporate spatial autocorrelation and scale differences
+between source and target units in the interpolation endeavor. When all the avail-
+able source measurements are used for interpolation, that is, when a global search
+neighborhood is adopted, geostatistical areal interpolation is extremely computationally
+intensive. Interpolation in this case requires huge memory space and massive comput-
+ing power, even with the dramatic improvement introduced by the spectral algorithms
+developed by Kyriakidis et al. (2005. Improving spatial data interoperability using geo-
+statistical support-to-support interpolation. In: Proceedings of geoComputation. Ann
+Arbor, MI: University of Michigan) and Liu et al. (2006. Calculation of average
+covariance using fast Fourier transform (FFT). Menlo Park, CA: Stanford Center for
+Reservoir Forecasting, Petroleum Engineering Department, Stanford University) based
+on the fast Fourier transform (FFT). In this study, a parallel FFT-based geostatisti-
+cal areal interpolation algorithm was developed to tackle the computational challenge
+of such problems. The algorithm includes three parallel processes: (1) the computa-
+tion of source-to-source and source-to-target covariance matrices by means of FFT;
+(2) the QR factorization of the source-to-source covariance matrix; and (3) the com-
+putation of source-to-target weights via Kriging, and the subsequent computation of
+predicted attribute values for the target supports. Experiments with real-world datasets
+(i.e., predicting population densities of watersheds from population densities of coun-
+ties in the Eastern Time Zone and in the continental United States) showed that the
+parallel algorithm drastically reduced the computing time to a practical length that
+is feasible for actual spatial analysis applications, and achieved fairly high speed-ups
+and efﬁciencies. Experiments also showed the algorithm scaled reasonably well as the
+number of processors increased and as the problem size increased.
+
+Keywords: parallel computing; geostatistics; fast Fourier transform; Kriging; areal
+interpolation
+
+1. Introduction
+1.1. Areal interpolation
+The geospatial data used for current GIS/GeoComputation-enabled spatial analysis are
+mainly produced by associating a set of attributes (either quantitative measurements or
+
+*Corresponding author. Email: qguan2@unl.edu
+
+ISSN 1365-8816 print/ISSN 1362-3087 online
+© 2011 Taylor & Francis
+http://dx.doi.org/10.1080/13658816.2011.563744
+http://www.tandfonline.com
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 1242
+
+Q. Guan et al.
+
+qualitative descriptions) with a set of spatial objects, or spatial basis deﬁned by Goodchild
+et al. (1993), for example, points, lines, and areas in vector map data, or cells/pixels in
+raster grids. In general, an interpolation problem involves a set of spatial objects with
+their attribute z known, that is, the source; and another set of spatial objects with their
+attribute z unknown, that is, the target. The goal is to predict the unknown attribute z of
+the target objects using the source objects and their attribute values. A common variant
+of spatial interpolation is point interpolation, which predicts the attribute values at target
+locations using a set of points over space with known attribute values. This work focuses
+on another type of spatial interpolation: areal interpolation. Areal interpolation is the trans-
+fer of attribute values from one existing spatial partition to another. The unknown (target)
+attribute values associated with a particular partition (target zones or supports) are pre-
+dicted from a set of known (source) attribute data available on a different partition (source
+zones or supports), where supports are deﬁned as spatial domains informed by attribute val-
+ues, for example, lines in one dimension or zones (polygons) in two dimensions (Kyriakidis
+et al. 2005). As for the types of areal attributes, we follow the terminology of Goodchild
+and Lam (1980), by referring to extensive attributes as areal totals, for example, populations
+of counties; and intensive attributes as areal averages, for example, population densities of
+counties.
+
+Haining (2003) distinguished two categories of areal interpolation approaches: carto-
+graphic and statistical. In the ﬁrst category, geometrical characteristics of the source and
+target supports are treated as the main factor in spatial prediction. Goodchild and Lam
+(1980) discussed the properties of an areal interpolation technique that uses the areas of
+intersection between source and target polygons as weights. In the second category of
+areal interpolation, based on statistical methods, values of a dependent attribute at the
+target zones are predicted from auxiliary data (predictors) available at those zones based
+on a regression model linking the dependent and the auxiliary data at the source zones.
+A third category of areal interpolation approaches could be identiﬁed, invoking princi-
+ples of geostatistics (see, e.g., Kyriakidis et al. 2005). In that category, target attribute
+values are predicted using different forms of Kriging and a model of spatial correlation
+while accounting for the support differences between source and target supports. Since
+geostatistical interpolation methods are formulated in a probabilistic setting, the predic-
+tion error variance can be estimated along with the prediction. Furthermore, Kyriakidis
+et al. (2005) proved that geostatistical areal interpolation provides mass-preserving target
+predictions. More recently, Kyriakidis and Goodchild (under review) proved that popu-
+lar cartographic areal interpolation methods, such as interpolation via proportional area
+weighting and dasymetric mapping, can be regarded as particular cases of geostatistical
+areal interpolation.
+
+Despite its many advantages over cartographic approaches, geostatistical areal interpo-
+lation has a vital disadvantage that greatly obstructs its usage in time-sensitive (real-time
+or near real-time) real-world applications: the extreme computational intensity. Especially
+when all available source measurements are involved in interpolation, a situation also
+known as global interpolation, huge memory space and massive computing power are
+required. Enormous computing time is therefore required, which is usually far beyond
+being feasible (examples will be given in the following sections). Global interpolation is
+needed when spatial attribute interaction has a large range compared with the size of sup-
+ports and the extent of the study region, for example, international trade. In some special
+cases, one may be interested in interactions between attribute values at the boundary and
+the interior, which calls for a near-global interpolation (see Yoo and Kyriakidis 2008). The
+goal of this article is to employ parallel computing technology to improve the performance
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 International Journal of Geographical Information Science
+
+1243
+
+of such geostatistical areal interpolation algorithms and reduce their computing time to a
+practical length for real-world spatial analysis applications.
+
+In fact, parallelizing interpolation algorithms is not a new topic in GIScience and
+GeoComputation. Armstrong and coworkers have worked extensively on parallelizing
+point interpolation on a variety of parallel computing platforms, including massive par-
+allel computers and the computational Grid (Armstrong and Marciano 1993, 1994, 1995,
+1996, 1997, Wang and Armstrong 2003). Furthermore, during the past decade, many stud-
+ies have parallelized Kriging-based point interpolation. Most of these studies parallelize
+the interpolation process by dividing the output grid into sub-grids and distributing them
+to multiple processors (Gajraj et al. 1997, Kerry and Hawick 1998, Morrison 2000, Hawick
+et al. 2003, Pedelty et al. 2003, Rossini et al. 2007). However, the computational demand
+for areal interpolation using Kriging systems is much higher than that for point interpola-
+tion. To construct a Kriging system for areal interpolation, the covariance matrices for the
+source and target supports (e.g., polygons) have to be computed. The entries of these matri-
+ces require enormous time to compute due to the repeated evaluation of spatial integrals
+(Chilès and Delﬁner 1999). Fortunately, the computation for each entry in the covari-
+ance matrix is independent of that for other entries, meaning that the support-to-support
+covariance computation can be parallelized. Nevertheless, little work has been done specif-
+ically on parallelizing geostatistical areal interpolation, and this article contributes to this
+effort.
+
+1.2. Geostatistical areal interpolation
+Geostatistical areal interpolation assumes there exists a latent point ﬁeld {z(u), u ∈ D}
+of an attribute Z, where z(u) is the unobserved point attribute value at location u, and D
+denotes the study domain. The kth source datum z(sk) is then assumed to be an integrated
+measurement of unknown point z-values within that non-point (e.g., areal) support:
+
+z(sk) =
+
+gk(u)z(u)du, k = 1, 2, ..., K
+
+(cid:2)
+
+u∈D
+
+where gk(u) denotes a known sampling function for the kth support that represents the
+contribution of each point u ∈ D to the corresponding source support datum z(sk). For
+extensive variables,
+
+For intensive variables,
+
+(cid:3)
+
+gk(u) =
+
+1 if
+0 if
+
+u ∈ sk
+u /∈ sk
+
+gk(u) =
+
+⎧
+⎨
+
+⎩
+
+1
+|sk|
+0
+
+if u ∈ sk
+
+if u /∈ sk
+
+(1)
+
+(2)
+
+(3)
+
+where |sk| is the measure (e.g., area of a polygon in 2D) of the kth support.
+
+In a geostatistical setting, the unknown point attribute ﬁeld {z(u), u ∈ D} is viewed
+as one out of many possible realizations of a random ﬁeld model {Z(u), u ∈ D}, where
+Z(u) denotes the random variable (RV) at location u. Under intrinsic and second-order
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 N(cid:7)
+
+i=1
+
+N(cid:7)
+
+N(cid:7)
+
+i=1
+
+j=1
+
+1244
+
+Q. Guan et al.
+
+stationarity, the mean of the point random ﬁeld model is considered constant, and the semi-
+variogram γ and the covariogram σ between any two RVs Z(u) and Z(u(cid:3)) are only functions
+of the vector h = u − u(cid:3) separating the two points u and u(cid:3), that is, γ z(u – u(cid:3)) = γ z(h) and
+σ z(u – u(cid:3)) = σ z(h).
+
+Under the above formulation, the covariance between two areal support RVs Z(sk) and
+
+Z(sk(cid:3)) can be written as (see, e.g., Goovaerts 1997)
+(cid:2)
+
+(cid:2)
+
+σz(sk, sk(cid:3)) = Cov{Z(sk), Z(sk(cid:3))} =
+
+gk(u)σz(u − u(cid:3))gk(cid:3)(u(cid:3))du(cid:3)du
+
+(4)
+
+u∈D
+
+u(cid:3)∈D
+
+In real-world applications, the study domain is discretized into a grid of points to represent
+the unobserved ﬁeld, and the kth source datum is then the discrete sum of the unknown
+point attribute values over that support:
+
+z(sk) ≈
+
+gk(ui)z(ui),
+
+k = 1, 2, ..., K
+
+(5)
+
+where N is the number of points comprising the discretization grid.
+
+Similarly, the covariance between two areal support RVs Z(sk) and Z(sk(cid:3)) can be written
+
+as the discrete weighted sum of point covariances:
+
+σz(sk, sk(cid:3)) = Cov{Z(sk), Z(sk(cid:3))} ≈
+
+gk(ui)σz(ui − uj)gk(cid:3) (uj) or σkk(cid:3) = gT
+
+k Cgk(cid:3)
+
+(6)
+
+where σ kk(cid:3) is the covariance between the support k and k(cid:3), gk a vector of sampling functions
+k the transpose of gk; C is a (N × N) covariance
+of all the points for the kth support, and gT
+matrix between all pairs of discretization points and gk(cid:3) a vector of sampling functions of
+all the points for the k(cid:3)th support.
+
+Consider there are K source supports and P unknown target supports within the study
+domain D. The corresponding simple Kriging system for predicting the unknown attribute
+value z(tq) for target support tq can be written as
+
+wp(sk(cid:3))σz(sk, sk(cid:3)) = σz(tp, sk),
+
+k = 1, 2, ..., K or
+
+wst = σst
+
+(7)
+
+(cid:7)
+
+ss
+
+K(cid:7)
+
+k(cid:3)=1
+
+(cid:8)
+
+ss is the source-to-source (STS) covariance matrix between all (K × K) pairs of
+where
+source supports, σ st the source-to-target (STT) covariance vector between all K source
+supports and the target support tp, and wst the vector of weights given to the source attribute
+values for predicting the unknown target value z(tp). Note again that global, as opposed to
+local, Kriging is considered in this work, meaning that all K source data are used to predict
+the attribute value of each target support. The parallel algorithm presented in this work,
+however, can be readily applied to the cases of local Kriging, too.
+
+Once the STS and STT covariance matrices are computed, the STT weights wst can
+be calculated by solving Equation (7). To solve such an Ax = b problem, factorization (or
+ss in this case) is usually per-
+decomposition) of matrix A (i.e., the STS covariance matrix
+formed, such as LU, Cholesky, or QR factorization. To accommodate the errors in the STS
+covariance matrix that might be introduced by previous computation procedures, this study
+
+(cid:8)
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 International Journal of Geographical Information Science
+
+1245
+
+uses the QR factorization to solve the Kriging system and obtain the least squares solution
+of weights. Given an m × n full rank matrix A with m ≥ n, the QR factorization decom-
+poses it into an m × n orthogonal matrix Q (i.e., QTQ = I) and an n × n upper-triangular
+matrix R, so that A = QR. The pseudo-code for QR factorization is as follows (Karniadakis
+and Kirby 2003):
+
+Initialize : Set qi = ai, i = 0, 1, . . . , n − 1
+Begin Loop : For i = 0, 1, . . . , n − 1Do :
+rii= (cid:6)qi(cid:6)
+2
+qi = qi/rii
+Begin Loop : For j = i + 1, . . . , n − 1Do :
+rij = qT
+i qj
+qj = qj − rijqi
+End Loop
+End Loop
+
+where ai is the ith column of matrix A; qi the ith column of matrix Q; ||qi||2 the L2 norm
+of qi, which is deﬁned as
+ki; and rij the entry at the junction of the ith row and jth
+column of matrix R.
+
+m
+k=1 q2
+
+(cid:9)(cid:8)
+
+After QR factorization, Equation (7) can be transformed as follows:
+
+(cid:4)sswst = σst → QRwst=σst → Rwst=QTσst
+
+(8)
+
+Once QT σ st is computed, Equation (8) can be solved using the back-substitution
+method since R is an upper-triangular matrix. Then the target value can be derived simply
+by multiplying the weights wst with the source values.
+A typical geostatistical areal interpolation includes four steps:
+
+Step 1: Discretization of source and target supports with a regular raster (point
+attribute values not known, just their location). Note that support discretiza-
+tion with irregularly placed points is also possible, but it is not pursued in this
+work.
+
+Step 2: Computation of support-to-support covariance matrices as integrals from a
+given point covariance model (i.e., a stationary covariogram model):
+
+(a) between all source supports,
+(b) between all source and target supports.
+
+Step 3: Use of a Kriging system with computed covariance matrices to derive weights
+
+Step 4:
+
+for interpolation.
+Interpolated values computed as linear combinations of the Kriging weights
+and the source data values.
+
+Without adopting any parallel technology, the standard geostatistical areal interpolation
+(see, e.g., Haining 2003) is highly computationally intensive, due to the need for mul-
+tiple evaluations of covariance integrals over arbitrary-shaped regions. Kyriakidis et al.
+(2005) developed a fast integration algorithm for computing the covariance between any
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 1246
+
+Q. Guan et al.
+
+two supports using fast Fourier transform (FFT), which is much more efﬁcient than the
+standard approach. The FFT-based approach will be brieﬂy reviewed in the next section
+before describing the novel contribution of this article.
+
+1.3. FFT-based geostatistical areal interpolation and its computational complexity
+
+According to Kyriakidis et al. (2005), the covariance between two supports can be com-
+puted by multiplying the forward FFT of the extended sampling function vector of the ﬁrst
+support, the forward FFT of the ﬁrst row of the extended point covariance matrix, and the
+forward FFT of the extended sampling function vector of the second support. Extension of
+the various matrices is required for invoking the FFT processing. In a 2D case, an Nx × Ny
+matrix is usually extended to a 2Nx × 2Ny matrix, where Nx and Ny denote the numbers of
+columns and rows of a matrix:
+
+σz(sk, sk(cid:3)) = Cov{Z(sk), Z(sk(cid:3))} = FFT(gk) ⊗ FFT(C(1, :)) ⊗ FFT(gk(cid:3))
+
+(9)
+
+where gkand gk(cid:3) are extended sampling function vectors of the supports, C(1, :) the ﬁrst
+row of the extended point covariance matrix, and ⊗ denotes element-wise or Hadamard
+product.
+
+This FFT-based geostatistical areal interpolation algorithm signiﬁcantly reduces the
+computing time when compared with the traditional approach (i.e., computing support-
+to-support covariance matrices by integrating the given point covariance values over the
+supports’ sampling function vectors). For an artiﬁcial test dataset (20 source supports
+and 25 target supports), the algorithm reportedly produced approximately an 80-fold time
+decrease over the traditional approach.
+
+However, the speed-up was achieved using a relatively simple artiﬁcial dataset. When it
+comes to real-world applications, this FFT-based algorithm is still computationally inten-
+sive, especially when dealing with highly dense discretization grids and large numbers
+of source and target supports. A Matlab-implemented interpolation application with the
+northern California population data on a 500 × 500 discretization grid requires 900-second
+computing time on a PC. Real-world geospatial datasets are usually large and complex,
+leading to an exponential increase in memory demand and computing time. Thus, single-
+processor computers might not be sufﬁcient for applications that involve datasets covering
+wide areas or require high accuracies (i.e., dense discretization) in combination with a
+need for near real-time response. Most of the computational intensity comes from the FFT
+processing, which requires extensive amount of memory space and CPU time. In fact, the
+FFT processes in the algorithm account for more than 80% of the total CPU time (Liu
+et al. 2006). Suppose there are K source supports and P target supports, this algorithm
+will require K + P + 1 FFT processes, where the extra one is the FFT on the ﬁrst row of
+the extended point covariance matrix. Assuming the computational complexity of the FFT
+algorithm to be used is O(N log N) (Frigo 1999), where N is the number of discretization
+points, and N is much larger than K and P, the overall computational complexity for the
+FFTs will be O((K + P) × N log N).
+
+Liu et al. (2006) developed a hybrid algorithm based on Kyriakidis et al.’s (2005) full
+FFT-based algorithm to calculate support-to-support covariances. Instead of performing
+the forward FFT on both of the supports’ extended sampling function vectors and the ﬁrst
+row of the extended point covariance matrix, Liu et al.’s (2006) algorithm only performs
+the forward FFT on the ﬁrst support’s extended sampling function vector and the ﬁrst row
+of the extended point covariance matrix. The inverse FFT is performed on the product of
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 International Journal of Geographical Information Science
+
+1247
+
+these two FFTs to produce the support-to-point covariance matrix for the ﬁrst support.
+Then the support-to-support covariance can be computed via the traditional approach, that
+is, integrating or averaging the support-to-point covariance values over the second support’s
+sampling function vector and this is achieved via a straightforward matrix multiplication.
+The computational complexity of the hybrid approach is O(2K × N log N), whereas the
+complexity of the full FFT-based approach is O((K + P) × N log N). More importantly, the
+full FFT-based approach requires enormous amount of run-time memory space to accom-
+modate the fast Fourier transformed extended sampling function matrices of all source and
+target supports. When double-precision ﬂoating-point numbers (each requires 8 bytes in
+memory) are used to store the matrices, (K + P) × 2Nx × 2Ny × 8 bytes are needed. On
+the other hand, the hybrid approach only needs to store the support-to-point covariance
+matrix for a particular source support at a time, which is merely 2Nx × 2Ny × 8 bytes.
+Once the support-to-support covariance values that involve this source support are com-
+puted, the memory for this support-to-point covariance matrix can be released for the next
+source support. Given the usually large volume of source and target datasets, and the high
+density of discretization points, the fast Fourier transformed sampling function matrices
+and covariance matrices are often too large to ﬁt in the core memory of a processor, which
+may lead to memory allocation failure and has become one of the major factors of degra-
+dation in performance for the FFT-based areal interpolation. One of our case studies (see
+Section 3) was to predict the population densities of watersheds (1633 polygons) in the
+Eastern Time Zone from the population densities of counties (2248 polygons) using a
+discretization grid of 1333 × 917. The full FFT-based approach would require a mem-
+ory space of 141.38 gigabytes (GB) at once just for the fast Fourier transformed sampling
+function matrices, while the hybrid approach only needs 37.3 megabytes (MB) at each iter-
+ation for the support-to-point covariance matrix. Apparently, the hybrid algorithm requires
+much less run-time memory space than the full algorithm does. We therefore chose Liu
+et al.’s (2006) algorithm as the base of our parallel algorithm.
+
+2. Parallelization and implementation
+2.1. Parallelizability analysis
+
+Since the FFT processing for a particular support is independent of that for other supports,
+and the covariance computation between any two supports is also independent of the com-
+putation between any other two supports (see Equation (6)), this step (i.e., step 2 of the
+general algorithm described in Section 1.2) can be easily parallelized. Liu et al.’s (2006)
+hybrid algorithm implies that to compute the STT covariance matrix, it is not necessary to
+perform FFT on both the source supports and the target supports, but only on the source
+supports, which will signiﬁcantly reduce both the memory space needed for the fast Fourier
+transformed sampling function matrices and the CPU time for FFT processing. Therefore,
+this step can be parallelized over the source supports by assigning subsets of source sup-
+ports to multiple processors, so that each processor only computes the support-to-point
+covariances for a particular group of source supports via FFTs. If the processor also holds
+the sampling function vectors of all source and target supports, then a portion of the STS
+covariance matrix and a portion of the STT covariance matrix can be computed locally on
+the processor (the gray parts in Figure 1).
+
+Furthermore, once the global1 STS and STT covariance matrices are computed, the
+Kriging system for estimating the STT weights and the computation of the attribute value
+for a particular target support is also independent of that for other target supports (see
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 1248
+
+Q. Guan et al.
+
+# Source supports (K )
+
+# Target supports (P )
+
+)
+
+ 
+
+K
+
+(
+ 
+s
+t
+r
+o
+p
+p
+u
+s
+ 
+
+e
+c
+r
+u
+o
+S
+#
+
+ 
+
+# Source supports
+assigned to the
+processor (K
+L)
+
+ 
+
+#
+S
+o
+u
+r
+c
+e
+
+ 
+s
+u
+p
+p
+o
+r
+t
+s
+ 
+(
+
+K
+
+)
+
+(a)
+
+(b)
+
+Figure 1. Covariance matrices held by a processor; the gray parts are computed locally on the
+processor (block task mapping). (a) The source-to-source covariance matrix held by a processor. (b)
+The source-to-target covariance matrix held by a processor.
+
+Equation (7)). Thus, these steps (i.e., steps 3 and 4 of the general algorithm described in
+Section 1.2) can be parallelized over the target supports. Each processor is assigned with a
+subset of the target supports, extracts the corresponding covariance values from the global
+STT covariance matrix to construct the Kriging system (Figure 2), and computes the STT
+weights, then computes the attribute values for the local2 target supports.
+
+Two issues are critical for the above parallelization. First, the point covariances are fully
+deﬁned by the covariogram model (i.e., the nugget, sills, ranges, and anisotropy angles) and
+the discretization scheme (i.e., the grid’s node spacing or cell size, and the location of the
+grid origin). In other words, given a particular covariogram model and a discretization
+scheme, the point covariance matrix should always be the same no matter on which pro-
+cessor it is computed. Second, given a particular discretization scheme, the discretization
+process should always produce the same sampling function vectors for the supports no
+matter on which processor it is executed.
+
+In addition, due to the usual large number of source supports in areal interpolation,
+the global STS covariance matrix is often massive in size and requires a large amount
+of computing time to factorize. A parallelization of the factorization process is therefore
+beneﬁcial. As discussed in Section 1.2, the QR factorization is an iterative process. At each
+iteration, each column of the matrix Q (which has the same dimensions as that of the STS
+
+The global source-to-source
+covariance matrix (K × K )
+
+t
+e
+g
+r
+a
+t
+-
+o
+t
+-
+e
+c
+r
+u
+o
+s
+ 
+l
+a
+c
+o
+l
+ 
+e
+h
+T
+
+)
+
+L
+
+ 
+
+P
+×
+K
+
+ 
+
+(
+ 
+x
+i
+r
+t
+a
+m
+
+ 
+t
+h
+g
+e
+w
+
+i
+
+t
+e
+g
+r
+a
+t
+-
+o
+t
+-
+e
+c
+r
+u
+o
+s
+ 
+l
+a
+c
+o
+l
+ 
+e
+h
+T
+
+)
+
+L
+
+ 
+
+P
+×
+K
+
+ 
+
+(
+ 
+x
+i
+r
+t
+a
+m
+ 
+e
+c
+n
+a
+i
+r
+a
+v
+o
+c
+
+# Target supports (P )
+
+The global source-to-target
+covariance matrix (K × P )
+
+Extract
+
+# Target supports assigned
+to the processor (P
+
+L)
+
+#
+ 
+S
+o
+u
+r
+c
+e
+ 
+s
+u
+p
+p
+o
+r
+t
+s
+ 
+(
+
+K
+
+ 
+
+)
+
+Figure 2. Kriging system constructed locally on a processor (block task mapping).
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 International Journal of Geographical Information Science
+
+1249
+
+covariance matrix) is updated independently. Thus, a QR factorization can be parallelized
+over the columns of Q (Grama et al. 2003, Karniadakis and Kirby 2003).
+
+2.2. Parallel algorithm design
+In this study, the parallelization of the FFT-based geostatistical areal interpolation algo-
+rithm includes three parallel processes: (1) the FFT processing for the source supports and
+the computation of the STS and STT covariance matrices; (2) the QR factorization of the
+STS covariance matrix; and (3) the computation of the STT weights via Kriging and the
+consequent computation of attribute values for the target supports.
+The detailed work ﬂow is described as follows (Figure 3):
+
+(1) Broadcasting the dataset, covariogram model, and discretization scheme
+
+The geometry of both the source and target supports, the attribute data of the
+source supports, and a user-deﬁned covariogram model are read onto the master
+processor. Based on the user-deﬁned discretization options and the spatial infor-
+mation obtained from the source and target supports, a discretization scheme is
+determined by the master processor. All these data are then broadcasted from the
+master processor to all the processors engaged in the computation.
+
+(2) Constructing the point covariance matrix and performing FFT
+
+On each processor, the covariogram model and discretization scheme are used to
+construct the ﬁrst row of the extended point covariance matrix. Then a forward
+FFT is performed on it. These processes are performed on all processors instead
+of performing them on the master processor and broadcasting the resultant vector
+to other processors, because transferring the resultant vector through the inter-
+connecting network linking the processors is much less efﬁcient than computing
+it locally on the processors, given that the size of the vector is usually large and
+the transfer rate of the network is low.
+(3) Discretizing source and target supports
+
+The geometry of the source and target supports is used to build the sampling
+function matrices for all source and target supports based on the discretization
+scheme obtained in step 1. Extremely small supports (i.e., supports into which no
+discretization point falls) will be ignored and their corresponding entries will be
+removed from the sampling function matrices. Attribute values corresponding to
+such small supports will also be removed from the attribute vector as well. Note
+this step is also performed on all processors, for the same reason given above. As
+discussed in Section 2.1, all processors will generate identical fast Fourier trans-
+formed extended point covariance map and sampling function matrices, since they
+hold the same covariogram model, discretization scheme, and support geometrical
+data.
+
+(4) Task mapping
+
+On each processor, two task maps are built based on the user-deﬁned task-
+mapping option for both the source and target supports. A task map contains as
+many entries as the number of the processors, and each entry contains a proces-
+sor’s ID and the IDs of supports that are assigned to the process (Table 1). Note
+that since all processors use the same task-mapping scheme, task maps should be
+identical across processors.
+The task-mapping scheme determines which task will be executed on which
+processor. It divides the task set into a certain number (usually the number of
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 1250
+
+Q. Guan et al.
+
+Figure 3. Three parallel processes for the FFT-based areal interpolation.
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 International Journal of Geographical Information Science
+
+1251
+
+Table 1. An example of task map produced by a block task-
+mapping scheme.
+
+Processor ID
+
+0
+1
+. . .
+NP–1
+
+Support IDs
+
+0, 1, 2, . . ., i
+i + 1, i + 2, . . ., j
+. . .
+l, l + 1, . . ., k
+
+processors, or NP) of task subsets and assigned them to processors. Several
+task-mapping schemes can be used, for example, block, cyclic, block–cyclic,
+cyclic–block, and random. Given a vector of tasks (i.e., supports in this case),
+the block task-mapping scheme partitions the vector into NP equally sized seg-
+ments and assigns each segment to a processor, so that each processor will have a
+set of consecutive tasks to perform locally (Figure 4a). In contrast, the cyclic map-
+ping scheme starts from the ﬁrst task of the task vector, and repeatedly assigns a
+task per processor until the end of the task vector (Figure 4b). The block–cyclic
+and cyclic–block mapping schemes are simply the combinations of the block and
+cyclic schemes. The random mapping scheme also repeatedly assigns a task per
+processor, but chooses the task randomly from the task set instead of following the
+order of the task vector as the cyclic mapping scheme does (Figure 4c). Since all
+processors use the same random seed that is generated and broadcasted from the
+master processor, they will generate the same random number sequence, hence
+identical task maps.
+Note that the dimensions of the sampling function vectors for all supports should
+be identical because they are built based on the same discretization scheme, thus
+the computational complexity of the FFT performed on the sampling function
+vector should be the same, that is, O(N log N), across supports. Also, the com-
+putational complexity of solving the Kriging system and computing the attribute
+value is the same for each target support. Since all task-mapping schemes used in
+this study distribute approximately the same number of source supports and target
+supports to processors, the workload of support-to-support covariance computa-
+tion and target attribute prediction for each processor should be the very similar.
+In other words, the workload is evenly distributed onto processors.
+
+(5) Computing local STS and STT covariance values via FFT (ﬁrst parallel process,
+
+Figure 5)
+According to its assignments in the source task map constructed in the previous
+step, each processor extracts the sampling function vectors from the source sam-
+pling function matrix consecutively, one at a time. For a source support to be
+processed locally, a forward FFT is ﬁrst applied on the extended sampling func-
+tion vector, and the resultant matrix is multiplied with the fast Fourier transformed
+extended point covariance matrix, which is obtained in step 2. An inverse FFT
+is then applied on the multiplication resultant matrix to produce the support-to-
+point covariance matrix for this particular source support. By using the traditional
+approach for calculating support-to-support covariances, that is, integrating the
+ﬁrst support’s support-to-point covariance values over the sampling functions of
+the second support, the covariance values between this source support and other
+source supports and all target supports are computed locally. Once the STS and
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 1252
+
+Q. Guan et al.
+
+Figure 4. Task-mapping schemes for eight tasks and four processors. (a) Block task mapping;
+(b) cyclic task mapping; (c) random task mapping.
+
+STT covariance values for a local source support are computed, the support-
+to-point covariance matrix for this source support is eliminated to release the
+memory space. By repeating this process on all local source supports, a processor
+computes a part of the global STS covariance matrix and a part of the global STT
+covariance matrix (the gray parts in Figure 1). Note that since the STS covariance
+matrix is a symmetric matrix along the diagonal, that is, Cov(sk, sk(cid:3)) = Cov(sk(cid:3) , sk),
+only one side (upper or lower) of the diagonal of the covariance matrix needs to be
+computed (in this study, the upper part is computed, Figure 6), and the other part
+can be obtained by simply copying the corresponding values from the computed
+part.
+
+(6) Exchanging covariance values and completing global STS and STT covariance
+
+matrices
+The processors exchange the values that have been computed locally to form the
+global STS and STT covariance matrices. Again, since the STS covariance matrix
+is symmetric along the diagonal, only one side of the diagonal (upper part in
+this study) needs to be exchanged, and the resultant matrix is an upper diagonal
+matrix. The global STS covariance matrix is then completed by copying the values
+from the upper side to the mirror entries in the lower part of the matrix.
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 International Journal of Geographical Information Science
+
+1253
+
+Figure 5. Detailed workﬂow of a processor for the ﬁrst parallel process.
+
+(7) Performing QR factorization on the global STS covariance matrix (second
+
+parallel process, Figure 7)
+After step 6, each processor has a copy of the global STS covariance matrix in
+memory. A parallel QR factorization is then performed. The cyclic task-mapping
+scheme is used over the columns of the matrix Q (see Section 1.2) to evenly dis-
+tribute the workloads onto processors. At each iteration, each processor updates
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 1254
+
+Q. Guan et al.
+
+# Source supports (K)
+
+)
+
+K
+
+(
+ 
+s
+t
+r
+o
+p
+p
+u
+s
+ 
+e
+c
+r
+u
+o
+S
+ 
+#
+
+Only this part needs to
+be computed via FFTs
+
+# Source supports
+assigned to the
+processor (K
+L)
+
+Figure 6. Part of the global STS covariance matrix is computed locally via FFTs.
+
+a particular group of the columns of Q, and a completed column (that will not
+be updated again and will be used at the next iteration by all processors) is
+broadcasted to all processors. In the end, all processors have an identical QR fac-
+torization (including an orthogonal matrix Q and an upper-triangular matrix R)
+of the STS covariance matrix in memory. Since the parallel algorithms for QR
+
+Processor i
+
+Global source-to-
+source covariance
+matrix
+
+Broadcast
+
+Gray columns are computed
+locally and iteratively
+
+Broadcast
+
+Q Matrix
+
+R Matrix
+
+0
+
+Figure 7. Detailed workﬂow of a processor for the second parallel process.
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 International Journal of Geographical Information Science
+
+1255
+
+factorization are quite mature and have been discussed extensively in the liter-
+ature, this article will not elaborate on the details (for more information, see
+Consnard and Robert 1986, Cosnard et al. 1986, Chu and George 1990). Note
+that unlike the other two parallel processes that do not require communication
+among processors during the computation, this parallel QR factorization process
+involves frequent data exchange along the iterations, which may become a major
+bottleneck of speed-up as the number of processors increases. To reduce the effect
+of communication overhead on the performance, the unblocking communication
+technique is used to overlap computation and data exchange (for technical details,
+see Gropp et al. 1998).
+
+(8) Constructing the Kriging system and computing the local STT weight matrix and
+
+local target predictions (third parallel process, Figure 8)
+According to its assignment in the target task map built in step 4, each processor
+extracts the covariance values from the global STT covariance matrix to form a
+local STT covariance matrix (the gray part in Figure 2). The local STT covari-
+ance matrix, together with the QR factorization of the STS covariance matrix,
+will be used to solve the Kriging system and obtain the local STT weights on
+
+Processor i
+
+Global source-to-target
+covariance matrix
+
+Local target supports:
+Target 0
+Target 1
+...
+Target P
+
+L
+
+Extarct
+
+Q
+
+R
+
+Local source-to-target
+covariance matrix
+(the gray part in Figure 2)
+
+Kriging
+
+Source
+data
+
+Local source-to-target
+weight matrix
+
+Multiply
+
+Local target values
+
+Figure 8. Detailed workﬂow of a processor for the third parallel process.
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 1256
+
+Q. Guan et al.
+
+each processor (see Section 1.2). The local target attribute predictions are then
+computed using the source attribute values and STT weights (Davis and Grivet
+1984).
+
+(9) Gathering target values and outputting
+
+The master processor gathers the predicted target attribute values from all proces-
+sors, re-orders them according to the target task map, and writes them back to the
+database.
+
+2.3.
+
+Implementation
+
+The parallel algorithm discussed above was implemented (see Appendix 1) using the
+C++ programming language and the Message Passing Interface (MPI), which is a
+standard parallel programming paradigm (Gropp et al. 1998) supported by almost all
+parallel computing systems. The FFT-based support-to-support covariance computation
+code was originally written by Liu et al. (2006) and was then modiﬁed to meet the
+requirements of this parallel algorithm. For the support-to-support covariance compu-
+tation, two public-domain libraries were used: the FFTW (www.fftw.org) was used to
+perform the FFT processing and the GsTL (http://pangea.stanford.edu/∼nremy/GTL/)
+was used to compute the point covariance. For geospatial data input and output, the
+Shapeﬁle C Library (http://shapelib.maptools.org/) was used to read and write shape-
+ﬁles. For matrix manipulation and operation, the Template Numerical Toolkit (TNT,
+http://math.nist.gov/tnt/index.html) was used to manage and process the matrices in
+memory, for example, the STS and STT covariance matrices, the STT weight matrix, and
+so on. A parallel QR factorization algorithm was implemented by modifying the source
+code of the TNT library.
+
+Several C++ classes were developed to manage the information used in the algorithm,
+for example, the covariogram model, the discretization scheme, and the task map. A suite
+of functions was also developed to transfer the information and data (e.g., shapeﬁle objects
+and TNT matrices) among processors for parallel computing.
+
+Besides the input shapeﬁles of source and target supports, the program also requires
+users to specify the discretization density (i.e., the cell size of the resultant raster) and to
+provide a ﬁle specifying the covariogram model of the underlying discretization points.
+Users are also allowed to choose the task-mapping scheme. Users can choose either simple
+Kriging or ordinary Kriging to compute the STT weights, but they have to provide the
+target mean if simple Kriging is chosen.
+
+3. Experiments and performance
+3.1. Datasets and experiment design
+
+Two datasets were used in our experiments to test the computational performance and scala-
+bility (i.e., changes in performance when using different numbers of processors and dealing
+with different sizes of datasets) of the parallel areal interpolation program.
+
+(1) Population densities in the Eastern Time Zone. The counties in the Eastern Time
+Zone (2248 polygons) served as the source supports, and their population den-
+sities (people/miles2) in year 2000 as the known source data. The watersheds in
+the Eastern Time Zone (1633 polygons) served as the target supports and their
+population densities were to be predicted.
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 International Journal of Geographical Information Science
+
+1257
+
+(2) Population densities in the continental United States. The counties in the con-
+tinental United States (4703 polygons) served as the source supports, and their
+population densities (people/miles2) in year 2000 as the known source data. The
+watersheds in the continental United States (3848 polygons) served as the target
+supports and their population densities were to be predicted.
+
+A discretization scheme of 2000 meter cell size (i.e., node spacing) was used for both
+datasets, yielding a 1333 × 917 grid for the Eastern Time Zone dataset and a 1452 × 2348
+grid for the continental US dataset. The size of the continental US dataset is signiﬁcantly
+larger than that of the Eastern Time Zone dataset in all aspects, that is, the number of source
+supports (4703 vs. 2248), the number of target supports (3848 vs. 1633), and the number
+of discretization points (3.4 million vs. 1.2 million). The size of a dataset determines not
+only the amount of computing time but also the communication overhead, hence affects the
+performance, that is, speed-up and efﬁciency. Thus, the continental US dataset presents a
+much larger problem size to the areal interpolation algorithm than the Eastern Time Zone
+data does. Ideally, a well-designed and implemented parallel algorithm should scale well
+with the problem size, that is, the effect of problem size on the speed-up and efﬁciency is
+optimally minimized.
+
+3.2. Performance evaluation
+
+All experiments were conducted on a Linux cluster that consists of 1151 nodes, 280 of
+which have two AMD quad core processors (2.2 GHz, 8 GB RAM per node), the other
+871 nodes have two dual core Opteron processors (2.8 GHz, 8 GB RAM per node). All
+nodes are connected with 800 MB/second InﬁniBand. The program was forced to run
+only on the Opteron nodes in order to minimize the effect of the variation of processors’
+computing speed. Note that the minimum computing unit in this cluster is the CPU core,
+and each core serves as an independent ‘processor’ with a maximum memory of 2 GB. The
+following performance analysis will use the terms ‘core’ and ‘processor’ interchangeably.
+The computing times were recorded for runs with different computing scenarios (e.g.,
+input covariogram model, number of CPU cores, and task-mapping scheme). Since the
+variation of covariogram model does not cause signiﬁcant change in the overall computa-
+tional complexity, one can expect minimal effect on the performance to be introduced by
+such variation. The experiments also veriﬁed this hypothesis. Using different covariogram
+models, the average difference in computing time accounted for less than 2% of the overall
+time for the continental US dataset. Since the prediction accuracy and uncertainty are not
+the focus of this study, the performance analysis will be based on the experiments using a
+relatively simple spherical covariogram model, which was designed based on no empirical
+knowledge of the regions.
+
+Also, because all task-mapping schemes used in this study distribute the same number
+of supports to the CPU cores, the workload distribution among cores is approximately
+the same for all mapping schemes. In fact, the experiments showed very little difference
+in computing time caused by task-mapping schemes. On average, only 3% of the total
+computing time for the continental US dataset was found different using different mapping
+schemes. Thus, the performance analysis will only focus on the results obtained using a
+particular task-mapping scheme, that is, the cyclic scheme. The prediction results using
+ordinary Kriging are shown in Figures 9 and 10.
+
+Using only one CPU core, it took the program 3577.78 seconds (about 1 hour) to pro-
+cess the Eastern Time Zone dataset and 29341.48 seconds (more than 8 hours) to process
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 1258
+
+Q. Guan et al.
+
+(a)
+
+(b)
+
+Population density
+(People/SquareMile)
+
+0.0–24.7
+24.8–38.4
+38.5–56.8
+56.9–74.6
+74.7–84.1
+84.2–114.2
+114.3–202.3
+202.4–350.2
+350.3–805.8
+805.9–66934.3
+
+0
+
+395,000
+
+790,000
+
+1,580,000 m
+
+N
+
+Figure 9. Predictions of population densities of watersheds in the Eastern Time Zone. (a) Population
+densities of counties and (b) population densities of watersheds.
+
+the continental US dataset, which places this geostatistical areal interpolation at the very
+edge of feasibility in real-world applications. However, with more CPU cores utilized, the
+computing time was drastically reduced (Figure 11). When 512 cores were used, only 16.35
+seconds were needed for the Eastern Time Zone dataset and 91.61 seconds for the conti-
+nental US dataset, which can be considered reasonably practicable for actual geospatial
+analysis applications. Experiments also showed that the computing time for the sequen-
+tial processes (e.g., support discretization and task mapping) remained almost static, and
+the communication and waiting time (besides the communication embedded in the second
+parallel process) slightly increased as the number of CPU cores increased. The sequential
+computation and communication/waiting only took a small fraction of the overall comput-
+ing time when small numbers of CPU cores were used and occupied larger proportion as the
+
+(a)
+
+(b)
+
+Population density
+(People/SquareMile)
+
+0.0–7.3
+
+7.4–18.5
+
+18.6–30.2
+
+30.3–39.5
+
+39.6–58.2
+
+58.3–79.8
+
+79.9–114.2
+
+114.3–202.3
+
+202.4–534.4
+
+534.5–66934.3
+
+0
+
+700,000
+
+1,400,000
+
+2,800,000 m
+
+N
+
+Figure 10. Predictions of population densities of watersheds in the continental United States. (a)
+Population densities of counties and (b) population densities of watersheds.
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 International Journal of Geographical Information Science
+
+1259
+
+1
+
+2
+
+4
+
+128
+
+256
+
+512
+
+16
+
+64
+8
+Number of CPU cores
+
+32
+
+(a)
+
+)
+s
+(
+ 
+e
+m
+
+i
+t
+ 
+g
+n
+i
+t
+u
+p
+m
+o
+C
+
+4000
+3500
+3000
+2500
+2000
+1500
+1000
+500
+0
+
+(b)
+
+)
+s
+(
+ 
+e
+m
+
+i
+t
+ 
+g
+n
+i
+t
+u
+p
+m
+o
+C
+
+35000
+
+30000
+
+25000
+
+20000
+
+15000
+
+10000
+
+5000
+
+0
+
+1
+
+2
+
+4
+
+16
+
+64
+8
+Number of CPU cores
+
+32
+
+128
+
+256
+
+512
+
+Figure 11. Computing times (cyclic task mapping).
+(b) continental US dataset.
+
+(a) Eastern Time Zone dataset and
+
+number of cores increased and the computing time for the parallel processes signiﬁcantly
+decreased (Figure 12).
+
+Figure 13 shows the speed-ups that the program and its three parallel processes
+achieved. Speed-up is one of the most frequently used criteria for assessing the perfor-
+mance of parallel programs. Considering an algorithm that executes on a parallel system
+with p processors (i.e., CPU cores in this study) in time tp, and the one that executes on
+a sequential system (with only one processor) in time t1, the speed-up is deﬁned as the
+following ratio:
+
+Sp = t1
+tp
+
+In most cases, 1 ≤ Sp ≤ p (Cosnard and Trystram 1995). Note that Sp = p is the ideal case
+(termed linear speed-up), which means the algorithm is perfectly parallelized and the work-
+load is evenly distributed amount processors. Since most algorithms are not completely
+parallelizable, some of their parts have to be executed sequentially, and the communica-
+tion between processors is usually inevitable, this ideal linear case is very hard to achieve.
+However, in some rare cases, super linear speed-up (Sp > p) may occur. With the larger
+accumulated cache size when using multiple processors, more or even all dataset can ﬁt
+into caches and the memory access time will be reduced dramatically, which yields extra
+speed-up in addition to that from the increased computing power.
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 Q. Guan et al.
+
+1
+
+2
+
+4
+
+8
+
+16
+
+32
+
+64 128 256 512
+
+Number of CPU cores
+
+1260
+
+(a)
+
+100.00
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+ 
+e
+m
+
+i
+t
+ 
+g
+n
+i
+t
+u
+p
+m
+o
+C
+
+(b)
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+ 
+e
+m
+
+i
+t
+ 
+g
+n
+i
+t
+u
+p
+m
+o
+C
+
+90.00
+
+80.00
+
+70.00
+
+60.00
+
+50.00
+
+40.00
+
+30.00
+
+20.00
+
+10.00
+
+0.00
+
+100.00
+
+90.00
+
+80.00
+
+70.00
+
+60.00
+
+50.00
+
+40.00
+
+30.00
+
+20.00
+
+10.00
+
+0.00
+
+Comm & Wait
+
+Sequential computation
+
+3rd parallel process
+
+2nd parallel process
+
+1st parallel process
+
+Comm & Wait
+
+Serial computation
+
+3rd parallel process
+
+2nd parallel process
+
+1st parallel process
+
+1
+
+2
+
+4
+
+8
+
+16
+
+32
+
+64
+
+128 256 512
+
+Number of CPU cores
+
+Figure 12. Computing time percentages (cyclic task mapping). (a) Eastern Time Zone dataset and
+(b) continental US dataset.
+
+In this parallel areal interpolation program, the ﬁrst parallel process (i.e., the FFT-based
+computation of support-to-support covariance matrices) constantly yielded near linear
+speed-ups for both datasets, due to its even distribution of workload among processors
+and minimal requirement for communication during the computation. In contrast, the sec-
+ond parallel process (i.e., the QR factorization) involves frequent data exchange during the
+computation (i.e., the broadcast of a completed column of matrix Q at each iteration). In the
+experiments, the speed-ups of the second parallel process also demonstrated an increasing
+trend in general, but the pace of increase was signiﬁcantly reduced by the increased cost
+of communication caused by larger number of processors (i.e., cores). The third parallel
+process (i.e., the computation of STT weights and target attribute values) yielded super lin-
+ear speed-ups, most likely because of the reason mentioned above. The overall speed-ups,
+when relatively small numbers of CPU cores (≤ 128) were used, were largely determined
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 International Journal of Geographical Information Science
+
+1261
+
+Figure 13. Speed-ups (cyclic task mapping). (a) Eastern Time Zone dataset and (b) continental US
+dataset.
+
+by the ﬁrst parallel process for its dominating occupation of the overall computing time,
+and demonstrated a near linear increasing pattern. As larger numbers of cores were used
+(≥ 256), the time proportion of the ﬁrst parallel process (along with other two parallel pro-
+cesses) greatly decreased, and the sequential computation and communication increased
+their proportions in the overall computing time. Thus, the overall speed-ups slowed down
+and shifted away from the linear speed-up.
+
+A comparison between the speed-ups for both datasets showed a similar increasing
+pattern in most cases, meaning this parallel program scales well for different problem
+sizes. The similarity remains until 512 CPU cores are used, when the computing time for
+sequential computation and communication outweighs the time for parallel processes for
+the Eastern Time Zone dataset, whereas the parallel processes still occupy the majority of
+the overall computing time for the continental US dataset (see Figure 12).
+
+Figure 14 shows the efﬁciencies of the parallel program and its three parallel processes.
+
+Efﬁciency ep is calculated based on speed-up as follows:
+
+ep = Sp
+p
+
+(11)
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 1262
+
+Q. Guan et al.
+
+Figure 14. Efﬁciencies (cyclic task mapping). (a) Eastern Time Zone dataset and (b) continental
+US dataset.
+
+Efﬁciency is used to measure the average utilization of processors. In most cases,
+ep ≤ 1. The better the parallelism of the algorithm, the nearer ep is to 1. When linear speed-
+up is achieved, ep equals to 1. Generally, efﬁciency declines as the number of processors
+increases, because the communication overhead increases.
+
+For both datasets, the efﬁciency of the ﬁrst parallel process remained nearly static
+around 1; the efﬁciency of the second parallel process dropped quickly as the number
+of cores increased because of the embedded communication overhead; and the efﬁciency
+of the third parallel process stayed above 1 for its super linear speed-up. The overall efﬁ-
+ciency for both datasets gradually dropped down as the number of CPU cores increased,
+but stayed above 0.8 in most cases until the number of cores reached 128.
+
+4. Conclusion and discussion
+Geostatistical areal interpolation based on variants of Kriging remains extremely compu-
+tationally intensive, requiring extensive amount of memory space and massive computing
+power. Little work has been done to employ parallel computing technology to tackle such
+computational obstacle. This study parallelizes the FFT/Kriging-based areal interpolation
+algorithms and attempts to promote its usage in real-world spatial analysis applications.
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 International Journal of Geographical Information Science
+
+1263
+
+The parallel areal interpolation algorithm developed in this study includes three parallel
+processes: (1) the FFT processing for the source supports and the computation of STS and
+STT covariance matrices; (2) the QR factorization of the STS covariance matrix; (3) the
+computation of STT weights via Kriging and the computation of attribute values for the
+target supports. The implementation of this parallel algorithm utilizes the general-purpose
+MPI library and other public-domain programming libraries, thus ensuring the portability
+of the algorithm across a large variety of parallel computing systems.
+
+Experiments using real-world datasets showed that this parallel algorithm drasti-
+cally reduced the computing time, achieved fairly high speed-ups and efﬁciencies, and
+scaled reasonably well as the number of processors increased and as the problem size
+increased. With the increasingly wide adoption of high-performance computing tech-
+nologies, including massive supercomputers, computer clusters, multi-core computers,
+distributed computing, and the recently emerging Cyberinfrastructure (i.e., Grid comput-
+ing and Cloud computing), users are able to perform such geostatistical areal interpolation
+with vast volume of geospatial datasets, which used to be infeasible for real-world geospa-
+tial applications in terms of memory space and computing time, within a practically short
+period of time. Also, the parallel program developed in this study can be easily added to
+an existing ArcGIS toolbox developed by Schneider and Kyriakidis (2006), which pro-
+vides a graphical user interface for geostatistical areal interpolation. To do so, a link to a
+MPI-based parallel computing environment (e.g., a local multi-core computer or a remote
+high-performance computing system) needs to be established, which can be implemented
+using a Python wrapper.
+
+The parallel algorithm developed in this study is based on global Kriging, which uses
+attribute values at all available source supports to predict the attribute value of a particular
+target support. To this respect, (global) area-to-point Kriging or downscaling (Kyriakidis
+2004, Yoo et al. 2010) would beneﬁt from the parallel computing speed-ups achieved in this
+work. Nevertheless, global Kriging is more computationally expensive and requires more
+memory space and computing time compared to local Kriging (Goovaerts 1997, Chilès and
+Delﬁner 1999). Even though this parallelization approach can be adapted to local Kriging,
+an efﬁcient neighbor-searching process will be needed.
+
+Also, this study uses regular discretization grids for support-to-support covariance
+computation, because FFT-based technology can only be used when covariance integrals
+are discretized with such regular schemes (Chilès and Delﬁner 1999). Evidently, irregular
+discretization grids may be used in some cases by specifying scattered locations at which
+the point covariance model will be evaluated. For irregularly shaped areal units, this would
+result in fewer discretization points and lower computational intensity (Goovaerts 2008),
+as compared with a regular grid attempting to adequately discretize complex geometrical
+shapes. Nevertheless, the parallelization approach used in this study will still stand for
+geostatistical areal interpolation with irregular discretization grids. Since supports may be
+discretized using different schemes, the dimensions of the sampling function vector (hence
+the number of discretization points N) will no longer be uniform as in regular grid cases,
+thus the computational complexity for the support-to-support covariance may vary across
+supports. Therefore, a discretization-based task-mapping scheme is needed to optimally
+distribute the workload to processors. Static task-mapping heuristics (Braun et al. 2001)
+can be used in this case because the computational intensity can be estimated based on the
+number of discretization points.
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 1264
+
+Notes
+
+Q. Guan et al.
+
+1. A global matrix refers to a matrix that includes all support-to-support pairs. For example, a
+global STT covariance matrix includes the covariance values between all source and all target
+supports.
+
+2. Local supports refer to the supports assigned to a particular processor.
+
+References
+Armstrong, M.P. and Marciano, R., 1993. Parallel spatial interpolation. In: Proceedings of the
+eleventh international symposium on computer-assisted cartography (Auto-Carto 11). Bethesda,
+MD: American Congress on Surveying and Mapping, 414–423.
+
+Armstrong, M.P. and Marciano, R., 1994. Inverse distance weighted spatial interpolation using a
+parallel supercomputer. Photogrammetric Engineering and Remote Sensing, 60 (9), 1098–1104.
+Armstrong, M.P. and Marciano, R., 1995. Massively parallel processing of spatial statistics.
+
+International Journal of Geographical Information Science, 9 (2), 169–189.
+
+Armstrong, M.P. and Marciano, R.J., 1996. Local interpolation using a distributed parallel supercom-
+
+puter. International Journal of Geographical Information Systems, 10 (6), 713–729.
+
+Armstrong, M.P. and Marciano, R.J., 1997. Massively parallel strategies for local spatial interpola-
+
+tion. Computers & Geosciences, 23 (8), 859–867.
+
+Braun, T., et al., 2001. A comparison of eleven static heuristics for mapping a class of independent
+tasks onto heterogeneous distributed computing systems. Journal of Parallel and Distributed
+Computing, 61 (6), 810–837.
+
+Chilès, J. and Delﬁner, P., 1999. Geostatistics: modeling spatial uncertainty. New York: Wiley.
+Chu, E. and George, A., 1990. QR factorization of a dense matrix on a hypercube multiprocessor.
+
+SIAM Journal on Scientiﬁc and Statistical Computing, 11 (5), 990–1028.
+
+Cosnard, M., Muller, J.-M., and Robert, Y., 1986. Parallel QR decomposition of a rectangular matrix.
+
+Numerische Mathematik, 48 (2), 239–249.
+
+Consnard, M. and Robert, Y., 1986. Complexity of parallel QR factorization. Journal of ACM, 33
+
+(4), 712–723.
+
+Thomson Computer Press.
+
+Cosnard, M. and Trystram, D., 1995. Parallel algorithms and architecture. Boston, MA: International
+
+Davis, M.W. and Grivet, C., 1984. Kriging in a global neighborhood. Journal of the International
+
+Association for Mathematical Geology, 16 (3), 249–265.
+
+Frigo, M., 1999. A fast Fourier transform compiler. AGM SIGPLAN Notices, 34 (5), 169–180.
+Gajraj, A., Joubert, W., and Jones, J., 1997. A parallel implementation of kriging with a trend. Los
+
+Alamos, NM: Los Alamos National Lab.
+
+Goodchild, M.F., Anselin, L., and Deichmann, U., 1993. A framework for the areal interpolation of
+
+socioeconomic data. Environment and Planning A, 25 (3), 383–397.
+
+Goodchild, M.F. and Lam, N.S.N., 1980. Areal interpolation: a variant of the traditional spatial
+
+problem. Geo-Processing, 1 (3), 297–312.
+
+Goovaerts, P., 1997. Geostatistics for natural resources evaluation. New York: Oxford University
+
+Press.
+
+Press.
+
+Goovaerts, P., 2008. Kriging and semivariogram deconvolution in the presence of irregular geograph-
+
+ical units. Mathematical Geosciences, 40 (1), 101–128.
+
+Grama, A., et al., 2003. Introduction to parallel computing. New York: Addison-Wesley.
+Gropp, W., et al., 1998. MPI: the complete reference. Vol. 2. Cambridge, MA: The MIT Press.
+Haining, R., 2003. Spatial data analysis: theory and practice. Cambridge: Cambridge University
+
+Hawick, K.A., Coddington, P., and James, H., 2003. Distributed frameworks and parallel algorithms
+
+for processing large-scale geographic data. Parallel Computing, 29 (10), 1297–1333.
+
+Karniadakis, G. and Kirby, R., II., 2003. Parallel scientiﬁc computing in C and MPI: a seamless
+approach to parallel algorithms and their implementation. New York: Cambridge University
+Press.
+
+Kerry, K.E. and Hawick, K.A., 1998. Kriging interpolation on high-performance computers. In
+Proceedings of the international conference and exhibition on high-performance computing and
+networking. Berlin: Springer-Verlag, 429–438.
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 International Journal of Geographical Information Science
+
+1265
+
+Kyriakidis, P.C., 2004. A geostatistical
+Geographical Analysis, 36 (3), 259–289.
+
+framework for area-to-point spatial
+
+interpolation.
+
+Kyriakidis, P.C. and Goodchild, M.F., under review. A geostatistical perspective on cartographic
+methods of areal interpolation. International Journal of Geographical Information Science.
+Kyriakidis, P.C., Schneider, P., and Goodchild, M.F., 2005. Improving spatial data interoperability
+using geostatistical support-to-support interpolation. In: Proceedings of geoComputation. Ann
+Arbor, MI: University of Michigan.
+
+Liu, Y., Jiang, Y., and Kyriakidis, P., 2006. Calculation of average covariance using fast Fourier
+transform (FFT). Menlo Park, CA: Stanford Center for Reservoir Forecasting, Petroleum
+Engineering Department, Stanford University.
+
+Morrison, J., 2000. Kriging in a parallel environment. In: Proceedings of geomatics for informed
+
+decisions (GEOIDE). Calgary, Alberta.
+
+Pedelty, J., et al., 2003. High performance geostatistical modeling of biospheric resources in the
+Cerro Grande Wildﬁre Site, Los Alamos, New Mexico and Rocky Mountain National Park,
+Colorado. In: Proceedings of earth science technology conference (ESTC). College Park, MD:
+University of Maryland
+
+Rossini, A.J., Tierney, L., and Li, N., 2007. Simple parallel statistical computing in R. Journal of
+
+Computational & Graphical Statistics, 16 (2), 399–420.
+
+Schneider, P. and Kyriakidis, P.C., 2006. Improving spatial support interoperability in GIS using
+geostatistics: An areal interpolation toolbox. In: Proceedings of the 4th international conference
+on geographic information science. Münster, Germany: GIScience.
+
+Wang, S. and Armstrong, M.P., 2003. A quadtree approach to domain decomposition for spatial
+
+interpolation in grid computing environments. Parallel Computing, 29 (10), 1481–1504.
+
+Yoo, E.H. and Kyriakidis, P.C., 2008. Area-to-point prediction under boundary conditions.
+
+Geographical Analysis, 40 (4), 355–379.
+
+Yoo, E., Kyriakidis, P.C., and Tobler, W., 2010. Reconstructing population density surfaces from areal
+data: a comparison of Tobler’s pycnophylactic interpolation method and area-to-point kriging.
+Geographical Analysis, 42 (1), 78–98.
+
+Appendix 1. Introduction to the Supplementary Materials Parallel Geostatistical
+Areal Interpolation Source Code and Test Data
+1. Code Structure
+
+pArealIntpl
+|
+|—pAI (folder for the parallel areal interpolation source code)
+| |
+| |—data (folder for the test data)
+| | |
+| | |–myCovMod_m.txt (test covariogram model structure)
+| | |
+| | |–us_eastern_pop_2000.∗ (shapeﬁle for test data – source)
+| | |
+| | |–us_eastern_waersheds.∗ (shapeﬁle for test data – target)
+| |
+| |—output (folder for the output tables of computing time)
+|
+|—fftCovLib (folder for the FFT-based covariance computation source code)
+| |
+| |–gstl_lib (folder for the GsTL library)
+|
+|—tnt (folder for the TNT library)
+|
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 1266
+
+Q. Guan et al.
+
+|—shpLib (folder for the Shapeﬁle C library)
+|
+|—ibcast (folder for the unblocking broadcast source code)
+
+2. Compile
+Note: This program has been tested on a CentOS 5.5 Linux system using OpenMPI 1.3.3,
+FFTW 3.2.2, and GCC 4.1.2
+
+(1) Make sure MPI and the FFTW library is installed properly
+(2) Change directory to pAI by typing ‘cd pAI’
+(3) Open Makeﬁle and modify the lines that specify the locations of MPI and FFTW
+(4) Type ‘make depend’
+(5) Type ‘make’ to compile.
+
+After successful compiling, an executable ﬁle named ‘pAI’ will be generated.
+
+3. Covariogram model ﬁle
+A covariogram model can include a nugget and multiple structures, and it must be
+organized as follows:
+
+nugget num_structures
+
+structure_type1 sill1 [ range11 range12 range13 ] [ angle11 angle12 angle13 ]
+
+structure_type1 sill2 [ range21 range22 range23 ] [ angle21 angle22 angle23 ]
+
+where structure_type can be ‘Spherical’, ‘Gaussian’, or ‘Exponential’.
+For areal interpolation (i.e., 2D), only rang1, rang2, and angle1 need to be speciﬁed. Other
+ranges and angles can be set to 0.
+
+IMPORTANT: Angles must be in Radian.
+
+...
+
+Example:
+
+0 1
+
+Spherical 1 [ 5000 3000 0 ] [ 0 0 0 ]
+
+4. Usage
+To run the program in a parallel computing environment:
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 International Journal of Geographical Information Science
+
+1267
+
+mpirun -np <num_proc> pAI -id <timeﬁle_id> -cf <covariance_ﬁlename> -sf
+<source_shpﬁlename> -sa <source_attribute> [-si/sv] -tf <target_shpﬁlename> -ta
+<target_attribute> [-ti/tv] -cs <cell_size> [-ok/-sk <target_mean>] [-bd/-cd/-rdm/-
+bcd <number_of_blocks>/-cbd <number_of_blocks>] [-qr/-lu]
+
+num_proc: number of processors/CPU cores
+timeﬁle_id: a unique ID for the time log ﬁle
+covariance_ﬁlename: covariogram model ﬁle, in ASCII format
+source_shpﬁlename: shapeﬁle name for the source supports
+source_attribute: source attribute ﬁeld name
+-si: use this if the source attribute is extensive, for example, population
+-sv: use this if the source attribute is intensive, for example, population density
+target_shpﬁlename: shapeﬁle name for the target supports
+target_attribute: target attribute ﬁeld name
+-ti: use this if the target attribute is extensive
+-tv: use this if the target attribute is intensive
+cell_size: cell size for discretization, that is, grid spacing
+-ok: use this if ordinary Kriging is to be used (default)
+-sk: use this if simple Kriging is to be used
+Note: The target mean MUST be speciﬁed.
+target_mean: mean value of target attributes
+-bd: block mapping scheme (default)
+-cd: cyclic mapping scheme
+-rdm: random mapping scheme
+-bcd: block–cyclic mapping scheme. The number of blocks MUST be speciﬁed.
+-cbd: cyclic–block mapping scheme. The number of blocks MUST be speciﬁed.
+number_of_blocks: must be speciﬁed when -bcd or -cbd is used.
+-qr: QR factorization. Parallelized (default)
+-lu: LU factorization. NOT parallelized
+
+Example:
+
+./data/
+mpirun -np 32 pAI -id US_PopDensity -cf
+us_eastern_pop_2000.shp -sa POP00SQMIL -sv -tf ./data/ us_eastern_watersheds.shp
+-ta POPSQMIL -tv -cs 2000 -ok -cd -qr
+
+./data/myCovMod_m.txt -sf
+
+Downloaded by [University of Sydney] at 12:38 28 April 2013 

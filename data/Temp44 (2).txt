@@ -1,0 +1,3561 @@
+Geoinformatica (2013) 17:125–172
+DOI 10.1007/s10707-012-0158-7
+
+A generic data model for moving objects
+
+Jianqiu Xu · Ralf Hartmut Güting
+
+Received: 22 December 2011 / Revised: 21 May 2012 /
+Accepted: 6 June 2012 / Published online: 21 June 2012
+© Springer Science+Business Media, LLC 2012
+
+Abstract Moving objects databases should be able to manage trips that pass through
+several real world environments, e.g., road network, indoor. However, the current
+data models only deal with the movement in one situation and cannot represent com-
+prehensive trips for humans who can move inside a building, walk on the pavement,
+drive on the road, take the public vehicles (bus or train), etc. As a result, existing
+queries are solely limited to one environment. In this paper, we design a data model
+that is able to represent moving objects in multiple environments in order to support
+novel queries on trips in different surroundings and various transportation modes
+(e.g., Car, Walk, Bus). A generic and precise location representation is proposed
+that can apply in all environments. The idea is to let the space for moving objects
+be covered by a set of so-called infrastructures each of which corresponds to an
+environment and defines the available places for moving objects. Then, the location
+is represented by referencing to the infrastructure. We formulate the concept of
+space and infrastructure and propose the methodology to represent moving objects
+in different environments with the integration of precise transportation modes. Due
+to different infrastructure characteristics, a set of novel data types is defined to
+represent infrastructure components. To efficiently support new queries, we design
+a group of operators to access the data. We present how such a data model is
+implemented in a database system and report the experimental results. The new
+model is designed with attention to the data models of previous work for free space
+and road networks to have a consistent type system and framework of operators.
+In this way, a powerful set of generic query operations is available for querying,
+together with those dealing with infrastructures and transportation modes. We
+
+J. Xu (B) · R. H. Güting
+
+Database Systems for New Applications, Mathematics and Computer Science,
+FernUniversität Hagen, Hagen, Germany
+e-mail: xjq_cs@yahoo.com.cn
+
+R. H. Güting
+e-mail: rhg@fernuni-hagen.de
+
+126
+
+Geoinformatica (2013) 17:125–172
+
+demonstrate these capabilities by formulating a set of sophisticated queries across
+all infrastructures.
+
+Keywords Moving objects · Data model · Infrastructure
+
+1 Introduction
+
+Moving objects databases have been extensively studied in the last decade due to
+their wide applications, e.g., location-based services [22, 24, 58], transportation and
+road networks [9, 33, 34, 43], nearest neighbor queries [21, 23, 32, 47], and trajectory
+searching [11, 12, 28]. Basically, a moving objects database manages spatial objects
+continuously changing locations over time. To fully understand the mobility of a trav-
+eler, recently researchers started to explore the area of moving objects with different
+transportation modes [39, 45, 59, 60]. People try to discover movement segments with
+determined motion modes from raw GPS data such as walking, driving, taking a bus
+as these pieces of information denote important characteristics of a mobile user’s
+context and can enrich the mobility with informative and context knowledge. To
+completely identify the movement for a person, two factors are needed: where and
+how. In a transportation system, providing a trip with different motion modes and
+the constraint on a mode (e.g., less than two bus transfers) is substantially meaningful
+for a traveler [9]. In respect of all the above work, taking into account transportation
+modes becomes increasingly important for moving objects, and new challenges are
+imposed for a database system to efficiently manage trips passing through several
+environments.
+
+1.1 Motivation
+
+To motivate the scope of this paper, consider the following two movement scenarios
+of Bobby:
+
+M1 walks from his house to the parking lot, and then drives the car along the road
+and highway to his of f ice building, f inally walks from the underground garage
+to his of f ice room.
+
+M2 walks from the house to a bus stop, and then takes a bus to the train station,
+moves from one city to another by train, f inally walks from the train station to
+his of f ice room.
+
+The two trips can be described by a sequence of transportation modes where
+(1) M1: Walk → Car → Indoor; (2) M2: Walk → Bus → Train → Walk → Indoor.
+Each trip passes several environments and each environment owns its possible
+transportation modes. Such comprehensive movements need to be efficiently and
+effectively managed by a database system. Existing data models [14, 18, 20, 22, 42, 44]
+for moving objects only address the issue in a specific environment and cannot
+represent the comprehensive trips above. We classify the current state-of-the-art into
+three categories:
+
+1.
+2.
+3.
+
+free space [14, 16, 18, 42, 52];
+road (spatial) network [20, 22, 44, 50];
+indoor [25, 26].
+
+Geoinformatica (2013) 17:125–172
+
+127
+
+Free space is an environment with no movement constraint. But in practice, ob-
+jects usually move on a pre-defined set of trajectories as specified by the underlying
+network (road, highway, etc). The first two are for outdoor. In daily life, people
+also spend a large amount of time in indoor space such as office buildings, shopping
+centers, etc. According to the Nokia report [2], the percentage of time for people
+staying inside buildings (GPS activates only outdoor) is up to 90%. The models above
+proposed different techniques for location representation and data manipulation.
+Each model can only manage the data limited to one environment. There is no
+management for different environments in a global system and the relationship
+between them is not considered, for example, the places where people can switch the
+transportation mode such as bus stops and building entrances. A complete trip with
+several transportation modes like M1 (M2) is not managed by previous techniques.
+For different applications, the movement is split into several parts each of which fits
+into one environment.
+
+Due to the limitation of data model, interesting queries regarding transportation
+modes and environments cannot be answered. Consider the following two examples.
+
+Q1
+Q2
+
+“where is Bobby at 8am, e.g., at home, in the street or in the of f ice room?”;
+“how long does Bobby walk during his trip?”
+
+If a complete trip is not managed, Q1 and Q2 cannot be supported in one system.
+To answer Q1, one first has to identify the environment that Bobby belongs to at
+the given time instant. For Q2, the walk movement might have several parts located
+in different places (outdoor and indoor). One first has to find all walking parts in
+the whole trip. Most existing methods [14, 18, 42, 52] use a pair (x, y) to identify
+a location; obviously, (x, y) cannot apply for indoor as it is a 3D environment. Of
+course, it is possible to extend the pair to a triple (x, y, z) to represent the location.
+But the method only focuses on geometric properties (e.g., coordinates). The raw
+location data (x, y, z) means nothing else than three real numbers so that it is unable
+to recognize the part for walking (or driving). Usually, a person’s trip has several
+transportation modes, e.g., Bus, Walk, and the trip should be represented in such
+a way that (1) a complete movement is managed; (2) a precise location in each
+environment is defined; and (3) one can efficiently retrieve a sub trip according to
+the transportation mode and distinguish trips with different modes.
+
+Besides free space, road network and indoor, there are still two environments
+that receive little attention: Public Transportation Network (PTN) and Region-
+based Outdoor (RBO). PTN seems to be similar as road network because both
+have pre-defined paths for moving objects. But there are still significant differences:
+(1) the movement in PTN is not only limited to bus routes but also depends on
+time schedules; (2) in a road network one can move any distance along the road
+and change the direction at any junction if allowed, but bus travelers can only start
+and end their movement at bus stops, sole places for transfer. RBO represents the
+area for people walking outside such as pavement and footpath. The overall area in
+a city for outdoor walking can be considered as a relatively large polygon with many
+obstacles inside. The obstacles denote places such as building blocks and junctions
+areas. People can move freely inside the polygon but not directly pass through
+obstacles.
+
+To manage a comprehensive movement in a database system, a data model
+that is able to represent moving objects in all available environments is needed.
+
+128
+
+Geoinformatica (2013) 17:125–172
+
+Although environments have different characteristics such as constrained or free, 2D
+or 3D, and movement depending on other vehicles, the location and moving objects
+representation should be robust and general in order to apply for all cases.
+
+1.2 Data models for moving objects
+
+Basically, there are two contrasting approaches to modeling geometric location data
+[41]: ﬁeld-based and object-based models. The first one considers the space as being
+continuous and empty, and there are discrete entities (objects) moving inside the
+space having their own properties, i.e., coordinates. References [14, 18, 42, 52]
+belong to this category. The other method deals with the world as a surface littered
+with recognizable and geographic objects that are associated with spatial attributes,
+and every location in space is represented by mapping to those objects. Papers
+[10, 20, 35, 40, 51] fall into this category. In this paper, we follow the method
+of the object-based approach but model all environments rather than one. We let
+the geographic space be covered by a set of so-called infrastructures, denoting all
+real world environments. Five infrastructures are considered in total: (1) Public
+Transportation Network, (2) Region-based Outdoor, (3) Free Space, (4) Road
+Network, and (5) Indoor. Each infrastructure consists of a set of components called
+infrastructure objects (IFOBs) that represent available places for moving objects.
+For example, in a road network, IFOBs are roads and streets. Pavements and
+footpaths represented by polygons constitute RBO. The location of moving objects
+is represented by referencing to these IFOBs.
+
+The continuously changing location data is abstractly described by a function
+projecting from time to a location. However, at present the representation is different
+depending on the environment feature. In free space, a pair (x, y) [14, 18, 42, 52]
+is used to identify a location. A road network position is denoted by (rid, pos)
+[20] where rid (∈ Dint) illustrates a road identifier and pos (∈ Dreal) records the
+position on the road. Compared with outdoor, an indoor model should consider both
+horizontal and vertical positions to uniquely identify a location.
+
+To manage moving objects in different environments, the location representation
+should be general and consistent in all cases rather than limited to one. At the same
+time, the unique feature of each individual situation should not be lost. There are
+two challenges (1) IFOBs (e.g., roads, polygons) have diverse characteristics and
+are represented by different data types in the database system; (2) the location is
+related to these heterogeneous IFOBs. Additionally, although there is no IFOB
+in free space, the location model must maintain its feature in order to seamlessly
+integrate such an environment, as the goal is to represent moving objects in all
+cases. We design the novel data model in such a way that on one hand a generic
+method is proposed to represent the precise location in all infrastructures. On the
+other hand, the location representation of previous work in free space and road
+network1 can be integrated so that former techniques are directly supported without
+too much effort. As a result, the generic location representation regresses to specific
+representation in free space and road network and previous models are integrated as
+two infrastructures into the new model. One does not have to design new data types
+
+1Indoor location is not precisely represented by existing models.
+
+Geoinformatica (2013) 17:125–172
+
+129
+
+and operators for environments that have already been well established. The new
+model is not simply a wrapper because (i) PTN and RBO are not treated by previous
+techniques but modeled by our method; (ii) indoor location is precisely represented.
+To manage generic moving objects in a database system, the data model should
+define (1) a robust method that can represent the continuously changing location in
+all available environments; (2) a set of data types representing IFOBs and moving
+objects; (3) a group of operators for efficiently accessing and manipulating the
+data. We have explained the reference idea for (1) above. Since environments have
+different characteristics, IFOBs in each case are represented by different data types
+in the database system. It is straightforward that a line represents a road and a
+polygon denotes the area for a pavement. But for PTN and Indoor, new data types
+are needed as objects have special features that cannot be represented by existing
+data types. To efficiently support query processing, operators have to be defined in
+the system for users to access the data and formulate queries. As a result, Sections 6
+and 7 demonstrate a comprehensive set of example queries ranging over different
+infrastructures and transportation modes.
+
+1.3 Contribution
+
+The main contribution of this paper is the design of a generic data model for
+managing moving objects in various environments. It includes the following specific
+contributions:
+
+• We formulate the concept of space and infrastructure and define their compo-
+nents. A general definition for heterogeneous IFOBs is given. We propose a
+method to represent the location of moving objects in all defined environments.
+Moreover, a framework for moving objects representation is designed.
+
+• We model available places for each infrastructure and give the data type rep-
+resenting its components, i.e., IFOBs. Applying the proposed framework, we
+present how the location is represented in each infrastructure. For the indoor
+environment, we define a graph model for indoor navigation that supports
+optimal route searching with respect to different costs (e.g., distance, time).
+• A type system is defined for the generic model, and a relational interface
+is provided to exchange information. A set of operators is designed on the
+proposed data types. The syntax and semantics of operators are also defined.
+Type system and operations are carefully designed to (1) obtain a powerful query
+language; and (2) integrate the well-established models of free space and road
+network.
+
+• A set of example queries on all available environments and various transporta-
+tion modes is formulated, demonstrating the expressiveness of the resulting
+querying framework. We present how such a data model is implemented in a
+database system. Query optimization techniques are also introduced. We report
+the experimental results of running proposed queries in a database system.
+
+The rest of the paper is organized as follows: Section 2 reviews the related work.
+The framework of the data model is presented in Section 3. Section 4 describes data
+types for infrastructure components and the location representation in each case.
+Section 5 defines the type system and provides a relational interface. The proposed
+operators are presented in Section 6. A comprehensive set of queries is formulated in
+
+130
+
+Geoinformatica (2013) 17:125–172
+
+Section 7. In Section 8 we describe the implementation of the data model. Section 9
+reports the experimental results. Finally, Section 10 concludes the paper.
+
+2 Related work
+
+2.1 Modeling moving objects
+
+In the database literature, there has been a large body of recent works [10, 13,
+18, 20, 22, 25, 27, 29, 35, 37, 38, 44, 46, 52, 53] on modeling moving objects. But
+all of them deal with the movement in one environment and do not investigate
+transportation modes. The closest to our work is [10, 20, 35] where the models
+consider the underlying environment for location representation. In [10], a semantic
+model is proposed for representing trajectories based on background geographic
+information. An algorithm is developed to map the positions of vehicles into a road
+network. Thus, the spatial aspect of trajectories is modeled in terms of a network,
+which consists of edges and nodes. However, the method is restricted to a specific
+application domain. To answer mobility pattern queries [35], a model is designed
+that relies on a discrete view of the underlying space for moving objects. The authors
+partition the space into a set of zones each of which is uniquely identified by a label.
+Afterwards, the location is represented by mapping it into zones, and a trajectory
+is defined as a sequence of labels. A so-called route-oriented model is presented
+in [20] for moving objects in networks. The method represents a road network by
+routes and junctions, and trajectories are integrated with the road network. A line
+is used to describe the geometrical property of a road. Then, a network location is
+represented by a road id and the position on the road. However, the aforementioned
+models have the following drawbacks. First, the methods can only represent the
+location in one environment, making the model not general. A complete trip passing
+several environments cannot be managed in a database system. Second, the location
+in [35] is not precisely represented, only identified by a symbol pointing to a zone.
+The model cannot answer a precise location query. Furthermore, moving objects are
+represented in a discrete way (a sequence of timestamps) instead of continuous. The
+method is limited to one application. Third, transportation modes are not handled.
+
+GTFS (General Transit Feed Specification) [1] defines a common format for pub-
+lic transportation schedules and associated geographic information, so that people
+can use the GTFS specification to provide schedules and geographic information to
+Google Maps. The specification contains some files (required and optional), and each
+file with a defined format records a list of items each of which stores a field name and
+value. For example, a stop file includes the following required field names: stop_id,
+stop_name, stop_lat, stop_lon. However, the representation for moving buses is not
+included. Locations of a bus traveler are a set of items recording bus stops as well as
+arrival and departure time at each stop, while positions between two adjacent stops
+are not determined. In fact, the locations of a bus traveler depend on the bus and do
+not have to be additionally represented.
+
+GPS is the dominant positioning technology for outdoor settings. For indoor
+environment, new techniques are required. A graph model is proposed in [25] for
+indoor tracking moving objects using the technology RFID. They assume RFID
+readers are embedded in the indoor space in some known positions and the indoor
+
+Geoinformatica (2013) 17:125–172
+
+131
+
+space is partitioned into cells corresponding to vertices in the graph. An edge in the
+graph indicates the movement between cells which is detected by RFID readers. A
+raw trajectory is a sequence of RFID tags. A method is developed to construct and
+refine the trajectory. The goal is to improve the indoor tracking accuracy. The result
+is different from the intention of this paper, modeling moving objects. Jensen et al.
+[26] present an index structure for moving objects in a symbolic indoor space. The
+trajectory model is composed of records in the format (oid, symb olicI D, t) where
+oid is the moving object identifier, symb olicI D is the identifier for a specific indoor
+space region and t indicates time. Nevertheless, the authors there do not give the
+data type representing a space region and define the location in an imprecise way.
+The room where the object is located can be known, but the precise location inside
+cannot be determined.
+
+A multidimensional data model is proposed in [49] to provide a foundation for
+capturing and querying complex transportation infrastructures. The model captures
+important transportation infrastructure concepts such as roads, road part, lanes and
+the relationships among them. Each individual lane is captured separately due to
+different road characteristics, and the relationship containment is captured among
+segments in different levels. Different contents are attached to some specific points
+and road sections, e.g., traffic accidents, gas stations, speed limits. Based on the
+model in [24], the representation dimension is extended by introducing three new
+relations on dimension values to capture direction, traffic exchange and lane change
+relationships between road segments. Some properties of the above three relations
+between segments are defined such as transitivity and propagation of direction. Each
+representation of the transportation infrastructure is modeled as a separate dimen-
+sion hierarchy. Multiple representations are also proposed. Two categories of queries
+are considered: transportation infrastructure queries and dynamic queries. However,
+only the road network is modeled without considering the other infrastructures such
+as public transportation system. The indoor environment is not handled. Besides, the
+representation of moving objects in both outdoor and indoor spaces is not defined.
+
+2.2 Transportation modes
+
+A data model presented in [9] gives the framework of a transportation system. The
+model is able to provide a trip consisting of several transportation modes, e.g., Bus,
+Walk, Train. Moving objects databases and graph-based databases are integrated
+to facilitate trip planning in urban transportation networks. The authors deal with
+returning a shortest path (SP) with multiple transportation modes to connect the
+origin and the destination, where SP can have more constraints and choices, e.g.,
+different motion modes, the number of transfers. A graph model is defined where
+each vertex corresponds to a place in a transportation network. The place has a
+name and a geometric representation, e.g., point or region. Each edge is associated
+with a transportation mode. Edges with different modes can be incident on the
+same vertices indicating that a transfer between different modes can happen. A
+trip is defined as a sequence of legs each of which represents a path with one
+transportation mode. However, the multimodal model aims to provide trip plannings
+with various constraints rather than model moving objects in various environments.
+The proposed leg and multimodal trip are not represented by defining data types
+in a database system, but described conceptually and abstractly. Besides, indoor
+
+132
+
+Geoinformatica (2013) 17:125–172
+
+environment is not included. We focus on representing moving objects in all real
+world environments and managing multimodal trips in a database system so that
+users can request queries in a system context. In our model, transportation modes
+are seamlessly integrated into moving objects. An interesting query is proposed in
+[8] that computes isochrones in multi-model and schedule-based transport networks.
+The goal is to find the set of points on a road network, from which a specific point
+of interest can be reached within a given time span. Only the transportation modes
+Walk and Bus are considered.
+
+In Microsoft’s project GeoLife, the work [59, 60] aims to discover and infer
+transportation modes from raw GPS trajectory data. By mining multiple users’
+location histories, one can discover the most interesting locations, classical travel
+sequences and travel experts in a given geospatial region, hence enabling a generic
+travel recommendation. The procedure comprises three phases. First, a GPS trajec-
+tory is decomposed into several segments of different transportation modes, while
+maintaining a segment of one mode as long as possible. A set of features being
+independent of the velocity is identified. Second, the determined features are fed
+into a classification model to output the probability of each segment with different
+transportation modes. Third, a graph-based postprocessing algorithm is developed to
+further improve the inference performance. Some researchers utilize mobile phones
+to detect transportation modes when outside. Reddy et al. [39] creates a classification
+system that uses a mobile phone with a built-in GPS receiver and an accelerometer
+to determine the transportation mode of an individual when outside. Stenneth et
+al. [45] proposed an approach to inferring a user’s mode based on the GPS sensor
+on the mobile device as well as the knowledge of the underlying transportation
+network, e.g., bus stop locations, railway lines. The above work is different from
+ours. We concentrate on representing moving objects in various environments with
+transportation modes instead of inferring the modes. In addition, they only take into
+consideration outdoor movement because the inferring method is based on GPS data
+where a GPS receiver will lose signal indoors.
+
+3 Generic data model
+
+3.1 Preliminaries
+
+We give the carrier set of basic types that we use for the definitions in the following
+sections.2
+
+Definition 3.1 Base types
+
+Dint = Z ∪ {⊥}, Dreal = R ∪ {⊥}, Dbool = {FALSE, TRUE} ∪ {⊥}
+
+Each domain is based on the usual interpretation with an extension by the
+undefined value, denoted by ⊥. We give three data types representing time: time
+instant, time interval and time range, defined as follows:
+
+2Using the algebraic terminology that for a data type α, its domain or carrier set is denoted as Dα.
+
+Geoinformatica (2013) 17:125–172
+
+133
+
+Definition 3.2 Time types
+time instant: Dinstant = R ∪ {⊥}
+time interval: Dinterval = {(s, e, lc, rc)|s, e ∈ Dinstant, lc, rc ∈ Dbool, s ≤ e, (s = e) ⇒
+
+time range:
+
+(lc = rc = true)}
+Dperiods = {V ⊆ Dinterval|(u, v ∈ Dinterval ∧ u (cid:10)= v) ⇒ disjoint (u, v) ∧
+¬ adjacent (u, v)}
+
+We use instant to denote the data type for time instant, which is based on the real
+type. The value of a time interval is to define a set of time instants. Type periods
+represents a set of disjoint and non-connected time intervals. We also give the intime
+type constructor which yields types whose values consist of a time instant and a value.
+Let α denote an abstract type (excluding time type), e.g., int, real.
+
+Definition 3.3 Dintime = Dinstant × Dα
+
+In addition, we employ spatial and temporal data types from [14, 18]: point, points,
+line and region, mbool (moving bool) and mpoint (moving point). The definitions of
+mbool and mpoint are given in Appendix C.
+
+3.2 Framework
+
+3.2.1 Space and infrastructures
+
+We let the space for moving objects be covered by the following infrastructures: Free
+Space, Road Network, Public Transportation Network, Region-based Outdoor and
+Indoor. Each infrastructure consists of a set of IFOBs and defines available places
+for moving. For example, roads and streets constitute Road Network, and a set of
+polygons specifies the walking area for Region-based Outdoor. For Free Space, the
+object set is empty. Let I = {I f s, Irn, I ptn, Irb o, Iindoor} be the set of all infrastructures,
+and Dom(Ii)(Ii ∈ I) be the values (IFOBs) for Ii. Then, we define the space as
+follows:
+
+Definition 3.4 Space =
+
+Ii∈I Dom(Ii)
+
+(cid:2)
+
+Let space be the data type representing a space with domain: Dspace = Space.
+Table 1 lists the components for space as well as possible transportation modes in
+each component. We summarize all transportation modes in Definition 3.5.
+
+Definition 3.5 Transportation mode
+
+Dtm = {Car, Bus, Train, Walk, Indoor, Metro, Taxi, Bike, Free}
+
+Table 1 Space components
+
+Space
+
+I f s
+Irn
+I ptn
+Irb o
+Iindoor
+
+Free
+Car, Bike, Taxi
+Bus, Train, Metro
+Walk
+Indoor
+
+134
+
+Geoinformatica (2013) 17:125–172
+
+Since people also walk in the indoor space, in the following the mode Walk means
+outdoor environment by default, which is to distinguish between the modes Walk
+and Indoor. Here, we merely deal with transportation modes for objects moving on
+the ground. Of course, there are still two modes: Ship and Airplane. Normally people
+do not frequently change to these two cases in daily life so that we do not consider
+them in this paper. But they can be easily integrated where both are considered as
+the modes in a public transportation system.
+
+3.2.2 Infrastructure components
+
+The components for an infrastructure are objects representing background geo-
+graphic information. To manage all these objects in a database system, some data
+types are needed. For instance, in Irn a line is used to describe the geometrical
+property of a road, and in Irb o a polygon or a region (in the following, we use
+terms polygon and region interchangeably) is used to identify a pavement area. The
+overall IFOBs include not only spatial objects but also spatial-temporal objects such
+as buses, trains. The data type depends on the infrastructure characteristic. To have
+a general representation, we give the definition of an IFOB as below.
+
+Definition 3.6 Infrastructure object (IFOB)
+
+An IFOB is defined as w(oid, s, β, name) where oid(∈ Dint) is a unique identifier,
+s is a symbol for a data type, β is a value of the type, and a string describing the name.
+
+The meaning of s is clear for Irn, Irb o and I f s where s ∈ IOSymbol = {LINE,
+REGION, FREESPACE}. The data types line and region are already defined in
+spatial databases. For free space without IFOBs, we let the symbol be FREESPACE.
+Regarding I ptn, the components are routes and moving vehicles that have special
+features. Taking the bus network as an example, a bus route cannot be simply
+represented by a line because the data of bus stops is missing. When modeling bus
+trips, the route and schedule should be considered. In Iindoor, a building consists of
+a set of rooms and the object representing a room should contain such two pieces
+of information (1) 2D area and (2) height above the ground level3 to be able to
+uniquely identify a location. New data types are designed for I ptn and Iindoor, defined
+in Section 4.
+
+3.2.3 Location representation
+
+To achieve the goal of general and precise location representation in all environ-
+ments, in the proposed model we describe the location of a moving object by two
+parts, defined as follows.
+
+Definition 3.7 Generic location
+
+Dgenloc = {(oid, (loc1, loc2))|oid ∈ Dint, loc1, loc2 ∈ Dreal}
+
+The first part is an identifier corresponding to an IFOB and the second stands for
+the relative position according to that object, described by (loc1, loc2). Each IFOB
+
+3The value means the distance from the road surface after the building construction.
+
+Geoinformatica (2013) 17:125–172
+
+135
+
+has its own geographical information such as a line for a road, a polygon for a
+pavement. By accessing the referenced object, the range of the location is deter-
+mined. With the second value, a global and precise location can be obtained. Using
+this method, the location in all environments listed in Table 1 can be represented.
+We explain the semantic meaning of generic location for each infrastructure in the
+following and give examples in Fig. 1.
+
+•
+
+(⊥, (loc1, loc2)) maps to a location in free space. As I f s does not contain any
+IFOB, we set oid by ⊥ and represent the position by recording coordinates
+(loc1, loc2).
+
+• A road network location is represented by (oid, (loc1, ⊥) where oid records a
+road id and loc1 describes the location on the road. The value of loc1 is between
+zero and the length of the road. loc2 is not required and set as undefined.
+• Regarding Region-based Outdoor, we denote a location (oid, (loc1, loc2)) by (1)
+a polygon id and (2) the relative location inside the polygon, with the left lower
+point of the polygon bounding box as origin point.
+In a public transportation system, a location (oid, (loc1, loc2)) is specified by a
+route id, a stop number loc1 and the distance loc2 from the stop on the route.
+For an indoor location, we let oid map to a room and (loc1, loc2) record the
+location inside the room. As Iindoor is a 3D environment, the height above the
+ground level of a location needs to be determined. This value is recorded by an
+IFOB representing a room. All locations inside one room have the same height
+as the room, so the value does not have to be explicitly recorded. The concept of
+room is general, e.g., an office room, a corridor.
+
+•
+
+•
+
+To sum up, the proposed method represents the location in all environments. The
+representation first maps to an IFOB and second identifies the relative position
+according to that object, resulting in a precise location in space. The underlying
+geographical data such as line or polygon is recorded by the referenced object and
+obtained by accessing the context, yielding the capability of supporting both global
+and local coordinates. In addition, topological relations like “contains” and “inside”
+between the location and IFOBs can be directly derived by investigating the object
+identifier instead of involving costly geometric computation.
+
+Next, we define a data type called genrange representing sets of locations. Such a
+type is used on the one hand to represent the trajectory of a generic moving object,
+i.e., its projection into generic space. On the other hand, it can represent any kind of
+curve or region in the generic space, for example, a road in the road network, a park
+in the region based outdoor space, a collection of rooms in a building, or an arbitrary
+region in free space.
+
+Fig. 1 Location in each infrastructure
+
+136
+
+Geoinformatica (2013) 17:125–172
+
+Definition 3.8 Generic range
+
+Subrange = {(oid, l, m)|oid ∈ Dint, l ∈ Dpoints ∪ Dline ∪ Dregion ∪ {⊥},
+
+m ∈ Dtm ∪ {⊥}}
+
+Dgenrange = 2Subrange
+
+Each genrange value is a set of elements each of which is denoted by sub _traji
+(∈ Subrange). sub _traji is composed of three attributes: oid denotes an IFOB id, l
+stores a set of locations and m describes a transportation mode.
+
+When a genrange value is used to represent the trajectory of a moving object, then
+l contains the locations passed by the object (usually as a line value with coordinates
+relative to the given IFOB). Also the transportation mode is defined. For example,
+the trajectory of a car moving on the road.
+
+When the value is used to represent an arbitrary region in the generic space, l may
+be a points or region value or undefined (an undefined value means that all locations
+in the IFOB are valid). In this case the transportation mode may be undefined.
+
+3.3 Moving objects representation
+
+In this paper, we focus on the complete history movement of moving objects instead
+of current and future positions. First, we give the abstract representation.
+
+Definition 3.9 Let f be the location function projecting from time to location.
+
+f : Dinstant → Dgenloc
+
+To represent the continuously changing data, a standard way to model it is by the
+regression method that first segments the data into pieces or regular intervals within
+which it exhibits a well-defined trend, and then chooses the basis and mathematical
+functions most appropriate to fit the data in each piece [14, 16, 30, 48]. Using the
+method of sliced representation, we represent a moving object as a set of so-called
+temporal units (slices). Each unit defines a time interval as well as the movement
+during the interval.
+
+Definition 3.10 Generic temporal units
+
+Loc = {(loc1, loc2)|loc1, loc2 ∈ Dreal}
+
+Gentu = {(i, oid, iloc1
+
+, iloc2
+
+, m)|i ∈ Dinterval, oid ∈ Dint, iloc1
+
+, iloc2
+
+∈ Loc, m ∈ Dtm}
+
+Each element in Gentu has five components: i defines a time interval, oid
+maps to an IFOB, iloc1 , iloc2 identify two positions according to the IFOB and m
+describes the transportation mode. A unit defines that during the time interval i
+(1) locations are represented by referencing to an IFOB identified by oid; (2) iloc1
+(iloc2 ) precisely records the start (end) location at i.s (i.e) according to the IFOB;
+(3) the transportation mode is m. Positions during [i.s, i.e] are achieved by linear
+interpolation.
+
+Geoinformatica (2013) 17:125–172
+
+137
+
+Given two units u1, u2 ∈ Gentu, some relationships can be exploited between
+
+them:
+
+1. u1.m (cid:10)= u2.m
+
+This denotes two units with different transportation modes. For example, u1.m =
+Car and u2.m = Walk. Queries on transportation modes extract data from this
+attribute.
+
+2. u1.m = u2.m ∧ u1.oid (cid:10)= u2.oid
+
+Transportation modes are the same, but the referenced IFOBs are different.
+Suppose that u1.m = u2.m = Bus, then u1.oid and u2.oid denote different buses.
+
+3. u1.m = u2.m ∧ u1.oid = u2.oid
+
+In this case, both transportation modes and IFOBs are the same, but the precise
+locations in space can be different, distinguished by iloc1 and iloc2 . For example,
+two pedestrians walk on the same pavement or two clerks walk inside the same
+office room, resulting in different trajectories.
+
+To make a compact representation for moving objects, we define the mergeable
+condition for two units u1 and u2. Let p1(∈ Dpoint) be the start location of u1. In fact,
+p1 is taken from the projection in space of u1. Again, we can have p2 for u2. Since a
+unit represents a linear movement, a function is employed for the evaluation at time
+t. We define T1 (T2) to be the relative time intervals of u1 (u2), i.e., [0, u1.i.e-u1.i.s],
+and give the evaluation functions.
+
+fu1
+
+fu2
+
+(t) = {(x, y)|x = p1.x + a1· t, y = p1.y + b 1· t, t ∈ T1, a1, b 1 ∈ R}
+
+(t) = {(x, y)|x = p2.x + a2· t, y = p2.y + b 2· t, t ∈ T2, a2, b 2 ∈ R}
+
+Then we define u1 and u2 to be mergeable if and only if the following three
+
+conditions hold:
+
+(i) u1.oid = u2.oid ∧ u1.m = u2.m;
+(ii) u1.i is adjacent to u2.i;
+(T1.e) = fu2
+(iii)
+
+fu1
+
+(T2.s) ∧ a1 = a2 ∧ b 1 = b 2.
+
+A set of sub movements can be merged and compressed into one unit if they
+fulfill the mergeable condition. Suppose that a car is moving on the highway with
+constant speed for half an hour, a GPS device may record the position every five
+seconds. Instead of maintaining a large number of GPS tracks one unit can suffice. A
+generic moving object is defined as a sequence of generic temporal units. The formal
+definition is given below.
+
+Definition 3.11 Generic moving objects
+
+Dgenmo = {< u1, u2, ..., un > |n ≥ 0, n ∈ Dint, and
+
+(i) ∀i ∈ [1, n], ui ∈ Gentu
+(ii) ∀i, j ∈ [1, n], i (cid:10)= j ⇒ ui.i ∩ u j.i = (cid:14) ∧ ui, u j are not mergeable }
+
+138
+
+Geoinformatica (2013) 17:125–172
+
+3.4 Approximate location
+
+In some cases, a rough location can simplify the representation and at the same time
+still be available for the application (e.g., [35, 36]). For example,
+
+Q3
+
+“find all travelers passing areas A and B during their trips”.
+
+The data should be managed in such a way that one can determine whether the
+trajectory of a traveler intersects the area or not, while the precise movement inside
+can be ignored. Accurate data need much storage space and processing time. Our
+model supports both precise and imprecise representation so that the system is able
+to tune the level of scale to the appropriate value, making therefore the system much
+more flexible. We define the location in an approximate way by (oid, (⊥, ⊥)). As
+each IFOB covers some places, the range for the location can be known by accessing
+the object. Considering Bobby’s movement M1, one can roughly describe such a trip
+by recording a sequence of IFOB ids for: (1) polygons; (2) roads; (3) rooms.
+
+4 Representation for infrastructures
+
+4.1 Public transportation network
+
+Public transportation vehicles include buses, trains, and underground trains. As they
+have similar characteristics, without loss of generality we take bus network as an
+example to present how the infrastructure is represented. A bus network contains
+static and dynamic components, where the first one includes bus stops and bus routes
+and the second one includes a set of bus trips.
+
+4.1.1 Static
+
+A bus stop identifies a location where a bus arrives, lets passengers get on and off,
+and then departs (if it is not the last stop). Each stop belongs to a route and several
+stops from different routes may map to the same location where a transfer can occur.
+
+Bus stop Intuitively, a bus stop corresponds to a point in space, but it also has some
+other information, e.g., a route id. Instead of simply using a point we define a data
+type named busstop with the carrier set:
+
+Definition 4.1 Bus stop
+
+Dbusstop = {(rid, pos)|rid, pos ∈ Dint, rid ≥ 0 ∧ pos ≥ 0}
+
+To identify a bus stop, we use rid to denote the route id and pos to show the order
+on the route. Given b s1, b s2 ∈ Dbusstop, we define b s1 is adjacent to b s2 ⇔ b s1.rid =
+b s2.rid ∧ b s1. pos + 1 = b s2. pos.
+
+Bus route A bus route consists of a sequence of sub lines (partitioned by bus stops)
+each of which is called a segment. A segment represents the connection between two
+adjacent bus stops.
+
+Geoinformatica (2013) 17:125–172
+
+Fig. 2 A simple bus network
+
+139
+
+Definition 4.2 Bus segment
+
+Busseg = {(b s1, b s2, geo)|b s1, b s2 ∈ Dbusstop, b s1, b s2 are adjacent, geo ∈ Dline}
+
+Given two segments seg1, seg2 ∈ Busseg, they are called linkable if and only
+if seg1.b s2 and seg2.b s1 map to the same point. Let getbr_id(seg) return the
+route id of a segment and busroute be the data type for bus routes with the
+domain:
+
+Definition 4.3 Bus route
+
+Dbusroute =
+
+(cid:3)
+< seg1, seg2, ..., segn > |n ≥ 1, n ∈ Dint, and
+(1) ∀i ∈ [1, n], segi ∈ Busseg;
+(2) ∀i ∈ [1, n − 1], getbr_id(segi) = getbr_id(segi+1)
+
+(cid:4)
+
+∧ segi is linkable to segi+1
+
+To demonstrate how the above data types work together, Figure 2 gives an
+example with three bus routes {r1, r2, r3} and five locations {s1, s2, s3, s4, s5}. The
+location set is to identify the positions for bus stops. Figure 3 lists the representation
+of bus stops and bus routes. For brevity, we omit the detailed geometry description
+here. Each location from {s1, s2, s3, s4} shows an intersection between two bus routes,
+implying that a bus change can happen here.
+
+Loc
+
+Bus Stops
+,
+,
+,
+,
+
+(a)
+
+Fig. 3 Static component
+
+Id
+1
+2
+3
+
+Bus Routes
+
+,
+,
+,
+
+(b)
+
+140
+
+Geoinformatica (2013) 17:125–172
+
+One issue that needs to be discussed is that in the real world a bus route has two
+directions (Up and Down) and for each direction there is a sequence of bus stops.
+Up and Down routes are normally located on two different lanes and the geometry
+description for them should be different. To be consistent with the reality, we define
+a bus route with Up and Down as two different routes, and each of them is uniquely
+identified and represented. In our model, this can be done by setting different rids to
+denote Up and Down routes.
+
+4.1.2 Dynamic
+
+A bus trip is determined by (1) bus route and (2) schedule where the former defines
+the path and the latter specifies the time period of such a moving object. We model
+each bus trip as a moving point. Let Dbusloc be the domain of bus locations.
+
+Definition 4.4 Bus location
+
+Dbusloc = {(br_id, b s_id, pos)|br_id, b s_id ∈ Dint, pos ∈ Dreal}
+
+A bus location is represented by a route id, a stop number on the route and
+the relative distance from the stop. Note that the definition is consistent with
+Definition 3.7 in Section 3.2.3, and here it is specified as the location on a bus route.
+Given bloc1, bloc2 ∈ Dbusloc, they are called successive if and only if the following
+conditions hold:
+(1) bloc1.br_id = bloc2.br_id;
+(2) bloc1.b s_id + 1 = bloc2.b s_id;
+(3) bloc1. pos = bloc2. pos = 0.
+
+We define an operator called geodata to return the spatial point for a bus location
+
+and a bus stop.
+
+geodata
+
+busroute × busloc → point
+busroute × busstop → point
+
+Let p_b si (∈ Dpoint) be the point that bloci (∈ Dbusloc) corresponds to. Then, the
+equality of two bus locations is defined as: bloc1 = bloc2 ⇔ p_b s1 = p_b s2. Let
+BusU be the domain for bus trip units, defined in the following.
+
+Definition 4.5 Bus trip units
+
+(cid:3)
+
+BusU =
+
+(i, bloc1, bloc2)|i ∈ Dinterval, bloc1, bloc2 ∈ Dbusloc, and
+
+(i)
+(ii)
+
+i.s = i.e ⇒ bloc1 = bloc2;
+(cid:4)
+bloc1, bloc2 are successive or equal
+
+The definition applies
+
+to the framework of generic temporal units
+
+in
+
+Definition 3.10, Section 3.3. Let v ∈ Gentu, u ∈ BusU, and we have
+
+(1)
+(2)
+(3)
+(4)
+(5)
+
+v.i → u.i;
+v.oid → u.bloc1.br_id (u.bloc2.br_id);
+v.iloc1
+→ (u.bloc1.b s_id, u.bloc1. pos);
+v.iloc2
+→ (u.bloc2.b s_id, u.bloc2. pos);
+as u denotes a specific infrastructure unit, v.m (Bus) is omitted in u.
+
+Geoinformatica (2013) 17:125–172
+
+141
+
+Let mpptn be the data type representing bus trips. Based on Definition 4.5, we
+
+have:
+
+Definition 4.6 Bus trips
+
+Dmpptn =
+
+(cid:3)
+< tub 1, tub 2, ..., tub n > |n ≥ 1, n ∈ int, and
+
+(i) ∀i ∈ [1, n], tub i ∈ BusU;
+(ii) ∀i, j ∈ [1, n], i (cid:10)= j ⇒ tub i.i ∩ tub j.i = ∅;
+(iii)
+
+∀i, j ∈ [1, n], tub i.bloc1.br_id = tub j.bloc1.br_id;
+
+(cid:4)
+
+Condition (iii) ensures that each bus trip only belongs to one route. A bus moves
+along the route represented by a curve in space, and positions between two successive
+stops are determined by the offset distances from the starting point on the route.
+This method yields a compact representation. Compared with the times of frequently
+updating raw location data (e.g., coordinates), the number of bus stops is very small.
+As a result, both update and storage costs are considerably reduced.
+
+4.1.3 Infrastructure objects
+
+With the above data types, we specify the IFOBs representation in I ptn. First, we
+extend IOSymbol to include values for data types in I ptn, IOSymbol = IOSymbol ∪
+{BUSSTOP, BUSROUTE, MPPTN4}. Applying Definition 3.6 in Section 3.2.2, the
+result is:
+
+•
+
+•
+
+static: IFOB(oid, BUSSTOP, β, name)(β ∈ Dbusstop)
+
+IFOB(oid, BUSROUTE, β, name)(β ∈ Dbusroute)
+
+dynamic: IFOB(oid, MPPTN, β, name)(β ∈ Dmpptn)
+
+Static objects are referenced by dynamic objects, while the movement of humans
+is represented by referencing to dynamic IFOBs. Here one has to be a bit careful.
+Although one may be tempted to assume that specifying the time interval and a
+reference to the bus object in the infrastructure are sufficient to define the movement
+of a traveler on a bus, a bus trip describes the scheduled bus movement from which
+the real bus movement may deviate (e.g., due to delays). For example, one would
+like to determine in a query at which bus stop a passenger entered the bus. Deriving
+this from the scheduled location of the bus at the time the passenger enters may lead
+to errors and inconsistencies with the remaining trip of the passenger (e.g., in the
+region based outdoor infrastructure). We therefore include in the unit describing a
+passenger’s trip also the start and end locations on the respective bus route.
+
+Let u ptn(i, oid, iloc1
+
+, iloc2
+
+, m) represent the movement of a bus traveler where:
+
+oid → IFOB (oid, MPPTN, β, name)(β ∈ Dmpptn);
+(1)
+(2)
+iloc1
+iloc2
+(3)
+(4) m = Bus.
+
+→ (b s_id, pos);
+→ (b s_id, pos);
+
+4MPPTN stands for moving point for public transportation network.
+
+142
+
+Geoinformatica (2013) 17:125–172
+
+The unit illustrates that during i the traveler goes by a bus identified by oid from
+iloc1 to iloc2 , where iloc1 (iloc2 ) records the start (end) location, i.e., the bus stop. In
+detail, b s_id records the stop number and pos denotes the distance from the stop.
+This representation can significantly reduce the storage size for moving objects.
+Instead of recording the locations at all places where the bus speed or direction
+changes, one unit can suffice. If several passengers take the same bus, their locations
+all map to the same IFOB. Travelers may get on and off the same bus at different
+stops, which are distinguished by iloc1 and iloc2 . In addition, one does not have to
+update the data until the travelers get off the bus or switch to another one.
+
+A bus trajectory is a set of elements sub _traji (∈ Subrange) with the attribute
+
+values:
+
+(1)
+(2)
+(3)
+
+sub _traji.oid → IFOB(oid, BUSROUTE, β, name)(β ∈ Dbusroute);
+sub _traji.l stores the movement on the route;
+sub _traji.m = Bus.
+
+4.2 Indoor
+
+4.2.1 Modeling indoor space
+
+In this environment, IFOBs represent objects such as rooms, chambers, corridors,
+etc. We use the term groom (general room) for all of them. Each groom covers a 2D
+area and is located at some distance above the ground level.
+
+Definition 4.7 Region3d
+
+Region3d = {( poly, h)| poly ∈ Dregion, h ∈ Dreal}
+
+The attribute poly describes the 2D area and h denotes the room height above
+the ground level. Given r1, r2 ∈ Region3d, we define r1 = r2 ⇔ r1. poly = r2. poly ∧
+r1.h = r2.h. In a building, usually an office room or a corridor has only one flat
+surface. But there are also amphitheaters and chambers that have several surfaces
+with different altitudes. To be more general, we model a groom as a set of objects.
+See below.
+
+Definition 4.8 General room
+
+Dgroom = {GR ⊆ Region3d|(gr1, gr2 ∈ GR ∧ gr1 (cid:10)= gr2)
+
+⇒ disjoint(gr1. poly, gr2. poly)}
+
+Considering the staircase between two floors, such an IFOB is modeled as a set of
+3D regions each of which represents one footstep of the staircase. We represent an
+elevator by several grooms and each object has only one element recording the 2D
+area on one floor (a rectangle) accompanied with a height value. To clarify terms,
+when we speak of groom, it is a short description for general room, while groom
+denotes the data type representing a groom. We extend the symbol set IOSymbol to
+include the value for groom, IOSymbol = IOSymbol ∪ {GROOM}.
+
+Geoinformatica (2013) 17:125–172
+
+143
+
+Let uindoor(i, oid, iloc1 , iloc2 , m) be a temporal unit for indoor moving objects.
+
+Applying Definition 3.10 in Section 3.3, the attributes map to:
+
+oid → IFOB(oid, GROOM, β, name)(β ∈ Dgroom);
+iloc1
+iloc2
+
+(1)
+→ (x, y);
+(2)
+→ (x, y);
+(3)
+(4) m = Indoor.
+
+The coordinates (x, y) denote the relative position in the groom where the left
+lower point of the bounding box on the 2D area is set as the origin point. An indoor
+trajectory is specified as:
+
+(1)
+(2)
+(3)
+
+sub _traji.oid → IFOB(oid, GROOM, β, name)(β ∈ Dgroom);
+sub _traji.l records the movement inside the IFOB;
+sub _traji.m = Indoor.
+
+4.2.2 Indoor navigation
+
+In this part, we present an indoor graph for precise shortest path searching inside
+a building that contains a set of grooms. Doors are used to build the connection
+between two grooms, and therefore we first give the representation for doors.
+
+Definition 4.9 Data type for doors
+
+Doorpos = {(gr_id, pos)|gr_id ∈ Dint, pos ∈ Dline}
+
+Ddoor = {(dp1, dp2, genus, tp)|dp1, dp2 ∈ Doorpos, genus ∈ {non-elev, elev},
+
+tp ∈ Dmbool}
+
+A door is shared by two grooms. We let dp1 and dp2 represent the door position
+in each groom with the groom id gr_id and the position pos inside. Besides location
+data, a door has an attribute genus describing the type. To model the time-dependent
+state of a door, i.e., open or closed, we define a moving bool tp. The value is a
+sequence of units where each unit has a time interval and a bool. We distinguish
+between elevator doors (eld) and non-elevator doors (neld). The time-dependent
+state for neld can be known, while the state for eld is unknown. Usually, from 8am to
+6pm an office room door is open, otherwise it is closed. But for an elevator, the floor
+it currently stays on is unknown. Hence the state for eld is uncertain and tp is set as
+undefined. We model the entrance/exit of an elevator on each floor as a door which
+builds the connection between different levels.
+
+Definition 4.10 An indoor graph is defined as Gindoor (N, E, W,
+door, lv,
+le, ) where (1) N is a set of nodes; (2) E ⊆ V × V is a set of edges and each edge
+is associated with a weight value from W; (3) lv : N →
+door is a function assigning
+labels to nodes; (4) le : E →
+
+groom is a function assigning labels to edges.
+
+groom,
+
+(cid:5)
+
+(cid:5)
+
+(cid:5)
+
+(cid:5)
+
+In Gindoor, we let a node denote a door. An edge corresponds to a groom and
+builds the connection between two doors without passing through a third door. For
+example, an elevator is represented by several grooms each of which defines the place
+for the elevator on one floor. The elevator entrance/exit on each floor is modeled as
+
+144
+
+Geoinformatica (2013) 17:125–172
+
+a node and the connection between two adjacent floors shows an edge. One groom
+may have more than one door and each pair of doors indicates a connection, resulting
+in several edges in the graph. A shortest path between two doors is computed in the
+obstructed space for the reason that obstacles may exist inside a room. We store the
+path on the edge and set the weight as the path length. To create an indoor graph,
+all paths between doors inside one groom have to be pre-computed. Since a room
+usually does not have too many doors, the cost is not high. And the computation is
+done once. We let indoorgraph be the data type for indoor graphs.
+
+Figure 4a depicts an example with four rooms {gr1, gr2, gr3, gr4} and four doors
+{d1, d2, d3, d4}. gr1, gr2, gr3 are office rooms and gr4 is a hallway. Each office room
+has a door, d1 in gr1, d2 in gr2 and d3 in gr3. d4 is the entrance/exit for the hallway.
+Gindoor is shown in Fig. 4b. For simplicity, we omit the shortest path for each edge.
+
+Our graph supports searching a shortest path with different costs: (1) distance;
+
+(2) number of rooms; and (3) time.
+
+Shortest distance We apply Dijkstra’s algorithm on Gindoor to find a route with the
+shortest distance. Let iloc (∈ Dgenloc) be an indoor location which is represented by
+a groom id and a position inside the groom. A preprocessing step is required that is
+to find paths from iloc to all doors in the groom where iloc is located, resulting in the
+connection to Gindoor. A∗ algorithm can be applied to improve query processing if the
+start and end locations are at the same level. This is done by setting the Euclidean
+distance as the heuristic value. We take the center point of each door (represented
+by a line) to compute the distance. If the start and end locations are at different
+levels, the above heuristic value might not be efficient (still correct) as it does not
+involve any information about staircase and elevator which are critical for movement
+between different levels. Another optimization technique is developed. The heights
+above the ground level of start and end locations can be retrieved by accessing their
+grooms. The two values define the height range for all locations on the shortest
+path. Then, all doors whose height values are out of the range can be pruned during
+searching.
+
+Smallest number of rooms This case is simple as the total cost is achieved by
+aggregating the number of edges in the path.
+
+(a)
+
+(b)
+
+Fig. 4 Floor plan and indoor graph
+
+Geoinformatica (2013) 17:125–172
+
+145
+
+i
+
+(delev
+j
+
+Minimum traveling time Let vwalk be a person’s average speed when walking inside
+a building. Since each edge stores the shortest path between two doors inside a
+groom, the time for passing an edge can be calculated by vwalk and the path length.
+This method applies for all grooms except elevators. The time cost of moving by an
+elevator contains two parts: (1) waiting; (2) elevator moving. The cost of the first part
+is uncertain because on which floor the elevator is located cannot be determined at a
+query time instant. The second part can be easily calculated if the height between
+two floors and the elevator speed is given. To solve the problem, we process as
+follows. Assume that the elevator speed is a constant value. Let delev
+) denote the
+elevator door on the ith ( jth) floor. The whole time needed to move from delev
+to delev
+j
+depends on (i) arrival time at delev
+and (ii) the path along which the elevator moves
+to reach delev
+. Without loss of generality, we assume 0 ≤ i < j. In the best case, when
+j
+a person arrives at delev
+, the elevator happens to stay at floor i and directly moves up
+to floor j. On the contrary, the elevator might just leave from floor i and moves up
+so that the person has to wait until the elevator goes down to the bottom floor and
+moves up again. Suppose that the distance between two floors is the same for the
+whole building, denoted by h, and there are n floors in total. Then, the length of the
+shortest and longest path between floor i and j is ( j − i) ∗ h and ( j − i) ∗ h + 2 ∗ n ∗ h,
+respectively. The two values are the lower and upper bounds, and the set of all
+possible values is {( j − i) ∗ h, ( j − i) ∗ h + h, ... ,( j − i) ∗ h + 2 ∗ n ∗ h}. Each value
+can be assigned a membership probability depending on the elevator schedule. A
+simple solution is to impose the uniform distribution of the probability for each path
+length, while more realistic modeling should take into account the building structure,
+history data analysis, optimal elevator schedule, and so on. Consequently, the total
+time spent on the elevator can be computed.
+
+i
+
+i
+
+i
+
+We compare our indoor model with some others [25, 31, 57] in the literature.
+(1) The precise indoor location and shortest path are represented by our method.
+Existing techniques only locate the object inside a room, while the accurate position
+inside is not handled. Previous indoor graphs define a room as a node, resulting an
+approximate description for indoor shortest path, i.e., a sequence of rooms. In some
+cases, this might not provide enough information for a traveler as some buildings may
+have large rooms with complex structures and obstacles, e.g., the hall in a hotel or an
+airport. We model the precise area of each room and define the paths to establish
+the connections between doors. This can have the exact location of an indoor object
+and show a well-defined route for people to follow. (2) We model both spatial and
+temporal attributes for doors to have a practical and robust representation, instead
+of only illustrating the connections between rooms. As a result, the concept of doors
+in our model is general, not only for office rooms and corridors but also for staircases
+and elevators. Previous models do not concern about the time-dependent state of
+a door. (3) We design an indoor graph to support optimal routes searching with
+respect to different costs all of which are meaningful in practice. Previous techniques
+do not provide a precise indoor shortest path and do not model the time cost of an
+indoor trip.
+
+4.3 Region-based outdoor
+
+This environment is for people walking outdoor, including places such as pavements,
+zebra crossings, etc. We represent the whole area by a relatively large polygon P
+
+146
+
+Geoinformatica (2013) 17:125–172
+
+with many holes inside. Holes denote obstacles such as building blocks and junction
+areas which people cannot directly pass through. To efficiently manage the data, P
+is decomposed into a set of polygons (e.g., triangles) to be stored in the database.
+Then, a location is represented by (1) a polygon id; (2) the relative position inside
+the polygon where the origin point is the left lower point of the polygon bounding
+box. Let urb o(i, oid, iloc1 , iloc2 , m) denote a unit for moving objects by walking
+and the value of each attribute is specified as: (1) oid → IFOB(oid, REGION, β,
+name)(β ∈ Dregion); (2) iloc1
+→ (x, y); (4) m = Walk. Positions
+between iloc1 and iloc2 during i are obtained by linear interpolation. Figure 5 shows
+an example in which the areas drawn by crosshatching represent the places that
+people cannot pass through. { pl1,..., pl7} denote the subareas from decomposing P.
+An example movement is depicted, denoted by M3, passing { pl1, pl5, pl7}. Locations
+of such a moving object can be represented in an approximate way (Section 3.4)
+where only the referenced object id is recorded, M3 = < (1), (5), (7) > (for brevity,
+we ignore other values of a unit).
+
+→ (x, y); (3) iloc2
+
+4.4 Free space and road network
+
+Location representation in previous models [14, 18, 20] is seamlessly integrated into
+the proposed framework. Let u f s(i, oid, iloc1 , iloc2 , m) be a unit for moving objects in
+free space. Specifically, (1) oid → ⊥; (2) iloc1
+→ (loc1, loc2);
+(4) m = Free. As there is no IFOB in I f s, oid is undefined. (loc1, loc2) denotes the
+coordinates in space. Let urn(i, oid, iloc1 , iloc2 , m) be a unit for moving objects in a
+road network where (1) oid → IFOB (oid, LINE, β, name)(β ∈ Dline); (2) iloc1
+→
+(loc1, ⊥); (3) iloc2
+→ (loc1, ⊥); (4) m ∈ {Car, Taxi, Bicycle}. A network position is
+represented by a road id and the position on the road. The second attribute in iloc1
+(iloc2 ) is set as undefined. In both environments, positions between iloc1 and iloc2 in a
+unit are computed by linear interpolation.
+
+→ (loc1, loc2); (3) iloc2
+
+Fig. 5 Outdoor space
+partition
+
+Geoinformatica (2013) 17:125–172
+
+147
+
+Table 2 A summary of
+proposed data types
+
+Generic data types
+
+Name
+
+tm
+genloc
+genrange
+genmo
+busstop
+busroute
+busloc
+mpptn
+groom
+door
+
+Meaning
+
+Transportation modes
+Generic locations
+Generic sets of locations
+Generic moving objects
+Bus stops
+Bus routes
+Locations on bus routes
+Moving buses
+General rooms
+Doors
+
+PTN
+
+Indoor
+
+5 The type system and an interface
+
+5.1 Data types
+
+The proposed data types, summarized in Table 2, include generic types for all
+environments and those arising from some specific infrastructures developed in the
+previous sections. We give the type system in Table 35 where SPATIAL and GRAPH
+[18, 20] are still used in one infrastructure. Generic data types genloc, genrange and
+genmo are available in all cases. For example, genloc represents the location in any
+infrastructure and is specified as point in free space and gpoint in road network. The
+type mpptn that we define for moving buses is an instance of genmo in I ptn. Similarly,
+moving objects representation in I f s and Irn is also an instance of genmo. To clarify
+the difference between the new model and previous models, we give the type system
+of free space and road network in Appendix C.
+
+5.2 Space: a relational view
+
+We provide an interface to exchange information between values of proposed data
+types and a relational environment. First, all IFOBs are managed in the database
+system as they are referenced by moving objects. Table 4 shows the defined in-
+frastructures each of which may have several components. For each component, we
+create a relation where each tuple corresponds to an IFOB. Each respective relation
+schema is shown in Table 5.
+
+The data type to define an IFOB is embedded as an attribute in each relation. To
+have a unique identifier for each IFOB, we define a range of int values to denote
+IFOB ids for each infrastructure and different infrastructures are assigned disjoint
+values. With all infrastructure relations, we construct the space in two steps:
+
+1.
+
+create a space initialized by one relation:
+
+createspace : rel → space
+
+5Basic types such as int, bool are omitted.
+
+148
+
+Geoinformatica (2013) 17:125–172
+
+Table 3 The type system in
+general model
+
+→ SPATIAL
+→ GRAPH
+→ PTN
+→ INDOOR
+→ GENLOC
+→ SPACE
+→ TM
+→ TEMPORAL
+
+point, points, line, region
+gpoint, gline
+busstop, busroute, busloc
+groom, door
+genloc
+genrange, space
+tm
+moving, intime
+
+GENLOC
+
+2. add more infrastructures to the space:
+
+put_infra : space × rel → space
+
+In the first step, the input relation can be empty, then we have the free space. If
+the relation stores roads, we have the space with road network. In the second step,
+more infrastructures can be added. One can create a full or non-full space depending
+on the application. For example, a non-full space might be road network plus bus
+network. Afterwards, the infrastructure data can be accessed by:
+
+get_infra : space × int → rel
+
+The value of the second argument is from the set {BUSSTOP, BUSROUTE, BUS,
+ROOM, DOOR, ROOMPATH, OUTDOOR, ROAD}, i.e., the names of infrastruc-
+ture components from Table 4, whose elements are assumed to be available as integer
+constants. Suppose that we have infrastructure relations for a city called Gendon.
+Applying the two steps (createspace and put_infra) we create a full space, denoted
+by SpaceGendon. The following examples illustrate queries on infrastructure data.
+
+• Q1. “Show me the information of Alexander street.”
+
+SELECT *
+FROM get_infra(SpaceGendon, ROAD) as road
+WHERE road.Name = "Alexander"
+
+Table 4 Infrastructures and
+their components
+
+Infrastructure
+
+Infrastructure component
+
+I ptn
+
+Iindoor
+
+Irb o
+Irn
+I f s
+
+BUSSTOP
+BUSROUTE
+BUS
+ROOM
+DOOR
+ROOMPATH
+OUTDOOR
+ROAD
+
+Geoinformatica (2013) 17:125–172
+
+Table 5 Infrastructure relations
+
+149
+
+relb usstop
+relb usroute
+
+relb us
+relroom
+reldoor
+relroompath
+
+relrb o
+relrn
+
+(BusStopId: int, Stop: busstop, Name: string)
+(BusRouteId: int, Route: busroute, Name: string,
+
+Up: bool)
+
+(BusId: int, BusTrip: mpptn, Name: string)
+(RoomId: int, Room: groom, Name: string)
+(DoorId: int, Door: door)
+(RoomPathId: int, Door1: int, Door2: int,
+
+Weight: real, Room: groom, Name: string, Path: line)
+
+(RegId: int, Reg: region, Name: string)
+(RoadId: int, Road: line, Name: string)
+
+• Q2. “Where can I switch between bus No.12 and No.37?”
+
+SELECT bs1, bs2
+FROM get_infra(SpaceGendon, BUSSTOP) as bs1,
+get_infra(SpaceGendon, BUSSTOP) as bs2,
+get_infra(SpaceGendon, BUSROUTE) as br1,
+get_infra(SpaceGendon, BUSROUTE) as br2
+
+WHERE br1.BusRouteId = 12 AND br2.BusRouteId = 37 AND
+
+bs1.Stop.rid = 12 AND bs2.Stop.rid = 37 AND
+geodata(br1,bs1) = geodata(br2,bs2)
+
+To answer Q2, one needs to perform a join on two relations: bus routes and stops.
+
+geodata is defined in Section 4.1.2, returning the location of a bus stop.
+
+Assume we also have some trajectory data of citizens living and working in
+Gendon. A trip is represented by a tuple recording the trip id, trajectory and name.
+The relation is named MOGendon and has the schema:
+
+MOGendon(Mo_id: int, Traj: genmo, Name: string)
+
+5.3 Graph model for indoor navigation
+
+Recall that in Section 4.2.2 we define nodes by doors and edges by paths between
+doors inside one groom for an indoor graph. We use two relations to store graph
+nodes and edges, reldoor for doors and relroompath for paths. The relation schemas are
+included in Table 5. An indoor graph is created by the following operator.
+
+createindoorgraph : rel × rel → indoorgraph
+
+Then, we can run shortest path queries using
+
+indoornavigation : genloc × genloc × instant × int × indoorgraph → genrange
+
+where the first two arguments specify the start and end locations, the third indicates
+a query time and the fourth argument of type int denotes the cost type of such a
+shortest path (e.g., distance, time).
+
+150
+
+6 Operations
+
+Geoinformatica (2013) 17:125–172
+
+Before proposing operators and query examples, we first introduce some notations
+employed from [18, 20] to achieve a smooth integration with abstract data types and
+their operations. The command LET <name> = <query> creates a new database
+object name whose value is given by the query expression. A query can thus be
+formulated in several steps (separated by ;), defining intermediate results by LET.
+The last expression determines the result of the query. We define expressions
+for time instant and interval, e.g., instant(2010, 12, 5, 8) (8am on 5 Dec. 2010),
+interval((2010, 12, 5, 8), (2010, 12, 5, 9)) (between 8am and 9am on 5 Dec. 2010). To
+define operator semantics, some notations are needed. Considering Definition 3.6, a
+space can be denoted by
+
+Space = {(oid , s, β, name)|oid ∈ Dint, s ∈ IOSymbol, name ∈ string}.
+
+By default, Space is available for all operators, i.e., not needed as an explicit
+argument, and one element of Space is denoted by w. We let u, v be single values
+of a data type and correspondingly U, V be generic sets of values of a type. u (U)
+refers to the first argument and v (V) refers to the second argument in an operator.
+mo denotes a moving object and ui be one unit of mo. Semantics of some operators is
+given in this section while that of the others is put into Appendix A due to complex
+definitions.
+
+6.1 Extended operators
+
+It would not make sense to start from scratch here. The design considers aspects
+such as systematic construction of the type system, definition of generic operations
+ranging over large collections of data types, and consistency between non-temporal
+and temporal (i.e. time dependent) operations. Operators in this part have the same
+semantics in previous work [18, 20] for free space and road network, listed in Table 6.
+We extend the syntax in order to support generic data types. See Q3.
+
+Table 6 Operators by
+extending syntax
+
+Name
+=, (cid:10)=
+
+deftime
+duration
+present
+
+initial, final
+atinstant
+atperiods
+val
+inst
+
+Signature
+tm × tm → bool
+genmo → periods
+periods → real
+genmo × intime → bool
+genmo × periods → bool
+genmo → intime(genloc)
+genmo × instant → intime(genloc)
+genmo × periods → genmo
+intime(genloc) → genloc
+intime(genloc) → instant
+
+Geoinformatica (2013) 17:125–172
+
+Table 7 Spatial operators
+
+Name
+=, (cid:10)=
+
+inside
+intersects
+
+distance
+
+Signature
+genloc × genloc → bool
+genloc × genrange → bool
+genloc × genrange → bool
+genrange × genrange → bool
+genloc × genloc → real
+
+151
+
+Semantics
+
+Definition A.1 in Appendix A
+Definition A.2 in Appendix A
+The same as Definition A.2
+Definition A.3 in Appendix A
+Definition A.4 in Appendix A
+
+• Q3. Where is Bobby at 8:00 am?
+
+LET qt = instant(2010, 12, 5, 8);
+
+SELECT val(mo.Traj atinstant qt)
+FROM MOGendon AS mo
+WHERE mo.Name = "Bobby"
+
+The result is expressed by a value with genloc, denoted by gl. One can investigate
+gl.oid and Space to know the infrastructure gl is located. Assuming the infrastructure
+is Road Network, the referenced road can be retrieved.
+
+SELECT * FROM get_infra(Space, ROAD) as r
+WHERE r.RoadId = gl.oid
+
+6.2 Spatial and spatial-temporal
+
+Spatial operators are collected in Table 7. We give comments for some operators.
+The meaning for distance should be clear if the two arguments belong to the same
+infrastructure, e.g., Euclidean distance in I f s, network distance in Irn. If they belong
+to different infrastructures, we define the value to be the minimum length of a trip
+connecting the locations.
+
+Table 8 lists operators on spatial-temporal data types. Trajectory projects a
+moving object into the space. Given a location, at restricts the trip to the specified
+place. One can also restrict the movement to a set of places by giving a genrange
+argument. The operator trip takes two locations and a query instant as input. The
+locations are general (i.e., can be situated in any infrastructure), and the result is
+described in the form of genmo. Consider the query “find a trip from my of f ice room
+
+Table 8 Spatial-temporal operators
+
+Name
+
+trajectory
+at
+
+passes
+
+trip
+
+Signature
+genmo → genrange
+genmo × genloc → genmo
+genmo × genrange → genmo
+genmo × genloc → bool
+genmo × genrange → bool
+genloc × genloc × instant → genmo
+
+Semantics
+
+Definition A.5 in Appendix A
+Definition A.6 in Appendix A
+Definition A.8 in Appendix A
+at(mo, v) (cid:10)= ∅
+at(mo, v) (cid:10)= ∅
+Omitted
+
+152
+
+Geoinformatica (2013) 17:125–172
+
+to my home with minimum traveling time”. The resulting trip described by a sequence
+of transportation modes might be Indoor → Car → Walk or Indoor → Walk →
+Bus → Walk.
+
+We give query examples for these operators below.
+
+• Q4. Between 8am and 9am, who sits in the same bus as Bobby?
+
+LET qt = interval((2010, 12, 5, 8), (2010, 12, 5, 9));
+
+SELECT mo1.Name
+FROM MOGendon AS mo1, MOGendon AS mo2
+mo2.Name = "Bobby" AND
+WHERE
+val(mo1.Traj atperiods qt) =
+val(mo2.Traj atperiods qt)
+
+6.3 Sets and decomposition
+
+The design of types and operations in the abstract model for moving objects [18]
+emphasized compatibility with a relational model and therefore proposed only
+“atomic” data types, i.e., types suitable as attribute types in a relation. Presumably
+for this reason, there is no set type constructor applicable to atomic types so that for
+example, a type set(periods) would be available.
+
+However, it was recognized that a tool for decomposing values of a data type into
+components was needed. For example, for a region value consisting of several disjoint
+components (“faces”) it should be possible to obtain each face as an independent
+region value; similarly for a moving(point) one would like to have a decomposition
+into continuous pieces, each as a separate mpoint value. It is obvious that a natural
+operation to perform such decompositions would have a signature
+
+components: α → set(α)
+
+for any atomic type α consisting of several components. In this paper we leave this
+restriction behind and do introduce a set constructor. In the implementation, it has
+turned out that one does not even need an explicit data structure to represent such
+sets but can handle sets of values as streams of tuples at the executable level of the
+system. Of course, it is also possible to introduce an explicit data structure for sets.
+Together with the set constructor we define a few generic operations:
+
+contains:
+card:
+
+set(α) × α → bool
+set(α)
+
+→ int
+
+Furthermore, the operation components is offered for decomposition:
+
+For α ∈ {range(β), points, line, region, moving(γ )}:
+components: α → set(α)
+
+Note that type periods is just an abbreviation for range(instant), hence the
+
+signature
+
+is also available.
+
+components: periods → set(periods)
+
+Geoinformatica (2013) 17:125–172
+
+153
+
+6.4 Transportation modes and IFOBs
+
+Table 9 lists the proposed operators. Given a moving object, we can get its transporta-
+tion modes. Using Bobby’s trajectory M1 as an example, get_mode returns {Walk,
+Car, Indoor}. With get_mode and contains (Section 6.3), one can examine whether a
+moving object includes a specific transportation mode. See Q7.
+
+• Q5. Find all people using public transportation vehicles.
+
+SELECT mo.Name
+FROM MOGendon AS mo
+WHERE get_mode(mo.Traj) contains Bus OR
+
+get_mode(mo.Traj) contains Train OR
+get_mode(mo.Traj) contains Metro
+
+Given a transportation mode, a trip can be restricted to a sub movement with
+respect to the mode, done by at (in Section 6.2, at restricts a trip to a given space and
+now the operator is extended).
+
+• Q6. How long does Bobby walk during his trip?
+
+SELECT duration(deftime(mo.Traj at Walk))
+FROM MOGendon AS mo
+WHERE mo.Name = "Bobby"
+
+We define a data type named ioref to have a light representation of referenced
+
+IFOBs, whose value may need a large storage space, e.g., region.
+
+Definition 6.1 Reference data type
+
+Dioref = {(oid, ref )|oid ∈ Dint, ref ∈ IOSymbol}
+
+Operator ref_id returns the referenced object id and get_ref gets the IFOB in a
+light representation (See Q9). When the underlying data is needed, one can get the
+full representation by accessing Space.
+
+Table 9 Operators on
+transportation modes and
+infrastructure objects
+
+Name
+
+get_mode
+at
+ref_id
+
+get_ref
+
+Signature
+genmo → set(tm)
+genmo × tm → genmo
+ioref → int
+busroute → int
+mpptn → int
+genloc → ioref
+genrange → set(ioref)
+genmo → set(ioref)
+
+Semantics
+{ui.m|ui ∈ mo}
+Definition 6.2
+u.oid
+u.b s1.rid, u ∈ U
+ui.bloc1.br_id, ui ∈ mo
+Definition 6.3
+Definition 6.4
+Definition 6.5
+
+154
+
+Geoinformatica (2013) 17:125–172
+
+• Q7. Find all people taking “Bus527”.
+
+SELECT mo.Name
+FROM MOGendon AS mo,
+
+get_infra(SpaceGendon, BUS) AS bus
+
+WHERE ref_id(bus.BusTrip) = 527 AND
+
+get_ref(mo.Traj at Bus) contains bus.BusId
+
+Definition 6.2 genmo × tm → genmo at
+
+The result is < u1, u2,...,un > where ui.m = v.
+
+Definition 6.3 genloc → ioref get_ref
+
+The result is (u.oid, w.s) where ∃ w ∈ Space: u.oid = w.oid.
+
+Definition 6.4 genrange → set(ioref) get_ref
+
+The result is {(u.oid, w.s) | u ∈ U ∧ (∃ w ∈ Space : u.oid = w.oid)}.
+
+Definition 6.5 genmo → set(ioref) get_ref
+
+The result is {(ui.oid, w.s) | ui ∈ mo ∧ (∃ w ∈ Space : ui.oid = w.oid)}.
+
+6.5 Subtype relationships and conversions between generic and specific types
+
+Sometimes one needs to apply generic operations (defined for genloc, genrange
+or genmo) to objects of more specific types. This is possible through subtype
+relationships. In Section 4, data types for the different infrastructures have been
+shown to fit into the generic framework; hence arguments of the specific types can
+be substituted in operations for the generic types. The valid subtype relationships are
+shown in Table 10. We give an example Q10 that is between genloc and busstop.
+• Q8. How long does Bobby wait at the bus stop “Uni”?
+
+SELECT duration(deftime((mo.Traj at Walk) at bs.Stop))
+FROM MOGendon AS mo,
+
+get_infra(SpaceGendon, BUSSTOP) AS bs
+
+WHERE mo.Name = "Bobby" AND
+bs.Name = "Uni"
+
+We give some comments for the query. The movement is first restricted to the
+mode Walk, and then limited to a bus stop. We suppose that people walk to a bus
+stop instead of by car or some other modes. Here, a generic location is specified as
+
+Table 10 Subtype
+relationships
+
+Infrastructure Generic types
+
+I ptn
+Iindoor
+Irb o
+Irn
+I f s
+
+genloc
+
+busstop, busloc
+
+genrange
+
+busroute
+groom, door
+
+genmo
+
+mpptn
+
+gpoint
+point
+
+gline
+mgpoint
+points, line, region mpoint
+
+Geoinformatica (2013) 17:125–172
+
+155
+
+the bus stop location. deftime gets the time period at the place and duration returns
+the time span.
+
+Furthermore, sometimes it is necessary to compare locations or moving objects
+that belong to different infrastructures. To be able to evaluate such relationships,
+we might try to provide mappings between all pairs of infrastructures. However,
+it is simpler to introduce a generic mapping that converts an object from any
+infrastructure into the free space counterpart. We introduce such an operation
+called freespace. Essentially it maps values of any of the types in Table 10 to the
+corresponding type in free space, hence offers the signatures shown in Table 11. For
+the mapping of indoor locations into free space we ignore the height value associated
+with a groom and project into the (x, y) plane (or the ground level of the building).
+This maps rooms from different floors into the same locations. Nevertheless, the
+mapping is still able to relate locations between different infrastructures. To help
+understand the operators, see the examples below.
+
+• Q9. Is the university under a thunderstorm area?
+Let R_storm (∈ Dregion) be the thunderstorm area.
+
+SELECT R_storm contains freespace(room.Room),
+FROM get_infra(SpaceGendon, ROOM) AS room,
+WHERE room.Name contains "Uni"
+
+We assume the name of all university rooms has “Uni” as the prefix and project
+
+the area of a room to the free space.
+
+• Q10. Find all buses passing the city center area.
+
+SELECT bus.Name
+FROM get_infra(SpaceGendon, BUS) AS bus,
+
+get_infra(SpaceGendon, OUTDOOR) AS outdoor
+
+WHERE outdoor.Name = "CityCenter" AND
+
+freespace(bus.Bus) passes outdoor.Reg
+
+Table 11 Conversion
+operators
+
+Operator
+
+freespace
+
+Signature
+genloc → point
+busstop → point
+busloc → point
+gpoint → point
+busroute → line
+groom → region
+door → line
+gline → line
+genmo → mpoint
+mpptn → mpoint
+mgpoint → mpoint
+genrange → points
+genrange → line
+genrange → region
+int × real × real → genloc
+
+freespace_p
+freespace_l
+freespace_r
+genloc
+
+156
+
+Geoinformatica (2013) 17:125–172
+
+To be able to compare the bus movement (of type mpptn) with the city center
+region (which is a region value in free space) we must map it into the free space using
+operation freespace, i.e., convert it to an mpoint.
+• Q11. Did bus 527 pass any traveler going by bicycle?
+
+We define pass to mean that there exists a time instant where the distance
+between the two moving objects is less than 3 m.
+
+SELECT mo.Name
+FROM get_infra(SpaceGendon, MPPTN) AS bus, MOGendon AS mo
+WHERE ref_id(bus.BusTrip) = 527 AND
+
+sometimes(distance(freespace(bus.Vehicle),
+
+freespace(mo.Traj at Bicycle)) < 3.0)
+
+Here we need to determine the distance between two moving objects, namely, the
+bus and a traveler going by bicycle. We assume the bus passes the bicycle if at some
+time their distance is small enough. To be able to determine the time-dependent
+distance, both moving objects have to move within the same infrastructure. There-
+fore we first map both of them into free space, i.e., convert them to mpoint. The
+application of the distance operator returns a moving real. Comparing this with the
+constant 3.0 returns an mbool value. Finally, sometimes yields true, if the mbool ever
+assumes the value true.6
+
+For the mapping of genrange values into free space, we need to introduce
+three operators freespace_p, freespace_l, and freespace_r returning points, line, or
+region values, respectively. This is necessary because genrange is a union type. The
+operators return the parts of the argument that can be mapped into the respective
+result type. For example, one can obtain the trajectory of a trip as a line value.
+
+Finally, for querying, a construction operator genloc for generic locations is
+needed that builds a generic location from an IFOB identifier and two real
+“coordinates”.
+
+7 More query examples
+
+In this section, we perform queries to evaluate the data model. The notation
+SET(<name>, <value>) constructs a relation with a single tuple and attribute from
+an atomic value. For example, SET(Name, "Bobby") constructs the relation r of the
+previous paragraph. Seeing the operator components (Section 6.3) with the signature
+periods → set(periods), the notation SET(Time, components(p)) will produce
+a relation with schema (Time: periods) having one tuple for each distinct time
+interval in the periods value p.
+
+Appendix A provides useful information to check all query formulations in detail.
+It lists the schemas of the involved infrastructure relations and an index for each
+query showing where the used operations have been defined.
+
+6sometimes is a derived operation, sometimes(mb ) = not(isempty(deftime(mb at true))). See [17],
+Exercise 4.5.
+
+Geoinformatica (2013) 17:125–172
+
+157
+
+• Q12. “Which streets does bus12 pass by.”
+
+SELECT r
+FROM get_infra(SpaceGendon, ROAD) as r,
+
+get_infra(SpaceGendon, BUSROUTE) as br
+
+WHERE br.BusRouteId = 12 AND
+
+intersects(br.Route, r.Road)
+
+• Q13. Find out who passed the room r312 in the university between 8am and 9am.
+
+LET qt = interval((2010, 12, 5, 8), (2010, 12, 5, 9));
+
+Assume the name of the room is “Uni-312”.
+
+SELECT mo.Name
+FROM MOGendon AS mo,
+
+get_infra(SpaceGendon, ROOM) AS room
+
+WHERE room.Name = "Uni-312" AND
+
+get_ref((mo.Traj atperiods qt) at Indoor)
+contains room.room_id
+
+To define this query, several operators are needed. First, we restrict moving
+objects to the given period by atperiods and to indoor movement by at. Second, we
+get the referenced IFOBs by get_ref. The result is represented by the reference type,
+i.e., as set(ioref). Third, we check whether the room id is included by contains.
+
+• Q14. Where does Bobby walk during his trip?
+
+SELECT trajectory(mo.Traj at Walk)
+FROM MOGendon AS mo
+WHERE mo.Name = "Bobby"
+
+• Q15. Find all people staying at office room 312 at the university for more than 2
+
+hours.
+
+SELECT mo.Name
+FROM MOGendon AS mo, get_infra(SpaceGendon, ROOM) AS room
+WHERE room.Name = "Uni-312" AND EXISTS
+
+SELECT *
+FROM SET(Piece,
+
+components(deftime(mo.Traj at room.Room)))
+
+WHERE duration(Piece) > 120
+
+The trajectory of mo is restricted to the times when he/she was at room 312 which
+due to the subtype relationship can be used as a genrange value. Obviously, the query
+refers to a single stay at this office rather than to the aggregated time over many
+visits. Hence we decompose the definition time interval into disjoint intervals using
+components. This is transformed into a relation from which we select tuples for which
+the duration of the stay is more than two hours. If the relation is not empty for a given
+mo, then this mo qualifies for the result.
+
+158
+
+Geoinformatica (2013) 17:125–172
+
+• Q16. Who entered bus 527 at bus stop “University”?
+
+SELECT mo.Name
+FROM MOGendon AS mo,
+
+get_infra(SpaceGendon, BUS) AS bus,
+get_infra(SpaceGendon, BUSSTOP) AS busstop
+
+WHERE ref_id(bus.BusTrip) = 527 AND
+
+busstop.Name = "University" AND
+bus.Stop = val(initial(mo.Traj at
+
+genloc(bus.BusId, undef, undef)))
+
+• Q17. Did anyone who was at the University on floor H-2 between 4:30pm and
+
+5pm take a bus to the main (train) station?
+To be on floor H-2 means to be in any of the rooms of floor H-2. We assume a
+table is available associating rooms with the floors they belong to:
+
+Uni_Rel(Floor: string, RoomName: string)
+
+Then the query can be formulated as follows:
+
+LET qt1 = interval((2010, 12, 5, 16, 30),
+
+(2010, 12, 5, 17));
+
+LET qt2 = interval((2010, 12, 5, 16, 30),
+
+SELECT mo.Name
+FROM MOGendon AS mo, Uni_Rel AS u,
+
+get_infra(SpaceGendon, ROOM) AS r,
+get_infra(SpaceGendon, BUSSTOP) AS bs1,
+get_infra(SpaceGendon, BUSSTOP) AS bs2
+
+WHERE u.Floor = "H-2" AND
+
+u.RoomName = r.Name AND
+(mo.Traj atperiods qt1) passes r.Room AND
+bs1.Name = "University" AND
+bs2.Name = "Main station" AND
+val(initial((mo.Traj atperiods qt2) at Bus))
+= bs1.Stop AND
+val(final((mo.Traj atperiods qt2) at Bus))
+= bs2.Stop
+
+The query implicitly requires that the person takes the bus to the main station
+later when he is on floor H-2. Hence we define a second time period from 4:30pm
+to 7pm during which the bus must be taken. We then ask for trajectories of people
+passing through the generic locations of rooms on floor H-2 within period qt1 as well
+as having a bus trip during qt2 that starts at the University bus stop and ends at the
+main station bus stop.
+• Q18. Who arrived by taxi at the university in December?
+
+To arrive by taxi at the university means that the final location of the passenger
+within the taxi belongs to some driveway area close to the university. We assume
+
+Geoinformatica (2013) 17:125–172
+
+159
+
+such a part of the road network has been entered into the database as an object
+UniDriveway of type gline.
+
+LET December = interval((2010, 12, 1), (2010, 12, 31));
+
+SELECT mo.Name
+FROM MOGendon AS mo
+WHERE EXISTS
+SELECT *
+FROM SET(Trip,
+
+components((mo.Traj atperiods December) at Taxi))
+
+WHERE val(final(Trip)) inside UniDriveway
+
+We reduce the trajectory of a person to the taxi trips in December. There may be
+several such trips (present in the resulting trajectory), hence we apply components to
+get the continuous pieces, i.e., the individual taxi trips. In the end, we check whether
+the relation containing these trips includes one with the final destination within the
+university driveway area.
+
+8 Implementation
+
+8.1 Data management
+
+The implementation is done in an open source and extensible database system SEC-
+ONDO [19] that supports spatial and moving objects management. The proposed
+data model is built in three steps.
+
+First, five infrastructures (Road Network, Region-based Outdoor, Bus Network,
+Metro Network and Indoor) are developed and each infrastructure contains four
+components: the type, a set storing its IFOBs, an index set and a graph. All data
+types representing IFOBs are implemented and each of them is embedded as an
+attribute in a relation. In order to access these objects efficiently, several indices
+are built. B-trees are built on relations by specifying key values and r-trees are also
+maintained to efficiently support queries on spatial attributes. Sometimes, one may
+compare objects from different infrastructures. For example, given a building, all bus
+stops within 300 meters can be located. R-tree indices improve the query efficiency.
+To sum up, an infrastructure organizes a set of relations and indices. Using the road
+network as an example, a collection of roads is stored in a relation, a B-tree with the
+key road id and an R-tree are built on the relation, and a road graph is defined for
+searching the shortest path.
+
+Second, the space which is built on the top of all infrastructures stores a set of
+records. Each record references to an infrastructure. Concrete data about IFOBs
+are maintained by the low level infrastructure and loaded by the space if they
+are needed for query processing (operator get_infra in Section 5.2). A record has
+two values denoting the minimum and maximum object ids in an infrastructure
+to efficiently identify the environment for a location. That is, the semantic mean-
+ing of oid (Definition 3.7) is explained by the space, i.e., a road or room id.
+An infrastructure can run individually without depending on other infrastructures
+to have a flexible system, as some applications may not need all environments.
+In general, the space serves as an interface and builds the connection between
+
+160
+
+Geoinformatica (2013) 17:125–172
+
+underlying infrastructure objects and moving objects. During the query processing,
+concrete data are loaded from the low level infrastructure, e.g., roads, bus routes,
+rooms. Only a reference for each infrastructure is maintained by the space to
+have a light representation. Besides, the space has the functionality of location
+mapping. To compare infrastructure objects from different environments, (e.g., Q10,
+Q11) one needs to project them into the same system and this is done by the
+space.
+
+Third, generic data types that can apply in all infrastructures are developed. A
+value represented by a generic type can be converted to a specific representation in
+one infrastructure, e.g., genloc → point. All proposed operators are implemented
+and registered as functions in the DBMS in order to be available for query
+users.
+
+8.2 Data generator
+
+To evaluate the performance of such a system, a benchmark is needed that provides
+realistic data including both infrastructures and moving objects. Motivated by the
+lack of real data for all infrastructures in a consistent environment, we create outdoor
+infrastructures from real roads and indoor environment from public floor plans
+(e.g., [5, 7]) to simulate a city environment. Xu and Güting [54] demonstrates the
+created data including roads, pavement areas, bus routes, buildings, etc. Visualizing
+3D indoor objects such as rooms, staircases, indoor trajectories is available by
+implementing a 3D viewer in the system. One can also perform the animation of
+indoor moving objects. We let the infrastructure data size be fixed and do not
+consider any update, e.g., roads insertion, new building construction.
+
+Moving objects are created based on trip planning where the start and end
+locations may be situated in different infrastructures, yielding multiple transporta-
+tion modes. A navigation algorithm through all environments is developed to
+support queries like “find the shortest path from the of f ice room to my apartment”.
+The system generates a moving object with different transportation modes, e.g.,
+Walk → Bus → Walk → Indoor. To find such a path, different infrastructure graphs
+are developed such as pavement graph and bus graph. We briefly describe the
+procedure of creating the example movement. First, given a query location in the
+walking area, the nearest bus stop is found and mapped to a pavement location. Then,
+the shortest path from the query location to the bus stop is returned and such a path
+is located in the pavement area. Second, the procedure of routing in a bus network is
+called and a bus trip with the minimum traveling time is retrieved. From the ending
+bus stop, the traveler walks to the target building. Third, indoor navigation is called
+to find a precise shortest path from the building entrance to a room. In addition
+to producing moving objects with multiple transportation modes, trips in a single
+environment are also available such as walking in the pavement area and moving
+inside a building. Precise paths are used to produce these moving objects instead of
+approximate locations.
+
+8.3 Indexing
+
+To optimize the query processing, an index structure is built on each generic moving
+object to efficiently access the units. Recall that a moving object is represented by a
+
+Geoinformatica (2013) 17:125–172
+
+161
+
+set of units arranged in a linear order on time. For the purpose of obtaining a sub trip
+according to the transportation mode in a fast way, we employ an index to access the
+data rather than search all units linearly. See some examples in the proposed queries
+that request a sub trip according to the mode. To answer Q4 the movement with the
+mode Bus is returned, and in Q6 walking trips are specified. For travelers who take
+public vehicles, one might get the sub trip on a particular bus, seeing Q7 and Q16.
+Obviously, the sequential scan yields poor performance for large data.
+
+Given a generic moving object mo, let I = {(m, l, h)|m ∈ Dtm , l, h ∈ Dint} be the
+index built on the units of mo. Each element in I consists of three attributes where
+m records the transportation mode and l, h are entries pointing to the start and end
+locations of a sequence of units with the mode m. That is, each element maps to a
+sub movement in mo with a single mode. Consider such an example movement7
+
+mo = < (Indoor)1, (Indoor)2, ..., (Indoor)10, (Walk)11, (Walk)12, ..., (Walk)15,
+
+(Car)16, (Car)17, ..., (Car)30, (Walk)31, ..., (Walk)40,
+(Indoor)41, (Indoor)42, ..., (Indoor)45 > .
+
+The index built on mo is I = {(Indoor, 1, 10), (Walk, 11, 15), (Car, 16, 30), (Walk,
+31, 40), (Indoor, 41, 45)}. Although I is still a list structure, the quantity of elements
+depends on the number of modes in mo, usually quite few. Each element locates the
+range of continuous units with a certain mode. As a result, given a transportation
+mode we first scan the index to determine the positions of qualified units and then
+access them to get the concrete value. The searching performance can be improved as
+a large number of units that do not fulfill the condition can be skipped by accessing I.
+By observation, there is a frequently called procedure in the queries, checking
+the existence of a transportation mode in mo. Since a large part of queries specifies
+a certain transportation mode (e.g., Q6, Q7, Q11), one needs to find all qualified
+moving objects. Trips that do not contain the give mode should not be considered. To
+know the involved transportation modes for mo, one option is to sequentially scan all
+units and compare the mode attribute to see if the value is identical to the argument.
+The proposed index can accelerate the procedure, but still yields a linear searching.
+The ability to determine the existence of a mode in constant time can reduce the
+overall running time. The solution is as follows. An integer IM (32 bits) is assigned to
+each mo to denote the involved transportation modes where a bit indicates whether
+a mode exists or not. Each transportation mode is assigned a value as an index to
+locate the corresponding bit in IM. We mark the bit true if the mode exists and false
+if it does not exist. Suppose that the least significant (right-most) nine bits are used
+for the modes in Definition 3.5. We assign 0 for Car as the bit index, 1 for Bus, and
+so on. A moving object with the following sequence of modes Indoor → Walk →
+Bus → Walk defines the value 26 (binary 00011010). We calculate IM for each mo in
+advance and store such a value in a tuple as an attribute along with mo. During the
+query processing, both the query mode and the integer are taken as input. The index
+for the bit corresponding to the query mode is calculated, and the stored integer is
+examined.
+
+7for simplicity, we only show the transportation mode in each unit
+
+162
+
+Geoinformatica (2013) 17:125–172
+
+9 Experimental evaluation
+
+In this section, we perform the experimental evaluation to test the system that
+manages generic moving objects. The implementation is developed in Secondo [19]
+and programmed in C/C++ and Java. A standard PC (AMD 3.0 GHz, 4 GB memory,
+2TB disk) running Suse Linux (kernel version 11.3) is used. We utilize the tool
+MWGen [56] to create all infrastructure data based on real roads and public floor
+plans (e.g., [5–7]). The road dataset is Berlin [4]. The tool takes roads and floor plans
+as input and generates pavement areas, bus network, metro network and a set of
+buildings. A website [3] is published for providing all experimental materials. The
+system is open source, and implementations as well as datasets are published for
+experimental repeatability.
+
+9.1 Datasets
+
+All infrastructure data are shown in Fig. 6a and the detailed information of buildings
+is reported in Fig. 6b. We create a set of buildings of different types based on their
+floor plans to simulate a city environment. |P| means the vertex number of the
+large polygon for walking, |B| records the number of buildings per type and |R|
+denotes the number of rooms in one building. Due to the privacy problem, there
+are no floor plans for private houses. Besides the static IFOBs, there are buses and
+metros represented by moving objects. In both bus and metro networks, we define
+a schedule for each route to create trips. We simulate one week movement. For the
+bus schedule, there are more trips on the day ∈ {Mon, Tue, Wed, Thu, Fri, Sat} than
+on Sunday. For metros, the schedules are the same for the whole week. The detailed
+information is shown in Fig. 6c.
+
+Moving objects datasets are described in Fig. 7. A set of movement rules is defined
+in [55] to create trips that simulate a variety of real life scenarios. For example,
+people’s trajectories exhibit regular patterns [15] most of the time, e.g., commuting.
+On the weekend, based on the habits and preferences they may have some trips to
+interesting places such as home of friends, shopping malls, and cinemas. To perform
+an activity, people usually prefer nearby to distant places, e.g., look for the nearest
+hotel. Based on these rules, a set of moving objects with different transportation
+modes is generated. Figure 7a lists the involved transportation modes and Fig. 7b
+
+X Range
+Y Range
+Roads
+
+[0, 44411]
+[0, 34781]
+3,250
+116,516
+89
+10
+4,996
+2.5 G
+
+Bus Routes
+Metro Routes
+Buildings
+Size
+(a) Infrastructures
+
+Fig. 6 Infrastructure data
+
+Type
+house
+294
+officeA
+214
+officeB
+360
+shopping mall
+21
+cinema
+584
+hotel
+89
+hospital
+431
+university
+train station
+56
+(b) Statistics of Buildings
+
+3,713
+600
+487
+80
+6
+39
+46
+20
+1
+
+5,220
+
+No. Bus Trips in
+One Day
+(From Mon to Sat)
+No. Bus Trips
+On Sun
+No. Metro Trips in
+One Day (From
+Mon to Sun)
+(c) Mobile Infrastructure Data
+
+2,660
+
+1,897
+
+Geoinformatica (2013) 17:125–172
+
+163
+
+Name
+
+Trips No. Total
+
+Disk Size (G)
+
+Units No.
+(M)
+25.9
+
+Avg.
+Units No.
+Per Trip
+51.4
+
+Berlin500k
+
+503,759
+
+3.92
+
+(a) Transportation Modes
+
+(b) Moving Objects
+
+[Indoor] + Walk +
+
+Bike
+Car
+Bus
+Metro
+Taxi
+
+Fig. 7 Generic moving objects
+
+shows the properties of the moving objects dataset. The mode Indoor is optional in a
+trip and the result depends on the start and end locations. The regular trips between
+home and work places include such a mode, but trips representing people walking
+around in the city center do not contain such a value. The mode Walk is contained by
+each trip. According to the study in [60], walk segment is an important part which
+builds the connection between movement segments with different transportation
+modes. Usually people do not directly switch from Car to Bus or from Indoor to
+Metro.
+
+9.2 Performance
+
+In this part, we report the experimental results to illustrate the efficiency and
+effectiveness of the proposed techniques for managing and querying generic moving
+objects. We investigate the system performance by running queries on a large amount
+of moving objects with multiple transportation modes. The CPU time and I/O
+accesses are used as performance metrics where the I/O accesses mean the number
+of pages that are read into the cache. In the database system, the cache size is set
+as 64M and one page size is 4k. We run each query ten times and set the average
+value to be the final result. For the constant value of a query such as a particular
+person, a university or an office building, we manually select an arbitrary value from
+the possible set.
+
+Figure 8 reports the experimental results where the CPU time of most queries is
+less than 10 s, demonstrating the efficiency of the proposed approaches. The detailed
+value of each query is shown in Fig. 9.
+
+ 15
+ 10
+ 5
+
+ 1
+ 0. 5
+
+ 0. 1
+
+)
+c
+e
+s
+(
+e
+m
+
+i
+t
+ 
+
+U
+P
+C
+
+ 250
+ 100
+ 50
+
+ 10
+
+ 1
+
+ 0. 1
+
+)
+k
+(
+ 
+s
+e
+s
+s
+e
+c
+c
+A
+O
+
+ 
+
+/
+I
+
+Q1 Q2 Q3Q4 Q5 Q6 Q7 Q8 Q9 Q10
+
+Q12
+
+Q13
+
+Q14
+
+Q15
+
+Q16
+
+Q17
+
+Q18
+
+Q1 Q2 Q3Q4 Q5 Q6 Q7 Q8 Q9 Q10
+
+Q13
+
+Q14
+
+Q15
+
+Q16
+
+Q17
+
+Q18
+
+Q11
+(a) CPU Time
+
+Q12
+(b) I/O Accesses
+
+Q11
+
+Fig. 8 Query cost
+
+164
+
+Geoinformatica (2013) 17:125–172
+
+Query CPU Time (sec)
+Q1
+Q2
+Q3
+Q4
+Q5
+Q6
+Q7
+Q8
+Q9
+
+0.1
+0.1
+3.5
+9.3
+7.8
+4.0
+4.3
+5.1
+0.1
+
+(a)
+
+I/O Accesses (k)
+0.934
+0.065
+40.73
+89.67
+40.66
+40.73
+41.85
+40.92
+0.143
+
+Fig. 9 Experimental statistics
+
+10 Conclusions and future work
+
+Query CPU Time (sec)
+Q10
+Q11
+Q12
+Q13
+Q14
+Q15
+Q16
+Q17
+Q18
+
+0.8
+6.3
+1.0
+6.4
+4.0
+7.5
+14.8
+6.3
+5.7
+
+(b)
+
+I/O Accesses (k)
+0.022
+45.87
+0.775
+134.48
+40.64
+215.58
+64.515
+70.123
+45.612
+
+In this paper, we introduced a data model to efficiently manage moving objects
+in multiple environments including public transportation network, indoor, region-
+based outdoor, road network and free space. A generic location representation is
+proposed and can be applied in all real world environments. We let the space for
+moving objects be covered by a set of infrastructures each of which corresponds to
+an environment. Each infrastructure is composed of a set of objects representing
+available places for moving objects. The location of moving objects maps to these
+infrastructure objects. New data types are proposed to define moving objects and
+components in each infrastructure. To efficiently access the data and formulate
+queries, a set of operators is defined in the system. A relational interface is provided
+for exchanging data between values of proposed data types and a relational envi-
+ronment. We formulate a group of interesting queries and report how such a model
+is implemented in a database system. Experimental results are reported by running
+queries on a large amount of moving objects.
+
+The future work is to discover some interesting movement patterns from generic
+
+moving objects regarding different environments and transportation modes.
+
+Appendix A: Operator semantics
+
+We extend the deﬁnition of operator geodata and give domains and ranges in
+Table 12. geodata which plays a crucial rule for deﬁning semantics, maps locations
+in different infrastructures into free space. The ﬁrst three signatures are for PTN.
+Given a line and the relative position on the line, geodata returns a point for that
+position. Given a point (line) inside a region, we obtain its global position. The last
+one maps an indoor location to free space. This is done by ignoring the height above
+the ground level, i.e., projecting a room to the ground ﬂoor of a building. To have
+the symbol set denoting data types supported by geodata, we deﬁne IOSymbol’ =
+{LINE, REGION, BUSROUTE, GROOM} (⊂ IOSymbol).
+
+Definition A.1 =: genloc × genloc → bool
+
+Let u, v be the two locations and the result is TRUE iff
+
+(i)
+
+u.oid = ⊥ ∧ v.oid = ⊥ ∧ u.iloc = v.iloc; or
+
+Geoinformatica (2013) 17:125–172
+
+165
+
+Table 12 Extension for
+geodata
+
+geodata
+
+busroute → line
+busroute × busstop → point
+busroute × busloc → point
+line × real → point
+For α ∈ {point, line}
+region × α → α
+groom × α → α
+
+(ii)
+(iii)
+
+(iv)
+
+u.oid = v.oid ∧ u.iloc = v.iloc; or
+u.oid = ⊥ ∧ (∃w ∈ Space : w.oid = v.oid ∧ w.s ∈
+geodata(w.β, v.iloc)); or
+v.oid = ⊥ ∧ (∃w ∈ Space : w.oid = u.oid ∧ w.s ∈
+geodata(w.β, u.iloc))
+
+IOSymbol’ ∧ u.iloc =
+
+IOSymbol’ ∧ v.iloc =
+
+Cases (i) and (ii) are straightforward as both locations are in free space or in the
+same IFOB. In case (iii) and (iv), if one location is in free space and the other belongs
+to another infrastructure, the latter maps to free space by loading the referenced
+IFOB.
+
+Definition A.2 inside: genloc × genrange → bool
+
+Let u be a single location and V be a set of locations. The result is TRUE iff ∃v ∈ V
+
+such that
+
+(i)
+(ii)
+
+(iii)
+
+(iv)
+
+u.oid = ⊥ ∧ v.oid = ⊥ ∧ u.iloc ∈ v.l; or
+u.oid = v.oid ∧ (u.iloc ∈ v.l ∨
+(∃w ∈ Space : v.oid = w.oid ∧
+geodata(w.β, u.iloc) ∈ geodata(w.β, v.l))); or
+u.oid = ⊥ ∧ (∃w ∈ Space :
+v.oid = w.oid ∧ w.s ∈ IOSymbol’ ∧
+u.iloc ∈ geodata(w.β, v.l)); or
+v.oid = ⊥ ∧ (∃w ∈ Space :
+u.oid = w.oid ∧ w.s ∈ IOSymbol ∧
+geodata(w.β, u.iloc) ∈ v.l)
+
+Case (i) shows a single location and a set of locations in free space. If u, v reference
+to the same object w (case (ii)), one can directly compare the location inside w or
+load the referenced object to transform from relative location to global. Similarly, if
+one parameter corresponds to free space and the other does not, we need to perform
+location mapping by the referenced object. These are cases (iii) and (iv).
+
+Definition A.3 intersects: genrange × genrange → bool
+The result is TRUE iff ∃u ∈ U, ∃v ∈ V such that
+u.oid = ⊥ ∧ v.oid = ⊥ ∧ u.l intersects v.l ; or
+u.oid = v.oid ∧ u.l intersects v.l ; or
+u.oid = ⊥ ∧ (∃w ∈ Space :
+v.oid = w.oid ∧ w.s ∈ IOSymbol’ ∧
+u.l intersects geodata (w.β, v.l)); or
+
+(i)
+(ii)
+(iii)
+
+Geoinformatica (2013) 17:125–172
+
+166
+
+(iv)
+
+v.oid = ⊥ ∧ (∃w ∈ Space :
+u.oid = w.oid ∧ w.s ∈ IOSymbol’ ∧
+v.l intersects geodata(w.β, u.l))
+
+Definition A.4 distance: genloc × genloc → real
+
+length(trajectory(trip(u, v)))
+
+Definition A.5 trajectory: genmo → genrange
+
+The result is a set of (oid, l, m) where m = ui.m and the values for oid and l are
+
+deﬁned in the following.
+
+(i)
+(ii)
+
+(iii)
+
+(iv)
+
+ui.oid = ⊥ ⇒ oid = ⊥ ∧ l = ∪ f (t)(t ∈ ui.i); or
+∃w ∈ Space: u.oid = w.oid ∧ (w.s = REGION ∨ w.s = GROOM), then
+oid = u.oid, l = ∪ f (t).iloc(t ∈ ui.i); or
+∃w ∈ Space: u.oid = w.oid ∧ (w.s = LINE ∨ w.s = BUSROUTE), then
+oid = u.oid, l = ∪geodata(w.β, f (t).iloc)(t ∈ ui.i); or
+∃w1, w2 ∈ Space : u.oid = w1.oid ∧ w1.s = MPPTN ∧ ref_id(w1) = w2.oid, then
+oid = w2.oid, l = trajectory(atperiods(w1, ui.i))
+
+The trajectory of a moving object is a set of movement projections, each of which
+shows the path of a unit ui ∈ mo. The meaning for (i) and (ii) should be clear. In case
+(iii), the object moves along a pre-deﬁned path, e.g., a road or bus route. For case
+(iv), the location in ui maps to a bus. Then, the trajectory is the bus movement, which
+goes to case (iii).
+
+Definition A.6 at: genmo × genloc → genmo
+
+Let mo =< u1, u2, ..., un > be the moving object and v denote the location.
+
+(i)
+(ii)
+
+, ..., u(cid:21)
+k
+
+v.iloc (cid:10)= ⊥, the result is < u(cid:21)
+> where u(cid:21)
+∈ mo ∧ ∀t ∈ u(cid:21)
+1
+i
+i
+v.oid (cid:10)= ⊥ ∧ v.iloc = ⊥, then the result is < u(cid:21)
+, ..., u(cid:21)
+1
+k
+(a) u(cid:21)
+i
+(b) u(cid:21)
+i
+w.oid = v.oid ∧ ∀t ∈ u(cid:21)
+i
+
+.oid = v.oid; or
+.oid = ⊥ ∧ (∃w ∈ Space such that
+
+.i : f (t) ∈ w.β ∧ w.s ∈ IOSymbol’)
+
+> where u(cid:21)
+i
+
+.i : f (t) = v; or
+∈ mo ∧
+
+The meaning is clear if the second argument represents a precise location (case
+(i)). If the location only records an object id (case (ii)), then the units in the result
+could have the same reference id as the input, or the unit location maps to the place
+covered by the given IFOB.
+
+Definition A.7 intersection: genrange × genrange → genrange
+
+Let U and V be the two arguments, and the result is denoted by L. The value for
+
+L is deﬁned in the following: ∀ li ∈ Dgenloc: li inside L ⇒ li inside U ∧ li inside V.
+
+Definition A.8 at: genmo × genrange → genmo
+
+Let mo =< u1, u2, ..., un > be the moving object and V be a set of locations. We
+use L (∈ Dgenrange) to denote the intersection locations between trajectory(mo) and
+V. The result is mo(cid:21) =< u(cid:21)
+.i :
+1
+f (t)(∈ Dgenloc) inside L.
+
+> fulﬁlling the condition: ∀u(cid:21)
+j
+
+∈ mo(cid:21), ∀t ∈ u(cid:21)
+j
+
+, ..., u(cid:21)
+k
+
+, u(cid:21)
+2
+
+Geoinformatica (2013) 17:125–172
+
+167
+
+Appendix B: Example relations and query signatures
+
+The following relations are used in the queries throughout the paper. Infrastructure
+relations are accessed by the get_infra operator.
+
+MOGendon(Mo_id: int, Traj: genmo, Name: string)
+
+rel_busstop
+rel_busroute (BusRouteId: int, Route; busroute, Name:
+
+(BusStopId: int, Stop: busstop, Name: string)
+
+rel_bus
+rel_room
+rel_door
+rel_roompath (RoomPathId: int, Door1: int, Door2: int,
+
+string, Up: bool)
+(BusId: int, BusTrip: mpptn, Name: string)
+(RoomId: int, Room: groom, Name: string)
+(DoorId: int, Door: door)
+
+rel_rbo
+rel_rn
+
+Weight: real, Room: groom, Name: string, Path:
+line)
+(RegId: int, Reg: region, Name: string)
+(RoadId: int, Road: line, Name: string)
+
+In the following tables we show the signatures of operations used in the queries.
+Operator get_infra is omitted as it occurs in almost every query. We deﬁne subtype
+to mean that the operator performs a conversion from a speciﬁc type to a generic
+type.
+
+Operator
+
+Signature
+
+No.
+Q1
+Q2
+Q3
+
+Q4
+
+Q5
+
+Q6
+
+Q7
+
+Q8
+
+Q9
+
+geodata
+atinstant
+val
+atperiods
+val
+=
+get_mode
+contains
+at
+deftime
+duration
+ref_id
+at
+get_ref
+contains
+subtype
+at
+at
+deftime
+duration
+contains
+freespace
+contains
+
+busroute × busstop
+genmo × instant
+intime(genloc)
+genmo × periods
+intime(genloc)
+genloc × genloc
+genmo
+set(tm) × tm
+genmo × tm
+genmo
+periods
+mpptn
+genmo × tm
+genmo
+set(ioref ) × int
+busstop
+genmo × tm
+genmo × genloc
+genmo
+periods
+set(region) × region
+groom
+set(string) × string
+
+→ point
+→ intime(genloc)
+→ genloc
+→ genmo
+→ genloc
+→ bool
+→ set(tm)
+→ bool
+→ genmo
+→ periods
+→ real
+→ int
+→ genmo
+→ set(ioref )
+→ bool
+< genloc
+→ genmo
+→ genmo
+→ periods
+→ real
+→ bool
+→ region
+→ bool
+
+Definition
+
+Section 4.1.2
+Table 6
+Table 6
+Table 6
+Table 6
+Table 7
+Table 9
+Section 6.3
+Table 9
+Table 6
+Table 6
+Table 9
+Table 9
+Table 9
+Section 6.3
+Table 10
+Table 9
+Table 8
+Table 6
+Table 6
+Section 6.3
+Table 11
+Section 6.3
+
+168
+
+No.
+Q10
+
+Q11
+
+Q12
+
+Q13
+
+Q14
+
+Q15
+
+Q16
+
+Q17
+
+Q18
+
+Geoinformatica (2013) 17:125–172
+
+Operator
+freespace
+passes
+ref_id
+distance
+freespace
+freespace
+at
+subtype
+subtype
+intersects
+atperiods
+at
+get_ref
+contains
+at
+trajectory
+subtype
+at
+deftime
+components
+duration
+ref_id
+subtype
+genloc
+at
+initial
+val
+=
+subtype
+passes
+subtype
+atperiods
+at
+initial
+ﬁnal
+val
+=
+subtype
+atperiods
+components
+ﬁnal
+val
+at
+inside
+
+→ mpoint
+→ bool
+→ int
+→ mreal
+→ mpoint
+→ mpoint
+→ genmo
+< genrange
+< genrange
+
+Signature
+mpptn
+mpoint × region
+mpptn
+mpoint × mpoint
+mpptn
+genmo
+genmo × tm
+busroute
+line
+genrange × genrange → bool
+genmo × periods
+genmo × tm
+genmo
+set(ioref ) × int
+genmo × tm
+genmo
+groom
+genmo × genrange
+genmo
+periods
+periods
+mpptn
+busstop
+int × real × real
+genmo × genloc
+genmo
+intime(genloc)
+genloc × genloc
+groom
+genmo × genrange
+busstop
+genmo × periods
+genmo × tm
+genmo
+genmo
+intime(genloc)
+genloc × genloc
+gline
+genmo × periods
+periods
+genmo
+intime(genloc)
+genmo × tm
+genloc × genrange
+
+→ genmo
+→ genmo
+→ set(ioref )
+→ bool
+→ genmo
+→ genrange
+< genrange
+→ genmo
+→ periods
+→ set(periods)
+→ real
+→ int
+< genloc
+→ genloc
+→ genmo
+→ intime(genloc)
+→ genloc
+→ bool
+< genrange
+→ bool
+< genloc
+→ genmo
+→ genmo
+→ intime(genloc)
+→ intime(genloc)
+→ genloc
+→ bool
+< genrange
+→ genmo
+→ set(periods)
+→ intime(genloc)
+→ genloc
+→ genmo
+→ bool
+
+Definition
+Table 11
+[18]
+Table 9
+[18]
+Table 11
+Table 11
+Table 9
+Table 10
+Table 10
+Table 7
+Table 6
+Table 9
+Table 9
+Section 6.3
+Table 9
+Table 8
+Table 10
+Table 8
+Table 6
+Section 6.3
+Table 6
+Table 9
+Table 10
+Table 11
+Table 8
+Table 6
+Table 6
+Table 7
+Table 10
+Table 8
+Table 10
+Table 6
+Table 9
+Table 6
+Table 6
+Table 6
+Table 7
+Table 10
+Table 8
+Section 6.3
+Table 6
+Table 6
+Table 9
+Table 7
+
+Geoinformatica (2013) 17:125–172
+
+169
+
+Appendix C: Type system in free space and road network
+
+Table 13 Data types in [14, 18, 20]
+BASE ∪ TIME
+
+→ BASE
+→ TIME
+→ RANGE
+→ SPATIAL
+→ GRAPH
+→ TEMPORAL
+
+int, real, string, bool
+instant
+range
+point, points, line, region
+gpoint, gline
+moving, intime
+
+SPATIAL ∪ GRAPH
+
+Definition C.1
+
+Definition C.2
+
+Definition C.3
+
+Definition C.4
+
+Definition C.5
+
+UBool = {(i, b )|i ∈ Dinterval, b ∈ Dbool}
+Dmbool = {< u1, u2, ..., un > |n ≥ 0, n ∈ Dint, and ∀i ∈ [1, n], ui ∈ UBool}
+
+UPoint = {(i, p1, p2)|i ∈ Dinterval, p1, p2 ∈ Dpoint}
+Dmpoint = {< u1, u2, ..., un > |n ≥ 0, n ∈ Dint, and ∀i ∈ [1, n], ui ∈ UPoint}
+
+NLoc = {(rid, pos, side)|rid ∈ Dint, pos ∈ Dreal, side ∈ Dbool}
+Dgpoint = {(n_id, gp)|n_id ∈ Dint, gp ∈ NLoc}
+
+NReg = {(rid, pos1, pos2)|rid ∈ Dint, pos1, pos2 ∈ Dreal}
+Dgline = {(n_id, gl)|n_id ∈ Dint, gl ∈ NReg}
+
+UGPoint = {(i, gp1, gp2)|i ∈ Dinterval, gp1, gp2 ∈ NLoc and
+
+(i) gp1.rid = gp2.rid;
+(ii) gp1.side = gp2.side}
+
+Dmgpoint = {< u1, u2, ..., un > |n ≥ 0, n ∈ Dint, and ∀i ∈ [1, n], ui ∈ UGPoint}
+
+References
+
+18 June 2012
+
+2012
+
+1. http://code.google.com/transit/spec/transit_feed_specification.html (2011). Accessed 15 Dec 2011
+2. http://conversations.nokia.com/2008/09/23/indoor-positioning-coming-to-life/ (2012). Accessed
+
+3. http://dna.fernuni-hagen.de/secondo.html/transportationmode.html (2012). Accessed 18 June
+
+4. http://www.bbbike.de/cgi-bin/bbbike.cgi (2008). Accessed 18 June 2012
+5. http://www.edenresort.com/home (2010). Accessed 20 Dec 2010
+6. http://www.greenhosp.org/floor_plans.asp (2011). Accessed 10 May 2011
+
+170
+
+Geoinformatica (2013) 17:125–172
+
+bases. In: IDEAS
+
+In: SIGMOD
+
+efficiency study. In: SIGMOD
+
+SSDBM
+
+patterns. Nature 453:779–282
+
+thought. In: VLDB
+
+7. http://www.modulargenius.com/default.aspx (2010). Accessed 20 Jan 2010
+8. Bauer V, Gamper J, Loperfido R, Profanter S, Putzer S, Timko I (2008) Computing isochrones
+
+in multi-modal, schedule-based transport networks. In: ACM GIS, Demo
+
+9. Booth J, Sistla P, Wolfson O, Cruz IF (2009) A data model for trip planning in multimodal
+
+transportation systems. In: EDBT
+
+10. Brakatsoulas S, Pfoser D, Tryfona N (2004) Modeling, storing and mining moving object data-
+
+11. Chen L, Özsu MT, Oria V (2005) Robust and fast similarity search for moving object trajectories.
+
+12. Chen Z, Shen HT, Zhou X, Zheng Y, Xie X (2010) Searching trajectories by locations—an
+
+13. Ding Z, Güting RH (2004) Managing moving objects on dynamic transportation networks. In:
+
+14. Forlizzi L, Güting RH, Nardelli E, Schneider M (2000) A data model and data structures for
+
+moving objects databases. In: SIGMOD, pp 319–330
+
+15. González MC, Hidalgo RCA, Barabási A (2008) Understanding individual human mobility
+
+16. Grumbach S, Rigaux P, Segoufin L (2000) Manipulating interpolated data is easier than you
+
+17. Güting RH, Schneider M (2005) Moving objects databases. Morgan Kaufmann, San Mateo
+18. Güting RH, Böhlen MH, Erwig M, Jensen CS, Lorentzos NA, Schneider M, Vazirgiannis M
+(2000) A foundation for representing and querying moving objects. ACM TODS 25(1):1–42
+19. Güting RH, Almeida V, Ansorge D, Behr T, Ding Z, Höse T, Hoffmann F, Spiekermann M
+(2005) Secondo: an extensible dbms platform for research prototyping and teaching. In: ICDE,
+demo paper
+
+20. Güting RH, de Almeida VT, Ding ZM (2006) Modeling and querying moving objects in net-
+
+works. VLDB J 15(2):165–190
+
+ries. VLDB J 19(5):687–714
+
+21. Güting RH, Behr T, Xu J (2010) Efficient k-nearest neighbor search on moving object trajecto-
+
+22. Hage C, Jensen CS, Pedersen TB, Speicys L, Timko I (2003) Integrated data management for
+
+mobile services in the real world. In: VLDB
+
+23. Iwerks GS, Samet H, Smith K (2003) Continuous k-nearest neighbor queries for continuous
+
+24. Jensen CS, Kligys A, Pedersen TB, Timko I (2004) Multidimensional data modeling for location-
+
+moving points with updates. In: VLDB
+
+based services. VLDB J 13:1–21
+
+25. Jensen CS, Lu H, Yang B (2009) Graph model based indoor tracking. In: MDM
+26. Jensen CS, Lu H, Yang B (2009) Indexing the trajectories of moving objects in symbolic indoor
+
+27. Jeung H, Liu Q, Shen HT, Zhou X (2008) A hybrid prediction model for moving objects. In:
+
+28. Jeung H, Yiu ML, Zhou X, Jensen CS, Shen HT (2008) Discovery of convoys in trajectory
+
+space. In: SSTD
+
+ICDE
+
+databases. In: VLDB
+
+query languages. In: ICDT
+
+Comput J 46(6):680–712
+
+ronments. In: W2GIS
+
+in road networks. In: VLDB
+
+networks. In: ICDE
+
+CIKM
+
+29. Kuijpers B, Othman W (2007) Trajectory databases: data models, uncertainty and complete
+
+30. Lema JA, Forlizzi L, Güting RH, Schneider M (2003) Algorithms for moving objects databases.
+
+31. Lorenz B, Ohlbach HJ, Stoffel EP (2006) A hybrid spatial model for representing indoor envi-
+
+32. Mouratidis K, Hadjieleftheriou M, Papadias D (2005) Conceptual partitioning: an efficient
+
+method for continuous nearest neighbor monitoring. In: SIGMOD
+
+33. Mouratidis K, Yiu ML, Papadias D, Mamoulis N (2006) Continuous nearest neighbor monitoring
+
+34. Mouratidis K, Lin Y, Yiu ML (2010) Preference queries in large multi-cost transportation
+
+35. Mouza C, Rigaux P (2005) Mobility patterns. Geoinformatica 9(4):297–319
+36. Mouza C, Rigaux P, Scholl M (2005) Efficient evaluation of parameterized pattern queries. In:
+
+37. Praing R, Schneider M (2007) Modeling historical and future movements of spatio-temporal
+
+objects in moving objects databases. In: CIKM, pp 183–192
+
+38. Praing R, Schneider M (2007) A universal abstract model for future movements of moving
+
+objects. In: AGILE conf., pp 111–120
+
+Geoinformatica (2013) 17:125–172
+
+171
+
+39. Reddy S, Mun M, Burke J, Estrin D, Hansen MH, Srivastava MB (2010) Using mobile phones
+
+to determine transportation modes. TOSN 6(2):82–108
+
+40. Scarponcini P (2002) Generalized model for linear referencing in transportation. Geoinformatica
+
+41. Shekhar S, Coyle M, Goyal B, Liu DR, Sarkar S (1997) Data models in geographic information
+
+42. Sistla P, Wolfson O, Chamberlain S, Dao S (1997) Modeling and querying moving objects. In:
+
+6(1):35–55
+
+systems. Commun ACM 40 4:103–111
+
+ICDE, pp 422–432
+
+43. Speicys L, Jensen CS (2008) Enabling location-based services–multi-graph representation of
+
+transportation networks. GeoInformatica 12(2):219–253
+
+44. Speicys L, Jensen CS, Kligys A (2003) Computational data modeling for network-constrained
+
+moving objects. In: ACM-GIS
+
+45. Stenneth L, Wolfson O, Yu P, Xu B (2011) Transportation mode detection using mobile devices
+
+and gis information. In: ACM SIGSPATIAL
+
+46. Su J, Xu H, Ibarra OH (2001) Moving objects: logical relationships and queries. In: SSTD
+47. Tao Y, Papadias D, Shen Q (2002) Continuous nearest neighbor search. In: VLDB
+48. Thiagarajan A, Madden S (2008) Querying continuous functions in a database system. In: SIGMOD
+49. Timko I, Pedersen TB (2004) Capturing complex multidimensional data in location-based data
+
+warehouses. In: GIS, pp 147–156
+
+50. Vazirgiannis M, Wolfson O (2001) A spatiotemporal model and language for moving objects on
+
+51. Voisard A, David B (2002) A database perspective on geospatial data modeling. TKDE
+
+52. Wolfson O, Xu B, Chamberlain S, Jiang L (1998) Moving objects databases: issues and solutions.
+
+53. Wolfson O, Chamberlain S, Kalpakis K, Yesha Y (2001) Modeling moving objects for location
+
+54. Xu J, Güting RH (2011) Infrastructures for research on multimodal moving objects. In: MDM,
+
+55. Xu J, Güting RH (2012) GMOBench: a benchmark for generic moving objects. Informatik-
+
+Report 362, Fernuniversität in Hagen
+
+56. Xu J, Güting RH (2012) MWGen: a mini world generator. In: MDM, to appear
+57. Yang B, Lu H, Jensen CS (2010) Probabilistic threshold k nearest neighbor queries over moving
+
+objects in symbolic indoor space. In: EDBT
+
+58. Zhang J, Zhu M, Papadias D, Tao Y, Tee DL (2003) Location-based spatial queries. In: SIGMOD
+59. Zheng Y, Liu L, Wang L, Xie X (2008) Learning transportation mode from raw GPS data for
+
+geographic applications on the web. In: WWW
+
+60. Zheng Y, Chen Y, Xie X, Ma WY (2010) Understanding transportation mode based on GPS
+
+data for web application. ACM Trans Web 4(1):1–36
+
+road networks. In: SSTD
+
+14(2):226–242
+
+In: SSDBM, pp 111–122
+
+based services. In: IMWS
+
+demo paper
+
+Jianqiu Xu got his bachelor’s and master’s degree from Nanjing University of Aeronautics and
+Astronautics in 2005 and 2008, respectively. Now he is a Ph.D. student supervised by Prof. Dr. Ralf
+Hartmut Güting from FernUniversität in Hagen, Germany.
+
+172
+
+Geoinformatica (2013) 17:125–172
+
+Ralf Hartmut Güting has been a full professor in computer science at the University of Hagen,
+Germany, since 1989. He received his diploma and Dr. rer. nat. degrees from the University of
+Dortmund in 1980 and 1983, respectively, and became a professor at that university in 1987. From
+1981 to 1984 his main research area was Computational Geometry. After a one-year stay at the
+IBM Almaden Research Center in 1985, extensible and spatial database systems became his major
+research interests; more recently, also spatio-temporal or moving objects databases. He has been an
+associate editor of the ACM Transactions on Database Systems and an editor of the VLDB Journal
+and is on the editorial board of Geoinformatica. He has published two German text books on data
+structures and algorithms and on compilers, respectively, and an English text book on moving objects
+databases, as well as around eighty journal and conference articles. His group has built prototypes of
+extensible and spatio-temporal database systems, the Gral system and the SECONDO system.
+
+

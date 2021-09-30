@@ -1,0 +1,3723 @@
+Geoinformatica
+DOI 10.1007/s10707-013-0198-7
+
+Group spatiotemporal pattern queries
+
+Mahmoud Attia Sakr · Ralf Hartmut G ¨uting
+
+Received: 22 May 2013 / Revised: 29 October 2013 / Accepted: 28 November 2013
+© Springer Science+Business Media New York 2014
+
+Abstract Group spatiotemporal patterns are certain formations, in space and time, shown
+by groups of moving objects, such as flocks, concurrence, encounter, etc. A large number
+of recent applications focus on the collective behavior of moving objects, rather than the
+individual movements. Therefore finding such groups in moving object databases is crucial.
+There exist, in the literature, smart algorithms for matching some of these patterns. These
+solutions, however, address specific patterns and require specialized data representation and
+indexes. They share too little to be integrated into a single system. There is a need for a
+generic query method that allows users to fill in pattern descriptions, and retrieve the set of
+matches. In this paper, we propose generic query operators that can consistently express and
+match a wide range of group spatiotemporal patterns. We formally define these operators,
+illustrate the evaluation algorithms, and discuss the issues of their integration with moving
+object database (MOD) systems. These operators have been implemented in the context
+of SECONDO MOD system, and the implementation is available online as open source.
+Several examples are given to showcase the expressive power of the operators. We have
+made available scripts that can be invoked from the SECONDO interface to automatically
+repeat some of the experiments in this paper.
+
+Keywords Collective behavior · Moving object databases · SECONDO · Spatiotemporal
+pattern queries
+
+M. A. Sakr ((cid:2)) · R. H. G¨uting
+Database Systems for New Applications, Fern Universit¨at in Hagen, Hagen, Germany
+e-mail: m attia sakr@yahoo.com
+
+R. H. G¨uting
+e-mail: rhg@fernuni-hagen.de
+
+M. A. Sakr
+Computer and Information Sciences, University of Ain Shams, Cairo, Egypt
+
+Geoinformatica
+
+1 Introduction
+
+Moving objects are object that change their location, extent, and/or value with time. These
+might be cars driving on the highway, airplanes moving in the three dimensional space, a
+developing storm that moves and changes its extent, or even non-spatial moving objects
+such as stock prices that increase or decrease with time. Moving objects are everywhere
+around us. The advances in the positioning and sensor technologies have made it easier and
+cheaper to collect the traces of movement, and represent them in digital formats. Enterprises
+have their own moving object data, and they would like to use it in computer applications,
+which calls for building a moving object database system (MOD).
+
+Building a MOD involves several research issues, including generic query and analy-
+sis operations, which is the scope of this paper. We propose generic query operators for
+expressing and matching group spatiotemporal patterns (STP). By a group STP we mean a
+collective behavior that consists of several moving objects, which behave in a similar way
+or interact together in some distinguishable way. Moving objects form groups to carry out
+some tasks. Many recent application domains are interested in finding such grouping events
+and analyzing them, because they highlight interesting phenomena, for example:
+
+–
+
+–
+
+–
+
+–
+
+The analysis of human crowds and pedestrian groups is crucial to a lot of important
+applications, such as the collective behavior classification, abnormality detection, and
+surveillance applications [41].
+The study of collective animal behavior (swarming) is essential because it is usually
+attached to interesting activities such as migration, protection against a predator, etc.
+Exploring how individuals on Social Web application (blogs, chat groups, Facebook,
+Twitter, etc) interact and group together is in the focus of many recent research works
+[22]. The media industry, political parties, and governments show an increasing interest
+in analyzing the dynamics of such groups.
+In cell phone tracking applications, and the applications where the locations are coarse
+(e.g., blue-tooth tracking), group behavior is more interesting than individual move-
+ments. For example, studying how mobile users group helps better assigning network
+resources in cell phone networks in order to achieve better load balancing,
+
+–
+
+– Mining the groups in meta databases like DBLP based on relationships such as co-
+authorship of papers or co-attendance of conferences helps understand the evolving
+structure of the research community [5].
+It is interesting to find group of stocks whose prices concurrently show some trend, and
+explore their dependencies,
+The biological functions of proteins are widely affected by group of amino-acids within
+a single protein that exhibit similar dynamics. Researchers in this area are interested in
+tracking such collective behaviors [29].
+
+–
+
+These examples show that the moving object data can originate from diverse sources, that
+the grouping can be based on diverse criteria, and that the pattern descriptions vary accord-
+ing to the data and the applications. The traditional approach of mining group STPs did
+not provide enough flexibility for expressing and matching such a wide variety of patterns.
+The existing techniques address specific patterns by introducing specific pattern definitions,
+then proposing corresponding matching algorithms. There is no agreement between these
+techniques on the pattern definitions, the data representation, the required indexes, and the
+representation of the results. This limits the possibility of integrating these techniques into
+a generic pattern matching tool to fulfill the needs of the above applications.
+
+Geoinformatica
+
+This paper studies the group pattern matching problem from the perspective of database
+query. Our approach aims at developing generic query operators for expressing and match-
+ing such patterns within the context of a moving object database system (MOD). The
+challenges are:
+
+–
+
+–
+
+–
+
+It should be possible to handle abstract moving objects of different types, e.g., moving
+point objects, moving regions, time-series, etc.
+These tools should allow the user to express the patterns in a flexible way. This is in
+contrast to the existing techniques that impose the pattern description by the matching
+algorithm.
+These tools should build on an existing MOD, e.g., use the existing operations, integrate
+with the query language, use the common indexes, etc.
+
+There are two flavors of MOD systems. The first deals with the current movement and
+the predicted near future (e.g., [36]). The second deals with the trajectories or the history of
+the movement (e.g., [19]). This paper focuses on the second class of models, the trajectory
+databases.
+
+We propose three generic query operators that are able to consistently express and match
+a wide range of group STPs. They allow users to flexibly describe the pattern by adjusting
+the set of arguments. They have been implemented and tested in the open source SECONDO
+MOD system [2].
+
+The rest of this paper is organized as follows. Section 2 reviews the closely related work.
+Section 3 cites and explains the moving objects database model that is assumed in this
+paper. It also explains the extensions that we add to this model. A casual illustration for
+the proposed operators is given in Section 4. The formal definitions of the operators follow
+in Sections 5, 6, and 7. Several query examples that illustrate the utility of the proposed
+operators are demonstrated in Section 8. Section 9 describes a generic technique for inte-
+grating these operators with the query optimizers. The experimental evaluation is shown in
+Section 10. Finally, Section 11, concludes the paper and tells about the future work plans.
+
+2 Related work
+
+In their work, Dodge et al. [9] presented a systematic taxonomy of group movement pat-
+terns, along with an extensive survey of this area of research. They proposed a set of
+dimensions to classify the movement patterns, underlining the commonalities between
+them. In [40], spatiotemporal patterns are classified into: relative motion patterns, disc pat-
+terns, and density-based patterns. These works suggest that a generic toolbox for pattern
+search can be designed based on such a classification.
+
+Andrienko and Andrienko have several publications that focus on solutions based on
+visual analytics, for example [4]. In particular, a set of data transformations, computations,
+and visualization techniques is defined, that could enable a human analyst to discover inter-
+esting patterns in moving objects data. Among them are time-aware maps, space-time cubes,
+interactive dynamic filtering of data, clustering of trajectories, etc. Clearly the outcome
+depends on the ability of the human analyst to combine these tools to make sense of the
+data. It is also necessary that the size of data be reasonably small for visualization.
+
+Most of the works in group spatiotemporal pattern matching propose algorithmic solu-
+tions that tend to address very specific patterns. These works typically focus on matching a
+single pattern. The pattern is given a restricted definition, then an efficient pattern matching
+algorithm is given based on this definition. These algorithms share too little to be integrated
+
+Geoinformatica
+
+within one system context. Moreover, there is no wide agreement on the definitions of the
+patterns. Table 1 lists some of these works. The table cites two of the different flock def-
+initions. The first is proposed in [16, 24]. The pattern matching is done using the REMO
+approach, that will be discussed below in detail. The second definition appears in [6]. The
+trajectories are represented as points in a high dimensional space, indexed by a skip quad
+tree. A flock query is then modeled as a count query to the skip quad tree. Several other vari-
+ants of the flock pattern were defined under different names, e.g., the convoy pattern in [20]
+and the moving cluster pattern in [21]. The Gathering [38, 39] and the Companion [33] pat-
+terns are other flock variants that were recently proposed. A gathering represents a relatively
+large group of moving objects that form a dense area of a relatively stable shape. Unlike a
+convoy, the members in a gathering might slowly change over time. The Companion pat-
+tern [33] allows for a faster change in the set of members. Its associated matching algorithm
+focuses on the fast online pattern matching on trajectory streams. Clearly the drawback of
+these algorithmic approaches is the lack of generality. Our observation is that the differ-
+ences between these similar variants can be expressed as generic database predicates. The
+user would then combine them to express a pattern.
+
+The MoveMine application [26] implements several recent algorithms for group STPs,
+and trajectory clustering and classification. The application offers a GUI to set the param-
+eters of every algorithm and to visualize the results. It was further extended in [25] by an
+algorithm for matching periodic behavior, and moving object clusters. MoveMine did not
+show, however, efforts towards integrating these pattern matching algorithms in a unified
+computational framework. A vision for a more generic computational framework for spa-
+tiotemporal pattern matching is discussed in [37]. This work discusses several system design
+aspects, and highlights the possible implementation challenges. It is, however, a visionary
+paper without any concrete details.
+
+Within the European GeoPKDD project (Geographic Privacy-aware Knowledge Disco-
+very and Delivery) [1, 14], tools for mobility data mining have been implemented on the
+top of the Hermes MOD system [28], including pattern mining tools. The whole system is
+
+Table 1 Examples for the Group STPs
+
+1 Concurrence [23]: n moving point objects (MPO) showing the same motion attribute value (e.g., speed,
+
+2 Trend-setter [23]: One trend-setting MPO anticipates the motion of m others, so that they show the same
+
+3 (m, r) Flock [16, 24]: At least m MPOs are within a circular region of radius r and they move in the
+
+azimuth) at time t.
+
+motion attribute value.
+
+same direction.
+
+4 (m, r, d) Leadership [16, 24]: At least m MPOs are within a circular region of radius r, and they move
+
+in the same direction. At least one of them was already moving in this direction for at least d time steps.
+
+5 (m, r) Convergence [16, 24]: At least m MPOs will pass through the same circular region of radius r,
+
+assuming they keep their direction.
+
+6 (m, r) Encounter [16, 24]: At least m MPOs will be simultaneously inside the same circular region of
+
+radius r (assuming they keep their speed and direction).
+
+7 (m, r, d) Convoy [20]: At least d consecutive timesteps, during which an (m, r) Density-based Cluster
+
+8 (m, r, d) Flock [6]: At least d consecutive timesteps, such that for every timestep there is a disk of radius
+
+is defined.
+
+r that contains all the m MPOs.
+
+Geoinformatica
+
+called the GeoPKDD system. In [27], the so-called two worlds model was introduced. It
+stores both the moving objects data and the discovered patterns in the database. The data is
+stored in a subset of the database logically marked as the data world, while the patterns are
+stored in another subset logically marked as the model world. The Hermes system is used
+for storage. Above Hermes, some pattern mining algorithms are implemented, and made
+accessible through a data mining query language [34, 35]. The implemented algorithms are
+the T-Pattern algorithm in [15], the flock algorithm [6], and two algorithms for trajectory
+clustering.
+
+The GeoPKDD system, similar to the MoveMine program, provides the user with a menu
+of pattern mining algorithms. While this menu is extensible by new algorithms, the user is
+always restricted to the specific definitions of the patterns imposed by the algorithms. Our
+approach focuses on letting the user describe that pattern. We propose generic operators,
+each of them being able to express a wide range of patterns. Section 8 will illustrate how to
+express the patterns in Table 1 using the proposed operators.
+
+The work by Laube et al. [23] proposes the REMO (RElative MOtion) model. It is the
+most closely related work to this paper. It defines a language that can consistently express
+a number of group STP queries. Briefly, the model defines a 2D matrix, where the rows
+represent the moving objects, and the columns represent a series of time instants. Whereas
+the columns are clearly ordered by time, the rows have no inherent order. The elements of
+the matrix are the values of some predefined motion attribute (e.g., object’s speed, azimuth,
+acceleration, etc.) computed for the moving object (row) at the time instant (column). The
+REMO matrix is hence a 2D string, where 2D string patterns can be searched for. The pattern
+query is expressed by means of regular expressions. The model could successfully express
+the concurrence, and the trend-setter patterns [23]. We see the following shortcomings in
+the REMO approach:
+
+(1)
+
+(2)
+
+(3)
+
+(4)
+
+The size of the REMO matrix is proportional to the database size. One would even
+need to maintain several matrices for several motion attributes.
+The REMO matrix does not inherently support the analysis based on the object loca-
+tions (e.g., spatial proximity constraints between the moving objects). The model is
+extended in [24] to support such analysis functions as second class citizens. That is,
+first the analysis is done on the REMO matrix, then the analysis part that requires
+object locations is done on the results. For example, according to the REMO model a
+flock pattern is a concurrence pattern plus spatial proximity constraints. This would
+require that the flock members match the concurrence pattern (i.e., concurrently share
+similar values for the motion attributes). Such a definition is clearly restrictive (e.g.,
+birds in a flock may move around, without leaving their flock, with different speed
+and/or azimuth).
+The model cannot express the patterns that are described based on object interactions.
+The motion attributes in the REMO matrix describe every object independently of the
+other objects. Patterns that are described based on the mutual relationships between
+the moving objects (e.g., north of, closer than) cannot be expressed.
+The REMO matrix handles the time discretely. It does not directly support con-
+tinuous trajectories. Trajectory sampling is known to incur inaccuracies in the data
+representation.
+
+Up to our knowledge, this work by Laube et al. is the only one that proposes a generic
+language for group STP queries. The above analysis calls for a new approach that overcomes
+these problems.
+
+Geoinformatica
+
+3 The underlying database model
+
+This paper builds on the moving objects data model proposed in [12, 19]. This section
+describes the parts of the model that will be used in the rest of the paper. We use the Second-
+Order Signature (SOS) [13] to describe the model. It is a tool for specifying data models,
+query processing, and optimization rules. It lets the user first define the type system (the
+first signature), then define polymorphic operations on the types (the second signature).
+
+A signature consists of sorts and operators, and generates a set of terms. In the first sig-
+nature, the one defining the type system, sorts are called kinds, operators are called type
+constructors, and terms are called types. That is, type constructors operate on kinds to gen-
+erate types. We briefly describe the type system, and the query language of [12, 19] in
+Sections 3.1 and 3.2. Then we extend this type system in Section 3.4.
+
+3.1 The base type system
+
+The upper part of Table 2 shows the type system of [12]. The bold parts are extensions that
+will be described in Section 3.4. The left, and middle columns display the argument and the
+result kinds, and the right column displays the type constructors. Kinds are sets of types. The
+kind DATA, for instance, contains four types. A type constructor that accepts no arguments
+is a constant, and yields a single type (e.g., int, point). A type constructor that accepts
+arguments generates a set, possibly infinite, of types (e.g., range(int), ..., range(instant)).
+The upper part of Table 2 defines abstract data types (ADT) for moving object repre-
+sentation, as was proposed in [12]. The lower part describes a relational data model, where
+ATTR = DATA ∪ ... ∪ MAPPING. The discussion in this paper is restricted to the relational
+model. It is however possible to introduce similar solutions for other database models (e.g.,
+object relational, XML, etc.).
+
+Table 2 defines the syntax of the type system. The semantics is defined by assigning a
+domain for every type. The base types (e.g., int, string, etc.) have similar domains as in
+
+Table 2 The type system
+
+DATA ∪ TIME
+DATA ∪ SPATIAL
+DATA ∪ SPATIAL ∪ COLL
+DISCRETE ∪ COLL
+
+UNIT
+
+(ident × ATTR)+
+TUPLE
+
+TUPLE
+
+→ IDENT
+→ DATA
+→ DISCRETE
+→ SPATIAL
+→ TIME
+→ RANGE
+→ COLL
+→ TEMPORAL
+→ UNIT
+→ UNIT
+→ MAPPING
+
+→ TUPLE
+→ REL
+→ STREAM
+
+ident
+
+int, bool, real, string
+
+int, bool, string
+
+point, region, line
+
+instant
+
+range
+
+set
+
+intime
+
+constunit
+
+mapping
+
+tuple
+
+rel
+
+stream
+
+ureal, upoint, uline, uregion
+
+Geoinformatica
+
+programming languages, except that their domains here are extended by the value undefined
+(e.g., Dreal = R ∪ {undefined}, where Dtype denotes the domain of type).
+
+This type system defines two kinds for moving objects: UNIT and MAPPING. Together,
+the two kinds define the so-called sliced representation of moving objects [12]. That is, the
+complete movement of a moving object during a certain observation period is decomposed
+into slices, each of which describes the movement during a smaller time interval. An object
+of kind UNIT represents a single slice. An object of kind MAPPING is a set of UNITs/slices.
+Let Dinstant denote the domain of time instants instant, isomorphic to R. Let Interval
+
+be the set of time intervals defined as:
+
+Interval = {(t1, t2, lc, rc)| t1, t2 ∈ Dinstant , lc, rc ∈ {false, true},
+t1 ≤ t2, (t1 = t2) ⇒ lc = rc = true}
+That is, a time interval can be left-closed and/or right-closed as indicated by the values of lc
+and rc respectively. It is also possible that the interval collapses into a single time instant.
+
+A type in the UNIT kind describes a pair consisting of a time interval and a temporal
+function. The temporal function describes the evolution of the value of the moving object
+during the associated time interval. For the types that have discrete domains (i.e., DIS-
+CRETE ∪ COLL), the temporal function is a constant, and the type constructor constunit
+constructs their unit types. Let Dσ be the domain of a type σ ∈ DISCRETE ∪ COLL. The
+domain of the corresponding unit type is:
+
+Dconstunit(σ ) = Interval × Dσ
+For example, the domain Dconstunit(bool) = Interval × {false, true, undefined}. For the types
+that have continuous domains (e.g., real, point), the domains of their unit types are defined
+individually. For example, the domain of the unit point is:
+
+Dupoint = Interval × (R2 × R2)
+The unit point describes a linearly moving point in the form (I, ((x1, y1), (x2, y2))). The
+position of the point at time t ∈ I is
+(cid:2)
+
+(cid:3)
+
+x1 + (x2 − x1)(t − I.t1)
+
+, y1 + (y2 − y1)(t − I.t1)
+
+I.t2 − I.t1
+
+I.t2 − I.t1
+
+A type in the MAPPING kind describes the complete movement of a moving object
+
+during some observation periods. It is therefore represented as a set of UNITs.
+
+Definition 1 ∀ unit
+mapping(unit) is:
+
+in UNIT, let Dunit denote its domain. The domain of the type
+
+Dmapping(unit) = {U ⊂ Dunit | ∀(i1, f1) ∈ U, (i2, f2) ∈ U :
+
+(i) i1 = i2 ⇒ f1 = f2
+(ii) i1 (cid:9)= i2 ⇒ (i1 ∩ i2 = ∅) ∧
+
+(i1 adjacent i2 ⇒ ¬((i1, f1) mergeable (i2, f2)))}
+
+where i1 adjacent i2 :⇔ (i1.t2 = i2.t1) ∨ (i1.t1 = i2.t2), and mergeable yields true if the
+two units can be merged together. It is defined according to the unit type. For constant units
+(constunit):
+
+((i1, f1) mergeable (i2, f2)) = (f1 = f2).
+For upoint, for instance, mergeable yields true if both units have the same direction and
+speed, and share one end point. This last condition ensures that a moving object has a
+
+Geoinformatica
+
+unique representation, the one with the minimum number of units. Note that the definition
+allows for temporal gaps during which the moving object is undefined. In the following, the
+types in MAPPING are denoted by a preceding m (e.g., mint, mpoint, mbool). Figure 1
+illustrates an mpoint object.
+
+3.2 The query language
+
+A large number of operations is defined for the type system described above, see [12, 19].
+They fall into three classes:
+
+1. Static operations defined on the non-temporal types (e.g., topological predicates, set
+
+operations, aggregations).
+
+2. Spatiotemporal operations offered for the temporal types (e.g., trajectory of an mpoint,
+
+evaluation of an mregion for a given instant of time).
+
+3. Lifted operations offered for combinations of moving and non-moving types. Basically
+
+they are time-dependent versions of the static operations.
+
+A large part of this moving objects model is implemented in the SECONDO system
+[2, 17]. It consists of three modules: the kernel, the query optimizer, and the graphical user
+interface.
+
+The SECONDO kernel accepts queries in a language called the SECONDO executable
+language. It is a procedural language, in which one specifies step-by-step methods for
+achieving the results. It consists of the three classes of operations above and of query pro-
+cessing operations of the relational model, usually applied in a stream processing mode.
+Essentially it is a precisely defined notation for query plans.
+
+SECONDO to our knowledge is unique in offering a complete syntax for query plans and
+a corresponding language level that is accessible to the user. In other words, the user can
+type query plans directly; these are parsed, checked for correct composition of operations,
+and then executed.
+
+The SECONDO optimizer accepts an SQL-like syntax. The three classes of operations
+mentioned above are integrated into this level as well. The optimizer uses cost based opti-
+mization to map SQL queries into query plans of the SECONDO executable language. Any
+plan that the optimizer generates could as well be typed directly by a user.
+
+In the sequel, queries will presented in both syntaxes. We will first demonstrate our
+proposed operators in the SQL-like syntax to give the big picture of the work. Then we
+will explain the concepts at the level of the SECONDO executable language, and formulate
+several query examples making use of the already existing SECONDO query processing
+operations as needed. This allows us to explain the operators in terms of precisely defined
+
+t
+t
+
+x
+
+y
+
+Fig. 1 The sliced representation of an mpoint
+
+Geoinformatica
+
+query processing operations and their related algorithms, without being bothered by the
+additional level of complexity resulting from embedding into SQL and query optimization.
+Here we briefly introduce the executable language level. Let PhoneBook be a relation
+with the type: rel(tuple(<(Name, string), (Phone, string)>)). A query that finds the
+entries with the name Ali Mahmoud is:
+
+The feed operator reads a relation from disk and converts it into a tuple stream. The consume
+operator does the opposite. The filter operator evaluates a Boolean expression for every
+input tuple, and yields the tuples that fulfill it. For such stream processing operations usually
+a postfix syntax is defined so that one can conveniently write query operators in the order
+in which they are applied. The signatures of these operators are:
+
+rel(tuple)
+stream(tuple)
+stream(tuple) × (tuple → bool) → stream(tuple) filter
+string × string
+
+→ stream(tuple) feed
+→ rel(tuple)
+
+→ bool
+
+contains
+
+consume
+
+#
+#
+#[
+#
+
+]
+
+where tuple is a type variable that can be instantiated with any type in TUPLE. The last
+column in the signature shows the operator syntax, where # denotes the operator, and
+denotes an argument. More operations will be described in the sequel. The SECONDO user
+manual and several tutorial can be found at [2].
+
+3.3 Time dependent predicates
+
+Time dependent predicates are the foundation of the work in this paper. Unlike standard
+predicates that yield bool, time-dependent predicates are operations that yield mbool values.
+They are part of the model in [12, 19]. Figure 2 illustrates the time-dependent predicate
+inside, whose signature is:
+
+mpoint × region
+
+→ mbool
+
+inside
+
+#
+
+It yields true when the mpoint object is spatially located within the region object, false
+otherwise. Mainly, all the standard predicates defined for non-moving types can be uni-
+formly and consistently made applicable to the corresponding moving types in the form of
+time-dependent predicates.
+
+t
+t
+
+Trip
+
+Trip inside R
+
+ 397.7
+
+ 378.3
+
+R
+
+x
+
+Fig. 2 Time-dependent predicates
+
+TRUE
+
+y
+
+FALSE
+
+ 378.3
+
+ 397.7
+
+t
+
+Geoinformatica
+
+The group STPs are typically expressed based on some motion attributes (e.g., direction,
+area, distance between objects, etc.). These attributes can be the raw coordinates (e.g., find
+cars meeting in down town), a derivative (e.g., find a cattle moving with high speed), or
+a second derivative (e.g., find oil spills increasing their area). Time-dependent predicates
+are able to express conditions on such attributes. They are also defined for all kinds of
+moving objects (e.g., mpoint, mregion, mreal). We express the group STP queries on top
+of them, hence allowing for complex analysis on all kinds of motion attributes and all types
+of moving objects.
+
+3.4 Extending the type system
+
+We extend the type system in [12] by the kind COLL as shown in bold in Table 2. This is to
+introduce the moving set type mset which denotes mapping(constunit(set)). It represents
+a set whose elements are changing over time. The domain Dmset of the type mset can be
+obtained by applying Definition 1. That is, let elem be a type variable that can be instantiated
+by any type in DATA ∪ SPATIAL, and let Delem be its domain. The domain of the type
+set is Dset = P(Delem), and the domain of the type constunit(set) is Dconstunit(set) =
+I nterval × Dset . Finally Dmset is obtained from Definition 1 as Dmapping(constunit(set)).
+The type mset is used to represent the groups of moving objects that match a group STP
+query, as will be shown in Section 4. We also define the set MSetPart, which is required for
+the operator definitions, as follows:
+
+Definition 2 Let MSetPart be a subset of Dmset defined as:
+
+MSetPart = { {(i1, f1), ..., (in, fn)} ∈ Dmset | ∃i ∈ I nterval : i = (i1 ∪ ... ∪ in)}
+
+That is, an element of the MSetPart is an mset instance that has no definition gaps within
+its definition time. Its definition time can be represented as a single time interval. As an
+illustration, consider the following example for an mset instance:
+
+It consists of 3 usets, and the elements are of type int. It also belongs to MSetPart, because
+the time intervals of the three units are adjacent (i.e., no temporal gaps in between).
+
+4 The proposed operators
+
+This section gives a casual description and illustrative examples of the proposed opera-
+tors. The operators’ formal definitions, and evaluation algorithms follow in Sections 5, 6,
+and 7. This section is intended to give the reader a rough big picture of the whole work
+before going into the details.
+
+We propose three generic operators with the names gpattern, crosspattern, and report-
+pattern. The gpattern and the crosspattern operators are so called patternoid operators. A
+patternoid is a simple pattern such as flock, convergence, concurrence, etc. This is in contrast
+to the composite patterns which consist of several patternoids (e.g., a convergence followed
+
+Geoinformatica
+
+by a flock). Both operators are built on top of the time-dependent predicates. The gpattern
+operator expresses concurrency patterns. This class of patterns represents groups of moving
+object that concurrently behave in a similar way with regard to some motion attribute (e.g.,
+maintain similar speed, similar heading, etc).
+
+We have also identified a second class of group STPs. They are formed by groups of
+objects that mutually interact together. Two examples are flocking and convergence. A flock
+is a group of objects that maintain close distance to one another. A convergence pattern is a
+group of objects that approach one another. The crosspattern operator expresses this class
+of patterns.
+
+The reportpattern expresses composite patterns on top of the patternoid operators. It
+allows one to specify constraints (e.g., temporal and spatial) between a list of patternoids.
+In the following, three examples will be shown to illustrate the gpattern, the crosspattern,
+and the reportpattern operators respectively. Assume we are given trajectories of gazelles
+moving in a forest. The dataset has the schema:
+
+Gazelles[Id: int, Trip: mpoint]
+
+Example 1 Find a group of 20 gazelles that were concurrently moving with a speed of more
+than 15 km/h, for at least 10 minutes.
+
+This query is written in the SECONDO SQL-like syntax. The gpattern is a table expression
+(i.e., it yields a table). Therefore, it is used in the FROM clause. It accepts six arguments:
+the input stream of tuples, the identifier attribute of this stream, a time-dependent predicate,
+the minimum duration of the pattern, the number of objects in the group, and a quantifier for
+the number of objects, either atleast or exactly. The gpattern evaluates the time-dependent
+predicate speed(Trip) > 15.0 for every gazelle in the input stream. Using the evaluated
+time-dependent booleans, it finds the groups with cardinality of at least 20 gazelles, that
+concurrently fulfill the time-dependent predicate, for at least 10 minutes. There might be
+several such groups. Therefore, a stream is returned in the result. Every element in the result
+stream is an mset instance that belongs to MSetPart. Notice that the set of gazelles in such
+a group might be changing over time because gazelles can be joining and/or leaving the
+group. Therefore the mset type is used to represent the results rather than the static set type.
+
+The following example illustrates the crosspattern operator.
+
+Example 2 Find a group of at least 20 gazelles that were simultaneously moving for 10
+minutes towards some meeting place.
+
+The example describes a relaxed version of the convergence patternoid in Table 1. The def-
+inition in the table requires that the gazelles keep their movement direction (azimuth) to the
+meeting place unchanged. Gazelles that change their direction, to maneuver around some
+obstacle, for instance, will not be reported. In the following query, we express convergence
+in terms of the continuous decrease in the dual distance between the gazelles. Notice that
+this pattern cannot be expressed by the gpattern operator, because the motion attribute,
+
+upon which this STP is expressed, is not computed for every gazelle independently of the
+others.
+
+Geoinformatica
+
+Similar to the gpattern, the crosspattern operator is also a table expression. It requires pairs
+of gazelles in the input stream, hence the Gazelles relation is first self-joined. Besides the
+input stream, the crosspattern operator accepts six other arguments: the identifier of the
+first gazelle, the identifier of the second gazelle, a time-dependent predicate, the minimum
+duration of the pattern, the minimum group size, and a string constant. The time-dependent
+predicate is evaluated for every input tuple (i.e., every pair of gazelles). Conceptually, this
+computes a kind of time-dependent join. That is, two tuples from the original Gazelles
+relation join together whenever the time-dependent predicate holds. Internally, within the
+crosspattern operator, this is represented as a time-dependent graph, as will be defined
+in Section 6. The nodes of this graph are the gazelles, and the edges are time-dependent.
+That
+is, an edge between two nodes exists whenever the time-dependent predicate
+holds.
+
+The last three arguments of the crosspattern operator define search criteria for a special
+sub-graph within this time-dependent graph. This example looks for a clique containing a
+minimum of 20 nodes, that lasts for a duration of at least ten minutes. A clique in this case
+means that each gazelle in the group is continuously getting closer to all the other gazelles
+in the same group. One can specify other sub-graph types according to the pattern one is
+describing (e.g., a connected component).
+
+By integrating the crosspattern operator with the query optimizer, it should be possi-
+ble to find efficient way of computing the self join. We will explain a generic method
+of integrating the crosspattern operator with the query optimizer, so that indexes will be
+used to retrieve only the pairs of gazelles that have chances to fulfill the time-dependent
+predicate.
+
+The following example illustrates a composite pattern query using the reportpattern
+
+operator.
+
+Example 3 Find groups of at least 20 gazelles which moved simultaneously for 10
+minutes towards some meeting place, then moved together with a speed of at least
+15 km/h.
+
+This composite pattern consists of the two patternoids in the previous examples. They are
+composed based on three constraints: (1) a temporal constraint restricting the concurrence
+patternoid to occur after the convergence patternoid, (2) a spatial constraint that the concur-
+rence patternoid starts from the final location of the convergence patternoid (i.e., the place
+
+Geoinformatica
+
+of meeting), and (3) an attribute constraint that the same group of moving objects matches
+the two patternoids. The query looks as follows:
+
+The reportpattern operator in this query (Lines 12–21) contains two patternoid operators
+(explained in the previous two examples), and one temporal constraint. The two patternoids
+are given the aliases concurrence and converge. The temporal constraint is expressed by the
+stconstraint operator. It states that converge happens first then concurrence, where then is
+defined by the let command in Line 1.
+
+The temporal
+
+relationship then describes an interval
+
+the
+terms/arguments of the vec operator in Line 1 specifies a relation between two time inter-
+vals. The start and the end time instants of the first interval are denoted aa, and those of the
+second interval are denoted bb. The order of the symbols describes the interval relationship
+visually. The dot symbol denotes the equality. For example, the relation aa.bb between the
+intervals i1, i2 denotes the order: ((i1.t1 < i1.t2) ∧ (i1.t2 = i2.t1) ∧ (i2.t1 < i2.t2)). The
+temporal relation expressed by the vec operator is the disjunction of its components.
+
+relationship. Each of
+
+Each of the two patternoid operators yields a stream(mset), where each stream element
+represents a group of gazelles fulfilling the patternoid as explained in Examples 1 and 2
+above. The reportpattern operator computes the product of these two streams, and filters
+it using the temporal constraint. A pair of mset instances fulfill the temporal constraint iff
+there definition times fulfill the then relationship. Notice that the definition time of an mset
+instance in the result stream is a single time interval, because it is restricted to belongs to
+MSetPart.
+
+The reportpattern operator in the inner FROM clause yields a stream of tuples having
+
+the schema:
+
+stream(tuple(< (concurrence, mset), (converge, mset) >))
+
+Geoinformatica
+
+The inner SELECT clause extends this stream with six attributes (Lines 5–10). The oper-
+ators used in these computations such as val, final, etc. already exist in SECONDO. The
+extended attributes are:
+
+–
+
+–
+
+–
+
+convFinSet: set, the set of gazelle identifiers at the final time instant of the mset
+instance converge. Similarly, concInitSet is the initial set of concurrence.
+concMReg: mregion is a moving region object that represents the time-dependent con-
+vex hull enclosing the gazelle trajectories that belong to concurrence. Similarly the
+convMReg encloses the trajectories in converge. The operator boundingregion does this
+interpolation. It will be explained later in more detail.
+convFinReg: region is the final snapshot of convMReg, and concInitReg is the initial
+snapshot of concMReg.
+
+Now this extended tuple stream is passed to the outer SELECT statement to apply the fil-
+ter conditions. The attribute constraint is expressed in Line 23. It enforces that the set of
+gazelles at the final time instant of converge and the set of gazelles at the initial time instant
+of concurrence have at least 20 gazelles in common. The spatial constraint is expressed in
+Line 24. It enforces that the region representing converge at its final time instant, and the
+region representing concurrence at its initial time instant intersect. Finally the last condi-
+tion, in Line 25, states that the gazelles in concurrence must maintain spatial proximity to
+one another. That is, the area of their convex hull must never exceed 8000 m2.
+
+The possibility of expressing such composite group patterns is novel up to our know-
+ledge. This example demonstrates also the benefit of building our operators on top of
+an existing MOD. We have used the already existing operators to assist expressing such
+sophisticated conditions.
+
+Table 3 lists the signatures of the proposed operators and their syntax in the SECONDO
+executable language. The three operators reportpattern, gpattern, and crosspattern are the
+main pattern matching operators. They represent their results as mset instances representing
+the identifiers of the moving objects constituting the matching groups. While the mset is
+computationally convenient for representing the results, it is not a good visualization for the
+user. This is why we introduce the boundingregion and the members operators which convert
+this representation into more visualizable ones. The boundingregion operator computes an
+mregion object which approximately represents the convex hull of the mpoint objects in a
+given group during the group life time. The members operator retrieves the mpoint objects
+that constitute the mset object from the input stream, and yields them as a stream. If the
+boolean argument is set to true, the returned mpoint objects are restricted to the time periods
+in which they belong to the mset. If this argument is set to false, these mpoints are wholly
+returned in the result without temporal restriction. The stvector is a type that represents the
+temporal relationships, such as then, in a compact integer representation. The vec operator
+can be used to construct such relationships.
+
+5 The gpattern operator
+
+This section formally defines the gpattern operator. Mainly it reports groups of moving
+objects that simultaneously fulfill a time-dependent predicate. Examples are: find a group
+of at least 5 stocks whose prices were simultaneously increasing or stable for a whole week
+during Feb 2011, find large groups (more than 400) of air passengers that were simulta-
+
+Geoinformatica
+
+]
+
+]
+
+,
+
+,
+
+,
+
+,
+
+,
+
+,
+
+,
+
+,
+
+[
+#
+
+,
+
+[
+#
+
+)
+
+,
+
+,
+
+(
+#
+
+n
+o
+i
+g
+e
+r
+g
+n
+i
+d
+n
+u
+o
+b
+
+n
+o
+i
+g
+e
+r
+
+m
+→
+
+n
+o
+i
+t
+a
+r
+u
+d
+×
+
+T
+×
+
+)
+)
+
+>
+
+)
+t
+n
+i
+o
+p
+m
+
+,
+t
+n
+e
+d
+i
+(
+,
+)
+t
+n
+i
+
+,
+t
+n
+e
+d
+i
+(
+
+<
+
+(
+e
+l
+
+p
+u
+t
+(
+
+m
+a
+e
+r
+t
+s
+
+}
+
+t
+e
+s
+
+m
+
+,
+t
+e
+s
+u
+{
+
+n
+i
+
+T
+∀
+
+)
+
+,
+
+(
+#
+
+n
+o
+i
+g
+e
+r
+g
+n
+i
+d
+n
+u
+o
+b
+
+n
+o
+i
+g
+e
+r
+
+→
+
+×
+
+)
+t
+e
+s
+(
+e
+m
+
+i
+t
+n
+i
+
+)
+)
+
+>
+
+)
+t
+n
+i
+o
+p
+m
+
+,
+t
+n
+e
+d
+i
+(
+,
+)
+t
+n
+i
+
+,
+t
+n
+e
+d
+i
+(
+
+<
+
+(
+e
+l
+
+p
+u
+t
+(
+
+m
+a
+e
+r
+t
+s
+
+]
+
+;
+
+[
+#
+
+n
+r
+e
+t
+t
+a
+p
+t
+r
+o
+p
+e
+r
+
+)
+)
+
+>
++
+
+)
+t
+e
+s
+
+m
+
+,
+t
+n
+e
+d
+i
+(
+
+<
+
+(
+e
+l
+
+p
+u
+t
+(
+
+m
+a
+e
+r
+t
+s
+
+→
++
+
+)
+l
+o
+o
+b
+(
+
+×
++
+
+)
+)
+t
+e
+s
+
+(
+
+m
+m
+a
+e
+r
+t
+s
+
+×
+
+t
+n
+e
+d
+i
+(
+
+)
+
+,
+
+,
+
+(
+#
+
+)
+
+,
+
+(
+#
+
+)
+
+(
+#
+
+s
+r
+e
+b
+m
+e
+m
+
+s
+r
+e
+b
+m
+e
+m
+
+c
+e
+v
+
+)
+t
+n
+i
+o
+p
+m
+m
+a
+e
+r
+t
+s
+
+(
+
+→
+
+l
+o
+o
+b
+×
+
+T
+×
+
+)
+)
+
+>
+
+)
+t
+n
+i
+o
+p
+m
+
+,
+t
+n
+e
+d
+i
+(
+,
+)
+t
+n
+i
+
+,
+t
+n
+e
+d
+i
+(
+
+<
+
+(
+e
+l
+
+p
+u
+t
+(
+
+m
+a
+e
+r
+t
+s
+
+}
+
+t
+e
+s
+
+m
+
+,
+t
+e
+s
+u
+{
+
+n
+i
+
+T
+∀
+
+s
+t
+n
+i
+o
+p
+→
+
+×
+
+)
+t
+e
+s
+(
+e
+m
+
+i
+t
+n
+i
+
+)
+)
+
+>
+
+)
+t
+n
+i
+o
+p
+m
+
+,
+t
+n
+e
+d
+i
+(
+,
+)
+t
+n
+i
+
+,
+t
+n
+e
+d
+i
+(
+
+<
+
+(
+e
+l
+
+p
+u
+t
+(
+
+m
+a
+e
+r
+t
+s
+
+r
+o
+t
+c
+e
+v
+t
+s
+
+→
++
+
+)
+g
+n
+i
+r
+t
+s
+(
+
+)
+
+,
+
+,
+
+(
+#
+
+t
+n
+i
+a
+r
+t
+s
+n
+o
+c
+t
+s
+
+l
+o
+o
+b
+
+→
+
+r
+o
+t
+c
+e
+v
+t
+s
+
+×
+
+2
+)
+l
+a
+v
+r
+e
+t
+n
+i
+
+→
+
+e
+l
+p
+u
+t
+(
+
+×
+e
+l
+p
+u
+t
+
+n
+r
+e
+t
+t
+a
+p
+g
+
+)
+t
+e
+s
+
+(
+
+m
+m
+a
+e
+r
+t
+s
+
+→
+
+g
+n
+i
+r
+t
+s
+
+×
+
+t
+n
+i
+
+×
+n
+o
+i
+t
+a
+r
+u
+d
+×
+
+)
+l
+o
+o
+b
+m
+→
+
+e
+l
+
+p
+u
+t
+(
+
+×
+
+)
+t
+n
+i
+
+→
+
+e
+l
+p
+u
+t
+(
+
+×
+
+)
+e
+l
+
+p
+u
+t
+(
+
+m
+a
+e
+r
+t
+s
+
+s
+r
+o
+t
+a
+r
+e
+p
+o
+
+n
+r
+e
+t
+t
+a
+p
+
+l
+a
+r
+o
+p
+m
+e
+t
+o
+i
+t
+a
+p
+s
+
+p
+u
+o
+r
+G
+
+3
+
+e
+l
+b
+a
+T
+
+n
+r
+e
+t
+t
+a
+p
+s
+s
+o
+r
+c
+
+)
+t
+e
+s
+
+(
+
+m
+m
+a
+e
+r
+t
+s
+
+→
+
+g
+n
+i
+r
+t
+s
+
+×
+
+t
+n
+i
+
+×
+n
+o
+i
+t
+a
+r
+u
+d
+×
+
+)
+l
+o
+o
+b
+m
+→
+
+e
+l
+
+p
+u
+t
+(
+
+×
+
+2
+)
+t
+n
+i
+
+→
+
+e
+l
+p
+u
+t
+(
+
+×
+
+)
+e
+l
+
+p
+u
+t
+(
+
+m
+a
+e
+r
+t
+s
+
+Geoinformatica
+
+neously heading to the passport control counters on a certain day, find groups of geese
+migrating in northern direction. The syntax of the gpattern operator, as shown in Table 3 is:
+
+stream(tuple) × (tuple → int) × (tuple → mbool)
+×duration × int × string → stream(mset)
+
+gpattern #[ ,
+
+,
+
+,
+
+,
+
+]
+
+The last argument has two possible values: “exactly”, or “atleast”. Hence, the operator
+
+has the following two forms:
+
+–
+–
+
+S gpattern[id, α, d, n, “exactly”].
+S gpattern[id, α, d, n, “atleast”].
+
+where S is a stream of tuples representing the moving objects. The id argument is a function
+that maps a tuple in S into the identifier of the moving object represented in this tuple. Note
+that in the base data model, moving objects have no identifiers. For this reason, the tuples
+in S are required to include two attributes: the moving object attribute, and an identifier
+attribute (for the efficient processing, it is required to be of type int). The argument α
+is the time-dependent predicate that is used to express the pattern. For instance, to find
+the groups of geese migrating in northern direction, α would be something like 45◦ <
+direction(Trip) < 135◦, where Trip is an mpoint object representing the trajectory of the
+geese. The argument d is the minimum duration (e.g., in milliseconds) of the patternoid.
+Finally the n argument is the minimum size of the group. In the following, the semantics of
+the two forms of the gpattern operators will be defined. The definitions deal with S as a set
+of moving objects. In the implementation, it is represented as a stream of tuples.
+
+eval( S gpattern[ id, α, d, n, “exactly” ] ) =
+
+{{(I, V )}|V ⊆ S, |V | = n, I ∈ Interval, length(I ) ≥ d,
+
+∀t ∈ I, ∀e ∈ V : (α(e))(t),
+∀I (cid:19) such that I (cid:19) ∈ Interval, I ⊂ I (cid:19) :
+∃e ∈ V , ∃t ∈ I (cid:19)
+
+: ¬(α(e))(t)}
+
+where length(I ) = I.t2 − I.t1, and (α(e))(t) ∈{false, true, undefined} is the evaluation of
+the time-dependent predicate α for the moving object e at the time instant t. The operator
+yields groups of exactly n moving objects. Therefore, every mset in the result contains only
+one unit (I, V ). The last condition guarantees that only the longest duration patternoids are
+reported, to avoid an infinite number of results.
+
+The definition allows a moving object to belong to several groups in the result. This is
+required to report all possible combinations of exactly n objects. This is helpful in express-
+ing the trend-setter pattern, for instance. That is, a group of exactly k moving objects
+matches some patternoid description, followed by another group of at least j moving objects
+that matches the same description.
+
+To define the semantics of the second form of the gpattern operator, we need first to
+
+define the following auxiliary operations:
+
+mbool
+mbool
+mset × set
+data × mset
+mapping
+mbool × bool
+
+→ bool
+→ bool
+→ mbool
+→ mbool
+→ range(instant)
+→ mbool
+
+always
+sometimes
+⊂, ⊆
+in
+deftime
+at
+
+)
+)
+
+)
+
+#(
+#(
+#
+#
+#(
+#
+
+where always yields true if its argument has the value true whenever it is defined. sometimes
+yields true if its argument is ever true. The time-dependent versions of the set predicates ⊂,
+
+Geoinformatica
+
+⊆, and in yield true at the time instants/intervals during which their corresponding standard
+predicates hold.1 The deftime operation yields the set of time intervals and/or instants during
+which a moving object is defined. Finally, the at operation restricts the definition time of
+a moving object to the time intervals and/or instants during which its value is equal to the
+second argument.
+
+Given a gpattern operator in the form S gpattern[ id, α, d, n, “atleast”], we first define
+
+the set M as:
+
+M = {X|X ∈ MSetPart, always(X ⊆ S), always(|X| ≥ n),
+
+(∀e such that sometimes(e in X) :
+
+P = deftime((e in X) at true) ⇒
+(i) ∀I ∈ P : length(I ) ≥ d
+(ii) ∀t ∈ P : (α(e))(t))}
+
+The set M contains all possible matches of the patternoid. In contrast to the previous form
+of gpattern, an mset instance in the result of this form might contain several units (i.e.,
+usets). This means that moving objects might be joining and/or leaving the group during its
+definition time. The last four lines ensure that each time an object joins the group, it stays
+for a duration of at least d before leaving it. We think this is a required feature, in order
+to exclude the commuters who do not really belong to the group. The following definition
+restricts the set M to the maximal patternoids in terms of the duration, and the group count.
+This is to avoid an infinite number of results. The evaluation of the second form of gpattern
+is defined as:
+
+eval( S gpattern[ id, α, d, n, “atleast” ] ) =
+
+{X|X ∈ M,
+
+((cid:2)Y ∈ M such that deftime(X) ⊂ deftime(Y )),
+((cid:2)Y ∈ M such that (deftime(X) = deftime(Y ) ∧ sometimes(X ⊂ Y )))}
+
+The evaluation of the gpattern operator is achieved by Algorithm 1. It uses the auxiliary
+functions shown in Algorithms 2–4. It also uses the time-dependent union operation of
+msets, which is defined as follows:
+
+(o1 ∪ o2)(t) =
+
+⎧
+⎪⎪⎨
+⎪⎪⎩
+
+o1(t) ∪ o2(t),
+o1(t),
+o2(t),
+undef
+
+if isdef(o1(t)) ∧ isdef(o2(t))
+if isdef(o1(t)) ∧ ¬isdef(o2(t))
+if¬isdef(o1(t)) ∧ isdef(o2(t))
+if¬isdef(o1(t)) ∧ ¬isdef(o2(t))
+
+where o1, o2 are mset instances, t is a time instant, and isdef yields true iff its argument is
+defined.
+
+Algorithm 1 accumulates the evaluations of the time-dependent predicate, for all the
+moving objects in the input stream, in the mset instance Accumulator. A moving object
+identifier appears in the Accumulator in the time intervals/instants during which it fulfills
+the time-dependent predicate. The size and duration thresholds n, d are then applied to the
+Accumulator. Finally, the last while loop iterates over the Accumulator to generate the result
+
+1The set operations ⊂, ⊆ read as ispropersubset, issubset. We intentionally avoid denoting the in operation
+using the symbol ∈ to differentiate between uset ∈ mset and the lifted data in mset.
+
+Geoinformatica
+
+stream. Every iteration of this loop reads the Accumulator units till a definition gap is met
+(i.e., a time interval/instant during which the Accumulator is undefined). The read part is
+called the head, and it belongs to the set MSetPart. Therefore, head is already one result for
+the gpattern in the case of atleast. In the case of exactly, the ExactSubsets function computes
+all the maximal duration subsets of head that have a cardinality of n, and they are added to
+the result stream.
+
+6 The crosspattern operator
+
+The crosspattern operator expresses a patternoid in terms of a time-dependent predicate
+evaluated for pairs of moving objects. In contrast to the gpattern operator, it expresses
+patternoids based on the mutual spatiotemporal relationships between objects. Many patter-
+noids can be expressed in this way (e.g., flock, convergence, etc.). A flock for instance can
+be expressed as a group of moving objects where the spatial distance between every object,
+and all other flock members are below some threshold.
+
+Geoinformatica
+
+Formally, let S be a set of moving objects. Let α be a time-dependent predicate that can
+
+be applied to pairs of moving objects. We define the so-called pattern graph as follows:
+P G(S, α) = {(n1, n2, p) | n1, n2 ∈ S, p ∈ Drange(instant),
+
+∀t ∈ p : (α(n1, n2))(t)}.
+
+That is, a pattern graph is a set of time-dependent edges in the form (n1, n2, p). Such an
+edge exists in the time periods p, disappears otherwise. In other words, it connects its two
+nodes n1, n2 whenever the time-dependent predicate α is fulfilled given the moving objects
+n1, n2. The set of graph nodes is not explicitly represented in the pattern graph. Rather, a
+node exists in the graph as long as at least one edge connects to it. Therefore, the set of nodes
+is also time-dependent. The pattern graph is a kind of an analytical space, where patternoids
+can be searched for. The connectivity of the graph tells about the interaction between the
+moving objects based on the α function.
+
+A temporal scan of a pattern graph, starting at its least most time instant and continu-
+ously increasing the time, yields a fully dynamic graph (i.e., a standard graph that undergoes
+a sequence of edge/node additions and/or deletions). There already exist algorithms in the
+graph theory for answering connectivity queries on dynamic graphs (e.g., finding connected
+components). These algorithms efficiently update the solution after a change occurs to the
+graph, rather than re-evaluating the query from scratch. A review of such techniques can be
+found in [11]. One can safely assume that all types of connectivity queries that are supported
+for standard graphs are also supported for dynamic graphs (e.g., Walk, Clique, Connected
+Component). That is, if an efficient algorithm is missing, the search can still be done ineffi-
+ciently by re-evaluating the query after every update. Hence, the crosspattern operator will
+theoretically be able to search the pattern graph for various subgraph types.
+
+Given a pattern graph P G(S, α), the temporal function P G(S, α)(t), where t is a time
+instant, yields the standard graph (N, E), where E is the set of edges in P G(S, α) that are
+defined at time t, and N is the set of nodes connected to at least one edge in E. Let U ⊆ S ×S
+be a set of candidate pairs2 of elements from S, and let S(cid:19) = π1(U ) ∪ π2(U ) where for a set
+
+2We use U as input to the crosspattern operator instead of S to be able to do some pre-filtering. For example,
+interesting pairs of candidates from S may be those coming close to each other during their lifetime, and they
+can possibly be determined efficiently using indexes. Evaluating instead all pairs from S may be prohibitively
+expensive.
+
+of tuples V, πi(V ) denotes the projection on the i-th component. So S is reduced to S(cid:19), the
+elements mentioned in U. Given an application of the crosspattern operator in the form U
+crosspattern[id1, id2, α, d, n, “clique”], we first define the set Q as:
+
+Geoinformatica
+
+Q = {X ∈ MSetPart | always(X ⊆ S
+∧(∀(I, V ) ∈ X, ∀t ∈ I :
+
+(cid:19)
+
+)
+
+V is a maximal clique in PG(S
+∧(∀e such that sometimes(e in X) :
+
+(cid:19)
+
+, α)(t) ∧ |V | ≥ n)
+
+P = deftime((e in X) at true) =⇒ ∀I ∈ P : length(I ) ≥ d)}
+
+An element X ∈ Q is an mset instance representing one group of moving objects that
+matches the patternoid. The maximal clique condition guarantees that the number of mov-
+ing objects in a result is maximal. The clique is mentioned in this definition as an example.
+Clearly it can be replaced by other subgraph types. The evaluation of the crosspattern
+operator is defined as:
+
+eval( U crosspattern[id1, id2, α, d, n, “clique”]) =
+
+{X ∈ Q | (cid:2)Y ∈ Q such that (deftime(X) ⊂ deftime(Y ) ∧
+
+(∀t ∈ deftime(X) : X(t) = Y (t)))}
+
+where X(t), Y (t) are the set values of X, Y at time t. This definition adds to the definition
+of Q the condition that the definition time of a result is maximal, thus avoiding an infinite
+number of results. The evaluation algorithm of the crosspattern operator is explained in
+Appendix A.
+
+7 The reportpattern operator
+
+In this section, we formally define the reportpattern operator. It accepts two sets: a
+set of patternoid operators each of which having an alias, and a set of temporal con-
+straints. Syntactically, the reportpattern operator requires that a patternoid operator yield a
+stream(mset), and that a temporal constraint be a bool expression. Semantically, the result
+of a patternoid operator is required to be a subset of MSetPart. This is required in order to
+be able to evaluate the temporal constraints, as will be explained below in this Section.
+
+We start by defining a language for the temporal constraints. A similar language was
+defined in [32], in the context of individual spatiotemporal pattern queries. Actually the
+reportpattern operator shares common concepts with the spatiotemporal pattern predicate
+in that work. We repeat these common definitions here because there are few differences that
+need to be technically covered, and because these definitions are crucial to understanding
+the function of the reportpattern operator.
+
+Given two time intervals, there are 13 possible relationships between them (e.g., Allen’s
+operators [3] before, meets, ...). If the intervals are allowed to degenerate into a time instant,
+there are a total of 26 possible relationships. Users will need to express some of these
+relationships in their queries. We use the notation that was proposed in [32]. It is a language
+that allows users to compose these relationships using the alphabet {a, b, .}. This language
+
+Geoinformatica
+
+is an alternative to assigning 26 relationship names, and requiring the users to learn them.
+Formally it has 26 terms denoting the 26 possible relationships. They are shown in the set
+IR:
+
+IR = {aabb, abba, bbaa, a.bab, aa.bb, a.bba, bb.aa, baa.b,
+abab, aba.b, baba, a.ba.b, baab, a.abb, bb.a.a, a.a.bb, bba.a,
+ba.ab, b.baa, aa.b.b, b.b.aa, aab.b, ab.ba, a.ab.b, b.ba.a, a.a.b.b}
+where a term in IR is formally defined as follows. Let i1, i2 ∈ I nterval, ir = s1s2...sk ∈ IR,
+if sj
+if sj
+if sj
+if sj
+if sj = .
+
+is the first a in ir
+is the second a in ir
+is the first b in ir
+is the second b in ir
+
+i1.t1
+i1.t2
+i2.t1
+i2.t2
+.
+
+Let rep(sj ) =
+
+⎪⎪⎪⎪⎨
+⎪⎪⎪⎪⎩
+
+⎧
+
+i1 and i2
+
+fulfill s1s2...sk
+
+:⇔ ∀j ∈ {1, ..., k − 1} :
+
+(i) sj (cid:9)= . (cid:9)= sj +1 ⇒ rep(sj ) < rep(sj +1)
+(ii) sj +1 = . ⇒ rep(sj ) = rep(sj +2)
+
+Two time intervals i1, i2 ∈ I nterval fulfill a set of interval relationships if they fulfill
+
+any of them, that is:
+
+i1 and i2 fulfill SI ⊆ IR :⇔ ∃ ir ∈ SI : i1 and i2 fulfill ir
+Syntactically, the vec operator in Table 3 allows for composing such SI subsets, and
+representing them as an object of type stvector.
+
+Let P = {p1, ..., pn} be a set of patternoid operators. A temporal constraint on P is an
+
+element of the set:
+
+T C(P ) = {1..n} × {1..n} × P(IR)
+It is a binary constraint that assigns a pair of patternoid operators in P a set of interval
+relationships. Syntactically, it is expressed by the stconstraint operator in Table 3.
+
+Let P = {p1, ..., pn} be a set of patternoid operators. Let eval(pi) denote the evaluation
+of the patternoid operator pi ∈ P , that is, eval(pi) ⊂ MSetPart. We define the set of
+candidate assignments CA(P ) as:
+
+CA(P ) = eval(p1) × ... × eval(pn)
+That is, the CA(P ) is simply the Cartesian product of the result streams of the patternoid
+operators.
+
+Let ca = (v1, ..., vn) ∈ CA(P ) and let c = (j, k, SI ) ∈ T C(P ) be a temporal constraint.
+ca fulfills c :⇔ deftime(vj ) and deftime(vk) fulfill SI
+where deftime(vi) is the time interval during which the mset vi is defined. Since the report-
+pattern operator requires that a result from a patternoid operator belongs to MSetPart, it is
+guaranteed that deftime(vi) yields a single time interval.
+
+Let C ⊆ T C(P ) be a set of temporal constraints. The set of supported assignments of C
+
+is defined as:
+
+SA(P , C) = {ca ∈ CA(P ) | ∀ c ∈ C : ca fulfills c}
+
+That is, for a candidate assignment to be a supported assignment, it must fulfill all the
+constraints in C. A supported assignment, hence, contains a single mset instance for every
+patternoid, and fulfills all the temporal constraints. The result of the reportpattern operator
+is the set of supported assignments. That is:
+
+Geoinformatica
+
+Definition 3 The reportpattern operator is a pair (P , C), where P = {p1, ..., pn} is a set
+of patternoid operators, and C ⊆ T C(P ) is a set of temporal constraints. Its evaluation is
+defined as:
+
+eval((P , C)) = SA(P , C)
+
+In order to evaluate the reportpattern operator, the classical model of the constraint sat-
+isfaction problem CSP is used. A similar approach was adopted in [32]. A CSP is a triple
+(cid:20)X, D, C(cid:21), where X is a set of variables, D is a set of the initial domains of X, and C is a set
+of constraints. The solution of the CSP is a set of tuples, each of which contains one value
+from the domain of each variable, and fulfills all the constraints in C. Such a tuple is called
+a supported assignment of the CSP.
+
+The definitions of the reportpattern operator and the CSP map to one another. The
+CSP variables X are the patternoid operators. The domain Di of a variable Xi consists
+of the msets that result when evaluating the corresponding patternoid operator. The CSP
+constraints are the temporal constraints in the reportpattern operator.
+
+This CSP is solved incrementally, as illustrated in Algorithm 5. The algorithm solves the
+CSPk−1 (i.e., having k − 1 variables) first, then extends it to the CSPk. Note that evaluating
+the domain of a variable is equivalent to evaluating a patternoid operator. Since such an
+evaluation is expected to be expensive, we wish to minimize the number of evaluated CSP
+variable domains, in the case that no solutions exist. The incremental evaluation allows
+for an early stop if a solution to the CSPk−1 cannot be found, avoiding the unnecessary
+evaluation of the remaining patternoid operators.
+
+The Agenda stores the variables (i.e., the patternoid operators), that are not yet evaluated.
+In every iteration, one variable is selected from the Agenda by the Pick function and eval-
+uated. The selection heuristic tries to discover as soon as possible whether the CSP has no
+solutions. It selects the variable from the Agenda that leads to the evaluation of the largest
+number of constraints in C during the current iteration. The same selection method was
+adopted in [32].
+
+The sub-CSP consisting of all the patternoid operators evaluated so far is solved by
+the extend function in Algorithm 6. Only consistent solutions (i.e., patternoids that fulfill
+the temporal constraints) remain in the supported assignments set SA. The algorithm stops
+immediately and returns an empty stream once the set SA is empty. The extend algorithm
+receives the domain of the newly evaluated Agenda variable and computes its cross prod-
+uct with the supported assignments of the previous iteration, generating a set of candidate
+assignments. Every candidate assignment is checked against all the temporal constraints to
+see whether or not it is supported. Finally the set of supported assignments is returned.
+
+Geoinformatica
+
+8 Examples
+
+The goal of this section is to illustrate that the three operators gpattern, crosspattern, and
+reportpattern are able to express a wide variety of patterns. It shows queries expressing
+some of the patterns in Table 1 using the SECONDO executable language.
+
+Example 4 Find all flocks of 20 gazelle or more within a radius of 15 meters that last for a
+duration of ten minutes or more.
+
+This is a (20, 15, 10) flock, similar to number 8 in Table 1. The difference is, that the
+
+notion of time here is continuous. The query looks as follows:
+
+It feeds the Gazelles relation twice, and uses the symmjoin operator to compute a self join.
+The symmjoin has the signature:
+
+stream(tuple < a1...ak >) × stream(tuple < ak+1...an >)
+×bool → stream(tuple < a1...an >)
+
+symmjoin
+
+#[ ]
+
+The crosspattern operator gets this joined stream, constructs the pattern graph based on
+the distance comparison predicate, and searches for a clique having 20 nodes or more and
+lasting 10 minutes or more. The transformstream casts the stream(mset) coming from the
+crosspattern operator into a stream(tuple) so that the consume operator can store it into a
+disk relation.
+
+A flock by definition requires that all objects stay within a circle of the given radius (r).
+The clique option in the query above means that the distance between every pair in a result
+group is no more than 2r meters. Hence, all objects stay within a circle whose radius is r.
+This proves that the query is equivalent to the flock definition.
+
+Example 5 Find a leadership pattern that consists of: 3 gazelles heading in northern
+direction, followed by a (20, 15, 10) flock of gazelles.
+
+Geoinformatica
+
+where mdirection computes the time-dependent angle, in degrees, between the moving
+point’s motion vector and the x-axis. The query finds all leader groups of exactly 3 mem-
+bers simultaneously heading between north-east and north-west. It also finds all (20, 15, 10)
+flocks. The temporal constraint accepts only pairs of groups where the flock temporally fol-
+lows the leader group. The first extend operator computes the bounding region of the flock,
+which is used in the filter operator to make sure that it also keeps a similar heading. The
+filter condition makes also sure that the leader objects are subset of the flock.
+
+Example 6 The encounter patternoid is a variant of the convergence patternoid, in Exam-
+ple 2. It is a convergence that ends with the moving objects meeting together. It can be
+expressed as follows:
+
+that is, the gazelles at the end instant of the patternoid are required to be within a circular
+area with radius of 30 m.
+
+These examples have illustrated that various operators can be used to flexibly express
+the patterns (e.g., boundingregion, area, mdirection). They have utilized various types of
+moving objects (e.g., mpoint, mregion, mreal). Patterns can be expressed using three
+layers: the time-dependent predicates, the patternoid operator, the reportpattern operator.
+The matched groups can be further processed by the various stream processing operators
+available in SECONDO. Our approach aggregates the expressive power of all these language
+components, allowing the user to express arbitrarily complex patterns.
+
+Geoinformatica
+
+9 The integration with query optimizers
+
+This section discusses the integration of the proposed group STP operators with query
+optimizers. In order to achieve this integration, two points have to be worked out: (1) sug-
+gesting an SQL syntax for the proposed operators (this syntax has already been illustrated in
+Section 4), and (2) defining translation rules that tell the optimizer how to translate these
+SQL expressions into optimized execution plans that probably invoke indexes. In order to
+make this discussion concrete, we describe the proposed integration in the context of the
+SECONDO optimizer [18]. These techniques are however generic, and it should be possible
+to apply them to other optimizer frameworks.
+
+The straightforward translation rule of the reportpattern operator is as follows:
+
+reportpattern([p1 as a1, ..., pn as an], [tc1, ..., tcm])
+→ reportpattern[a1 : p1, ..., an : pn; tc1, ..., tcm]
+
+where pi is a patternoid, ai is an alias, and tci is a temporal constraint. A translation rule
+defines one way of generating the execution plan for an SQL-like expression. It has the
+structure:
+
+SQL expr → Executable expr[:- conditions]
+
+It reads: the SQL expr is translated into the Executable expr when the conditions hold.
+There can be several valid translations for the same SQL expression. Optimizers apply
+different techniques for selecting the most efficient translation (e.g., cost-based optimiza-
+tion). The above translation rule of the reportpattern operator does only a translation of
+syntax from SQL into SECONDO executable. It does not propose efficient execution plans.
+The following subsections propose more sophisticated translation rules that invoke indexes
+and other optimization mechanisms for the three operators gpattern, crosspattern, and
+reportpattern.
+
+9.1 Optimizing the gpattern operator
+
+The gpattern operator evaluates for every tuple in the input stream the time-dependent pred-
+icate. Obviously, a tuple whose evaluated mbool is always false cannot be part of a result.
+One would like to use indexes to remove such tuples from the input stream before evalu-
+ating the gpattern operator. Hence, the translation rule should analyze the time-dependent
+predicates and translate them into index accesses, whenever suitable indexes are avail-
+able. In other words, one would need to extend the optimizer with translation rules for the
+time-dependent predicates. A similar approach was successfully adopted in [32].
+
+We assume that the underlying optimizer framework already has translation rules defined
+for the standard (i.e., non-temporal) selection predicates. That is, given a query that consists
+of a table expression in stream and a standard selection predicate f, it is possible to invoke
+a function optimize(in stream, f ), which yields an optimal execution plan for this query. If
+in stream is a database relation for instance, optimize might yield an index scan. If it is not
+possible to use indexes, it yields the straightforward plan in stream filter[f ].
+
+The translation rules of the time-dependent predicates are defined on top of the transla-
+tion rules of the standard predicates. The idea is to map every time-dependent predicate p
+into a standard predicate f such that the fulfillment of f implies that p is sometimes fulfilled
+(i.e., f ⇔ sometimes(p)). For example, the time-dependent predicate
+
+mpoint × region → mbool
+
+inside
+
+#
+
+Geoinformatica
+
+is mapped into the standard predicate:
+
+mpoint × region → bool
+
+passes
+
+#
+
+where it is true that
+
+passes(mpoint1, region1) ⇔ sometimes(inside(mpoint1, region1)).
+
+A long list of such mappings can be found in [32]. Let map(α) be the mapping of the
+time-dependent predicate α into a standard predicate, as defined above. The translation rule
+of the gpattern operator is as follows:
+
+gpattern( S, id, α, d, n, q )
+→ optimize( S, map( α ) ) gpattern[ id, α, d, n, q ]
+
+It consists of two steps. Firstly, the time-dependent predicate α is rewritten into the standard
+predicate map(α). Secondly, the already existing translation rules of map(α) are invoked
+using optimize(S, map(α)).
+
+The following example illustrates this translation rule. Suppose that we wish to express
+a group STP query called drinking, that reports groups of gazelles that gather to drink from
+some lake. The SQL-like query would be as follows:
+
+The gpattern operator in this query yields a relation that contains one mset attribute with the
+default name elem. The buffer operator creates a larger region around the region theLake,
+whose boundary is 50 m far from the boundary of theLake. The query finds groups of
+gazelles that concurrently stay within a distance of 50 m from theLake, for at least half an
+hour.
+
+According to this translation rule, the optimizer will first rewrite the time-dependent
+predicate Trip inside buffer(theLake, 50)
+into the standard predicate Trip passes
+buffer(theLake, 50). This is the mapping from α into map(α). The rest of the work is done
+by optimize(S, map(α)). It invokes the translation rules of the standard passes predicate,
+that already exists in the optimizer. The SECONDO optimizer, for example, translates it into
+an R-tree index access as in this plan:
+
+The predicate passes is translated into a window query on the spatial R-tree index, the
+Gazelles Trip sptuni. We assuming that this index exists already in the database. The query
+window is the bounding box of the buffer region around the lake. The result of the window
+query is refined using the passes predicate. Thus, only the tuples that fulfill passes, and
+consequently fulfill sometimes(inside), are passed to the gpattern operator.
+
+Geoinformatica
+
+9.2 Optimizing the crosspattern operator
+
+The optimization of the crosspattern operator is similar to that of the gpattern operator. The
+only difference is that the time-dependent predicate in the crosspattern operator is applied to
+pairs of moving objects. So, it is handled as a join predicate rather than a selection predicate
+as in the gpattern operator. Nevertheless, the strategy is the same.
+
+The time-dependent predicate α in the crosspattern operator is mapped into a stan-
+dard join predicate by map(α). We assume that
+the optimizer defines a function
+optimize(S1, S2, f ) that accepts two table expressions S1, S2 and a standard join predicate
+f, and yields an optimized execution plan. Hence, the translation rule is:
+
+crosspattern( S, id1, id2, α, d, n, q )
+→ optimize( S, S, map(α)) crosspattern[ id1, id2, α, d, n, q ]
+
+9.3 Optimizing the reportpattern operator
+
+As described in Section 7, the reportpattern operator is evaluated incrementally by solving
+the CSPk−1 first, then extending it to CSPk. During the evaluation, the algorithm knows
+temporal information from the patternoid operators evaluated so far, and from the tempo-
+ral constraints. This temporal information can be used to restrict the definition time of the
+input trajectories before the evaluation of the remaining patternoid operators. Consider, for
+example, a reportpattern operator containing two patternoid operators p1, p2, and a tem-
+poral constraint stconstraint(p1, p2, vec(“aabb”)). If we know, after evaluating p1, that the
+earliest ending group in its result ends at time t1, a supported assignment of p2 can only start
+after t1. The input trajectories can safely be restricted to t > t1 before evaluating p2. Thus,
+the patternoid operator p2 receives shorter trajectories, and its evaluation time decreases.
+
+This would require a change to Algorithm 5 of the reportpattern operator. Line 5 of the
+algorithm needs to be replaced by two steps: (1) given the set of temporal constraints, the set
+of supported assignments SA, and the next patternoid operator to be evaluated pi, the first
+step is to perform a temporal reasoning to compute the time periods on which a solution of
+pi can be consistent, (2) to tell the patternoid operator pi to use these computed time periods
+to restrict the definition times of the input trajectories before evaluating its time-dependent
+predicate.
+
+The details of this technique are lengthy, and require reviewing the literature of temporal
+reasoning. We omit this discussion here to keep the scope of the paper focused. A complete
+description can be found in [31].
+
+9.4 Notes on the implementation
+
+Unfortunately we were not able, in practice, to integrate the gpattern, crosspattern, and
+reportpattern operators with the SECONDO optimizer. The SECONDO optimizer is designed
+so that it is easy to extend it with new operators and predicates that can be invoked in
+the SELECT or the WHERE clauses. It is, however, not currently extensible by table
+expressions, that can be invoked in the FROM clause. Since the three operators are table
+expressions, we were not able to implement this optimizer extension.
+
+Still, one is able to write optimized execution plans directly in the SECONDO executable
+language, as we have already illustrated. One is able to use the available indexes in the
+queries. Actually this is a nice feature of SECONDO that the execution plans can be directly
+written by the user using a precisely defined query language.
+
+Geoinformatica
+
+10 Experimental evaluation
+
+This section experiments with the gpattern and the crosspattern operators. The reportpat-
+tern operator is similar to the spatiotemporal pattern predicate, which have been already
+evaluated in [32]. So, we will not repeat their experiments here.
+
+10.1 Evaluating the gpattern operator
+
+This experiment evaluates the gpattern operator. Datasets of different sizes are used, in order
+to evaluate the scalability. We start with the Trains relation from the berlintest database, that
+comes with the SECONDO distribution [2]. It was created by simulating the underground
+trains of the city Berlin. The simulation is based on the real train schedules and the real
+underground network of Berlin. The simulated period is about 4 hours in one day. It has the
+schema:
+
+Trains[ Id : int, Line : int, Up : bool, Trip : mpoint ]
+
+This relation is replicated n times to scale up the dataset size. The replication is done
+carefully so that the result relation will have patterns that can be extracted by the gpat-
+tern operator. Then we issue group STP queries using the gpattern operator to match these
+patterns. The scalability is evaluated by repeating the experiment for different values of n.
+
+10.1.1 Preparing the data
+
+The replication is done by making n copies of every train, and adding random position shifts
+to the units of the copied trains. These shifts are bound with 500 meters on every dimension
+x, y. So these disturbed copies are at most ∼707 meters away from the original train at any
+given time instant. The SECONDO query that generates these replicas is as follows:
+
+The replica is computed by cross joining the Trains relation with a stream of integers 1 to
+(n − 1). For every tuple in the cross product, the randomshiftdelay operator adds random
+(x,y) position shifts to the units of the Trip attribute, where the shifts in x, and the shifts in
+y are within the range [-500, 500] meters. This cross product is then concatenated with the
+original Trains relation, and a tuple identier tupID is computed for all the tuples in this new
+relation.
+
+The original Trains relation has 562 tuples. Table 4 lists the relations that were generated
+
+for this experiment.
+
+Geoinformatica
+
+Table 4 The datasets used for evaluating the gpattern operator
+
+Number of
+
+Size On Disk
+
+Total Number of units
+
+(location observations)
+
+Relation
+
+name
+
+Trains5
+
+Trains10
+
+Trains15
+
+Trains30
+
+Trains50
+
+Trains70
+
+Trains85
+
+Trains100
+
+Trains120
+
+Trains150
+
+Trains200
+
+Trains300
+
+tuples
+
+2810
+
+5620
+
+8430
+
+16860
+
+28100
+
+39340
+
+47770
+
+56200
+
+67440
+
+84300
+
+112400
+
+168600
+
+257,720
+
+515,440
+
+773,160
+
+1,546,320
+
+2,577,200
+
+3,608,080
+
+4,381,240
+
+5,154,400
+
+6,185,280
+
+7,731,600
+
+10,308,800
+
+15,463,200
+
+41.5 MB
+
+83 MB
+
+124.5 MB
+
+249 MB
+
+414 MB
+
+580 MB
+
+673 MB
+
+828 MB
+
+993 MB
+
+1.2 GB
+
+1.6 GB
+
+2.4 GB
+
+10.1.2 Generating the queries
+
+The intention behind generating the data in this way is to have groups of trains that move
+close to the original trains that they were replicated from. Given one of the original trains,
+the gpattern operator can be used to retrieve the whole group of the replicated trains. The
+query looks like this:
+
+It finds the groups of at least 80 trains that concurrently stayed within a distance of 800
+meters from train7 for at least 30 minutes. In the experiment, ten query objects were
+randomly picked to replace the train7. They are selected by the query:
+
+The sample operator selects a random sample from the input relation having the size
+indicated in the arguments. The main query in this experiment is:
+
+Basically it iterates over the ten query objects, and invokes for each of them the gpattern
+operator to find the corresponding group of replicated trains.
+
+Note that the run-time of this query includes the time of evaluating the time-dependent
+predicate distance(.Trip, attr(t, Trip q)) < 800.0. We expect that evaluating the time-
+dependent predicate will be the most expensive part in the evaluation algorithms of gpattern
+
+and crosspattern operators. We experimentally evaluate this statement. The query above is
+separated into the two queries. The first query evaluates the time-dependent predicate and
+stores the mbool results into a SECONDO relation. The second query invokes the gpat-
+tern operator to match the pattern, and it uses the pre-evaluated mbools instead of the
+time-dependent predicate. The two queries are as follows:
+
+Geoinformatica
+
+10.1.3 Results
+
+These three queries are run once for each of the relations in Table 4, after changing the rel-
+evant parameters. The response time of every run is divided by ten to compute the average
+run-time per query object. Figure 3 plots this average run-time in minutes against the rela-
+tion size. It shows two run-time curves. The upper one includes the time of evaluating the
+time-dependent predicate, while the lower curve excludes it. The difference between the
+two curves is the time taken for evaluating the time-dependent predicates.
+
+Execluding the time of evaluating the time-dependent predicate
+Including the time of evaluating the time-dependent predicate
+
+ 3.5
+
+ 2.5
+
+ 4
+
+ 3
+
+ 2
+
+ 1
+
+ 1.5
+
+s
+e
+t
+u
+n
+i
+M
+
+ 0.5
+
+ 0
+
+ 0
+
+ 20
+
+ 40
+
+ 60
+
+ 80
+
+ 100
+
+ 120
+
+ 140
+
+ 160
+
+ 180
+
+Number of tuples (x 1000)
+
+Fig. 3 The run-time of the gpattern operator
+
+Geoinformatica
+
+In the light of these results, we conclude that evaluating the time-dependent predicate has
+the dominant cost in the evaluation of gpattern (Algorithm 1). The run-time scales linearly
+with the dataset size, and it is within a few minutes for large input. This experiment was
+done on an Ubuntu Linux 64 bit machine, 8 GB RAM, AMD processor with 6 cores, 800
+MHz each.
+
+10.2 Evaluating the crosspattern operator
+
+This section experiments with the crosspattern operator. Two datasets are combined
+together. The first contains simulated flocks, moving in the Cartesian space. The second is a
+background dataset, that is used to hide the flocks. It is generated using the BerlinMOD data
+generator [10]. The queries of this experiment invoke the crosspattern operator to extract
+these hidden flocks.
+
+10.2.1 Preparing the data
+
+We used the C++ Boids data generator3 by Christopher Kline to generate flocks. This data
+generator belongs to the research area of artificial life. It simulates a decentralized emergent
+behavior that mimics groups of birds. Boids are bird-like moving objects. The simulation is
+based on the idea that every bird decides its route based on its local neighborhood. The local
+neighborhood of a bird are the other birds visible to it. Every individual Boid continuously
+corrects its route by applying a list of simple steering rules, with decreasing priorities:
+
+1. Avoid collision with neighbors and with obstacles in the space.
+2. Keep close to the center of the local neighborhood.
+3. Maintain safe cruising distances to neighbors.
+4. Match the velocity to the velocity of neighbors.
+5. Wander.
+6. Maintain a stable altitude (frequent ascends and descends are exhausting for birds).
+
+The data generator allows for defining several groups of Boids, and assigning every
+group a different feather color. Individual Boids flock only with Boids having their own
+feather color. We have modified this data generator for the purpose of this experiment. The
+modifications are as follows:
+
+1. The original data generator outputs 3D coordinates. For this experiment 2D coordinates
+are required. We have modified the functions that apply the steering rules, so that they
+work in the 2D space, and made the generator output 2D coordinates.
+
+2. We have added a special Boids group whose members freely fly in the background
+without flocking. This group responds only to the steering rules: avoid collision, wan-
+der, and level flight. The intention was to use this group to hide the flocks. However,
+we decided to use the BerlinMOD data instead. We found that these background Boids
+more-or-less perform random walks, and that the BerlinMOD data is more realistic.
+3. The original generator was modified, so that it accepts a world as a parameter. Boids
+are restricted in their movement by the boundaries of this world. They never cross it.
+This is necessary to overlay the Boids dataset with the BerlinMOD dataset.
+
+3 http://www.behaviorworks.com/people/ckline/cornellwww/boid/boids.html
+
+We have integrated the modified C++ Boids data generator into SECONDO, and it can
+
+now be invoked using the generateboids operator. It has the signature:
+
+Geoinformatica
+
+vector(int) × vector(real) × instant × duration →
+stream(tuple < (BoidI D, int), (T , instant), (X, real), (Y, real) >)
+generateboids #( , , , )
+
+where the first argument is a vector that determines the number of groups, and the num-
+ber of Boids in every group. The first entry in this vector is the size of the background
+group. In this experiment it is set to zero because the BerlinMOD data is used in the back-
+ground. The second argument defines the obstacles that the Boids have to avoid. The world,
+in which the Boids move, should be given as the first entry of this vector. The Boids
+start their trips inside this world, and they avoid hitting or crossing its borders while they
+fly. For simplicity, the operator assumes that obstacles are circles. It expects triples in the
+form of (center x, center y, radius). The third and the fourth arguments are the start time
+and the duration of the simulation. The operator yields a stream of observations, each of
+which is a time-stamped 2D position of a Boid. These observations can be interpolated
+using the SECONDO approximate operator to construct the trajectories. The queries are as
+follows:
+
+where xyt is the relation generated by calling the generateboids operator. GROUP COUNT
+is set to 30 in this experiment. The first query generates observations for three flocks,
+each having 30 Boids. The world obstacle is defined in terms of WORLD CENTER and
+WORLD RADIUS which are derived from the BerlinMOD background data, so that the
+flocks spatially overlap them. Similarly the simulation start time and duration temporally
+overlap the BerlinMOD data. The second query interpolates the observation into trajecto-
+ries. Firstly, the point attribute Position is computed from the X and Y attributes. Then the
+tuples are sorted and grouped by BoidID. Finally, the mpoint Trip attribute is interpolated
+from the observations using the approximate operator.
+
+After generating the flocks an estimate of the average distance between the Boids that
+belong to the same flock is computed. This will be used as a distance threshold in the
+experiment queries.
+
+The BerlinMOD benchmark [10] is used to generate a background dataset in which the
+Boid flocks are hidden. It simulates car trips given a street network (the default is the net-
+work of Berlin, unless otherwise provided) and a distribution of home and work places in the
+different zones of the city. It simulates home-work trips, work-home trips, and leisure trips,
+considering many factors that make the simulation realistic. The data generator accepts a
+
+Geoinformatica
+
+real number (called the scale factor) that controls the dataset size. Using this scale factor the
+data generation script computes the two parameters:
+
+1.
+2.
+
+number of cars = round(2000 *
+simulation duration in days = round( 28 *
+
+scale factor)
+
+√
+
+scale factor)
+
+√
+
+The default scale factor is 0.005, which generates trips for 141 cars over approximately 2
+days. A scale factor of 1 generates trips for 2000 cars over 28 days. The script generates one
+trajectory per car. One can optionally instruct it to divide this trajectory into separate trips.
+In this experiment, we do so.
+
+The Boids relation and the BerlinMOD relation containing the trips (called dataMtrip)
+
+are concatenated. The result relation has the schema:
+AllData[Id: int, Trip: mpoint]
+The identifier Id is sequentially assigned after the concatenation.
+
+The crosspattern operator expects a stream of tuples, each having a pair of moving
+objects. Hence, a self-join on this relation needs to be computed first. This join is based
+on the distance, because the query will be looking for flocks. That is, a pair of trips join
+if their spatial distance is sometimes less than some threshold. This threshold is estimated
+by sampling the pairwise distance between the mpoints in the Boids relation. Compu-
+ting the spatiotemporal join on such large datasets is expensive (several hours). We used
+a cluster of 6 machines, each having two logical machines, to compute these joins. This
+is done using the HadoopParallel Algebra in SECONDO. It provides operators that interact
+with both Hadoop and SECONDO in order to run spatiotemporal join queries on a cluster.
+This is a non-published preliminary work that was kindly made available to us by the SE-
+CONDO team. Joining the datasets that we used in this experiment took from approximately
+1.5 to approximately 24 minutes on the cluster. The relation resulting from this join has the
+schema:
+
+AllDataJoined[Id r1: int, Id r2: int, Trip r1: mpoint, Trip r2: mpoint]
+
+We expect that the run-time of the STP query that finds the flocks be affected by: (1) the
+number of flocks, and (2) the size of AllDataJoined. The higher the number of flocks, the
+higher the number of components that are maintained by the crosspattern algorithm during
+its iterations. So we expect that the run-time will increase when the number of flocks is
+increased. We also expect that the run-time will be proportional to the size of AllDataJoined.
+This is because the time-dependent predicate will be evaluated for every tuple, and also
+because the number of graph edges and the number of graph updates will increase. Therefore
+the six datasets shown in Table 5 were generated by varying these two parameters.
+
+Table 5 Description of the datasets of the crosspattern experiment
+
+Flocks
+
+BerlinMOD
+
+scale factor
+
+Tuples in
+
+AllData
+
+Tuples in
+
+Units in
+
+Disk size of
+
+AllDataJoined
+
+AllDataJoined
+
+AllDataJoined
+
+3
+
+10
+
+3
+
+10
+
+3
+
+10
+
+0.01
+
+0.01
+
+0.1
+
+0.1
+
+0.25
+
+0.25
+
+1,855
+
+2,065
+
+15,253
+
+15,463
+
+36,436
+
+36,646
+
+2,579
+
+13,462
+
+17,002
+
+119,956
+
+54,062
+
+367,131
+
+2,804,947
+
+14,173,430
+
+20,715,492
+
+133,228,643
+
+67,140,914
+
+409,777,381
+
+402 MB
+
+2 GB
+
+2.9 GB
+
+19 GB
+
+9 GB
+
+57 GB
+
+10.2.2 Generating the queries
+
+Using each of these six datasets, the following query is issued:
+
+Geoinformatica
+
+This query should retrieve all the flocks that have been hidden in the data. The distance
+threshold DistThreshold is computed during the data generation by sampling the pairwise
+distance of the Boids belonging to the same flock. The smooth operator negates all the false
+units in the given mbool instance that are shorter than 5 minutes, so that they become true.
+We have added this operator, because we have noticed that pairs of Boids which belong to
+the same flock often come apart from one another for short time periods. While in reality
+this is a normal wandering behavior, it affects the results of the crosspattern operator. Some
+flocks might not appear in the result because they split into smaller flocks for few seconds.
+The smooth operator bridges such short intervals of predicate unfulfillment to avoid this
+problem.
+
+10.2.3 Results
+
+The query above was able to correctly find all the flocks that have been hidden in the data.
+It also reported no other flocks from the background data. This is because the query sets the
+minimum group size to 25, and the minimum duration to 40 minutes. These conditions made
+it hard for the berlinMOD trajectories in the background to accidentally match the pattern.
+Figure 4 shows the run time of this query. The x-axis shows the input size (i.e., the
+number of tuples in AllDataJoined), and the y-axis shows the time in minutes. The figure
+
+Execluding the time of evaluating the time-dependent predicate
+Including the time of evaluating the time-dependent predicate
+
+ 140
+
+ 120
+
+ 100
+
+ 80
+
+ 60
+
+ 40
+
+ 20
+
+s
+e
+t
+u
+n
+i
+M
+
+ 0
+
+ 0
+
+ 5
+
+ 10
+
+ 15
+
+ 25
+Number of tuples (x 10,000)
+
+ 20
+
+ 30
+
+ 35
+
+Fig. 4 The run-time of the crosspattern operator
+
+Geoinformatica
+
+shows two curves. The larger curve shows the response time of the query. The smaller curve
+shows the response time after excluding the time taken for evaluating the time-dependent
+predicate. That is, the smaller curve shows the time taken to construct the pattern graph
+and to find the large connected components. Clearly the response time is dominated by
+the time of evaluating the time-dependent predicates. This suggests that it is not worthy to
+further improve our algorithm for finding large connected components (Algorithm 9 in the
+Appendix), because the time taken by it is already negligible compared to the total response
+time. This experiment was done on the same machine as the previous experiment.
+
+10.3 A Remark
+
+In this experiment, we have noticed that the crosspattern operator is very sensitive to its
+parameters. Both the results, and the run time are affected by slight changes to the param-
+eter values. If the DistThreshold is too small, for example, the components will split more
+often, and might disappear from the final results. If it is too large, the number of components
+that the evaluation algorithm maintains during its iterations will increase, because objects
+from the background data will satisfy this distance threshold and the minimum group count.
+These components will be maintained during the evaluation and increase the run-time. But
+they will probably not appear in the results, because they will not fulfill the minimum
+duration threshold.
+
+We have noticed that the crosspattern operator becomes very slow when the number of
+maintained components approaches 1000 (this number depends on the machine specifica-
+tions). This is because SECONDO FLOBs (Faked Large OBjects) are used to represent the
+components. SECONDO writes a FLOB to disk if it exceeds a certain size threshold. Con-
+currently maintaining such a large number of FLOBs involves a lot of disk access, thus the
+run-time significantly increases.
+
+A good practice is to start with a strict description of the pattern, in order to avoid a large
+number of intermediately maintained components. In this experiment for example, a strict
+description would be a combination of small DistThreshold, a large group size threshold,
+and a long pattern duration threshold. If the results are not satisfactory (i.e., some expected
+groups are missing), one should relax the pattern description a little and try again, and so on.
+
+11 Conclusions
+
+In this paper, we have proposed generic query operators for group spatiotemporal pattern
+(STP) queries. They are both expressive and extensible. The query examples in the paper
+show that arbitrarily complex group STP queries can be expressed. Essentially patterns are
+composed of patternoids, and patternoids are expressed on top of time-dependent predicates.
+Each of these three layers is both expressive and extensible. The overall expressive power
+of the language is a kind of a multiplication of their expressive powers.
+
+We have defined two patternoid operators, that are able to express patternoids in
+terms of the independent movement, and the dual interaction between moving objects.
+An opportunity for future work is to propose a patternoid operator for team interactions.
+Such patternoids can occur in soccer games, for instance (e.g., the offside trap). Mainly
+they describe groups of moving objects, where every individual shows some individual
+movement pattern, and these patterns relate together and show some group STP.
+
+The representation of the pattern results as msets allows for nesting group STP queries
+into more complex queries. Moreover, the implementation in SECONDO makes it possible to
+
+Geoinformatica
+
+use the already existing operators in pattern expression. We have also proposed operators for
+casting the mset into other representations, such as a moving region or a stream of moving
+points. These operators help visualizing and further processing the pattern matching results.
+The discussion in this paper covered the aspects of system integration including the
+integration with the query language and the query optimizer. The implementation is done
+within the open source system SECONDO as a new algebra. The developers of the system
+have agreed to make this algebra available in the coming release. The algebra will include
+automatic SECONDO scripts for repeating the gpattern experiment. It was not possible to
+automate the repetition of the crosspattern experiment because it needs to execute parallel
+joins on a cluster, which cannot currently be automated.
+
+Finally we think that this new approach gives the users high flexibility in expressing
+patterns. It is neither restricted to certain types of moving objects nor to certain types of
+operations in expressing the patterns. Our focus in the near future will be on applying these
+operators in diverse real applications. This will expectably cast light on extensions and
+modifications.
+
+Appendix A: The crosspattern evaluation Algorithm
+
+We discuss the evaluation algorithm of the crosspattern operator in the appendix, because
+of the many details it incorporates. Abstractly speaking, the function of the crosspattern
+operator is to search for large connected components within a time-dependent graph (i.e.,
+the pattern graph), which is constructed from the evaluations of the time-dependent predi-
+cate on pairs of moving objects. As discussed before, the general form of the crosspattern
+operator is:
+
+U crosspattern[id1, id2, α, d, n, subgraph − type].
+
+The function of the crosspattern operator can be divided into three sub-functions:
+1. Constructing the pattern graph PG(S(cid:19), α).
+2. Searching for the large connected components of type subgraph-type within the pattern
+graph. Large means that they must fulfill the minimum duration d constraint, and the
+minimum group cardinality n constraint.
+
+3. Representing the found connected components, and yielding them.
+
+A.1 Related work (REVIEW)
+
+The problem of the crosspattern operator is indeed a generic one, and it has applications in
+other fields. Generally it helps analyzing the temporal behavior of evolving networks. Social
+network users and the evolution of their relationships can be modeled by pattern graphs.
+The α predicate in such a case might be representing whether a pair of users are friends, or
+whether they contact one another on a daily basis. Other applications are the modeling of
+the link availability in communication networks, especially wireless and ad-hoc networks,
+and the link analysis in the evolving web. Such topics are in the focus of several recent
+workshops.
+
+Up to our knowledge, this problem has not yet been studied in the context of moving
+object databases. It seems natural however to have a type for time-dependent graphs (mo-
+ving graphs) and relevant operations defined on top of it. In the context of communication
+networks, there are works on the so called Evolving Graphs [7] to model network dyna-
+mics. An evolving graph is a sequence of snapshots, each of them representing the graph
+
+Geoinformatica
+
+at a single time instant. A recent work [30] proposed a compression technique, so that the
+space requirements of evolving graphs are affordable. We see two properties of evolving
+graphs that makes them unsuitable for representing pattern graphs:
+
+1. The pattern graph is a continuous mapping from time to graph. The evolving graph is a
+
+discrete representation. Clearly the two models are not equivalent.
+
+2. An evolving graph requires O(n) storage space, even after applying the compression
+technique in [30], where n is the number of changes occurring in the graph. In the
+case of the crosspattern operator, the number of changes normally ranges from 4 to 6
+order-of-magnitude. This would easily exceed several GB of memory space.
+
+We are also not informed of works on finding connected components in evolving graphs.
+
+Connectivity queries are studied in the context of the dynamic graphs. A dynamic graph
+is a standard graph that undergoes a sequence of edge additions or deletions. If both addi-
+tions and deletions are allowed, it is called a fully dynamic graph. Dynamic graph techniques
+focus on online graph updates and queries. Only the most recent graph is represented, and
+no history is kept. A dynamic graph is different from a pattern graph, because the latter
+needs to represent the history. On the other hand, a dynamic graph can be derived from a
+pattern graph by means of a temporal scan.
+
+There are smart algorithms for maintaining the minimum spanning forest in fully
+dynamic graphs [11]. That is, instead of re-evaluating the minimum spanning forest after
+every graph update (i.e., edge addition or deletion), the algorithm does this evaluation only
+once in the beginning, and tries to efficiently update the forest after every graph update.
+Such algorithms can easily be modified to maintain connected components instead of the
+minimum spanning forest.
+
+There are two main differences that make the problem of the crosspattern operator more
+complex than the problem of maintaining connected components in fully dynamic graphs:
+
+1. The crosspattern operator searches for large connected components in terms of the two
+
+constraints d, n as we explained before.
+
+2. The crosspattern operator is required to store/represent the result (i.e., the large
+connected components) as time-dependent graphs. The algorithms for maintaining
+minimum spanning forests allow only for online queries, and keep no history.
+
+Asur et al. [5] proposed a method for identifying the evolution of groups/communities
+in time-dependent interaction graphs, such as the merging of several groups, the split of a
+group, the formation of a new group, or the dissolve of an existing group. The continuous
+mapping from time to graph was modeled in [22]. The model was used to discover and
+track the groups on social web applications that appear for short times. This work used the
+localization characteristics of such groups to restrict the search space within the graph to
+smaller sets of nodes and smaller time intervals.
+
+The problem of the crosspattern operator combines several sub problems that were sep-
+arately addressed in the works reviewed in this section. It requires: continuous mapping
+from time to graph, finding connected components and maintaining them through the graph
+updates, handling multiple graph updates and simultaneous edge additions and deletions,
+identifying group evolution events (e.g., split, merge, dissolve), representing the history of
+the group, and the novel problem of finding large connected components. We describe in
+the following section an algorithm that solves this problem. It shares concepts from these
+works. But it implements these concepts in a way that reduces the redundant computations
+among them and that accommodates them in a common data model. We think that there
+should be a future study towards implementing an algebra of time-dependent graphs in
+
+Geoinformatica
+
+database systems. Such an algebra should propose an abstract data type, and a set of generic
+operations.
+
+A.2 The crosspattern evaluation Algorithm
+
+Algorithm 7 illustrates the evaluation of crosspattern. The first argument is a stream of
+tuples that corresponds to the set U, defined in Section 6. Every tuple in U has a pair of
+moving objects, whose identifiers can be queried using the two mappings IDFun1, IDFun2.
+The first part of the algorithm (Lines 3–8) constructs the pattern graph, which is represented
+by the mset instance Accumulator. The Accumulator contains edge identifiers, such that an
+edge identifier belongs to the Accumulator whenever its corresponding edge exists in the
+pattern graph. For each tuple in U, the identifiers of the two contained moving objects are
+used to compute a unique edge identifier by the function NodesToEdge. This function has an
+inverse EdgeToNodes. The two functions compute the edge identifier given its two nodes’
+identifiers, and vice versa in a constant time. The edge itself is computed by evaluating the
+time-dependent predicate α for the current tuple. Note that the definition time of the edge
+corresponds to the time periods in which α(u) is true. Finally the edge is constructed using
+the mbool2mset function (see Algorithm 2), and inserted into the Accumulator.
+
+In the experiments, we have seen that the number of units in the Accumulator, and the
+number of edge identifiers in every unit are very large. The straightforward implementation
+of the mset type in SECONDO stores the edge identifiers of every unit. Knowing that for
+a medium input size (e.g., U has 4 order-of-magnitude tuples), the number of units in the
+Accumulator is 5 order-of-magnitude, and every unit has 2-3 order-of-magnitude edge iden-
+tifiers. Under such conditions, the Accumulator would require several GB of disk space.4
+
+4SECONDO uses FLOBs (Faked Large OBjects) to store moving objects. FLOBs may be stored in memory
+or on disk as decided by the FLOB manager. The decision is made based on FLOB size. Large FLOBs are
+written to disk.
+
+Geoinformatica
+
+We have implemented a second variant of the mset, that stores in every unit only the changes
+from the previous unit (i.e., edges that are added or removed). This variant considerably
+reduces the space requirement, because in most of the time the change is adding or removing
+a single edge.
+
+We have also implemented the union operation in Line 8 in a different way that works
+efficiently with this mset implementation. Inside the loop (Lines 3–8), we use a sorted list
+to buffer events in the form of at time t1 the edge ej starts to be contained in Accumulator,
+and at time t2 the edge ej ends to be contained in Accumulator. There are two such events
+for every time interval in which α is fulfilled: one event for joining, and the other for leaving
+the Accumulator. These events are sorted inside the list by increasing time. Buffering an
+event is O(log(n)) in the buffer size. After the loop ends, the Accumulator is constructed
+from the buffer in a single linear scan.
+
+We expect that the most expensive part in constructing the pattern graph will be the
+evaluation of α(u) (Line 7). This has been experimentally confirmed in Section 10.2. The
+cost varies according to the associated time-dependent predicate α. The predicate dis-
+tance(. , .) < . between two mpoint objects, for instance, is O(n + m), where n and m are
+the number of units of the two arguments. More about time-dependent predicates, and their
+evaluation algorithms can be found in [8].
+
+The rest of the crosspattern algorithm finds the sub graphs that fulfill the user criteria
+n, d, q. First the Accumulator is split at the locations where it has definition gaps, if any.
+The result is a list of mset instances that belong to MSetPart. The search proceeds consid-
+ering each of these parts separately as a pattern graph, finding the sub graphs in each, and
+concatenating the results into a single output stream R. We have invested a considerable time
+in developing a fast algorithm for finding large connected components in the pattern graph.
+Since the possible values of q are all special kinds of connected components (e.g., clique),
+we start first by finding the large connected components, then search for sub graphs of kind
+q within them. At the time of writing this paper, only the algorithm for finding connected
+components is implemented. So queries looking for clique, walk, etc are not yet available in
+SECONDO.
+
+Finding large connected components is done in two steps as shown in Algorithm 8. The
+first step finds the connected components (must not be large). The second step filters the
+nodes and edges of each found component according to the thresholds n, d, and keep only
+the large components. Note that applying the thresholds can only result in edges being
+removed from the connected component. It is not possible that edges that do not belong
+to a connected component be there in the large connected component. Thus the function
+ApplyThresholds does not need to know about the pattern graph. Rather, it is a function in the
+connected component, and the two thresholds n and d, in order to find the large connected
+components. While applying the thresholds, a connected component might split into several,
+
+or it might disappear completely if too many nodes and edges are filtered out. Thus, the
+result of ApplyThresholds is a stream of large components, which is possibly empty.
+
+Geoinformatica
+
+The function FindConnectedComponents is described in Algorithm 9. It iterates over the
+units of the mset representing the pattern graph. This iteration is equivalent to a temporal
+scan of the pattern graph. The result of such a scan is a dynamic graph, as mentioned in
+Section A.1. Every uset in the pattern graph contains two sets that describe the changes
+to the graph edges: addedEdges, and removedEdges. The algorithm starts with an empty
+standard graph g (used to maintain the most recent snapshot of the time-dependent graph),
+and an empty list of connected components Components. While iterating over the units, the
+algorithm tries to efficiently maintain g and Components, so that they will be up to date
+with the last visited unit. The Components list holds only the connected components in g
+whose number of nodes ≥ n. The nodes of g know the labels of their components if they
+belong to any, otherwise null. In the beginning of an iteration, g is a snapshot of the pattern
+graph at the end instant of the unit in the previous iteration, and Components holds the
+connected components in g. During the iteration, the goal is to update g and Components to
+
+Geoinformatica
+
+reflect the recent changes to the pattern graph, represented by the two sets addedEdges and
+removedEdges.
+
+Most of the time, an update to the pattern graph is an addition or a removal of a single
+edge. It occurs less often that an update involves multiple edge additions and/or removals.
+In the experiment in Section 10.2, 27.3 % of the updates involved multiple edges, while
+72.7 % were single edge updates. Algorithm 9 is designed to handle multiple edge updates,
+because it is the general case.
+
+Newly added edges are first inserted into g. Then the algorithm inspects their effect on
+
+the existing components, which can be any of the following:
+
+1. Some of the new edges might connect to one another and to other edges in g forming a
+new component having n nodes or more. This new component is then added to the list
+Components and marked as NewlyAdded (Line 9 of the algorithm).
+
+2. Some of the new edges might connect to one of the existing components causing it to
+grow up its number of edges (and probably nodes). Such a component is marked as
+GotMoreEdges (Line 10).
+
+3. Some of the new edges might connect several existing components together. These
+components are marked as Merged, as a preparation to merge them together into a
+single larger component. This large component will consist of the Merged components
+and the newly added edges.
+
+4. The rest of edges stay in g, and have no effect on the Components list.
+
+These four cases are checked in the same way. A breadth first search that begins from the
+newly added edges is started to find their entire connected components in g. A search path
+is terminated if it reaches a node that already belongs to a component in Components. This
+search is done in linear time in terms of the number of traversed nodes and edges. It traverses
+at most the newly added edges plus the edges of two components having n − 1 nodes.
+This bound is reached if it happens that the newly added edge connect two components
+in the graph having n − 1 nodes each. Notice that the algorithm will not traverse edges
+of the already maintained components having at least n nodes. Every newly added edge
+contributes to exactly one of the above cases. After this inspection, every component in
+the list Components has one of the states: NotChanged, NewlyAdded, GotMoreEdges, or
+Merged.
+
+The algorithm proceeds to handle edge removals. It iterates over the edges to be removed,
+and finds in g whether they belong to components. Looking up the component of an edge is
+O(1) by looking up the component of any of its nodes. The removal of edges might affect
+the existing components in one of the following ways:
+
+1. Edges that belong to no component are removed from g, and have no further effects.
+2. Edges that belong to components are removed from them. This might result in the
+
+dissolve or the split of these components.
+
+The loop in Lines 14–16 collects all the components that are affected by edge removals
+into the set affectedComponents. The connectivity of each of the affected components is
+checked, to see whether it is still connected. This is done in O(nodes + edges) of the
+component.
+
+Now we need to update the states of the affected components. Note that these compo-
+nents might have already states assigned to them in the part handling added edges (this
+is rather rare). Table 6 illustrates the state composition. Column headers list the possible
+states after handling added edges, and the row headers list the possible states after handling
+removed edges. The cells of the table show the result of the composition. In the experiment
+
+Geoinformatica
+
+Table 6 Composing component states
+
+NotChanged
+
+GotMoreEdges
+
+NewlyAdded
+
+Merged
+
+RemoveNow
+
+RemoveNow
+
+RemoveNow
+
+LostEdges
+
+Split
+
+LostEdges
+
+Split
+
+AddRemoveMix
+
+Split
+
+NotChanged
+
+NotChanged
+
+GotMoreEdges
+
+RemoveNow
+
+NewlyAdded
+
+NewlyAdded
+
+NewlyAdded
+
+RemoveNow
+
+Merged
+
+ReDistribute
+
+Merged
+
+in Section 10.2, we have counted the occurrences of each of these component states. The
+percentages are listed in Table 7. These states are required for updating
+
+Figure 5 illustrates an example of a graph update that causes the state NewlyAdded
+followed by RemoveNow. The minimum component size in this example is n = 5.
+Figure 5 (A) displays the graph before the update. The update adds the edges {(3,1), (6,9)},
+and removes the edges {(2,5), (2,6)}. The algorithm handles the added edges first, and the
+result is a NewlyAdded component having 6 nodes (Fig. 5 (B)). Then the removed edges
+are handled, and the result is the removal of this component (RemoveNow), because it is
+split into two small components. Composing NewlyAdded with RemoveNow results in the
+state RemoveNow for the two small components in Fig. 5 (C). Similarly, Fig. 6 illustrates
+NewlyAdded followed by Split, and Fig. 7 illustrates Merged followed by Split.
+
+Clearly, situations like these examples hardly occur in real world applications. Consider
+for examples the application of finding moving clusters within a group of animals. The
+example in Fig. 5 happens when the two pairs of animals (3,1), (6,9) come close to one
+another (i.e., below the distance threshold), and the pairs (2,5), (2,6) come apart from one
+another at exactly the same time instant. It is unlikely that the movement is synchronized in
+this way.
+
+Now as the algorithm knows the updates that occurred to every component, it propagates
+these updates to the result stream R(cid:19). Every mset element in R(cid:19) represents the history of a
+connected component in the given pattern graph. At the end of every iteration, the function
+Finalize appends a unit (uset) to every element in R(cid:19) representing the change that happened
+to this component in this iteration.
+
+We do not list here the algorithm of Finalize, but we briefly describe it in the following.
+It maintains two lists of mset instances R, R(cid:19). The list R holds the connected components
+that do not receive updates anymore. These are connected components that used to exist in
+the past and are currently dissolved. The list R(cid:19) holds the active components that still receive
+updates. Elements of R(cid:19) are linked to the elements of the Components list that propagate
+
+Table 7 Component states occurrence frequencies
+
+State
+
+NotChanged
+
+LostEdges
+
+NewlyAdded
+
+Merged
+
+ReDistribute
+
+Percentage
+
+∼ 52.42%
+∼ 22.61%
+∼ 0.98%
+∼ 0.04 %
+0.0 %
+
+State
+
+GotMoreEdges
+
+AddRemoveMix
+
+RemoveNow
+
+Split
+
+Percentage
+
+∼ 22.86 %
+∼ 0.0 %
+∼ 0.98 %
+∼ 0.09 %
+
+Geoinformatica
+
+Fig. 5 State NewlyAdded followed by state RemoveNow
+
+changes to them. Finalize receives the Components list and iterates over it. According to the
+state of every component it does one of the following:
+1. A NewlyAdded component results in creating and adding a new mset instance to R(cid:19).
+This reflects that a new connected component started to appear in the pattern graph, and
+that Finalize has to track it. This new mset instance has a single uset having the same
+time interval as the unit of the pattern graph that is currently being processed, and the
+set of edges of the new component.
+
+2. A component whose state is one of GotMoreEdges, LostEdges, or AddRemoveMix
+results in extending the associated active component in R(cid:19) by an additional uset having
+the same time interval as the unit of the pattern graph that is being currently processed,
+and the set edges in the component after the update.
+
+5.
+
+4.
+
+3. A non changed component (i.e., state is NotChanged) results in extending the associated
+active component in R(cid:19) by an additional uset having the same time interval as the unit
+of the pattern graph that is being currently processed, and the same set of edges as its
+last uset instance.5
+If the state of the component is RemoveNow, the associated active component is moved
+from R(cid:19) to R. This is done under the condition that the duration of this active component
+be ≥ the minimum duration threshold d, otherwise it is ignored by being removed from
+R(cid:19), and not put into R.
+If several components merge together (i.e., their state is Merged), this means that they
+have been separate in the past, but starting from now they share the same set of edges.
+Finalize extends each of the associated active components by an additional uset having
+the same time interval as the unit of the pattern graph that is being currently processed,
+and the set of edges that consists of all the edges in the merged components, plus the
+newly added edges that caused them to merge.
+If a component is marked as Split, this means that an active component in R(cid:19) splits at
+this time instant into several smaller components. Finalize makes as many copies of
+this active component as the number of the split components, and extends every copy
+with an uset whose time interval is the same as the unit of the pattern graph that is
+
+6.
+
+5To guarantee a unique minimal representation of msets, which is a required feature in the base moving
+objects model, adjacent units having the same set of elements are merged together into a single unit, whose
+time interval is the union of their time intervals.
+
+Geoinformatica
+
+Fig. 6 State NewlyAdded followed by state Split
+
+Fig. 7 State Merged followed by state Split
+
+7.
+
+being currently processed, and whose set of edges is the set of edges of one of the split
+components.6
+If a component is marked as ReDistribute, this means that Finalize does not really
+understand the update. It has no clue which active components should be updated, and
+how. This state happens only if a component is marked as Merged then as Split in the
+same iteration, as illustrated in Fig. 7. In such a case, the links between this component
+and the associated active components might be invalid. Finalize needs to re-investigate
+the update. It collects in one hand all the components that are marked as ReDistribute,
+and in the other hand all their associated active components, and it matches the two
+hands. A component matches an active component if they have common graph nodes.
+After the matching is done, Finalize is able to assign to every component one of the
+states above (e.g., Split, GotMoreEdges), and process it accordingly. The ReDistribute
+state was never observed in the experiment in Section 10.2.
+
+At the end of Finalize, it resets the state of all components in Components to NotChanged,
+preparing for the next iteration.
+
+Back to Algorithm 8, the next step after finding the connected components is to apply
+the thresholds n, d to them, in order to yield the large connected components. Please note
+that these thresholds apply to the nodes of the connected components, and note that the
+connected components are represented as mset instances that store the edges. Hence, the
+
+6Copying the whole history of the active component is expensive. Some of these copies might not appear in
+the result if their components disappear from the pattern graph early before their duration reaches d. In our
+implementation, we represent R(cid:19) by two lists: a list that holds parts of the component history, and another
+list that holds indexes to the first list. Using these two lists, the parts of the history that are shared by several
+active components are stored only once in the first list, and referenced several times in the second list. At
+the time of moving an active component from R(cid:19) to R, the parts that constitute this active component are
+concatenated together.
+
+Geoinformatica
+
+A
+
+B
+
+Fig. 8 Helper indexes for representing the nodes of the pattern graph
+
+ApplyThresholds function needs to transform the component it receives from a representa-
+tion of graph edges into a representation of graph nodes. Using a linear scan of the received
+component, it builds a hash table in the form shown in Fig. 8 (A), where every node has
+one entry. An intervali entry represents one of the intervals on which this NodeID belongs
+to the connected component. It stores also pointers to the units of the connected compo-
+nents that fall within this interval. ApplyThresholds also builds a map in the form shown in
+Fig. 8 (B), where Unit is a pointer to one of the units (uset) of the connected component.
+This map stores the number of nodes in every unit, so that the threshold n can be quickly
+applied.
+
+The hash table and the map are linked to the units of the mset representing the con-
+nected component, in such a way that the three of them can be quickly synchronized if any
+of them is changed. ApplyThresholds makes sure that the three structures are always syn-
+chronized. To apply the d threshold, it scans the hash table and filters out all the intervals
+whose duration is less than d. Such a change affects the node count of the units, and it is
+reflected in the map by means of synchronization. To apply the n threshold, ApplyThres-
+holds scans the map and removes the units that have less than n nodes. Such a change affects
+the hash table, and it inserts definition gaps within the connected component. ApplyThres-
+holds keeps applying the two thresholds iteratively until no more changes occur. It splits the
+connected component at the locations where it has definition gaps. The pieces that come
+out of this split are all large connected components, so they are appended to the result
+stream.
+
+Back to Algorithm 7 Line 12, the function FindSubGraphs receives this stream of large
+connected components, and searches for the sub graphs of type q within them. Up to the time
+of writing this paper, this function has not been implemented. Naively, one would search
+every unit in the large connected components for sub graphs of type q, and concatenate the
+results to construct the whole history of the sub graph. Smarter algorithms are still missing,
+and require further research.
+
+Algorithm 7 has one more missing part. It deals only with undirected pattern graphs.
+This means that the time-dependent predicate α must be commutative. So far, the group
+patterns that we have seen in the literature can be expressed using commutative predicates.
+Most of the patterns are expressed based on the distance between objects, or on a deriva-
+tive of this distance. Still, the crosspattern operator would be more expressive if it allowed
+for non-commutative predicates as well. This completes our illustration of the crosspattern
+algorithm.
+
+Geoinformatica
+
+References
+
+1. Geopkdd website geographic privacy-aware knowledge discovery and delivery. http://www.geopkdd.eu
+2. SECONDO web site. http://dna.fernuni-hagen.de/secondo.html/
+3. Allen JF (1983) Maintaining knowledge about temporal intervals. Commun ACM 26(11):832–843.
+
+doi:10.1145/182.358434
+
+4. Andrienko G, Andrienko N, Wrobel S (2007) Visual analytics tools for analysis of movement data.
+
+SIGKDD Explor Newsl 9:38–46. doi:10.1145/1345448.1345455
+
+5. Asur S, Parthasarathy S, Ucar D (2009) An event-based framework for characterizing the evo-
+3(4):16:1–16:36.
+
+lutionary behavior of interaction graphs. ACM Trans. Knowl. Discov. Data
+doi:10.1145/631162.1631164
+
+6. Benkert M, Gudmundsson J, H¨ubner F, Wolle T (2008) Reporting flock patterns. Comput Geom Theory
+
+Appl 41(3):111–125. doi:10.1016/j.comgeo.2007.10.003
+
+7. Bui-Xuan BM, Ferreira A, Jarry A (2003) Computing shortest, fastest, and foremost journeys in dynamic
+networks. Int J Found Comput Sci 14(2):267–285. doi:10.1142/S0129054103001728. http://www-apr.
+lip6.fr/∼buixuan/files/BFJ03.pdf
+
+8. Cotelo Lema JA, Forlizzi L, G¨uting RH, Nardelli E, Schneider M (2003) Algorithms for moving objects
+
+databases. Comput J 46(6):680–712
+
+9. Dodge S, Weibel R, Lautensch¨utz AK (2008) Towards a taxonomy of movement patterns. Inf Vis
+
+10. D¨untgen C, Behr T, G¨uting RH (2009) Berlinmod: a benchmark for moving object databases. VLDB J
+
+7(3):240–252. doi:10.1057/palgrave.ivs.9500182
+
+18(6):1335–1368. doi:10.1007/s00778-009-0142-5
+
+11. Eppstein D, Galil Z, Italiano GF (1999) Dynamic graph algorithms. In: Atallah MJ (ed) Algorithms
+and theory of computation handbook, chap 8. CRC Press. http://www.info.uniroma2.it/italiano/Papers/
+dyn-survey.ps.Z
+
+12. Forlizzi L, G¨uting RH, Nardelli E, Schneider M (2000) A data model and data structures for moving
+objects databases. In: SIGMOD ’00: proceedings of the 2000 ACM SIGMOD international conference
+on management of data. ACM, New York, pp 319–330. doi:10.1145/342009.335426
+
+13. G¨uting RH (1993) Second-order signature: a tool for specifying data models, query processing, and
+
+optimization. SIGMOD Rec 22(2):277–286. doi:10.1145/170036.170079
+
+14. Giannotti F, Nanni M, Pedreschi D, Renso C, Rinzivillo S, Trasarti R (2009) Geopkdd–geographic
+privacy-aware knowledge discovery. In: The European future technologies conference (FET 2009)
+15. Giannotti F, Nanni M, Pinelli F, Pedreschi D (2007) Trajectory pattern mining. In: KDD’07, pp 330–339
+16. Gudmundsson J, van Kreveld M, Speckmann B (2004) Efficient detection of motion patterns in spatio-
+temporal data sets. In: GIS ’04: proceedings of the 12th annual ACM international workshop on
+geographic information systems. ACM, New York, pp 250–257. doi:10.1145/032222.1032259
+
+17. G¨uting RH, Almeida V, Ansorge D, Behr T, Ding Z, H¨ose T, Hoffmann F, Spiekermann M, Telle
+U (2005) SECONDO: an extensible DBMS platform for research prototyping and teaching. In: ICDE
+’05: proceedings of the 21st international conference on data engineering. IEEE Computer Society,
+Washington, DC, pp 1115–1116
+
+18. G¨uting RH, Behr T, Almeida V, Ding Z, Hoffmann F, Spiekermann M (2004) SECONDO: an extensible
+
+DBMS architecture and prototype. Tech Rep Informatik-Report 313 FernUniversit¨at Hagen
+
+19. G¨uting RH, B¨ohlen MH, Erwig M, Jensen CS, Lorentzos NA, Schneider M, Vazirgiannis M (2000)
+A foundation for representing and querying moving objects. ACM Trans Database Syst 25(1):1–42.
+doi:10.1145/352958.352963
+
+20. Jeung H, Shen HT, Zhou X (2008) Convoy queries in spatio-temporal databases. In: ICDE ’08: pro-
+ceedings of the 2008 IEEE 24th international conference on data engineering. IEEE Computer Society,
+Washington, DC, pp 1457–1459. doi:10.1109/ICDE.2008.4497588
+
+21. Kalnis P, Mamoulis N, Bakiras S (2005) On discovering moving clusters in spatio-temporal data. In:
+
+SSTD, pp 364–381
+
+22. Kamath KY, Caverlee J (2011) Transient crowd discovery on the real-time social web. In: Proceedings
+of the fourth ACM international conference on Web search and data mining, WSDM ’11. ACM, New
+York, pp 585–594. doi:10.1145/935826.1935909
+
+23. Laube P, Imfeld S, Weibel R (2005) Discovering relative motion patterns in groups of moving point
+
+objects. Int J Geogr Inf Sci 19(6):639–668
+
+24. Laube P, Kreveld M, Imfeld S (2004) Finding REMO—detecting relative motion patterns in geospatial
+lifelines. In: Developments in spatial data handling: proceedings of the 11th international symposium on
+spatial data handling. Springer, Berlin Heidelberg, pp 201–215. doi:10.1007/b138045
+
+Geoinformatica
+
+25. Li Z, Han J, Ji M, Tang LA, Yu Y, Ding B, Lee JG, Kays R (2011) Movemine: mining moving
+object data for discovery of animal movement patterns. ACM Trans Intell Syst Technol 2(4):37:1–37:32.
+doi:10.1145/989734.1989741
+
+26. Li Z, Ji M, Lee JG, Tang LA, Yu Y, Han J, Kays R (2010) MoveMine: mining moving object databases.
+In: SIGMOD ’10: proceedings of the 2010 international conference on management of data. ACM, New
+York, pp 1203–1206. doi:10.1145/807167.1807319
+
+27. Ortale R, Ritacco E, Pelekis N, Trasarti R, Costa G, Giannotti F, Manco G, Renso C, Theodoridis Y
+(2008) The daedalus framework: progressive querying and mining of movement data. In: GIS, p 52
+28. Pelekis N, Theodoridis Y, Vosinakis S, Panayiotopoulos T (2006) HERMES–a framework for location-
+
+based data management. In: Proceedings of EDBT 2006
+
+29. Ramanathan A, Agarwal PK, Kurnikova M, Langmead CJ (2009) An online approach for mining col-
+lective behaviors from molecular dynamics simulations. In: Proceedings of the 13th annual international
+conference on research in computational molecular biology, RECOMB 2’09. Springer-Verlag, Berlin,
+Heidelberg, pp 138–154. doi:10.1007/978-3-642-02008-7 10
+
+30. Ren C, Lo E, Kao B, Zhu X, Cheng R (2011) On querying historical evolving graph sequences. PVLDB
+
+31. Sakr M (2012) Spatiotemporal pattern queries. Ph.D. thesis, Fern Universit¨at Hagen. http://deposit.
+
+32. Sakr M, G¨uting RH (2011) Spatiotemporal pattern queries. GeoInformatica 15:497–540. doi:
+
+4(11):726–737
+
+fernuni-hagen.de/2814/
+
+10.1007/s10707-010-0114-3
+
+33. Tang LA, Zheng Y, Yuan J, Han J, Leung A, Hung CC, Peng WC (2012) On discovery of traveling
+companions from streaming trajectories. In: IEEE 28th international conference on data engineering
+(ICDE) 2012, pp. 186–197. doi:10.1109/ICDE.2012.33
+
+34. Trasarti R (2010) Mastering the spatio-temporal knowledge discovery process. Ph.D. thesis, University
+
+of Pisa Department of Computer Science, Italy
+
+35. Trasarti R, Giannotti F, Nanni M, Pedreschi D, Renso C (2011) A query language for mobility data
+
+mining. IJDWM 7(1):24–45
+
+36. Wolfson O, Xu B, Chamberlain S, Jiang L (1998) Moving objects databases: Issues and solutions. In:
+SSDBM’98: 10th international conference on scientific and statistical database management, pp 111–
+122
+
+37. Xiao D, Eltabakh M (2013) Stepq: Spatio-temporal engine for complex pattern queries. In: Nascimento
+M, Sellis T, Cheng R, Sander J, Zheng Y, Kriegel HP, Renz M, Sengstock C (eds) Advances in spatial and
+temporal databases, lecture notes in computer science, vol 8098, pp 386–390. Springer Berlin Heidelberg
+38. Zheng K, Zheng Y, Yuan NJ, Shang S, Zhou X (2013) Online discovery of gathering patterns over
+
+trajectories. IEEE Trans Knowl Data Eng 99(PrePrints):1. doi:10.1109/TKDE.2013.160
+
+39. Zheng Y, Yuan NJ, Zheng K, Shang S (2013) On discovery of gathering patterns from trajectories. In:
+Proceedings of the 2013 IEEE international conference on data engineering (ICDE 2013), ICDE ’13.
+IEEE Computer Society, Washington, DC, pp 242–253. doi:10.1109/ICDE.2013.6544829
+
+40. Zheng Y, Zhou X (eds) (2011) Computing with Spatial Trajectories. Springer
+41. Zhou S, Chen D, Cai W, Luo L, Low MYH, Tian F, Tay VSH, Ong DWS, Hamilton BD (2010)
+Crowd modeling and simulation technologies. ACM Trans Model Comput Simul 20(4):20:1–20:35.
+doi:10.1145/842722.1842725
+
+Geoinformatica
+
+Mahmoud Attia Sakr has worked as a lecturer in the University of Ain Shams, Cairo, Egypt since July
+2013. He received his Ph.D (Dr. rer. Nat) from the University of Hagen, Germany, 2012. His thesis was
+about spatio-temporal pattern queries. He has proposed generic query operators for expressing and matching
+movement patterns that might occur within individual trajectories or formed by groups of moving objects.
+This work has been implemented and made available within SECONDO.
+
+Ralf Hartmut G ¨uting has been a full professor in Computer Science at the University of Hagen, Germany,
+since 1989. He received his Diploma and Dr. rer. nat. degrees from the University of Dortmund in 1980
+and 1983, respectively, and became a professor at that university in 1987. From 1981 until 1984 his main
+research area was Computational Geometry. After a one-year stay at the IBM Almaden Research Center
+in 1985, extensible and spatial database systems became his major research interests; more recently, also
+spatio-temporal or moving objects databases. He has been an associate editor of the ACM Transactions on
+Database Systems and an editor of the VLDB Journal and is on the Editorial Board of GeoInformatica. He
+has published two German text books on data structures and algorithms and on compilers, respectively, and
+an English text book on moving objects databases, as well as around eighty journal and conference articles.
+His group has built prototypes of extensible and spatio-temporal database systems, the Gral system and the
+SECONDO system.
+
+

@@ -1,0 +1,1386 @@
+Geoinformatica
+DOI 10.1007/s10707-014-0216-4
+
+A Dilution-matching-encoding compaction of trajectories
+over road networks
+
+Ranit Gotsman · Yaron Kanza
+
+Received: 24 January 2014 / Revised: 5 July 2014 / Accepted: 11 August 2014
+© Springer Science+Business Media New York 2014
+
+Abstract Many devices nowadays record traveled routes as sequences of GPS locations.
+With the growing popularity of smartphones, millions of such routes are generated each day,
+and many routes have to be stored locally on the device or transmitted to a remote database.
+It is, thus, essential to encode the sequences, in order to decrease the volume of the stored
+or transmitted data. In this paper we study the problem of encoding routes over a vectorial
+road network (map), where GPS locations can be associated with vertices or with road seg-
+ments. We consider a three-step process of dilution, map-matching and coding, which helps
+reducing the amount of transmitted data between the cellular device and remote servers.
+We present two methods to code routes. The first method represents the given route as a
+sequence of greedy paths. We provide two algorithms to generate a greedy-path code for a
+sequence of n vertices on the map. The first algorithm has O(n) time complexity, and the
+second one has O(n2) time complexity, but it is optimal, meaning that it generates the short-
+est possible greedy-path code. Decoding a greedy-path code can be done in O(n) time. The
+second method encodes a route as a sequence of shortest paths. We provide algorithms to
+generate unidirectional and bidirectional optimal shortest-path codes. Encoding and decod-
+ing a shortest-path code can be done in O(kn2 log n) time, where k is the length of the
+produced code, assuming the graph valency is bounded. Our experimental evaluation shows
+that shortest-path codes are more compact than greedy-path codes, justifying the larger time
+complexity.
+
+Keywords Compact representation · Trajectories · GPS · Compression · Dilution ·
+Map matching · Route recording
+
+R. Gotsman
+Technion, Israel Institute of Technology, Haifa, Israel
+e-mail: ranitgo@yahoo.com
+
+Y. Kanza ((cid:2))
+Jacobs Technion-Cornell Innovation Institute, Cornell Tech, New York, NY, USA
+e-mail: kanza@cornell.edu
+
+Geoinformatica
+
+1 Introduction
+
+Many devices, such as smartphones, contain a GPS receiver that allows users to record
+their locations as they travel. Recording sequences of locations generates trajectories that
+can be used by various applications. Trajectories can be shared to recommend travel
+routes to users [10, 43, 44], to find significant locations [4], to combine social net-
+works with spatial networks [9] or to predict destination [38]. They can be used to
+determine similarity between users [21] or specify user behavior [13, 42]. They can be
+collected and analyzed to provide statistics about travels of individuals or of groups of
+people. Such statistics can be utilized by urban planners and policy makers in munic-
+ipal, provincial and federal decision making, e.g. in issues such as development and
+preservation.
+
+An emerging problem is how to efficiently code such data sets in a world where millions
+of trajectories are generated each day, and have to be stored or transmitted for future process-
+ing in remote servers. An example of this is the Cabspotting project http://cabspotting.org/
+that traces taxi cabs in San Francisco as they travel throughout the Bay Area. Previous solu-
+tions were based on sampling and dilution [5, 11, 22–24, 30, 34, 45], segmentation of time
+series [37], using frequently-traveled segments [6] or on time-decaying synopses [29, 31],
+without taking the topology of the road network into account. Muckell et al. [25] provide
+a comparison and an evaluation of these different compression techniques. In this paper,
+which is an extended version of [14], we consider the representation of trajectories over a
+road network, and we present a novel comprehensive approach that uses the topology of the
+road network to provide a compact representation of the traveled route—a representation
+that is much more compact than the mere result of a dilution.
+
+We present a three-step process that starts by applying dilution of the trajectory using
+the standard Douglas-Peucker polyline-simplification algorithm [8]. Then, we apply map-
+matching to provide a route over the road network. Once a route is generated based on the
+GPS trajectory, it may be represented as a path in a planar graph, namely, a sequence of
+vertices in the graph. A compact representation of the route is computed using the topology
+and the geometry of the network. The proposed approach allows applying the dilution prior
+to the map matching, e.g., in cases where the dilution is conducted in a mobile device that
+does not hold a map of the area, before sending the data to a server that has an appropriate
+map. If a map exists already at the first step, the map matching can be conducted prior to
+the dilution. Our approach of dilution-matching-encoding reduces the transmission of data
+between the cellular client that records the GPS trajectory and remote servers, because the
+client is not required to download a map of the environment and also it can avoid sending
+entire trajectories to a server. The dilution allows sending to a server only a small portion
+of the recorded data, reducing data transmission to provide an energy-efficient mode of
+operation.
+
+Our main contribution is two novel ways to compactly represent a path in a
+planar graph, and efficient algorithms to compute these compact representations. In both
+methods, we represent the path as a subsequence of vertices such that this path can be
+uniquely reconstructed from the vetrtices by computing for each pair of consecutive vertices
+a well-defined path and concatenating these paths. For example, given a path, we seek to
+decompose it into the smallest possible sequence of shortest paths. Then, given the subse-
+quence of vertices and the graph, the route may be recovered by generating a shortest path
+between every two consecutive vertices in the code.
+
+In Section 2 we define the problem and provide an overview of the approach. The dilution
+phase is described in Section 3. The map-matching step is presented in Section 4. A grid
+
+index to support efficient implementation of the map matching is presented in Section 5.
+Methods that compute compact codes for the paths produced by the map matching are
+presented in Section 6. We also describe at the end of Section 6 how to handle the temporal
+aspect of GPS trajectories and discuss online versus offline computations. Experimental
+evaluation over real data is provided in Section 7. In Section 8, we conclude and discuss
+future work.
+
+Geoinformatica
+
+2 Framework
+
+A vectorial road network is a representation of a road map as a directed planar graph
+G = (V , E) comprising a set V of vertices and a set E of edges, with a geometry
+X. The edges of the graph represent road segments and the vertices represent junc-
+tions. The geometry X is an injection from V to the set of real-world points on Earth,
+i.e., each vertex v of G is associated with its real-world location, denote by X(v). In
+this paper we consider recordings of travel routes over vectorial road networks. Devices
+with an embedded GPS receiver allow recording user locations. Based on recorded
+locations, travel routes of users can be represented as sequences of points (locations).
+Each sequence has the form (x1, . . . , xn) where for each i < j , point xi
+is a loca-
+tion that was visited and recorded prior to point xj . We refer to such a sequence as a
+trajectory.
+
+Trajectories are raw sequences of locations. Over a road network, our aim is to represent
+each sequence as a path on the graph. A path in G is a sequence of vertices (v1, . . . , vm) of
+V such that each two consecutive vertices are connected by an edge. To represent a sequence
+of points as a sequence of vertices, we first need to map the points of the sequence to the
+graph, namely, apply map matching. This produces the actual travel path on G—a path that
+matches the given sequence.
+
+After the map-matching, we can compute a compact representation of the produced
+path. In this paper, we consider a compact representation of a path P = (v1, . . . , vm)
+to be a subsequence C = (vi1, . . . , vik ) of P such that there is a known method to
+restore P from C. Typically, we would like the compact representation to be as short as
+possible.
+
+Problem Definition: Given a trajectory as a sequence of points, and let P be the path of
+G that matches the given trajectory, the goal is to compute a compact representation of P .
+Computing a compact representation of a path P is referred to as encoding P . Restoring
+P from the compact representation is referred to as decoding P . For many applications, the
+time complexity of the encoding and of the decoding should be taken into account. For such
+applications, the goal is to provide a compact representation that can be efficiently encoded
+and decoded.
+
+Our general approach is to apply the following three steps, for a given sequence of n
+location points. (1) Dilute the sequence, to remove unnecessary redundant points. (2) Apply
+map matching to associate the remaining points to vertices (junctions) of the road net-
+work. (3) Compute a compact representation of the sequence of vertices. Typically, Step 1
+is conducted on a client that does not have the entire map of the environment and can-
+not apply the other two steps. Such client will apply Step 1 to dilute the sequence before
+sending the data to the server, to reduce communication costs. The server will apply
+steps 2 and 3. Obviously, the dilution step can be skipped if the recording client has
+a complete map of the environment. In the following sections we describe these three
+steps.
+
+Geoinformatica
+
+3 Trajectory dilution
+
+The first step of our method is to dilute (or simplify) the trajectory by removing redundant
+points. A redundant point is a point that is “almost” on the line connecting the points before
+and after it, as it does not add much new information about the trajectory. Since our map-
+matching step is not sensitive to differences in the density of the GPS trajectory versus the
+density of vertices of the network, dilution does not reduce the accuracy of the matching.
+
+Given a trajectory, as a sequence (x1, x2, . . . , xn), removal of redundant points can
+be done using the Douglas-Peucker (DP) polyline-simplification algorithm [8] which has
+O(n2) time complexity. The DP algorithm is controlled by a single parameter—the distance
+a point is allowed to deviate from a straight line. The algorithm discards most of the points
+and marks just those to be kept. The algorithm proceeds recursively as follows. Initially
+it starts with the pair of indices (1, n), representing the entire sequence x1, x2, . . . , xn of
+points in the trajectory. It automatically marks the indices 1 and n to be kept. It then finds
+the index i of the point xi that is farthest from the line segment between x1 and xn. If the
+point is closer than ε to that line segment, then all the points with indices 2, . . . , n − 1 may
+be discarded without the diluted trajectory being farther than ε from the line segment, and
+the recursion terminates. If the point is farther than ε, then index i is marked to be kept. The
+algorithm then calls itself twice recursively, first with the pair (1, i) and then with the pair
+(i, n). When the procedure is complete, the generated trajectory consists of all (and only)
+those points whose indices have been marked to be kept. A more efficient implementation of
+DP, with O(n log n) time complexity has been presented by Hershberger and Snoeyink [17].
+Simplifying a trajectory can typically reduce the number of points significantly, say from
+1,000 to a mere 30 points, while preserving the geometric integrity of the trajectory. A
+slightly better reduction can be achieved by taking into account the heading of the travel
+and the distances between adjacent points, as shown in [5]. The DP simplification algorithm
+also helps in removing redundant trajectory points which accumulate while a vehicle stops
+in a traffic jam or at a traffic light. These points contain no additional information and just
+introduce noise because of GPS inaccuracy.
+
+4 Map matching
+
+The second step after dilution is applying map matching. Map-matching has been studied
+for more than a decade, and the algorithms have evolved from very simple to quite sophis-
+ticated. Many papers studied this topic but it is not the focus of this paper, thus we do not
+present all the previous work in this area. Yet, so that the paper will be self contained, we
+present the map matching method we used, which is an adaptation of existing methods to
+handle well diluted trajectories. For a review of existing algorithms, we refer the reader
+to the comprehensive surveys of White, Bernstein, & Kornhauser [36], Quddus, Ochieng,
+Zhao, & Noland [32] and Quddus, Ochieng, & Noland [33].
+
+4.1 Map matching and HMM
+
+The first algorithms for map matching were based on geometric proximity alone. Given a
+sequence of GPS readings X = (x1, . . . , xn), where each xk is a two-dimensional coor-
+dinate, and a road map (network) represented as a (planar) graph, each of the points xk is
+projected on the closest map edge. See Fig. 1, which shows the result of this naive algorithm
+applied to the GPS trajectory of Fig. 2. Since each point is snapped independently of the
+
+Geoinformatica
+
+Fig. 1 Each of the (green) GPS trajectory points is “snapped” to the closest map edge (orange points),
+leading to an incorrect match
+
+others, the results could be inconsistent and erroneous (see a correct matching in Fig. 3). An
+obvious improvement to this naive approach is to take advantage of the global map topol-
+ogy (e.g. [15, 20, 39]), i.e. the fact the user must travel along roads in a continuous manner,
+and cannot “bounce” between roads. The first such topological map-matching algorithms
+operated in the regime where GPS readings were few and far between, thus had to assume a
+user model, namely that the user had certain well-defined behavior patterns, e.g. that a user
+would move along the shortest path between two given points. This led to inconsistencies
+when users did not travel along the shortest path between points.
+
+Many recent map-matching algorithms dealt with the inconsistency problem by using
+a Hidden-Markov Model (HMM) probabilistic approach [18]. Treating a GPS trajectory
+comprising edges T = (t1, t2, . . . , tn) as a sequence of empirical observations (i.e. mea-
+surements), they attempt to compute the most likely sequence of map edges traversed given
+that sequence of observations. Note that here, to simplify the presentation, we represent a
+trajectory as a sequence of edges rather than as a sequence of points, where each edge is
+merely a line connecting two consecutive measured GPS points.
+
+A key principle in the HMM approach is that the algorithm must work simultaneously on
+the two inputs: the map and the GPS trajectory, hence it operates in a state space consisting
+of states which are pairs of entities, one from the map and one from the GPS trajectory.
+Thus, solving the HMM involves building a trellis, which is a replication of the map n times
+(one per each GPS trajectory point). Each replica is a layer of the trellis, containing all map
+edges and represents a trajectory edge. Thus, in this layered trellis graph, each trellis node
+represents a pair: an edge from the GPS trajectory and an edge from the map, and each
+trellis edge represents a connection between two map edges relevant to that edge of the
+trajectory. A trellis node (ti, ej ) is connected to a trellis node (ti+1, ek) if and only if the two
+map edges ej and ek are relevant (i.e. sufficiently close) to the GPS trajectory edges ti and
+ti+1 and connected one to the other. Note that trellis edges exist only between two adjacent
+layers of the trellis. Each trellis node (ti, ej ) has an emission probability that estimates
+the correlation between the GPS measurement ti and the edge ej based on the (Euclidean)
+
+Geoinformatica
+
+Fig. 2 Noisy GPS readings (green) and the associated polyline (blue). Black arrows show road matching
+options for the GPS points
+
+distance between them. The trellis edge connecting node (ti, ej ) to node (ti+1, ek) has a
+transition probability that estimates the distance between the two map edges ej and ek.
+There are no edges between trellis nodes within the same layer. See Fig. 4 for an example of
+a graph and GPS trajectory, and the corresponding trellis. The HMM algorithm attempts to
+find a path of trellis edges from the first layer to the last. This sequence of edges represents
+the map-matched route.
+
+Fig. 3 The orange dots connected by the red polyline are the corresponding map-matched route computed
+by our map-matching
+
+Geoinformatica
+
+Fig. 4 Left: A sparse GPS trajectory. Middle: The trellis in the algorithm of Hummel [18]. Right: The trellis
+in the algorithm of Newson & Krumm [27]
+
+In essence, the original HMM algorithm of Hummel [18] proceeds monotonically along
+the temporal axis described by T , that is, along the horizontal dimension of the trellis. By
+doing so, it traverses the map edges while traversing the trajectory, following the shortest
+weighted path through the trellis. The weight of a path is derived from the emission and
+transition probabilities of the vertices and edges along that path. The fact that there are
+no edges within layers allows efficient computation of this shortest path using the Viterbi
+dynamic programming algorithm [35]. The result is a list of map edges, which is the map-
+matched route.
+
+The original HMM algorithm was designed primarily for the scenario of dense (but
+noisy) GPS trajectories. By “dense”, we mean that, on the average, there are many GPS
+points per map edge. This means that the horizontal dimension of the trellis will be much
+larger than the vertical dimension, and there will be many edges, in the shortest path com-
+puted through the trellis, which will “march” along the same map edge. This precludes
+the opposite scenario—that of sparse GPS trajectories. In sparse trajectories, the trellis has
+a very small horizontal dimension, and many map edges should be traversed for a single
+trajectory edge. Since there are no edges within a trellis layer, this is not supported well,
+and the shortest path through the trellis is meaningless.
+
+The variants of the HMM algorithm of Newson & Krumm [27] for map matching,
+attempts to modify the algorithm of Hummel to deal also with the case of sparse GPS trajec-
+tories. For each trajectory edge, all the map edges in its vicinity—those that are not farther
+away than some predefined radius r—are considered. An edge is added between two adja-
+cent layers of the trellis corresponding to explicit shortest paths computed between any pair
+of map edges in adjacent vicinities. This way there are still no edges within trellis layers, but
+it is possible to move between layers, each layer corresponding to a GPS trajectory point,
+even if these points are quite far apart.
+
+See Fig. 4 (left) for an example of a simple map and a GPS trajectory consisting of
+four readings, thus three edges. Figure 4 (center) shows the associated trellis used in the
+algorithm of Hummel [18]. Each of the three layers consists of a replica of the 12 graph
+edges. The blue edges between layers correspond to relationships between the three edge
+vicinities, essentially representing adjacent edges in the input graph. For example, the blue
+edge between (A, e1) and (B, e3) corresponds to the path (e1, e3). Nodes are color-coded
+according to vicinities, and correspond to graph edges in the vicinity associated with that
+layer. Each trellis node is weighted using an emission probability and each trellis edge is
+
+Geoinformatica
+
+weighted using a transition probability. No shortest path exists between e1 and e12, so the
+algorithm will not generate a correct result.
+
+Figure 4 (right) shows the associated trellis used in the algorithm of Newson &
+Krumm [27], which contains all that was in the previous trellis, and additional red edges.
+As before, the blue edges in the trellis represent adjacent edges in the input graph. The
+additional red edges in the trellis represent non-trivial shortest paths in the input graph.
+For example, the red edge between (A, e1) and (B, e4) corresponds to the shortest path
+(e1, e2, e4) between e1 and e4 in the input graph. The bold (blue and red) path is the shortest
+path between e1 and e12 through the trellis, corresponding to the bold red path in the input
+graph, which is the resulting map-match of the GPS trajectory.
+
+While this modified HMM algorithm is now capable of map-matching sparse trajectories,
+the main problem is that it requires the computation of many shortest paths on the map,
+related to many of the trajectory edges, in order to construct the trellis in the first place. This
+can be time consuming.
+
+4.2 Our variation of the map-matching algorithm
+
+We now describe our map-matching algorithm, which deals correctly and naturally with
+sparse GPS trajectories. Our algorithm is also based on a trellis graph, however, in contrast
+to the HMM algorithm of Newson & Krumm [27], it does not construct all the explicit
+shortest paths between map edges.
+
+The key idea behind our algorithm is to allow the map and the GPS trajectory to play
+completely symmetric roles. The algorithm advances along the trajectory T and map edges
+in parallel, allowing each to advance at the correct speed, slowing down if necessary by
+staying put at a specific trajectory edge or map edge. This is ultimately formulated as a
+shortest path problem on the same type of trellis graph used by other HMM algorithms,
+whose nodes are pairs of edges—one from the GPS trajectory and one from the map. An
+edge exists between two trellis nodes, (i, j ) and (k, l) (i and k are indices of GPS trajec-
+tory edges and j and l are indices of map edges) if and only if edge k is a successor of
+edge i in the trajectory and l is a neighboring edge of j on the map. The main difference
+between our trellis and the standard HMM trellis is that ours contains edges within layers.
+The weight of a trellis edge is a combination of the directionality of the comprised edges and
+the Euclidean distance between them. Note that the trellis graph is very sparse. A solution to
+the map-matching problem is the path with the minimal length among the following paths:
+the shortest paths between (t1, ei) and (tn, ej ), where edge ei is an edge within a radius r
+of the edge t1 and edge ej is an edge within radius r of the edge tn (we found that r = 20m
+gives good results). If there are no edges within this radius r, then r will be increased, until
+there is some minimal number (typically 5) of edges to consider (both for the starting edges
+and for the ending edges).
+
+Constructing the Trellis Graph. Given a map M with m edges and a GPS trajectory of edges
+T = (t1, t2, . . . , tn), we build a trellis graph G, with O(nm) nodes. As mentioned before,
+each node is a pair of edges, one (t) from T , and one from the edges in the vicinity of t in
+M. As we will see, G is very sparse since every node is connected to very few other nodes.
+Graph G has the same trellis structure as the graph used by the standard HMM algorithms,
+namely, can be viewed as n layers of the edges of the map M. Trellis edges within a layer
+correspond to neighboring edges (i.e. two edges where the target vertex of the first edge
+coincides with the source vertex of the second edge) within a single vicinity in the map,
+and edges between layers correspond to graph edges connecting between the vicinities of
+
+Geoinformatica
+
+Fig. 5 Constructing the trellis graph G
+
+trajectory edges. Thus, movement within each layer corresponds to movement within the
+map at a given trajectory edge, and movement between layers corresponds to movement
+along the trajectory. Algorithm in Fig. 5 describes this construction in detail.
+
+In Fig. 5, the values dir1 and dir2 are the direction of edge ti relative to edge e and
+the direction of edge x relative to edge y, respectively. The parameter d1 is the minimum
+among (1) the distance from the source of ti to e and (2) the distance from the source
+of e to ti. The parameter d2 is defined similarly—the minimum between (1) the distance
+from the source of x to y and (2) the distance from the source of y to x. The parameters
+d1, d2, tLen1, tLen2, mLen1 and mLen2 measure the distances between edges, as illustrated
+in Fig. 6. The dominant weight is the distance between the map edge and the trajectory
+edge, since if this distance is large, then there is a smaller chance that the true route passed
+through that edge. Using these weights allows the algorithm to take into account how far
+the map edges and the trajectory edges are from each other. Figure 7 shows a trellis graph
+constructed by the algorithm in Fig. 5 on the input map graph and GPS trajectory of Fig. 4.
+
+Fig. 6 Values used in the computation of the weight of the edge ((ti, e), (x, y)) in the trellis graph
+
+Geoinformatica
+
+Fig. 7 Illustration of our map-matching algorithm. Left: Sparse GPS trajectory. Right: The trellis graph
+constructed by our algorithm from the map and trajectory. The bold blue path is the shortest path between e1
+and e12 through the trellis, corresponding to bold red path in the input graph, which is the resulting map-match
+of the GPS trajectory
+
+After constructing the trellis graph G, we choose a couple of choices for the source edge
+on the map and a couple of choices for the target edge on the map. This is done by taking all
+the map edges that fall within a small radius r from the first and last point of the trajectory.
+
+Computing the Matching. The last step of the algorithm is to find the weighted shortest path
+from a pair (t1, e) to a pair (tn, e(cid:2)), where e is an optional starting edge and e(cid:2) is an optional
+ending edge of G. Note that these edges are optional because in the trellis graph there are
+several edges that can be a starting edge and several edges that can be an ednding edge. The
+resulting path P will consist of pairs (t, e(cid:2)(cid:2)), where t ∈ T and e(cid:2)(cid:2) is an edge of the map. The
+map-matched route of the GPS trajectory to the map will be the ordered map edges of P
+after deleting consecutive duplicates of map edges. For example, in Fig. 7, P (the bold red
+path) is ((A, e1), (B, e3), (B, e10), (C, e11), (C, e12)), corresponding to the map-matched
+route (e1, e3, e10, e11, e12). Figure 8 illustrates a diluted trajectory and the map matching
+after the dilution.
+
+The algorithm fails if no shortest path can be found. This usually means that either the
+map is not connected in the region we are working on, or that we did not extract enough map
+edges to support such a path during the extraction of relevant data. In such case, we may run
+the algorithm again on larger trajectory edge vicinities, use historical-based route inference,
+as in [41], or use a data structure that represents the uncertainty of moving objects over the
+road network [40].
+
+5 Grid index
+
+Since a digital map is typically a large data set, we would like to extract from it only the
+relevant portion, before any processing is done. We extract from the map only the edges
+that correspond to the region where the edges of the GPS trajectory are located—those that
+intersect a bounding buffer of offset R from some trajectory edge. (In our implementation,
+we used R = 200m, as in the experiments of Newson & Krumm [27].)
+
+Geoinformatica
+
+Fig. 8 Top: Dense input GPS trajectory (recorded by Newson & Krumm [27]). Bottom: Diluted GPS
+trajectory (dilution by a factor of 20) and the map-matched result, using our algorithm, on the sparse trajectory
+
+The extracted map edges are the only edges the map-matching algorithm needs to know
+about. These edges are identified using a standard grid-based spatial index, which indicates
+the edges of the map intersecting each spatial grid cell. For each trajectory edge, we compute
+the grid cells that intersect the bounding box of the edge (inflated by one grid cell in each
+direction), retrieve the indices within those cells from the data set, and from the map edges
+indexed therein we select those within radius R of the trajectory edge. See example in Fig. 9.
+
+6 Path codes
+
+Once a route is generated by matching the GPS trajectory to the road network, this trav-
+eled route may be represented as a path in a planar graph, namely, a sequence of vertices
+in the road network, implying edges between every two consecutive vertices. Hence, after
+the map-matching, the traveled route will be represented as a sequence of vertex IDs. Thus,
+storing (or transmitting) long paths could be quite costly. In applications that involve
+building large databases of user paths, these costs could be prohibitive.
+
+To deal with this difficulty, we present two novel ways to compactly represent a path
+in a planar graph, and efficient algorithms to compute these compact representations. Our
+methods represent the path as a subsequence of vertices from which the path can be uniquely
+reconstructed as a sequence of well-defined paths between each two consecutive vertices.
+In this representation, given the subsequence of vertices and the graph, the route may be
+
+Geoinformatica
+
+Fig. 9 Extraction of map edges relevant to a given GPS trajectory edge (bold blue). Relevant cells are
+bounded by the dashed black line. Relevant map edges indexed within the cells are those within the dashed
+orange region (a buffer of 200 meters around the trajectory edge)
+
+recovered by generating the relevant paths between each two consecutive vertices of the
+code.
+
+6.1 Greedy-path coding
+
+Our first method of representing a path in a graph is as a sequence of consecutive greedy
+paths.
+
+Definition 1 (Greedy Path) Given a planar graph G = (V , E) with geometry X (i.e.,
+X is a mapping of vertices to geographic locations), a path P = (i1, i2, . . . , im) is
+a greedy path from vertex i1 to vertex im when the sequence of Euclidean distances
+||X(i1)−X(im)||, ||X(i2)−X(im)||, . . . , ||X(im−1)−X(im)|| is monotonically decreasing.
+
+Geoinformatica
+
+Intuitively, a greedy path between vertex v and vertex u is one where each vertex w
+along the path is closer to u than pred(w) (the predecessor of w). This defines a greedy
+path in a weak sense, and we add another condition to define a greedy path in a stronger
+sense.
+
+Definition 2 Given a planar graph G = (V , E) with geometry X, a path P =
+(i1, i2, . . . , im) is a greedy path from vertex i1 to vertex im in G if the sequence
+||X(i1) − X(im)||, ||X(i2) − X(im)||, . . . , ||X(im) − X(im)||, of Euclidean distances, is
+monotonically decreasing, and for all 1 ≤ k < m, the following holds: ik+1 =
+argminj ∈neighbors(ik)(||X(j ) − X(im)||).
+
+The extra condition implies that not only is each vertex w along the path closer to u than
+pred(w), but is the closest to u among all neighbors of pred(w). (We assume here that in the
+graph there are no two different pairs of vertices that the distances between their vertices are
+precisely equal.) A greedy path in the strong sense can be viewed as the discrete equivalent
+of a gradient descent path from v to u when considering the Euclidean distance function
+from u. The motivation for this extra condition is that under mild conditions on the graph,
+the greedy path in the strong sense will be unique, as opposed to the greedy path in the weak
+sense, which is typically not unique. As we will see later, uniqueness is important for the
+path coding application.
+
+Note that a greedy path (in the weak sense, and certainly in the strong sense) between
+two given vertices in a planar graph is not always guaranteed to exist, even if the graph is
+connected. This can happen, for example, if a greedy walk from v to u gets stuck at a vertex
+w from which no neighbors are closer to u than w. This is the equivalent of getting stuck
+at a local minimum when performing gradient descent in the continuous case. For some
+specific planar graphs, the situation is better, for example, it is known that a greedy path in
+the weak sense exists between any two vertices of a Delaunay triangulation [3]. Such greedy
+paths are used extensively for routing in embedded networks, where messages are greedily
+forwarded towards their destination. Figure 10 shows some examples of greedy paths in the
+weak and strong senses in a planar graph. In Fig. 10 (Left), the green path is a greedy path
+in the weak sense between A and B1, and the orange path is the greedy path in the strong
+sense. In Fig. 10 (Right), a greedy path in the weak sense exists between A and B2 (depicted
+in green), but no greedy path in the strong sense exists. This is evident from the fact that a
+greedy walk proceeds along the orange path and reaches a dead end (i.e. a local minimum
+
+Fig. 10 Greedy paths—greedy paths in the weak sense are depicted in green; and greedy paths in the strong
+sense are depicted in orange. Left: Greedy paths from A to B1, in the strong and in the weak sense. Right:
+There is no greedy path from A to B2 in the strong sense
+
+Geoinformatica
+
+of the Euclidean distance function from B2). From this point onwards, we will use just the
+term greedy path to mean greedy in the strong sense.
+
+It is easy to decide whether a given path is a greedy path by simply checking the condition
+of Definition 1. It is not too difficult either to compute a greedy path between vertex i1 and
+vertex im, if such path exists, using the following greedy algorithm. Start from vertex i1.
+When at ik, choose as ik+1 the neighbor of ik which is the closest to the final destination
+im and also closer than ik to im (if the latter condition is not satisfied, then the algorithm is
+stuck at a local minimum and fails). Then continue in the same manner from ik+1.
+
+Given a path P = (i1, i2, . . . , im), a greedy-path code of P is a subsequence Q =
+(j1, j2, . . . , jk) of P such that i1 = j1, im = jk, and P is identical to the concatenation
+of the greedy paths between jt and jt+1 for 1 ≤ t < k, namely, if jt = ir and jt+1 = is
+then the sub-path (ir , . . . , is ) of P is a greedy path. An optimal greedy path code of P is a
+shortest possible Q (as measured by k). The objective is to produce a code such that greedy
+paths indeed exist between the code vertices. These greedy paths will be unique because of
+the extra (strengthening) condition.
+
+We now describe two algorithms to compute a greedy path code of a path in a graph.
+The first is the simplest possible, running in linear time, but not necessarily generating an
+optimal greedy path code. The second algorithm is less efficient, but optimal. Note that in
+the worst case, the greedy path code of a path is the path itself.
+
+Both algorithms take advantage of the fact that greedy paths have the suffix property,
+namely, any suffix of a greedy path is also a greedy path, which is a trivial consequence of
+the definition of a greedy path. It also means that given a graph G and a target vertex t, the
+uniqueness of the greedy paths implies that all greedy paths from all other vertices of G to t
+(if they exist) form a greedy tree rooted at t (after reversing the direction of the edges). This
+tree does not span the entire vertex set of G, rather only those vertices from which a greedy
+path to t exists.
+
+Given a greedy path code of a path (i1, i2, . . . , im), it may be decoded in time complexity
+O(m) by simply computing the greedy paths in the graph between each two consecutive
+vertices of the code. The uniqueness of the greedy path guarantees that the decoding is
+correct, i.e. indeed recovers the original path. The linear complexity assumes that all vertices
+have a bounded valence, thus computing the correct neighbor of a vertex in a greedy path
+requires O(1) time.
+
+6.2 Simple greedy-path coding algorithm
+
+The simple greedy-path coding algorithm, presented in Fig. 11, starts from im, and proceeds
+checking backwards if the path is greedy (lines 4 and 5). A codeword (an index of a vertex
+in the graph) is generated and added to the code when the path ceases to be a greedy path
+(Line 6), and the procedure repeats from there.
+
+The suffix property of the greedy paths allows to check greediness in Line 4 by checking
+just the current s at each step, saving checking the greediness of the entire subpath between
+s and t. This algorithm has O(m) time complexity, where m is the number of vertices in
+the input path. The linear complexity assumes that all vertices have a bounded valence,
+thus checking the greediness of an edge in the path requires O(1) time. Unfortunately, this
+algorithm is not guaranteed to find the shortest possible greedy path code. See Fig. 12 and
+Fig. 14 for examples of greedy-path coding in a graph G consisting of a single path. A path
+of 6 vertices (which is also the entire graph G) is coded into 5 points using the simple greedy
+path coding algorithm, as presented in Fig. 12. Using the optimal algorithm, to be described
+next, results in a greedy path code of 3 points, as presented in Fig. 14.
+
+Geoinformatica
+
+Fig. 11 Algorithm for computing a simple greedy-path coding
+
+6.3 Optimal greedy-path coding algorithm
+
+The optimal greedy-path coding algorithm, presented in Fig. 15, computes an optimal
+greedy-path code—a code with a minimal number of points. It is somewhat similar to the
+Imai-Iri algorithm [19] for simplifying a polyline. It starts by building a graph R whose
+nodes are the nodes of the given graph G. There is an edge (v, u) in R for every pair of ver-
+tices v and u for which exists a greedy path from v to u in G. Then, the algorithm computes
+a shortest path from the node representing s to the node representing t, in R. This generates
+a greedy-path code with a minimal number of vertices.
+
+Figure 13 depicts the graph R constructed for the graph G of Fig. 12. Node 1 in R
+represents Node s of G and Node 6 of R represents Node t of G. The shortest path between
+1 and 6 is depicted by a purple boldface line. This path goes via nodes 1, 5 and 6 and
+it provides the optimal code presented in Fig. 14. For comparison, the code in Fig. 12 is
+represented by a path via nodes 1, 2, 3, 4 and 6 in R, and since it is not the shortest path
+from 1 to 6, this code is not optimal.
+
+The time complexity of this algorithm is O(m2), since the outer loop (on t) iterates m
+times, and the inner loop can add up to t edges, resulting in a graph R containing m vertices
+and O(m2) edges. Thus the shortest path computation in Line 8 also requires O(m2) time
+when using Dijkstra’s algorithm with Fibonacci heaps [12].
+
+Fig. 12 Simple greedypath code.
+The code is the 5 purple points
+
+Fig. 13 Graph R as constructed
+by the algorithm of Fig.15 for G
+of Fig.12
+
+Geoinformatica
+
+6.4 Uniqueness of shortest paths
+
+The optimal greedy path coder relies on finding a shortest path in the graph R (Line 8 of
+Fig. 15). To guarantee a unique coding (e.g. in order to determine if two paths are identical
+based only on their codes), this shortest path of R must be unique, i.e. independent of the
+shortest-path algorithm (e.g. Dijkstra, Bellman-Ford, Floyd-Warshall) used by the encoder.
+One approach is to define a lexicographic order over paths, compute all the shortest paths
+and choose the shortest path which is the smallest according to the lexicographic order.
+One of the disadvantages of this approach is that it requires computing all the shortest
+paths, which can be inefficient. Another disadvantage is that it may produce a non-uniform
+partition. For example, consider a path P with 12 vertices. There can be two shortest path of
+length 3 in R, for P —one path in R whose edges represent greedy sub-paths of lengths 1,
+1, 10 (in G) and another path in R whose edges represent greedy sub-paths of lengths 4, 4,
+4. The second option provides a more uniform partition and will be better for presentation
+or for estimating if the path travels through a certain area.
+
+To achieve uniformity and improve the efficiency of the computation, we slightly modify
+the graph R to be geodetic, i.e. be a graph in which for each pair of vertices the shortest
+path between them is unique [28]. We slightly perturb the graph in a way that guarantees
+uniqueness without compromising the true shortest path, which is somewhat similar to the
+approach presented in [16]. Essentially, the weight of edge (ir , is ) will be
+
+s − r
+m
+where m is the number of points in the path P and s − r is the number of points in the
+sub-path of P from ir to is .
+
+wrs = 1 +
+
++ 1
+
+mir +2
+
+,
+
+(cid:2)
+
+(cid:3)
+2
+
+Fig. 14 Optimal greedy path
+code. The code is the 3 purple
+points
+
+Geoinformatica
+
+Fig. 15 Algorithm for computing an optimal greedy-path coding
+
+(cid:4)
+
+(cid:5)
+
+s−r
+m
+
+2. (The
+
+1
+
+In the perturb weights, the dominant element is wrs = 1 +
+
+mir +2 element
+was added to prevent “ties” between partitions into sub-paths of the same lengths, e.g.,
+partition of a 12-vertex path into sub-paths of lengths 5, 5, 2 versus a partition into sub-paths
+of lengths 5, 2, 5.) Using these perturbed weights will have the effect of generating shortest
+paths whose number of edges is as uniform as possible. That is, among all the shortest-path
+codes, this approach will prefer those whose greedy path segments have approximately the
+same number of edges. This is because all candidate codes having the same number k of
+greedy path segments, represent the same total number of edges m (as in the input path).
+Denoting by xi the number of edges in the i-th greedy path segment, minimizing the sum
+k
+i=1(xi)2 prefers uniform distribution of the xi’s, as the following lemma
+of the squares
+emphasizes.
+
+(cid:6)
+
+Lemma 1 The solution to min
+is xi = m/k for i = 1, . . . , k.
+
+(cid:6)
+
+(cid:6)
+
+k
+i=1(xi)2 subject to
+
+k
+i=1 xi = m (m is a positive constant)
+
+The proof of the lemma is straightforward using Lagrange multipliers.
+A different way to perturb the edge weights is to add a large enough variety of small
+enough pseudo-random values to the edge weights. For example, by choosing random per-
+m7 , . . . , m4
+turbation values from the set { 1
+}, according to the Isolation Lemma of Mulmuley
+et al. [26], the probability that all shortest paths are unique is at least 1 − 1
+m . For details and
+for additional methods how to create a geodetic graph, we refer the reader to the work of
+Borradaile et al. [2].
+
+m7
+
+6.5 Shortest-path coding
+
+Greedy-path coding seeks to find the subsequence of points of P that segments P into a
+number of sub-paths, where the sub-paths are greedy paths between consecutive points of
+the subsequence. Greedy-path coding is relatively simple and decoding is extremely fast. It
+relies on the extrinsic geometry (i.e. coordinates of the embedding) of the graph. However,
+more compact codes are possible. In this section we explore shortest path coding, i.e. repre-
+senting P as the subsequence of points of P which segments P into a number of sub-paths
+which are shortest paths between consecutive points of the subsequence. As we will see,
+these codes will be more difficult to compute and decoding them will be slower, but they
+will be more compact.
+
+Geoinformatica
+
+We define the length of a path to be the sum of the lengths of the edges in the path. Typi-
+cally, the length of an edge is the Euclidean distance between its vertices, but other distance
+functions can be used, such as the Haversine distance or the length of the polygonal line
+that connects the vertices—our approach can be applied with any such distance function.
+A shortest path between vertex i and vertex j is the path between the two vertices whose
+length is the shortest possible. This path can be computed using Dijkstra’s algorithm and its
+many variants [1, 7]. As such, it relies only on the intrinsic geometry (edge lengths) of the
+graph.
+
+In contrast with the greedy-path coding algorithms, shortest-path coding requires
+considering a larger portion of the graph than just the given path P and its neigh-
+boring edges—an entire bounding box of the path. Since the algorithm relies on com-
+putation of shortest paths between vertices, we need a much broader view of the
+region.
+
+6.6 Optimal shortest-path coding algorithm
+
+Shortest paths have the sub-path property, namely, any sub-path between vertex u and ver-
+tex v within a shortest path is necessarily also a shortest path between u and v. In particular,
+this implies the prefix property and the suffix property, that any prefix or suffix of a short-
+est path is a shortest path. The prefix property implies the well-known fact that given a
+graph G and a source vertex s all shortest paths from s to all other vertices form a spanning
+tree of G rooted at s. Using the suffix property, it is possible to prove that the follow-
+ing simple (i.e. greedy in the algorithmic sense) shortest-path coding algorithm is in fact
+optimal.
+
+The algorithm is presented in Fig. 16. Essentially, it is similar to the simple greedy-path
+coding algorithm, except that it proceeds in the forward direction, as opposed to the reverse
+direction. It starts with vertex s and builds a shortest-path spanning tree whose root is s. In
+each step, it checks incrementally whether sub-paths of the input path are shortest paths,
+and it does so by taking advantage of the suffix property, to save computations. In every
+iteration, it finds the vertex of P that is the farthest from s among the vertices it for which
+the subsequence of P between s and it is the shortest path in G from s to it . The discovered
+vertex is added to the constructed code C.
+
+Fig. 16 Algorithm for computing an optimal shortest-path coding
+
+Geoinformatica
+
+As discussed in Section 6.4, we assume that all path lengths are different real numbers.
+This is needed to guarantee that the shortest path tree computed in Line 4 is unique, to allow
+the decoder to reconstruct the original path from the code.
+
+The optimality of the algorithm follows from the next proposition.
+
+Proposition 1 Any shortest-path code C(cid:2) of a path P in graph G will have length greater
+than or equal to the length of C—the output of the algorithm.
+
+Proof Let C = (i1, . . . , ik) be the output of the algorithm in Fig. 16 and C(cid:2) = (j1, . . . , jr )
+be the output of any other shortest-path coding algorithm. It suffices to prove that each of
+the k − 1 segments (is, . . . , is+1) contains at least one element of C(cid:2) for all 1 ≤ s ≤ k − 1,
+since then k ≤ r.
+
+Note that the claim holds trivially for the first segment (s = 1) since i1 = j1. So, assume
+1 < s < k. Now assume by way of contradiction that the segment (is , . . . , is+1) does not
+contain any element of C(cid:2). Let jp be the largest element of C(cid:2) such that jp < is and jp+1
+be the next element of C(cid:2) (in the “worst case”, p = 1). By the assumption, jp+1 ≥ is+1.
+Now, by definition, (jp, . . . , jp+1) is a shortest path, so the suffix property implies that
+(is, . . . , jp+1) is also a shortest path, in contradiction to the fact that (is , . . . , is+1) is the
+longest possible shortest path starting at is . (See illustration in Fig. 17.)
+
+Note that this proof does not hold for the simple greedy-path coding algorithm (Fig. 11).
+This is because the simple greedy-path coding algorithm does not guarantee the final
+contradiction—that (is, . . . , is+1) is the longest possible greedy path starting at is , since this
+algorithm operates in reverse.
+
+The complexity of the optimal shortest-path coding algorithm is O(k(n + n log n + m)),
+where n is the number of edges/vertices in the effective graph M (the bounding box of P ),
+and k is the number of points in the code. Note that k is bounded by the number of points in
+the initial path P . In general, n is O(m2), since this is the relationship between the number
+of edges in a one-dimensional path and the number of edges in a two-dimensional region
+whose boundary length is O(m), giving a complexity of O(km2 log m).
+
+Decoding a shortest-path code is by computing the shortest path between every two con-
+secutive vertices of the code. Similarly to the encoding, the decoding has O(km2 log m)
+time complexity, because there are k − 1 pairs of consecutive vertices in a code with k ver-
+tices, and decoding requires to compute the shortest path between each pair of consecutive
+vertices, that is, to apply k − 1 times a computation with O(m2 log m) time complexity.
+
+6.7 Bidirectional optimal shortest-path coding
+
+In Section 6.6 we showed how to build an optimal shortest path code from s to t. In
+this section we examine the influence of the direction of building the code on the com-
+paction. Consider a path in G from s to t, given as a sequence P = (i1, i2, . . . , im)
+
+Fig. 17 Illustration of the proof of Proposition 1. Purple points are the optimal coding C. Cyan points are
+some of the code C(cid:2). The path (is, . . . , is+1) does not contain any element of C(cid:2). If the path (jp, . . . , jp+1)
+is a shortest path, then the suffix property implies that (is , . . . , jp+1) is also a shortest path
+
+Geoinformatica
+
+of indices of vertices, where i1 = s and im = t. We start by asking the following
+question: is there a difference between applying the optimal shortest-path coding algo-
+rithm from s to t and applying it from t to s, i.e., between applying it on the sequence
+i1, i2, . . . , im where s is the source and t is the target and applying it on im, . . . , i2, i1
+where t is the source and s is the target? We start by asking the question for the case
+where G is undirected. To simplify the discussion, we assume that shortest paths are
+unique, as elaborated in Section 6.4. In an undirected graph G, the following observation
+holds.
+Observation 1 If i1, i2, . . . , ik is a shortest path from s to t in G then ik, . . . , i2, i1, the
+sequence in reverse order, is a shortest path from t to s in G.
+
+This holds because if ik, . . . , i2, i1 were not a shortest path from t to s, there would be a
+path P (cid:2) shorter than ik, . . . , i2, i1 from t to s. By reversing the order of the traversed edges
+in P (cid:2), and their direction, we would get a path from s to t that is shorter than ik, . . . , i2, i1
+(such reversing is possible in an undirected graph), in contradiction to the assumption that
+ik, . . . , i2, i1 is a shortest path between s and t.
+
+, . . . , i(cid:2)
+j (cid:2)
+k(cid:2)
+
+Based on Observation 1, we can show that the direction of creating the code has no effect
+on the length of the code. To see this, suppose C = (ij1 , . . . , ijk ) is a code computed by
+the optimal shortest-path coding algorithm, for a given path P = (i1, . . . , im) in G. Let
+Ci = (i(cid:2)
+) be the code computed by the optimal shortest-path coding algorithm
+j (cid:2)
+1
+for the inverse path P i = (im, . . . , i1). Then, on the one hand, according to Observation 1,
+Ci is a shortest path code of P , thus according to Proposition 1, k ≤ k(cid:2). On the other hand,
+according to Observation 1, C is a shortest path code of P i, so according to Proposition 1,
+k ≥ k(cid:2). Hence, k = k(cid:2).
+
+In a directed graph, the direction of the encoding may affect the length of the code. For
+example, consider the directed graph in Fig. 18 and a path P = (s, v1, v2, t). The shortest
+path from s to t does not go via v2. Hence, the code is (s, v2, t). However, the shortest path
+from t to s does go via v2 and v1, so for the inverse path P i, the code is merely (t, s), and
+thus shorter.
+
+The difference between the codes generated in the different directions can be significant.
+Obviously, the length of the code of a path P or of the inverse path P i cannot exceed the
+length of P . However, there can be a case where the code of P is merely two indices (s, t)
+while the code of P i has the same length as P . An example of such case is illustrated in
+Fig. 19. Consider the path P = (s, v1, . . . , v6, t). The shortest path from s to t goes via
+v1, . . . , v6, so the code is (s, t). On the other direction, for each vertex there is an edge
+that allows skipping it, so the code must include the entire path. A simple solution to this
+is to run the optimal shortest-path coding algorithm in both directions, choose the smaller
+code and add a bit to the code to indicate whether the code has been reversed. However,
+there are cases where such approach is still not optimal. For example, consider the graph in
+
+Fig. 18 A directed graph (only
+the edge from v1 to t is directed
+and the other edges are
+undirected) where the encoding
+of the path (s, v1, v2, t) is
+(s, v2, t) whereas the encoding of
+the inverse path (t, v2, v1, s) is
+(t, s)
+
+Geoinformatica
+
+Fig. 19 A directed graph (only
+the arrow-shaped edges are
+directed and the other edges are
+undirected) where the encoding
+of the path (s, v1, . . . , v6, t) is
+(s, t) whereas the encoding of
+the inverse path (t, v6, . . . , v1, s)
+is (t, v6, . . . , v1, s)
+
+Fig. 20. On one direction, the code in (s, v9, . . . , v14, t) and on the other direction, the code
+is (t, v6, . . . , v1, s). In both cases the code comprises 8 indices. However, consider the code
+(s, v9, t), with a bit vector [0, 1] to specify that the (s, v9) subsequence has been encoded in
+the direction from s to v9 and the (v9, t) subsequence has been encoded in a reversed order,
+i.e., an encoding of the inverse of the sub-path. We refer to such encoding as a bidirectional
+code and we can see that it can be more compact than the unidirectional codes.
+
+A bidirectional code is a code C = (i1, . . . , im) with a bit vector B = [b1, . . . , bm−1]
+such that for each pair ij , ij +1 of successive indices in C, the bit bj indicates if the sub-
+path between them has been encoded forwards or backwards. If the encoding is forwards,
+the decoding finds the shortest path from ij to ij +1. Otherwise, it finds the shortest path
+from ij +1 to ij . We now describe how to construct a bidirectional code of a given path
+P = (i1, . . . , im). We denote by path(ij1 , ij2 ) the path that is the part of P between ij1
+and ij2 .
+
+The algorithm works recursively. First, it applies the optimal shortest-path coding algo-
+rithm on P and on the inverse path P i = (im, . . . , i1). Suppose C = (ij1 , . . . , ijk ) is a code
+
+Fig. 20 A directed graph (only the arrow-shaped edges are directed and the other edges are undirected)
+where the unidirectional codes are (s, v9, . . . , v14, t) and (t, v6, . . . , v1, s), yet there is a bidirectional code
+(s, v9, t), [0, 1]
+
+Geoinformatica
+
+, . . . , i(cid:2)
+j (cid:2)
+k(cid:2)
+
+computed for path P . Let Ci = (i(cid:2)
+) be the code computed for the inverse path P i.
+j (cid:2)
+1
+If there is a pair of consecutive indices ij , ij +1 in one of the codes, for which the other code
+contains a pair of indices that represent a proper sub-path of the path between ij , ij +1, then
+ij , ij +1 are added to the code, with an appropriate direction bit, and the algorithm is applied
+recursively for i1, . . . , ij and ij +1, . . . , im. Otherwise, we add the indices of C to the con-
+structed code, and stop. For example, for the path (s, v1, . . . , v14, t) in Fig. 20, the two
+codes are C = (s, v9, . . . , v14, t) and Ci = (t, v6, . . . , v1, s). The path path(s, v9) in C has
+a proper sub-path path(v6, v7) in Ci, so we add (s, v9) to the constructed bidirectional code.
+Now, for the rest of the sequence, v9, . . . , v14, t, we get a code C = (v9, v10, . . . , v14, t) and
+a code Ci = (t, v9). Since path(t, v9) has a proper sub-path path(v9, v10), we add it to the
+constructed code with a bit set to indicate it is reversed. This yields the code (s, v9, t), [0, 1].
+The algorithm is presented in Fig. 21. In the algorithm we use the following notations.
+By the concat function we denote the concatenation of the given sequences or arrays. We
+denote by P[i,...,j ] the subsequence which is the part of path P between index i and index j .
+We denote by path(i, j ) the sub-path of P from the vertex indicated by i to the vertex indi-
+cated by j , and we denote by path(i, j ) ⊂ path(i(cid:2), j (cid:2)) the case where path(i, j ) is a proper
+sub-path of path(i(cid:2), j (cid:2)).
+
+Next, we show that the Bidirectional Shortest-Path Coding Algorithm of Fig. 21 is
+
+optimal, i.e., it computes a bidirectional shortest-path code with minimal size.
+
+Proposition 2 Algorithm Bidirectional Shortest-Path Coding is optimal.
+
+Proof The algorithm of Fig. 21 computes a bidirectional shortest-path code, because in
+each addition of a pair of indices ij , ij (cid:2) to the constructed code, ij and ij (cid:2) are a pair of
+consecutive indices in Cf or in Cb, thus, the sub-path of P that connects vertices ij and ij (cid:2)
+is a shortest path, since Cf and Cb are shortest-path codes of P .
+
+To prove optimality, suppose Cmin is a bidirectional code shorter than the code C returned
+by the algorithm of Fig. 21, i.e., |Cmin| < |C|. We show that this leads to a contradiction.
+Let Cf
+min be the code constructed from: (1) the pairs of consecutive indices in Cmin that the
+path between them is encoded forwards, and (2) the part of the code Cf that completes
+
+Fig. 21 Algorithm for computing a bidirectional shortest-path coding
+
+Geoinformatica
+
+Fig. 22 Simple greedy-path code (19 points out of 214 original points)
+
+these forward pairs, to cover P , where Cf is the code computed in Line 3 of the algo-
+rithm of Fig. 21. Let Cb
+min be a code constructed similarly from the pairs of indices in Cmin
+with backwards encoding and Cb. Then, |Cf
+| ≤ |Cmin| + |C|, according to the
+construction of Cf
+min. Obviously, |Cmin| + |C| < 2|C|, since |Cmin| < |C|, and
+min and Cb
+2|C| ≤ |Cf | + |Cb|, based on the computation of C from Cf and Cb in Fig. 21. Thus,
+
+| + |Cb
+
+min
+
+min
+
+Fig. 23 Optimal greedy-path code (15 points out of 214 original points)
+
+Geoinformatica
+
+| + |Cb
+
+|Cf
+| < |Cf | + |Cb|. This means that either |Cf
+however, both cases contradict the optimality of Cf and Cb.
+
+min
+
+min
+
+min
+
+| < |Cf | or |Cb
+
+| < |Cb|,
+
+min
+
+In the encoding, we apply the recursive call at most k times, where k = min{|Cf |, |Cb|}
+is the size of the minimal code among the forward and the backward codes, because in
+each call we decrease the forward and the backward codes by at least one edge before
+applying the next recursive call. In the first recursive call, we apply twice the optimal
+shortest-path coding algorithm, whose time complexity is O(km2 log m), and in the next
+recursive calls, we can use the already computed codes, with slight adjustments to the
+indices when sub-paths are overlapping (e.g., recall the example in Fig. 20—after adding
+(s, v9) to the constructed code, the edge (t, v6) of Ci is adjusted to be (t, v9) by removing
+the sub-path that refers to discarded indices). Hence, the time complexity of the bidirectional
+shortest-path coding algorithm is O(km2 log m).
+
+Decoding a bidirectional optimal shortest-path code is by computing the shortest path
+between each pair of consecutive vertices in the code, in the direction specified by the bit
+vector B of the code, and while considering the road network as a directed graph. This
+decoding process is similar to the decoding of a unidirectional optimal shortest-path code,
+except that we need to compute the shortest paths in different directions. However, this does
+not affect the time complexity of the decoding, hence, decoding a bidirectional shortest-path
+code has the same time complexity as decoding a unidirectional shortest-path code.
+
+6.8 The temporal dimension of trajectories
+
+A trajectory is a sequence of GPS measures, and GPS measures have a temporal
+dimension—each GPS point is associated with the time when it was measured. An important
+
+Fig. 24 Optimal shortest-path code (5 points out of 214 original points)
+
+Geoinformatica
+
+question is how the temporal dimension could be used for the compaction of the trajec-
+tory. Some systems collect and analyze the travel times of users on different roads. By
+collecting historical travel times, these systems can associate to the edges of G the travel
+time required to traverse these edges. In such case, travel times replace the geometrical dis-
+tance, and the shortest-path algorithms find the fastest path. A fastest path between two
+vertices is the path for which the sum of the traversal times associated with the edges is
+minimal. Accordingly, on a graph G in which the traversal times replace the geometri-
+cal lengths for the edges, we can apply the optimal shortest path coding algorithms and
+receive a code which is actually a sequence of fastest paths. Since frequently people choose
+the fastest route when traveling between locations, this approach could be effective; how-
+ever, this approach is frequently impractical due to the following two reasons: (1) it is
+difficult to acquire a complete and accurate coverage of the average travel times on the
+road segments of a large area, and (2) the travel times may change through the day and
+may be affected by holidays and weather. Thus, the same path may have different codes
+at different times during the day, which would make the comparison between trajectories
+cumbersome.
+
+Fig. 25 Simple greedy-path
+code (7 points out of 77 original
+points)
+
+Geoinformatica
+
+A graph G in which travel times replace the geometrical distance will allow us to restore
+traversal times. For a given path P = (i1, i2, . . . , im), code C = (ij1 , ij2 , . . . , ijk ) and
+time threshold τ on the accuracy of the restored times, we can store the times of the GPS
+measures for the indices in C, as part of the encoding. For each node of P that is not in
+C, we will estimate its measure time based on the travel time from its preceding vertex in
+C. That is, given vertex il that is in P and not in C, we will find the largest index jx < l
+(1 ≤ x ≤ k, i.e., ijx is an index in C). Then, we will estimate the measure time of il as
+the sum of the measure time of ijx and the travel time from ijx to il . Yet, to ensure the
+accuracy of such computation, as part of the encoding we will add to C any vertex of P
+for which the difference between the estimated measure time and the actual measure time
+exceeds τ .
+
+ˇCivilis et al. [6] studied the problem of how to reduce the number of GPS measures
+transmitted from a device to the server. They showed how to use for this task the velocity
+vector and how to effectively reduce the number of transmitted measures in a constant-speed
+scenario. Their approach can replace the dilution phase when the velocity of the travel can
+be accurately extracted from the GPS measures. However, this and other aspects of coping
+with the temporal facet of trajectory compaction are left for future work.
+
+Fig. 26 Optimal greedy-path
+code (6 points out of 77 original
+points)
+
+Geoinformatica
+
+6.9 Offline versus online processing
+
+Typically, it is important that the decoder will be efficient since the process of decoding
+is done many times (essentially every time a route is extracted from a database) and in
+real-time, as opposed to the encoding process which usually happens only once, and is
+typically done in an offline process. Decoding of the greedy path codes takes O(m) time
+and decoding of the more compact shortest path code takes O(km2 log m) time (where k is
+the length of the code).
+
+In some applications it is necessary to encode a path online, as it is being gener-
+ated. This would seem to be impossible for the two greedy-path coding algorithms, since
+they operate in reverse. Nonetheless, it is possible to modify these algorithms to run in
+forward order, paying a penalty in time complexity. The optimal shortest-path coding algo-
+rithm can be executed online with a lag of just one path vertex, i.e. it is possible to
+decide whether a path vertex is part of the shortest path code only after the next route
+vertex has been seen. There will also be a running-time penalty to implement this in
+practice.
+
+Fig. 27 Opt. shortest path code
+(4 points out of 77 original
+points)
+
+Geoinformatica
+
+Fig. 28 Coding ratios of the three algorithms. Each data point is a path in the dataset
+
+7 Experiments
+
+To test the effectiveness of our methods, we implemented and tested them. We implemented
+our map-matching algorithm in an interactive browser-based system, using the Google
+Maps Javascript API and the Open Street Map digital database. The system was written in
+Javascript for the client side and uses JSP/Servlets on the server side. The algorithms were
+implemented in MATLAB and compiled to run independently on the server by JSP/Servlet
+calls. The machine we used contained an Intel i7 CPU with 8GB RAM.
+
+We used the dataset of GPS trajectories of the ACM SIGSPATIAL Cup 2012 contest (see
+http://depts.washington.edu/giscup/) and the GPS trajectory dataset used in [27], recorded
+
+Fig. 29 Running times. Each point is a path in the dataset
+
+Geoinformatica
+
+Fig. 30 Encoding of a path in Manhattan, New York City. The initial path, depicted in red, contains 30 nodes
+(yellow circles). The unidirectional shortest-path code (purple circles) contains 4 nodes and the bidirectional
+shortest-path code (green circles) contains 3 nodes
+
+Fig. 31 Encoding of a path in Manhattan, New York City. The initial path, depicted in red, contains 57 nodes
+(yellow circles). The unidirectional shortest-path code (purple circles) contains 12 nodes and the bidirectional
+shortest-path code (green circles) contains 7 nodes
+
+Geoinformatica
+
+in the Seattle area, to test our algorithms. These trajectories consist of GPS recording at
+a frequency of 1Hz through urban and rural areas (highways, small streets and intersec-
+tions), which translates to a recording every 5-20 meters, depending on the vehicle velocity.
+These are considered dense recordings. The noise level was σ = 10 meters. A typical GPS
+trajectory contained 500 points. We also used a number of GPS trajectories we recorded
+ourselves using a smartphone application, while driving in the city of Haifa. These trajec-
+tory recordings were made such that at least 10 seconds and at least 10 meters elapsed
+between two successive recordings. These are quite sparse recordings. Here too the noise
+level was σ = 10 meters. In all the experiments, a grid-based spatial index was used for an
+efficient retrieval of road segments that are in a certain area or in the vicinity of a certain
+point.
+
+In the experiments, we used a dilution parameter ε = 20 meters, which on the average,
+reduced a trajectory of approximately 500 points to a map-matched path of approximately
+125 vertices.
+
+Figures 22, 23, 24, 25, 26 and 27 compare the different types of codes. They illus-
+trate typical compact representations of a path. The coding points are depicted in purple
+and the other removed points appear in orange. Note that by using the optimal shortest-
+path code only 5 points are required to represent a path of 214 points. In general, the
+difference between the simple greedy-path code and the optimal greedy-path code is rela-
+tively small, but the shortest-path code is typically much more compact than the other two
+codes.
+
+We ran statistics on a set of 33 routes that were map-matched (using our algorithm) from
+the GPS trajectories in the ACM SIGSPATIAL Cup 2012 dataset and the GPS trajectory
+dataset used in [27], to determine the average coding ratio and running time of the various
+algorithms. A typical path contains approximately 125 vertices after the dilution and the
+map-matching phases. The results are shown in Fig. 28 and Fig. 29. As evident there, the
+simple greedy-path coding algorithm reduces the number of vertices to 7.3% of the original
+on the average, the optimal greedy-path coding algorithm reduces slightly more, to 7.1%.
+The shortest-path coding algorithm reduces to 4.5%, on the average.
+
+To compare the unidirectional shortest-path code and the bidirectional shortest-path code
+we computed codes for paths in Manhattan, New York City. This area has been chosen
+because it has many one-way streets. The results of such encoding are depicted in Fig. 30
+and Fig. 31. It can be seen that in areas with many one-way streets, the bidirectional shortest-
+path code is more compact than the unidirectional shortest-path code and can decrease the
+code size by approximately 25%.
+
+8 Conclusions
+
+We study the problem of computing a compact coding of routes over a vectorial road net-
+work. Given a trajectory as a sequence of GPS measurements, it is shown how to represent
+it compactly, in a three-step process: (1) diluting the sequence to reduce data transmission
+between the client and remote servers, for decreasing energy consumption, (2) apply-
+ing map-matching to receive a sequence of map vertices, and (3) generating a compact
+representation of the traveled route.
+
+For the classical problem of map-matching, the paper presents an adaptation of an
+HMM-based method. The aim is to handle effectively scenarios where the GPS mea-
+surements are sparse and noisy. This ability is lacking in many existing approaches. The
+result of the map-matching is a route in the form of a sequence of vertices of the road
+
+Geoinformatica
+
+network. We present two approaches to represent a route compactly—as a sequence of
+greedy paths or as a sequence of shortest paths. We provide two algorithms for comput-
+ing the sequence of greedy paths. One algorithms is simple and highly efficient, having
+O(n) time complexity, over a sequence of n points, and the second algorithm has O(n2)
+time complexity, however, it computes the optimal greedy-path code. Decoding a greedy-
+path code can be done in O(n) time. For generating the sequence of shortest paths, we
+provide algorithms with O(kn2 log n) time complexity, where k is the length of the (out-
+put) code. We present a unidirectional coding algorithm that is optimal over undirected
+graphs, and a bidirectional coding algorithm that is optimal over directed graphs. We show
+that over directed graphs, the bidirectional code is sometimes more compact than the uni-
+directional code. Decoding a shortest-path code also has O(kn2 log n) time complexity.
+Experimentally, when applying our algorithm to real-world data sets, we observed that
+shortest-path codes are more compact than greedy-path codes but it takes more time to com-
+pute them. Evidently, our representation is more compact than merely applying dilution and
+map-matching.
+
+Compact coding of routes on a map, coupled with a very fast decoding algorithm, is
+important for storage and transmission of this type of data from large (online) databases,
+especially as these databases become more and more widespread in the connected mobile
+world. An important related question is when is it possible to perform computations on
+routes in their coded form, i.e. without explicitly decoding them. For example, is it possi-
+ble to intersect two routes by intersecting their greedy path or shortest path codes without
+decoding the two routes first? Similarly, is it possible to determine proximity of a given map
+vertex to a coded route, without decoding the route? These questions remain as future work.
+Future work also includes the question of how to effectively handle trajectories whose data
+are inaccurate and incomplete.
+
+Acknowledgements This research was supported in part by the Israel Science Foundation (Grant 1467/13)
+and by the Isreali Ministry of Science and Technology (Grant 3-9617).
+
+References
+
+1. Bellman R (1958) On a routing problem. Q Appl Math 16(1):87–90
+2. Borradaile G, Sankowski P, Wulff-Nilsen C (2010) Min st-cut oracle for planar graphs with
+near-linear preprocessing time. In: Proceedings of the 2010 IEEE 51st Annual Symposium on
+Foundations of Computer Science, FOCS ’10. IEEE Computer Society, Washington,DC, pp 601–
+610
+
+3. Bose P, Morin P (2004) Online routing in triangulations. SIAM J Comput 33:937–951
+4. Cao X, Cong G, Jensen CS (2010) Mining significant semantic locations from GPS data. Proc VLDB
+
+Endowment 3(1–2):1009–1020
+
+5. Chen Y, Jiang K, Zheng Y, Li C, Yu N (2009) Trajectory simplification method for location-based social
+networking services. In: Proc. of the ACM international workshop on location-based social networks.
+Seattle, Washington, pp 33–40
+
+6. Civilis A, Jensen CS, Pakalnis S (2005) Techniques for efficient road-network-based tracking of moving
+
+objects. IEEE Trans Knowl Data Eng 17(5):698–712
+
+7. Dijkstra EW (1959) A note on two problems in connexion with graphs. Numer Math 1(1):269–271
+8. Douglas DH, Peucker TK (1973) Algorithms for the reduction of the number of points required to rep-
+resent a digitized line or its caricature. Cartographica: Inter J Geogr Inf Geovisualization 10(2):112–
+122
+
+9. Doytsher Y, Galon B, Kanza Y (2010) Querying geo-social data by bridging spatial networks and social
+networks. In: Proc. of the 2nd ACM SIGSPATIAL international workshop on location-based social
+networks, San Jose, pp 39–46
+
+Geoinformatica
+
+10. Doytsher Y, Galon B, Kanza Y (2011) Storing routes in socio-spatial networks and supporting social-
+based route recommendation. In: Proc. of the 3rd ACM SIGSPATIAL international workshop on
+location-based social networks, pp 49–56
+
+11. Feldman D, Sugaya A, Rus D (2012) An effective coreset compression algorithm for large scale sen-
+sor networks. In: Proceedings of the 11th international conference on information processing in sensor
+networks. ACM, Beijing, pp 257–268
+
+12. Fredman ML, Tarjan RE (1984) Fibonacci heaps and their uses in improved network optimization
+algorithms. In: Proceedings of the 25th annual symposium on foundations of computer science. IEEE,
+pp 338–346
+
+13. Giannotti F, Nanni M, Pedreschi D, Pinelli F, Renso C, Rinzivillo S, Trasarti R (2011) Unveiling the
+complexity of human mobility by querying and mining massive trajectory data. VLDB J 20(5):695–719
+14. Gotsman R, Kanza Y (2013) Compact representation of GPS trajectories over vectorial road networks.
+In: Proc. of the 13th international conference on advances in spatial and temporal databases, SSTD’13.
+Springer-Verlag, Munich, pp 241–258
+
+15. Greenfeld JS (2002) Matching GPS observations to locations on a digital map. In: Proceedings of the
+
+81st annual meeting of the transportation research board
+
+16. Hartvigsen D, Mardon R (1994) The all-pairs min cut problem and the minimum cycle basis problem on
+
+planar graphs. SIAM J Discret Math 7(3):403–418
+
+17. Hershberger J, Snoeyink J (1994) An o(n log n) implementation of the Douglas-Peucker algorithm for
+line simplification. In: Proceedings of the tenth annual symposium on computational geometry. ACM,
+Stony Brook, New York, pp 383–384
+
+18. Hummel B (2006) Map matching for vehicle guidance. In: Dynamic and mobile GIS: Investigating space
+
+19. Imai H, Iri M (1986) Computational-geometric methods for polygonal approximations of a curve. Comp
+
+and time. CRC Press, pp 437–438
+
+Vis, Graph, Image Proc 36(1):31–41
+
+20. Levin R, Kravi E, Kanza Y (2012) Concurrent and robust topological map matching. In: Proceedings
+of the 20th international conference on advances in geographic information systems, SIGSPATIAL ’12.
+ACM, Redondo Beach, pp 617–620
+
+21. Li Q, Zheng Y, Xie X, Chen Y, Liu W, Ma WY (2008) Mining user similarity based on location history.
+In: Proceedings of the 16th ACM SIGSPATIAL international conference on advances in geographic
+information systems, GIS ’08. ACM, Irvine, pp 34:1–34:10
+
+22. Meratnia N, de By RA (2004) Spatiotemportal compression techniques for moving point objects. In:
+Proceedings of the 9th international conference on extending database technology (EDBT). Heraklion
+Crete, Greece, pp 765–782
+
+23. Muckell J, Hwang JH, Lawson CT, Ravi SS (2010) Algorithms for compressing GPS trajectory data: An
+empirical evaluation. In: Proceedings of the 18th SIGSPATIAL international conference on advances in
+geographic information systems, GIS ’10. ACM, San Jose, pp 402–405
+
+24. Muckell J, Hwang JH, Patil V, Lawson CT, Ping F, Ravi SS (2011) SQUISH: An online approach
+for GPS trajectory compression. In: Proceedings of the 2nd international conference on com-
+puting for geospatial research & applications, COM.Geo ’11. ACM, Washington, DC, pp 13:1–
+13:8
+
+25. Muckell JJr, P W O, Hwang JH, Lawson CT, Ravi SS (2013) Compression of trajectory data: a
+
+comprehensive evaluation and new approach. Geoinformatica
+
+26. Mulmuley K, Vazirani UV, Vazirani VV (1987) Matching is as easy as matrix inversion. Combinatorica
+
+7(1):105–113
+
+27. Newson P, Krumm J (2009) Hidden Markov map matching through noise and sparseness. In: Proceed-
+ings of the 17th ACM SIGSPATIAL international conference on advances in geographic information
+systems, pp 336–343
+
+28. Ore O (1962) Theory of Graphs. AMS Colloquium Publications 38.American Mathematical Soc
+29. Potamias M, Patroumpas K, Sellis T (2006) Amnesic online synopses for moving objects. In: Proceed-
+ings of the 15th ACM international conference on information and knowledge management, CIKM ’06.
+ACM, Arlington, pp 784–785
+
+30. Potamias M, Patroumpas K, Sellis T (2006) Sampling trajectory streams with spatiotemporal criteria.
+In: Proceedings of the 18th international conference on scientific and statistical database management,
+SSDBM ’06. IEEE Computer Society, Washington, DC, pp 275–284
+
+31. Potamias M, Patroumpas K, Sellis T (2007) Online amnesic summarization of streaming locations. In:
+Proc. of the 10th international conference on advances in spatial and temporal databases, SSTD’07.
+Springer-Verlag, Boston, pp 148–166
+
+32. Quddus MA, Ochieng W, Zhao L, Noland RB (2003) A general map matching algorithm for transport
+
+telematics applications. GPS Resolut 7(3)
+
+Geoinformatica
+
+33. Quddus MA, Ochieng WY, Noland RB (2007) Current map-matching algorithms for transport appli-
+cations: State-of-the art and future research directions. In: Transportation research part c: Emerging
+technologies
+
+34. Trajcevski G, Cao H, Scheuermanny P, Wolfsonz O, Vaccaro D (2006) On-line data reduction and
+the quality of history in moving objects databases. In: Proceedings of the 5th ACM international
+workshop on data engineering for wireless and mobile access, MobiDE ’06. ACM, Chicago, pp 19–
+26
+
+35. Viterbi AJ (1967) Error bounds for convolutional codes and an asymptotically optimum decoding
+
+algorithm. Trans Inf Theory 13(2):260–269
+
+36. White CE, Bernstein D, Kornhauser AL (2000) Some map matching algorithms for personal navigation
+
+assistants. In: Transportation research part c: emerging technologies, vol 8, pp 91–108
+
+37. Xu Z, Zhang R, Kotagiri R, Parampalli U (2012) An adaptive algorithm for online time series segmen-
+tation with error bound guarantee. In: Proceedings of the 15th international conference on extending
+database technology, EDBT ’12. ACM, Berlin, pp 192–203
+
+38. Xue AY, Zhang R, Zheng Y, Xie X, Huang J, Xu Z (2013) Destination prediction by sub-trajectory syn-
+thesis and privacy protection against such prediction. In: Proc. of the 2013 IEEE international conference
+on data engineering (ICDE 2013). IEEE Computer Society, Washington, DC, pp 254–265
+
+39. Yin H, Wolfson O (2004) A weight-based map matching method in moving objects databases. In: Pro-
+ceedings of the 16th international conference on scientific and statistical database management, SSDBM
+’04. IEEE Computer Society, Washington, DC, pp 437–438
+
+40. Zheng K, Trajcevski G, Zhou X, Scheuermann P (2011) Probabilistic range queries for uncertain tra-
+jectories on road networks. In: Proceedings of the 14th international conference on extending database
+technology, EDBT/ICDT ’11. ACM, Uppsala, Sweden, pp 283–294
+
+41. Zheng K, Zheng Y, Xie X, Zhou X (2012) Reducing uncertainty of low-sampling-rate trajectories.
+In: Proceedings of the 2012 IEEE 28th international conference on data engineering. IEEE Computer
+Society, Washington, DC, pp 1144–1155
+
+42. Zheng Y, Li Q, Chen Y, Xie X, Ma WY (2008) Understanding mobility based on GPS data. In: Proceed-
+ings of the 10th international conference on ubiquitous computing, UbiComp ’08. ACM, Seoul, pp 312–
+321
+
+43. Zheng Y, Zhang L, Ma Z, Xie X, Ma WY (2011) Recommending friends and locations based on
+
+individual location history. ACM Trans Web 5(1):1–5. 44
+
+44. Zheng Y, Zhang L, Xie X, Ma WY (2009) Mining interesting locations and travel sequences from GPS
+trajectories. In: Proceedings of the 18th international conference on world wide web, WWW ’09. ACM,
+Madrid, pp 791–800
+
+45. Zheng Y, Zhou X (eds.) (2011) Computing with Spatial Trajectories, Springer
+
+Ranit Gotsman is a software engineer at Micro Focus. She received an M.Sc. in computer Science from the
+Technion - Israel Institute of Technology (2013). Previously, she received a B.Sc. in computer science and in
+biology from the Hebrew University of Jerusalem
+
+Geoinformatica
+
+Yaron Kanza is an assistant professor at the Department of Computer Science of the Technion - Israel
+Institute of Technology and a visiting assistant professor at the Jacobs Technion-Cornell Innovation Institute,
+Cornell Tech. He received his Ph.D. degree in computer science from the Hebrew University of Jerusalem
+(2005). Previously, he received a B.Sc. in mathematics and computer science and an M.Sc. in computer
+science (summa cum laude) from the Hebrew University of Jerusalem. He was a post-doctoral fellow at the
+database group of the University of Toronto, during the years 2004-2006 and joined the Technion in 2007.
+His research interests include: Database Systems and Database Theory (data integration, data exchange,
+uncertainty and incompleteness, access control); Managing data on the World-Wide Web (querying XML,
+XML retrieval, the Semantic Web); and Geospatial Data Managment.
+
+

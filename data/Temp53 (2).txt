@@ -1,0 +1,1461 @@
+Improving label placement quality by considering basemap
+detail with a raster-based approach
+
+Geoinformatica
+DOI 10.1007/s10707-014-0214-6
+
+Maxim A. Rylov & Andreas W. Reimer
+
+Received: 20 January 2014 / Revised: 14 May 2014
+Accepted: 24 June 2014
+# Springer Science+Business Media New York 2014
+
+Abstract Topographic maps are arguably one of the most information-dense, yet intuitively
+usable, graphical artifacts produced by mankind. Cartography as science and practice has
+developed and collected a wealth of design principles and techniques to cope with the
+problems of high graphical density, especially for the case of label placement. Many of the
+more sophisticated techniques that take into account figure-ground relationships for lettering
+have not been fully operationalized until now. We present a novel generic quality evaluation
+model that allows full automation of refined techniques for improving map feature overlap,
+visual contrast and layer hierarchy. We present the objective function as a set of metrics
+corresponding to the design principles and provide exemplary parameterization via the set of
+experiments on global real-world datasets. The approach designed for labeling of point-like
+objects and can potentially be applied to linear and areal features. It has a low computational
+and memory requirement. Furthermore, it is conceivably applicable to annotate any kind of
+visualization beyond maps. The results of the conducted tests and comparison with a com-
+mercial labeling package illustrate the ability to produce highly legible and readable map
+lettering with our approach. Presented method heeds more cartographic design principles and
+is computationally less costly compared to commercially available methods.
+
+Keywords Automated label placement . Automated cartography . Quality evaluation . Image
+segmentation . GIS mapping
+
+1 Introduction
+
+Feature annotation is an important and a complex task in the process of spatial information
+representation and visualization. The task occurs in several disciplines like cartography [31,
+59, 81], Geographic Information Systems (GIS) [19], 3D modeling [24, 43], and chart and
+graph drawing [5, 39]. Manual label placement is known to be a highly laborious and very
+
+M. A. Rylov (*) : A. W. Reimer
+GIScience Research Group, Institute of Geography, Heidelberg University, Berliner Straße 48,
+69120 Heidelberg, Germany
+e-mail: maxim.rylov@geog.uni-heidelberg.de
+
+A. W. Reimer
+e-mail: andreas.reimer@geog.uni-heidelberg.de
+
+Geoinformatica
+
+time-intensive task. Nowadays, in the era of computers, there have been numerous and various
+research endeavors to automate the process of positioning names (see collection of papers
+maintained by Wolff and Strijk [77]). Most of the previous research has dedicated to the
+problem of automated label placement in map lettering. The effectiveness and functionality of
+a map, as a communication medium, undoubtedly depends on how it is annotated. Clarity and
+legibility are two main objectives which the cartographer strives to achieve and which have
+direct influence on the perceptual and cognitive process used by map readers to search a
+certain name on the map and to determine its meaning [46, 48]. Among other factors, map
+background, visual contrast (or visual clutter) and number of distractors highly affect visual
+search and reaction time [8, 46, 55]. To relieve the density of a material, toponyms can be
+placed in regions with lower graphic complexity [10], which allows reducing map complexity
+[18]. These regions are also attractive in the sense of higher type legibility [54].
+
+In the literature, two different methods are used to evaluate the quality of label placement
+[30, 70] in respect of overprinting of other geographic features. They are a raster-based [15]
+and a vector-based method [20, 67]. The vector-based method generates its scoring for a given
+candidate position of a label by intersecting the label geometry with all potentially intersecting
+geometries of the background. Commercial packages like ESRI’s Maplex Label Engine [17] or
+MapText’s Label-EZ use that technique and allow assigning preferences and weights to
+specific background feature classes. The vector-based approach is more appropriate for sparse
+maps with moderate feature density. It is more accurate in estimating the intersection of labels
+with background features, but meets insuperable difficulties in terms of computational com-
+plexity when the feature density of a map grows. The runtime of this method is O((n+
+m)log(n+m)) [67], where n is the number of points to be labeled and m is the combinatorial
+complexity of the map features which can consist of a potentially enormous number of line
+segments. For geo-data that is not cartographically generalized, e.g. simplified, the problem is
+even more pronounced due to high vertex counts. The vector-based approach furthermore does
+not take into account the cartographic appearance of lines (e.g. width, stroke, cap, etc.) or
+polygons (e.g. hatching) directly without extra computations. The raster-based method as-
+sumes the map has already been rendered and looks at the content of the area covered by the
+label. Succinctly, the raster-based method [15] is less geometrically accurate due to the
+discretization. At the same time it is robust to the density of map features and works with
+any data disregarding their degree of generalization. It does not require vector data as a data
+source, which allows it to be used for post-hoc labeling of graphics from external sources.
+
+The problem of overprinting other non-textual map features by names received
+insufficient attention in the literature concerning automated label placement. One of
+the earliest attempts to use a rasterized map for identification of not occupied regions
+for making a label placement was made by Jones [37]. Jones proposed to prioritize
+pixel values according to the priority of the class of a background feature. A similar
+idea has been used by Harrie et al. [27] and Zhang and Harrie [82]. Their algorithm
+tries to position lettering so, that labels obscure cartographic data as little as possible.
+Stadler et al. [66] adopted some ideas of morphological image processing to perform
+initial positioning of labels in their force-directed method.
+
+This article focuses on defining an exhaustive quality measure for scoring potential
+label positions in terms of amount of clutter and overlapping other map features, lying
+in the map background. In our case the map background presents a raster image in
+which the map objects are already rendered. We define a measure which considers the
+extent, the shape and the importance of background features by extracting information
+from a raster image. In our approach we used the technique of image segmentation
+[26, 53] to perform analysis of a pixel-based image and methods for measuring color
+
+Geoinformatica
+
+similarity and for measuring the information content
+distinguishing peculiarities of our measure are the following:
+
+in maps [28, 45]. The
+
+& Appropriate for any feature type: point [9, 60], line [16, 76] and polygon [4, 61, 72].
+& Any nature of the background: diverse raster data sources, maps with terrain representation
+[32, 33, 35], Web Map Service (WMS) [49] or Web Map Tile Service (WMTS) [21, 50]
+layers.
+
+& Applicable to data of any scale, i.e. with any degree of generalization without impact on
+
+the runtime.
+
+& Low computational complexities and memory requirements.
+& Capability to be used for annotating objects in interactive 3D maps [43].
+
+The proposed measure can be considered as an additional component of a generic quality
+evaluation function [70] that measures how good a certain labeling algorithm performs its task.
+As a rule, this function is employed by a mathematical optimization algorithm for solving
+automated label placement problem [16, 60].
+
+This paper begins with giving some principles of automated label placement and how the
+presented approach supplements existing methods (Section 2). Further, we continue with
+writing out some suited design principles in the form of cartographic guidelines and describing
+the quality measure in sufficient detail (Section 3). Next, we present the results of our empirical
+experiments on real-world datasets, provide exemplary parameterization and show some
+sample maps that were annotated using our measure (Section 4). The results illustrate the
+advantages and abilities of the proposed measure. Finally, we conclude with an analysis of the
+measure and provide thoughts about possible use cases (Section 5).
+
+2 Principles of automated label placement
+
+Many various compelling techniques have been proposed over last four decades to solve the
+problem of automated label placement. Among them are rule-based “expert” systems with
+exhaustive search [2, 29, 81], integer programming [84], artificial intelligence procedures [62,
+73] or metaheuristic search methods [11, 80]. Most researchers (e.g. [13, 84]) consider label
+placement problem as a problem of combinatorial optimization [63]. Thus, this kind of a
+problem can be solved using mathematical optimization algorithms [16], which require two
+components to be defined: a discrete search space and an objective function. In the context of
+label placement problem a search space consists of elements that represent candidate label
+positions. The purpose of an objective (quality) function is to measure the goodness of a
+certain label position (an element of a search space) with respect to other labels and to the map
+content as a whole. An objective function gives a numerical score that indicates the quality of
+labeling. In other words, the quality function aids to imitate the process, employed by a
+cartographer, of finding a compromise between diverse informal and contradicting principles
+of good label arrangement. As map labeling quality depends on many cartographic criteria
+then the general form of an objective function is normally defined as a weighted sum of single
+metrics [60, 70, 83]:
+
+F Lð Þ ¼
+
+w1⋅f priority lð Þ þ w2⋅f aesthetics lð Þ
+
+þ
+
+X
+
+(cid:2)
+
+l∈L
+
+(cid:3)
+þw3⋅f association lð Þ þ w4⋅f label−visibility lð Þ þ w5⋅f feat−visibility lð Þ
+
+ð1Þ
+
+Geoinformatica
+
+where L=(l1,…,ln) is a set of n labels on the map, wi, i=1,2,..,5 are the weights. The partial
+quality functions f*(l) are:
+
+& The function fpriority(l) measures the importance, classification and hierarchy of a labeled
+
+& The aesthetic quality of a label is denoted as faesthetics(l) and evaluates the quality of the
+position and the shape of a label with respect to geometry of the feature it annotates.
+& The degree of association between a particular feature and its label is measured by the
+
+object.
+
+fassociation(l).
+
+& The flabel−visibility(l) represents how well a label is visible by taking into account other
+
+features and labels on the map.
+
+& The metric ffeat−visibility(l) represents a measure of quantifying how well a feature is visible
+
+on the map with respect to other features and labels.
+
+An extensive study, which contains about sixty criteria on the issue of measuring the quality
+
+of label placement for any type of designation, was done by van Dijk et al. [70].
+
+In this paper we consider a refined measure which substitutes metrics ffeat−visibility(l) and
+flabel−visibility(l) in (1). The measure quantifies amount of the map information that can be
+hidden by a label and the degree of visual contrast between a label and other graphical
+elements when the map background is presented as a raster image. The devised measure relies
+on the information derived from the map background after applying an image segmentation
+algorithm [26, 53].
+
+3 Measures of feature overprinting and type legibility
+
+One of the goals of automated label placement is to formalize and quantify cartographic
+principles, which are given in descriptive form, into a set of numerical measures. The ability of
+the algorithm to find a good type placement highly depends on how good those measures
+perform their task. In this section we introduce some quality metrics which can measure the
+degree of label-feature overprinting and visual contrast between them. In other words, the
+metrics allow evaluating and consequently minimizing distortion of map features that has been
+effected due to lettering. They also allow enhancing map legibility. The devised metrics are
+based on widely used cartographic precepts.
+
+3.1 Cartographic principles
+
+Cartographers have well-established and descriptive rules and postulates, which explain the
+principles of map lettering and serve as a guide for producing good type placement on maps [7,
+31, 79]. We studied sufficiently broad and comprehensive cartographic guidelines that refer to
+overlapping and clutter of other map symbols (e.g. lines, hachures, shaded hills, etc.) by
+names. These certain guidelines are the following:
+
+G1. Move the names away from positions where they partially overlap or even totally
+conceal other symbols. Locating names in empty spaces is preferable (Fig. 1a).
+G2. Avoid interfering or overprinting a geographic feature which is running the length of the
+
+name (Fig. 1b)
+
+G3. For legibility, the name should be placed so as to minimize visual contrast of other
+
+names and space around them (Fig. 2).
+
+Geoinformatica
+
+G4. Labels should take into account the nature and the importance of the graphical features
+in the layout. Overlapping or concealment of different feature classes (e.g. roads, lakes,
+rivers, administrative boundaries) by types should be treated differently. Positioning
+names on top of less important features is preferable.
+
+In the following subsections we present and describe in detail four metrics (Section 3.3-
+3.6), which correspond to the cartographic guidelines given above. We conclude with a single
+quality evaluation function that incorporates all four metrics at once (Section 3.7).
+
+3.2 Preliminary definitions
+
+This subsection gives some basic definitions which help us to provide the description of the
+proposed metrics.
+
+As mentioned above, our measure depends on a raster image which represents non-textual
+map features. In order to make further work with raster data (pixels) easier, we chose the
+approach of image segmentation [26, 65]. Such representation of an image facilitates efficient
+and meaningful analysis of its properties. Besides, this method is extensively used for feature
+extraction and recognition from digital cartographic documents [44]. In our approach image
+segmentation helps to merge the map background regions which have similar colors. Image
+segmentation consists of the partitioning of an image into homogeneous regions (clusters). We
+note that our approach assumes clusters based on color space only, disregarding spatial
+proximity. Maps in raster form can contain a large number of unique colors that can be
+governed by shaded relief or bathymetry, gradient fills of polygons or color gradations
+produced by the antialiasing technique. In this case, the clustering is crucial for further analysis
+as a data reduction step. Next, we omit the description of any existing image clustering method
+[26, 53] and assume that one of them has already been chosen.
+
+The required input for our measure is a digital image, the number of clusters in the
+segmented image and a set of axis-aligned rectangles that represent the boundaries of the
+characters in a name, where each character can be a letter or other graphic symbol. In simple
+terms, the raster pixels are grouped and succinctly indexed by color. We further require the
+boxes around the individual letters to line up with the raster grid. The following paragraph
+expresses this process more formally.
+
+Let us define I={1,…,W}×{1,…,H}, where W and H are the dimensions of the input image,
+I⊂ℤ2. Each element p∈I is a pixel that has its color, denoted as Cp.We also denote the number of
+clusters in the segmented image as M. We assume that an image segmentation algorithm φ [26]
+has been applied to the input image I. The algorithm φ was able to assign an index of a cluster to
+each pixel p ∈ I. Thus, we can denote this transformation as φ(I) = {S1, S2, …, SM},
+
+(a)
+
+(b)
+
+Fig. 1 Illustrative examples of good and poor name positioning for the above-mentioned guidelines
+
+Geoinformatica
+
+Fig. 2 An example map lacking of visual contrast between labels (e.g. Prilep city, Bitola city, Debrešte village)
+and map background. SOURCE: Defence Geographic and Imagery Intelligence Agency (UK) [14]. © UK MOD
+Crown Copyright, 2014
+
+where Sm, m=1,…,M are the clusters. Hence, each pixel p∈I has the associated cluster index
+sp. Further, let us assume that the name of a label l∈L consists of Kl characters. Then, the set of
+axis-aligned rectangles that bound its characters we denote as Rl ¼ r1; …; rKl
+g ,
+where ri, i=1,…,Kl (see Fig. 3). In our implementation of the metrics, we demand that
+beforehand the coordinates and size of ri are rounded to the pixel coordinates (see Fig. 7). In
+order to shorten further mathematical manipulations, we denote all pixels that lie within a certain
+
+f
+
+rectangle ri as Dri . We also define the area of an image covered by a label l as A Rlð
+
+a rið Þ ,
+
+where the function a returns the area of a rectangle ri, or, in other words, the number of pixels.
+Note that the pixel size is only considered in the procedure of rounding the character bounds ri
+(see also Section 3.9).
+
+Kl
+Þ ¼ ∑
+i¼1
+
+Fig. 3 Workflow of the method. The input image I with shaded relief is transformed into a segmented image
+(M=4). Next, map background information of the segmented image is assigned to each letter of the potential
+labels. Note that the ‘urban area’ of Tetovo is imaginary and has been provided for the sake of explanation
+
+Geoinformatica
+
+The rectangle-based representation of type letters also supports the cartographic technique
+known as letter-spacing which is a powerful and widely used design element. Sometimes it is
+called type spacing, character spacing or tracking in typography. Letter-spacing gives more
+freedom in making the names and the non-textual features less obscure (e.g. see Fig. 4, the Nile
+River goes between two letters).
+
+3.3 Measure of background homogeneity
+
+A good design technique is to place labels in areas where other features are less dense. The
+purpose of this sub-section is to define a metric that can measure background homogeneity (see
+G1). In image processing, homogeneity expresses how similar certain elements (pixels) of the
+image are. Homogeneity has diverse definitions and measures, which can be found in the
+literature [38, 52]. Pursuing our needs, we consider homogeneity only for the pixels that are
+covered by the characters of a label l∈L, namely by the set of given rectangles in Rl. Hence,
+we can use the concept of local homogeneity which we define as a value that represents a
+cluster with maximum number of elements bounded by Rl. Let us define a function that
+calculates the number of elements of a cluster m within Rl as follows:
+
+sq∈{1,..,M} is a cluster index of a pixel q. The function B(d,e) defined as:
+
+where d,e are the cluster indices.
+
+Hence, using (2), the background homogeneity metric can be written as:
+
+N cl Rl; mð
+
+Þ ¼
+
+(cid:5)
+
+(cid:4)
+B sq; m
+
+Kl X
+X
+
+i¼1
+
+q∈Dri
+
+B d; e
+ð
+
+Þ ¼
+
+(cid:6)
+
+1; d ¼ e
+0; d ≠ e
+
+QBH Rlð
+
+Þ ¼
+
+maxm∈M N cl Rl; mð
+A Rlð
+
+Þ
+
+Þ
+
+:
+
+ð2Þ
+
+ð3Þ
+
+ð4Þ
+
+The function QBH(Rl) can be interpreted as the percentage of the area inside Rl covered by
+the cluster with maximum number of elements (pixels) in Rl. Function (4) returns a value in
+the interval [0,1]. This metric is designed to yield a value of 1.0 when all elements within Rl
+belongs to one cluster, i.e. the region of the map background under a label l is homogeneous.
+An application of metric (4) in a comprehensive multi-criteria model for point-feature label
+placement can be found in the work by Rylov and Reimer [60].
+
+(a)                              
+
+(b)
+
+Fig. 4 A sketchy representation of axis-aligned rectangles (b) which bounds characters of a label (a)
+
+Geoinformatica
+
+3.4 Measure of spatial distribution
+
+The shortcoming of the measure presented in the previous sub-section is that it does not
+consider the spatial distribution of the clusters over the rectangles. This fact can be revealed by
+a simple example. In Fig. 5 two different distributions of a certain cluster (grey pixels) are
+shown. In the examples (a) and (b) the cluster has exactly the same number of elements in Rl.
+Thus, according to the definition of QBH(Rl), this metric returns the same score value.
+However, as it can be seen from Fig. 5, the distributions of cluster elements within the
+rectangles are absolutely different. In example (a) all elements of the cluster are mostly located
+in the first rectangle. But example (b) represents the case when the elements of the cluster are
+spread over the rectangles, in other words, along the name. This fact formally contradicts G2.
+Therefore, a new metric that considers the spatial distribution of background features is
+needed. An intuitive answer would be to simply count the number of rectangles that contain
+elements of a given cluster. There are many cases, though, where cluster elements are present
+in all rectangles and a comparison between their respective distributions is still needed.
+
+To go one step further with the intuitive answer by weighting the occurrence of overlaps by
+the percentage of elements in regard to the whole is very close to the concept of “entropy” for
+quantification of information [64]. Sukhov [68, 69] has borrowed the idea of the concept and
+applied it for measuring the information content in maps. Later, his quantitative measure was
+revised by Li and Huang [45] to consider the spatial distribution of the map objects. Their
+normalized entropy (see also [28]) is defined as:
+
+X
+n
+
+H ¼
+
+j¼1
+
+log
+
+P j⋅logP j
+(cid:7) (cid:8)
+1
+n
+
+ð5Þ
+
+where Pj is the probability which is calculated as the ratio between the area of Voronoi cell of
+an object j and the total area of the map, n is the number of objects.
+
+In pure form the measure defined in (5) is not appropriate for using in our
+to meet our needs. We assume
+
+approach. Therefore, we devise to accommodate it
+
+Fig. 5 Two set of rectangles with the same number of elements in a certain cluster, but with different distribution
+of the elements
+
+Geoinformatica
+
+that the total entropy for spatial distribution of the clusters within Rl is calculated as a
+sum of the entropies of particular clusters:
+
+where Hcl(Rl,m) is the entropy of the cluster Sm within Rl. The interpretation of the
+entropy in our case is the following: for the same number of cluster elements, the
+entropy will be larger if the elements are more evenly distributed over the rectangles
+of Rl. Now let us define the probability of the cluster Sm within ri as:
+
+H Rlð
+
+Þ ¼
+
+X
+
+M H cl Rl; mð
+
+Þ
+
+m¼1
+
+M
+
+Pi Rl; mð
+
+Þ ¼
+
+X
+
+(cid:5)
+
+(cid:4)
+B sq; m
+
+q∈Dri
+
+A Rlð
+
+Þ
+
+where Pi(Rl,m) is the probability for the cluster Sm in the ith rectangle, function B is
+defined in (3). Then, the entropy of the cluster Sm can be calculated, according to (5),
+as follows:
+
+H cl Rl; mð
+
+Þ ¼
+
+X
+
+8
+>>><
+>>>:
+
+Kl
+
+i¼1
+
+Pi Rl; mð
+(cid:7)
+
+Þ
+
+Þ⋅logPi Rl; mð
+(cid:8)
+1
+N cl Rl; mð
+
+Þ
+
+log
+
+0;
+
+otherwise
+
+; N cl Rl; mð
+
+Þ > 1
+
+where Ncl(Rl,m) is a function, defined in (2),
+which belong to the cluster Sm in all rectangles of Rl.
+
+that returns the number of elements,
+
+In order to meet the requirements of G2 we need to construct the spatial distribution metric
+in such a way that it returns values that are close to 0.0 when the clusters within Rl are evenly
+distributed. Conversely, the metric should return a value of 1.0 when the clusters are not evenly
+distributed. Hence, the final metric can take the form of:
+
+where H(Rl) is defined in (6). The function QSD(Rl) takes values in the interval [0,1].
+
+QSD Rlð
+
+Þ ¼ 1−H Rlð
+
+Þ
+
+3.5 Measure of background feature priority
+
+Toponyms may overlap non-textual background elements of different classes (e.g. land, roads,
+seas, woods) which of course have distinct importance (G4). Jones [37] proposed to use an
+overlapping priority for different feature classes, i.e. each color of the background has a
+priority. As a label covers set of pixels, we can conclude that the best label position is in
+which the sum of priorities of covered pixels is minimal. Hence, using aforesaid notations we
+can construct the next metric as:
+
+QFP Rlð
+
+Þ ¼ 1−
+
+X
+
+X
+
+Kl
+
+i¼1
+
+(cid:4) (cid:5)
+P sq
+
+q∈Dri
+Þ
+
+A Rlð
+
+(cid:4) (cid:5)
+where P(sq) is a function that returns the priority of a background pixel q. Function P sq
+should return normalized values, in order to take in (10) the values in the range 0; 1½
+(cid:2) . Metric
+(10) also helps to distinguish and refine potential label positions that are considered by the
+metrics QBH and QSD as equal (see Fig. 6).
+
+ð6Þ
+
+ð7Þ
+
+ð8Þ
+
+ð9Þ
+
+ð10Þ
+
+Geoinformatica
+
+Fig. 6 An example of possible label positions which have the same value ofQBH and QSD
+
+3.6 Measure of visual contrast
+
+In this sub-section we consider a metric that measures visual contrast (G3) between a label and
+the map background in terms of their color similarity. Earlier works by Williams [74] and by
+Phillips and Noyes [55] showed that clutter mostly comes from symbols of similar colors. It
+was proved through the set of experiments that the effect of lacking visual contrast decreases
+the performance of map reading. Wood [78] experimentally determined that brightness
+difference between figure and ground is highly important for the tasks of estimation and
+comparison of map areas. Furthermore, Swiss cartographer Eduard Imhof asserted:
+
+One should always combine those elements which are as different or as contrasting as
+possible, both in the information which they contain and in their design characteristics:
+in other words, those symbols which supplement each other well in what they represent
+and are graphically compatible.Eduard Imhof, 1982, p. 334
+
+These facts lead us to the necessity of taking into account contrast difference in the
+quantification of feature overlapping, since this may positively affect the type legibility and
+visual search time as a whole.
+
+We base our metric on the difference between two colors. It is obvious that the difference
+between the colors, as they are perceived, determines the figure-ground relationship. The color
+space (e.g. RGB, CMYK, HSV, etc.) plays a crucial role in measuring the color-difference.
+Since we are interested in measuring visual perception of the information, the color space
+should be designed in a way of good approximation of human vision. One of such color spaces
+is CIE Lab (CIELAB) space [12] which was standardized by the French Commission
+Internationale de l′Eclairage (International Commission on Illumination). A color in CIELAB
+is expressed through three components L*, a*, b*, where L* defines lightness, a* and b*
+denote red/green and yellow/blue values respectively. The distance between two color values
+in CIELAB is defined as:
+
+ΔE x; yð
+
+Þ ¼
+
+q
+
+ﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃﬃ
+Þ2
+ΔL(cid:3)
+ð
+
+Þ2 þ Δb(cid:3)
+ð
+
+Þ2 þ Δa(cid:3)
+ð
+
+where ΔL*,Δa*,Δb* are the differences between corresponding components.
+
+To compute the difference of colors between a label and the background, we need to
+calculate the difference between the color of the label and color of each pixel inRl . Hence, we
+can define visual contrast metric as follows:
+
+X
+
+X
+
+Kl
+
+i¼1
+
+(cid:4)
+ΔE Cq; Ct
+
+(cid:5)
+
+q∈Dri
+100⋅A Rlð
+
+Þ
+
+QVC Rlð
+
+Þ ¼
+
+ð11Þ
+
+ð12Þ
+
+Geoinformatica
+
+where Cq,Ct are the colors of a background pixel q and text color respectively. The function
+QVC(Rl) is normalized and its values fall in the range [0,1]. The value 100 in the denominator
+represents the difference of the lightness component L* of black and white colors.
+
+It should be noted that the problem of color perception in cartography is much more
+profound than the CIELAB-space distances suggest. On a fundamental level, this is caused by
+the inverse optics problem [58, 75]. For our label placement problem, the CIELAB approx-
+imation works well as a proof of concept. For more sophisticated techniques trying to address
+simultaneous contrast and perceptual distances, we point the reader to the works like Lee et al.
+[42] for pixel-based techniques and Purves and Lotto [56] for more holistic approaches.
+
+3.7 Aggregated measure
+
+In the previous section, four metrics have been proposed. They quantify the cartographic
+guidelines given in Section 3.1. These metrics, which are defined in (4), (9), (10) and (12), can
+be conflated into one single measure as follows:
+
+Q lð Þ ¼ αBH ⋅QBH Rlð
+
+Þ þ αSD⋅QSD Rlð
+
+Þ þ αFP⋅QFP Rlð
+
+Þ þ αVC⋅QVC Rlð
+
+Þ
+
+ð13Þ
+
+where Rl is the bounds of a label l∈L and αBH,αSD,αFP,αVC are weighing parameters which
+should sum up to 1 in order to yield values of Q(l) in the interval [0,1]. The higher the value of
+the function the more preferable a label position is. Equation (13) is a counterpart of functions
+flabel−visibility(l) and ffeat−visibility(l) in equation (1). For an exhaustive study on the issue of
+construction of quality functions please refer to van Dijk et al. [70]. The approach of adjustable
+weights affords the opportunity to prefer one cartographic guideline over another. The
+adjustment of the weights should be undertaken by the experienced user with care. The aim
+of the adjustments is to find optimal set of weights, which produces the most readable, legible
+and aesthetically plausible type placement. Section 4.3 includes a detailed discussion of
+possible values of the weights and their influence on the resulting labeling.
+
+3.8 Computational complexity
+
+In this section, we discuss the factors influencing the overall computational complexity of the
+proposed model. It should be noted that the computation of our composite measure is
+performed only once, namely, after all potential label positions have been generated and
+before the position selection procedure (e.g. greedy, discrete gradient descent or simulated
+annealing algorithm, see [16]) is applied.
+
+The time complexity is determined by two main stages that constitutes the two parts of our
+approach. They are the image segmentation algorithm and the computation of the quality score
+for each label using function (13). Let N be the number of pixels in the input image I, and let
+M be the number of the required clusters. Denote by V the number of pixels covered by n
+labels. Then, the time complexity of the model can be written in the general form as O(F(N,
+M)+nM+V), where F(N,M) is a function that defines the number of operations for the image
+segmentation algorithm. The second term of the total complexity O(nM+V) represents the
+runtime which is needed to perform the labeling quality evaluation using our measure. Taking
+into account that M is fixed and has small values in practice, V directly depends on n and on
+the font size of the text, the second term can be computed in linear time O(n). Note that the
+first term O(F(N,M)) depends on the type of segmentation technique and can vary greatly. For
+example, the seeded region growing method [1] has the time complexity of O((M+logN)N).
+
+Geoinformatica
+
+The K-means clustering algorithm requires O(NMr) execution time, where r is the number of
+iterations taken by the algorithm to converge [34]. Furthermore, the hierarchical agglomerative
+algorithm is much slower and requires O(N2logN) [34].
+
+We summarize that our measure can perform its task very rapidly in comparison to the
+whole runtime consumed by other stages of a labeling algorithm (see details in Section 4.3)
+when it deals with the moderate number of labels and a fast image segmentation algorithm.
+
+3.9 Image resolution
+
+In practical situations, a raster image that represents map background can have an origin
+different from the labels to be rendered. It follows that their raster resolution might be different.
+The raster resolution plays an important role in the accuracy of the presented method. The two
+factors that have an influence on the approach can be defined as:
+
+& Rounding error in the alignment of the letter bounds to the pixel coordinates (see red
+
+rectangles in Fig. 7a).
+
+& A digital image with lower resolution providing less information for the estimation of map
+
+content covered by labels (see Fig. 7).
+
+In general, we can conclude that the higher resolution of the input raster is the
+better our measure accomplishes its task. At the same time the runtime is increased,
+as it is needed to operate with larger number of pixels both in image segmentation
+and quality evaluation steps. To obtain plausible results the input
+image for our
+measure should obviously have the resolution equal to or greater than the resolution
+of the text that is being positioned.
+
+4 Implementation and experiments
+
+In this section we present the results of some experimental tests that were conducted. The
+results show the evidence of applicability of our measure in labeling of the sample maps which
+are based on real-world geographic datasets. Moreover, we try to study the influence of each
+metric (see Section 3.3-3.6) on the resulting type placement.
+
+(a)                              
+
+(b)
+
+Fig. 7 An example of letter bounds alignment to the pixel grid with different pixel resolutions. The resolution of
+image (b) is four times higher than in image (a)
+
+Geoinformatica
+
+4.1 Implementation
+
+We have implemented a version of the measure presented in this paper within a framework for
+producing maps on desktop or publishing them to the web. This framework is written in C#
+and called MapSurfer.NET. The experiments have been performed on a machine with an Intel®
+Core™ i5-2,500 CPU @ 3.30 GHz running Windows 7 Professional x64 with 8GB installed
+memory. The runtime execution environment of our test application was .NET Framework 4.5
+(x64).
+
+For the experiments we have chosen the octree quantization algorithm [22] to perform
+image segmentation of an image that represents the map background. This algorithm is very
+simple in implementation and provides the best compromise of the performance and the
+quality in comparison to other more sophisticated methods (e.g. [44]). The number of clusters
+(colors) was set to 8. The choice of the image segmentation algorithm and the number of
+clusters is, of course, arbitrary. But, note that they should depend on the nature and the content
+of the map background. In order to properly evaluate the positions of the labels that partially lie
+inside the map viewport, we use a raster image with enlarged extent according to the label
+coverage. In our implementation, the map background was fetched from a WMTS service [21,
+50] that provided tiles which are combined into a single image covering the whole region of
+interest.
+
+In our experiments we applied the proposed measure only to point features which were
+labeled using the fixed position model, namely the 8-positioned model (Fig. 8). Position
+selection procedure in the type placement algorithm was performed using simulated annealing
+algorithm [40] proposed by Christensen et al. [11]. To evaluate the quality of labeling, we used
+a modified version of the objective function (1). We substituted the metrics flabel−visibility(l) and
+ffeat−visibility(l) for the measure (13). The final quality function in our tests had the form:
+
+X
+
+(cid:2)
+
+(cid:3)
+w1⋅f priority lð Þ þ w2⋅ f aesthetics lð Þ þ w3⋅f association lð Þ þ w4⋅Q lð Þ
+
+F Lð Þ ¼
+
+ð14Þ
+
+l∈L
+
+The description of other metrics in (14) is suppressed in this paper, since they are given in
+
+sufficient details by Rylov and Reimer [60].
+
+4.2 Dataset information
+
+Two datasets have been used in the experiments. The first dataset contains point, linear and
+areal features that have been extracted from the dataset which represents Volunteered Geo-
+graphic Information (VGI) [23], more precisely the data of the OpenStreetMap (OSM) [25,
+57]. The second dataset represents digital elevation model that was collected using Advanced
+Spaceborne Thermal Emission and Reflection Radiometer (ASTER GDEM) [3].
+
+Fig. 8 Imhof’s [31] model for positional prioritization of point-feature labeling
+
+Geoinformatica
+
+4.3 Experimental results
+
+For the first set of tests, we have chosen a map region which represents the island of Sicily. The
+image of the map background contains the road network and water bodies. In order to
+determine the general contribution of the proposed measure, we first produced the label
+placement without the measure, i.e. in equation (14) w4=0. The resulting map is depicted in
+Fig. 9. From that figure we clearly see that there are many labels which partially conceal or
+entirely obliterate background features (see labels marked with red frames). For example, the
+city of Caltanissetta completely hides a segment of the road network. Another demonstrative
+example is a label of Randazzo town where the letters cover the whole length of a river (Fiume
+Alcantara).
+
+Next, we carried out an experiment by using our measure with w4=0.4 and the parameter
+set № 1 from Table 1. Thus, we incorporate the preference of background homogeneity and
+absolutely neglect the influence of contrast differences by setting αVC=0.0. For the metric QFP
+(Section 3.5) we set the lowest priority to the color of the sea while other colors are equally
+important. Fig. 10 illustrates the results of this experiment. It can be seen that the resulting map
+became much more clear and legible in terms of distortion of other map contents. In other
+words, the labels overprint the geographic symbols (e.g., roads, rivers) to a lesser extent.
+However, some labels are located in positions where the roads running the length of the name
+(e.g. the city of Caltanissetta and town of Palagonia, see Fig. 10). Next, we tried to improve the
+lettering for above-mentioned places by using the metric of spatial distribution (Section 3.4)
+with the higher value of αSD. We ran the label placement algorithm with the parameter set №
+2. The result of this experiment is shown in Fig. 11. Now we can observe that the names of
+places Caltanissetta and Palagonia are located in different positions, where they less interfere
+with the road network, while other labels remained mostly on the same positions. As Figs. 10
+and 11 show, the behavior and the influence of the two tested metrics QBH and QSD on the
+
+Fig. 9 A map of Sicily annotated without the measure. Projection: spherical Mercator (EPSG:3857) Data source:
+OpenStreetMap [51]
+
+Geoinformatica
+
+resulting labeling is rather subtle and requires a careful selection of the weights αBH, αSD
+in (13).
+
+We provide the runtime measurements of the last experiment, to give an impression on the
+computational costs of the presented method. The input data for the tested region contain 120
+named locations, resulting in 960 candidate label positions. Taking into account the set of
+quality measures (14), the simulated annealing produced 108 label placements in 2.45 s.
+Scoring all candidates with our proposed measure (13) took 179 ms (83 ms for image
+segmentation). This is equal to 7 % of the overall time spent on labeling. Note that in our
+implementation we used only one core of the processor. Hence, the performance can be
+improved by exploiting multiple CPU cores for scoring labels with (13) or a GPU for image
+segmentation.
+
+In order to compare the effectiveness of the presented approach with the vector-based
+method, we prepared a map in ArcMap using the same dataset and performed label placement
+using Maplex [17] (Fig. 12). We configured Maplex to avoid overprinting roads and water
+bodies. The presented map consists of 12,422 individual background features. Maplex uses a
+version of the sliding model [67, 71] by operating with 96 candidate positions for each point-
+feature, yielding a total of 11,520 candidate positions. Succinctly, Maplex was able to place 4
+more labels (see Table 2) than the simulated annealing algorithm equipped with our raster-
+based measure. This is a highly-expected result. Strijk and van Kreveld [67] already reported
+that the simple implementation of the sliding model outperforms simulated annealing by up to
+10 % in number of labels located. It is important to mention that Maplex’s label placement has
+4 label pairs in which labels overlap with nearby point symbols (see red circles in Fig. 12:
+Giarre and Riposto, Misterbianco and Motta Sant'Anastasia, Carlentini and Lentini, Erice and
+Valderice). Maplex slightly outperforms our algorithm in the number of labels without any
+feature-overlap (35 vs. 32, Figs. 12 and 11, Table 2), when considering the 105 labels common
+to both results. This is most likely a function of the greater degrees of freedom for the sliding
+model. The label placement without using measure (13) is poor and awkward due too many
+label-feature overlaps (Fig. 9), markedly decreasing legibility and readability. Next, we
+visually compared the label placement quality for the overlap cases. We informally considered
+the amount of overprinting, the number and nature of overlaps and the legibility of names in
+relation to the surrounding geographic features. In our judgment our method accomplishes its
+task better in 30 cases compared to 4 cases where we deemed the Maplex result to be of higher
+quality. All other cases (33, ~50 %) were either at the very same position or of equal quality.
+Generally the comparison indicates that the proposed method produces results in the tested
+context that are of at least equal quality compared to Maplex. It is worth noting that the
+resulting name placement in Fig. 11 can be undoubtedly improved by using sliding label
+positions.
+
+In the next set of experiments we investigated the effect of the visual contrast metric
+(Section 3.6) on the resulting labeling. For that purpose, we show the adaptability of our
+measure for labeling relief maps. For the test we chose the same region as depicted in Fig. 2.
+
+Table. 1 Parameter sets of the experiments
+
+№
+
+1
+
+2
+
+3
+
+w4
+
+0.4
+
+0.4
+
+0.2
+
+0.2
+
+αBH
+
+0.85
+
+0.7
+
+0.7
+
+0.3
+
+αSD
+
+0.1
+
+0.25
+
+0.3
+
+0.2
+
+αFP
+
+0.05
+
+0.05
+
+0.0
+
+0.0
+
+αVC
+
+0.0
+
+0.0
+
+0.0
+
+0.5
+
+Mask content
+
+roads and water bodies
+
+roads and water bodies
+
+roads and water bodies
+
+shaded relief
+
+Geoinformatica
+
+Fig. 10 The labeling using the measure with the preference for background homogeneity. Projection: spherical
+Mercator (EPSG:3857). Data source: OpenStreetMap [51]
+
+This region is located on the border between three countries: Macedonia, Albania and Greece.
+As in the first experiment we used the parameterization which is defined in the first row of the
+set № 3. The result of this experiment is depicted in Fig. 14. As we can see, some labels
+
+Fig. 11 The labeling using the measure with the preference for background homogeneity and spatial distribution.
+Projection: spherical Mercator (EPSG:3857). Data source: OpenStreetMap [51]
+
+Geoinformatica
+
+Fig. 12 The label placement produced by Maplex that was configured to prevent overlapping of the roads and
+water bodies. Projection: spherical Mercator (EPSG:3857). Data source: OpenStreetMap [51]. The red circles
+mark overlaps of labels with nearby point symbols
+
+(marked with red frames) are difficult to search and to read. Many background elements in a
+map might lead to a darker colors accumulating in a cartographic product. One of the more
+popular background elements is hill-shading, which is bound to introduce more grey and black
+into the map, even if counteracted by sun-tones and lighter colors as done masterfully in the
+Swiss style [32, 33]. Automated analytic shading as it is available in many software packages
+has an even stronger tendency to darken the overall map (e.g. Fig. 13) [36]. This can severely
+limit the legibility of the positioned text (see Fig. 2) even with letter casing (halo) (see Fig. 14).
+In order to improve the labeling even for maps with a background with many dark elements,
+we tested the visual contrast component. We prepared the second background mask of the
+relief based on ASTER GDEM data [3]. As we have two masks, the measure (13) should be
+considered twice in equation (14). Namely, we split it into two constituent parts (see two rows
+of the parameter set № 3), where the first set was used for the background mask with roads and
+water bodies, and the second one for the mask with shaded relief respectively. The quality of
+type placement can be significantly enhanced by taking into account shaded relief and the
+
+Table 2 Lettering placement characteristics produced by different labeling algorithms
+
+Labeling without measure
+(13)
+
+Labeling using measure (13), set
+№2
+
+Maplex
+
+Candidate positions
+Labels placed [number of label
+
+960
+107 [0]
+
+overlaps]
+
+Labels without feature-overlap
+
+18.44 %
+
+Preferred positions among the labels with feature-overlap
+
+960
+108 [0]
+
+30.48 %
+
+44.78 %
+
+11,520
+112 [4]
+
+33.33 %
+
+5.97 %
+
+Geoinformatica
+
+Fig. 13 An example of shaded relief map segmentation using K-means algorithm with 8 clusters
+
+visual contrast metric (see Fig. 15). In Fig. 15 the previously marked labels are much more
+legible and have less overprinting of the surrounding shades in comparison to the preceding
+placement in Fig. 14. Also note, at the same time the labels have less interference with roads,
+rivers and lakes.
+
+Fig. 14 The labeling using the measure with the preference for background homogeneity and spatial distribution
+metrics. Projection: spherical Mercator (EPSG:3857). Data source: ASTER GDEM [3] and OpenStreetMap [51].
+The purple rectangle shows the region depicted in Fig. 13
+
+Geoinformatica
+
+Fig. 15 The labeling using all metrics. Projection: spherical Mercator (EPSG:3857). Data source: ASTER
+GDEM [3] and OpenStreetMap [51]
+
+5 Summary and conclusions
+
+This paper introduced the measure for quantifying the quality of potential label positions based
+on map background information. The proposed measure is built upon some cartographic
+principles of type placement. As we have shown, a general labeling algorithm [16] equipped
+by our measure tends to locate names in map regions with lower graphic complexity. It also
+tries to minimize interference with background elements and to avoid visual clutter between
+graphical elements of similar colors. We performed a set of experiments on real-world datasets.
+The results of the reported experiments clearly indicate that applying our measure in automated
+map lettering can significantly improve name placement in respect of higher clarity and better
+legibility of the map, which indisputably make maps more effective. Our measure is well and
+sufficiently defined to be fully reproduced in and adopted to any other application. Moreover,
+the comparison of the presented method with a vector-based method implemented in Maplex
+indicates comparable quality of label placement in terms of feature overlap.
+
+The overall computational complexity and memory consumption of our measure is low due
+to the raster representation instead of using vector geometries. This fact makes the proposed
+measure appropriate for use in interactive and dynamic labeling [6, 47] and especially
+attractive for labeling on mobile devices [41]. However, a practical implementation of the
+measure in a real-time or mobile context would benefit from some modifications. These should
+include the parallel computation of scores for candidate positions on multiple independent
+CPUs and speeding up the image segmentation using a GPU. Note that the stage of image
+segmentation can potentially be performed on the server side in advance before the image is
+delivered to the client. In this case, the client also needs the table of corresponding colors.
+Moreover, the real-time context requires a rather fast algorithm for solving the combinatorial
+
+Geoinformatica
+
+optimization problem. Another possible application for our method is automated labeling of
+3D models [24, 43].
+
+The proposed quality measure was designed for and tested on point-feature label placement
+with axis-aligned labels. However, it is notable, that the presented approach can be modified to
+support evaluation of labeling for any placement scheme (e.g., points [9, 60], lines [16, 76] or
+polygons [4, 61, 72]). The difference amounts to the need for the resampling of pixels that lie
+within an arbitrarily rotated rectangle describing the bounds of a letter.
+
+The comparison and study of the influence of different image segmentation algorithms and
+their parameterization on resulting labeling were not conducted. However, these questions are
+still open and require further research.
+
+Acknowledgments The authors would like to warmly thank colleagues at our GIScience Research Group for
+productive discussions and their valuable feedback. We would like to express our particular appreciation to the
+anonymous reviewers whose constructive and helpful comments substantially improved the paper. Financial
+support as the scholarship from DAAD (Deutscher Akademischer Austauschdienst, German Academic Ex-
+change Service) obtained by Maxim Rylov is gratefully acknowledged. Additional thanks go to Sarah Lohr for
+helping with the comparison of labeling results.
+
+References
+
+1. Adams R, Bischof L (1994) Seeded region growing. IEEE Trans Pattern Anal Mach Intel 16(6):641–647.
+
+2. Ahn J, Freeman H (1984) A program for automatic name placement. Cartographica 21(2–3):101–109. doi:
+
+doi:10.1109/34.295913
+
+10.3138/0646-Q262-6636-3681
+
+3. ASTER Validation Team (2011) ASTER Global Digital Elevation Model Version 2 – Summary of Validation
+Results. Published by the ASTER GDEM Validation Team: METI, NASA and USGS. August 2011, 27
+pages. Available online at: http://www.jspacesystems.or.jp/ersdac/GDEM/ver2Validation/Summary_
+GDEM2_validation_report_final.pdf. http://reverb.echo.nasa.gov.
+
+4. Barrault M (2001) A methodology for placement and evaluation of area map labels. Comput Environ Urban
+
+Syst 25(1):33–52. doi:10.1016/S0198-9715(00)00039-9
+
+5. Battista GD, Eades P, Tamassia R, Tollis IG (1994) Algorithms for drawing graphs: an annotated bibliog-
+
+raphy. Comput Geom: Theory Appl 4(5):235–282
+
+6. Been K, Daiches E, Yap C (2006) Dynamic map labeling. IEEE Trans Vis Comput Graphics 12(5):773–780.
+
+7. Brewer CA (2005) Designing better maps: a guide for gis users. ESRI Press, Redlands CA
+8. Brown B (1976) Effect of background constraint on visual search times. Ergonomics 19(4):441–449. doi:10.
+
+doi:10.1109/TVCG.2006.136
+
+1080/00140137608931556
+
+9. Carstensen LW (1987) A comparison of simple mathematical approaches to the placement of spot symbols.
+
+Cartographica 24(3):46–63. doi:10.3138/GH04-24H7-63T8-167V
+
+10. Castner HW, Eastman RJ (1985) Eye-movement parameters and perceived map complexity—ii. Am
+
+Cartographer 12(1):29–40. doi:10.1559/152304085783914712
+
+11. Christensen J, Marks J, Shieber S (1995) An empirical study of algorithms for point-feature label placement.
+
+ACM Trans Graph 14(3):203–232. doi:10.1145/212332.212334
+
+12. CIE (1978) Recommendations on uniform colour spaces, colour difference equations. CIE Publication,
+
+13. Cromley RG (1985) An LP relaxation procedure for annotating point features using interactive graphics In:
+
+Psychometric Colour Terms
+
+proc. AutoCarto 7:127–132
+
+14. Defence Geographic and Imagery Intelligence Agency (UK) (1973) Series ONC, Sheet F-3, Albania, Bosnia,
+etc., 1:1000000, Edition 14-GSGS, Reprinted by DGIA, Ministry of Defence, United Kingdom, 2000. Scan
+provided by University of Texas, Perry-Castañeda Library Map Collection. http://www.lib.utexas.edu/maps/
+onc/txu-pclmaps-oclc-8322829_f_3.jpg (accessed on October 22, 2013)
+
+Geoinformatica
+
+15. Doerschler JS, Freeman H (1992) A rule-based system for dense-map name placement. Commun Assoc
+
+Comput Mach 35(1):68–79. doi:10.1145/129617.129620
+
+16. Edmondson S, Christensen J, Marks J, Shieber S (1996) A general cartographic labeling algorithm.
+
+Cartographica 33(4):13–24. doi:10.3138/U3N2-6363-130N-H870
+
+17. ESRI (2009) Maplex for ArcGIS. Paper, An ESRI White, Available at http://www.esri.com/library/
+
+whitepapers/pdfs/maplex-for-arcgis.pdf
+
+18. Fairbairn D (2006) Measuring map complexity. Cartogr J 43(3):224–238. doi:10.1179/000870406X169883
+19. Freeman H (1991) Computer name placement. In: Maguire DJ, Goodchild MF, Rhind DW
+(eds) Geographical Information Systems: principles and applications. Longman, London, pp
+445–456
+
+20. Freeman H, Ahn J (1984) AUTONAP – An Expert System for Automatic Map Name Placement. In: Proc.
+
+1st Int Symp on Spatial Data Handling, pp 544–569.
+
+21. García R, de Castro JP, Verdú E, Verdú MJ, Regueras LM (2012) Web Map Tile Services for Spatial Data
+Infrastructures: Management and Optimization. In: Bateira C (ed.) Cartography - A Tool for Spatial Analysis,
+pp 25–48. doi:10.5772/46129
+
+22. Gervautz M, Purgathofer W (1988) A Simple Method for Color Quantization: Octree Quantization. In:
+Magnenat-Thalmann N, Thalmann D (ed) New Trends in Comput Graphics, pp 219–231. doi:10.1007/978-
+3-642-83492-9_20
+
+23. Goodchild MF (2007) Citizens as sensors: the world of volunteered geography. GeoJournal 69(4):211–221.
+
+doi:10.1002/9780470979587.ch48
+
+24. Götzelmann T, Ali K, Hartmann K, Strothotte T (2005) Form Follows Function: Aesthetic Interactive Labels.
+In: Comput Aesthetics 2005. EG WS on Computational Aesthetics in Graphics, Visualization and Imaging,
+pp 193–200. doi:10.2312/COMPAESTH/COMPAESTH05/193-200
+
+25. Haklay M, Weber P (2008) Openstreetmap – user generated street map. IEEE Pervasive Comput 7(4):12–18.
+
+doi:10.1109/MPRV.2008.80
+
+26. Haralick M, Shapiro LG (1985) Image segmentation techniques. Comput Vision Graph Image Process 29:
+
+100–132. doi:10.1016/S0734-189X(85)90153-7
+
+27. Harrie L, Stigmar H, Koivula T, Lehto L (2004) An algorithm for icon placement on a real-time map. In: Fisher
+P (ed) Developments in spatial data handling. Springer, Berlin, pp 493–507. doi:10.1007/3-540-26772-7_38
+28. Harrie L, Stigmar H (2010) Evaluation of measures for quantifying map information. ISPRS J Photogramm
+
+Remote Sens 65(3):266–274. doi:10.1016/j.isprsjprs.2009.05.004
+
+29. Hirsch SA (1982) An algorithm for automatic name placement around point data. Am Cartographer 9(1):5–
+
+17. doi:10.1559/152304082783948367
+
+30. Hong F, Zuxun Z, Daosheng D (2005) Quality evaluation model for map labeling. Geo Spat Inf Sci 8(1):72–
+
+31. Imhof E (1975) Positioning names on maps. Am Cartographer 2(2):128–144. doi:10.1559/
+
+78. doi:10.1007/BF02826996
+
+152304075784313304
+
+32. Imhof E (1982) Cartographic relief presentation. Walter de Gruyter, Berlin
+33. Imhof E (2007) Cartographic relief presentation (reprint). ESRI Press, Redmond
+34. Jain AK, Murty MN, Flynn PJ (1999) Data clustering: review. J ACM Comput Surv 31(3):264–323. doi:10.
+
+1145/331499.331504
+
+35. Jenny B, Hurni L (2006) Swiss-style colour relief shading modulated by elevation and by exposure to
+
+illumination. Cartogr J 43:198–207. doi:10.1179/000870406X158164
+
+36. Jenny B, Patterson T (2007) Introducing plan oblique relief. Cartogr Perspect 57:21–40
+37. Jones C (1989) Cartographic name placement with prolog. IEEE Comput Graph Appl 9(5):36–47. doi:10.
+
+1109/38.35536
+
+38. Jurio A, Bustince H, Pagola M, Couto P, Pedrycz W (2013) New measures of homogeneity for image
+processing: an application to fingerprint segmentation. Soft Comput Springer, Berlin. doi:10.1007/s00500-
+013-1126-3
+
+39. Kakoulis KG, Tollis IG (2003) A unified approach to automatic label placement. Int J of Comput Geom Appl
+
+13(1):23–59. doi:10.1142/S0218195903001062
+
+40. Kirkpatrick S, Gelatt CD Jr, Vecchi MP (1983) Optimization by simulated annealing. Science 220:671–680.
+
+doi:10.1126/science.220.4598.671
+
+41. Kovanen J, Sarjakoski LT (2013) Sequential displacement and grouping of point symbols in a mobile
+
+context. J Locat Based Serv 7(2):79–97. doi:10.1080/17489725.2013.764024
+
+42. Lee S, Sips M, Seidel H-P (2013) Perceptually driven visibility optimization for categorical data
+visualization. In: IEEE Trans Vis Comput Graph 19(10):1746–1757. doi:10.1109/TVCG.2012.315
+43. Lehmann C, Döllner J (2012) Silhouette-based label placement in interactive 3D maps. In: Buchroithner M,
+Prechtel N, Burghardt D (eds) Cartography from Pole to Pole. Lecture Notes in Geoinformation and,
+Cartography, pp 177–186
+
+Geoinformatica
+
+44. Leyk S, Boesch R (2010) Colors of the past: color image segmentation in historical topographic maps based
+
+on homogeneity. GeoInformatica 14(1):1–21. doi:10.1007/s10707-008-0074-z
+
+45. Li Z, Huang P (2002) Quantitative measures for spatial information of maps. Int J Geogr Inf Sci 16(7):699–
+
+709. doi:10.1080/13658810210149416
+
+46. Lloyd R (1997) Visual search processes used in map reading. Cartographica 34(1):11–32. doi:10.3138/F342-
+
+47. Mote K (2007) Fast point-feature label placement for dynamic visualizations. Inf Vis 6(4):249–260. doi:10.
+
+1217-827R-0777
+
+1057/palgrave.ivs.9500163
+
+48. Noyes L (1980) The positioning of type on maps: the effect of surrounding material on word recognition
+
+time. Hum Factors: J Hum Factors Ergon Soc 22(3):353–360. doi:10.1177/001872088002200309
+
+49. Open Geospatial Consortium (2006) OpenGIS Web Map Server Implementation Specification. Tech. Rep.
+OGC 06–042, In: de la Beaujardiere J (eds.), Open Geospatial Consortium. Available at http://portal.
+opengeospatial.org/files/?artifact_id=14416.
+
+50. Open Geospatial Consortium (2010) OpenGIS Web Map Tile Service Implementation Standard. Tech. Rep.
+OGC 07-057r7, In: Masó J, Pomakis K, Julià N (eds.), Open Geospatial Consortium. Available at http://
+portal.opengeospatial.org/files/?artifact_id=35326.
+
+51. OpenStreetMap, (2013). (a collaborative project for creating a free editable geo-database of the
+world. Data © OpenStreetMap contributors; accessed on November 12, 2013). Available at http://
+openstreetmap.org.
+
+52. Pal SK, Pal NR (1987) Segmentation using contrast and homogeneity measures. Pattern Recogn Lett 5(4):
+
+293–304. doi:10.1016/0167-8655(87)90061-4
+
+53. Pal NR, Pal SK (1993) A review on image segmentation techniques. Pattern Recognit 29:1277–1294. doi:10.
+
+1016/0031-3203(93)90135-J.
+
+54. Phillips RJ, Noyes L, Audley RJ (1977) The legibility of type on maps. Ergonomics 20(6):671–682
+55. Phillips RJ, Noyes L (1982) An investigation of visual clutter in the topographic base of a geological map.
+
+Cartogr J 19(2):122–132. doi:10.1179/000870482787073225
+
+56. Purves D, Lotto RB (2010) Why we see what we do redux: a wholly empirical theory of vision, 2nd edn.
+
+57. Ramm F, Topf J, Chilton S (2010) openstreetmap: using and enhancing the free map of the world. UIT,
+
+58. Reimer A (2011) Squaring the Circle? Bivariate Colour maps and Jacques Bertin's concept of 'Disassociation'
+
+(Digital Proceedings), Int Cartographic Conference ICC 2011, Paris.
+
+59. Robinson AH, Morrison JL, Muehrcke PC, Kimerling AJ, Guptil SC (1995) Elements of cartography, 6th
+
+Sinauer Associates, Inc
+
+Cambridge
+
+edn. Wiley, New York
+
+60. Rylov MA, Reimer AW (2014) A comprehensive multi-criteria model for high cartographic quality point-
+
+feature label placement. Cartographica 49(1):52–68. doi:10.3138/carto.49.1.2137
+
+61. Rylov MA, Reimer AW (2014) A Practical Algorithm for the External Annotation of Area Features. Cartogr
+
+J 51(3). doi:10.1179/1743277414Y.0000000091
+
+62. Schreyer M, Raidl GR (2002) Letting ants labeling point features. in: proc. IEEE Congr Evol Comput (CEC ′
+
+63. Schrijver S (2003) Combinatorial optimization: polyhedra and efficiency. Springer, Berlin
+64. Shannon CE, Weaver W (1964) The mathematical theory of communication, the university of illinois press.
+
+65. Shapiro LG, Stockman GC (2001) Image segmentation. Computer Vision, pp. 279–325, New Jersey,
+
+02) 2:1564–1569
+
+Champaign, IL
+
+Prentice-Hall.
+
+66. Stadler G, Steiner T, Beiglbock J (2006) A practical map labeling algorithm utilizing morphological image
+processing and force-directed methods. Cartogr Geogr Inf Sci 33(3):207–215. doi:10.1559/
+152304006779077327
+
+67. Strijk TW, van Kreveld MJ (2002) Practical extensions of point labeling in the slider model. GeoInformatica
+
+6(2):181–197. doi:10.1023/A:1015202410664
+
+68. Sukhov VI (1967) Information capacity of a map entropy. Geodesy Aerophotography 10:212–215
+69. Sukhov VI (1970) Application of information theory in generalization of map contents. Int Yearb Cartogr, X: 41–47
+70. van Dijk S, van Kreveld MJ, Strijk TW, Wolff A (2002) Towards an evaluation of quality for names
+
+placement methods. Int J of Geogr Inf Sci 16(7):641–661. doi:10.1080/13658810210138742
+
+Geoinformatica
+
+71. van Kreveld MJ, Strijk TW, Wolff A (1999) Point labeling with sliding labels. Comput Geom: Theory Appl
+
+13:21–47. doi:10.1016/S0925-7721(99)00005-X
+
+72. van Roessel W (1989) An algorithm for locating candidate labeling boxes within a polygon. Am
+
+Cartographer 16(3):201–209. doi:10.1559/152304089783814034
+
+73. Verner OV, Wainwright RL, Schoenefeld D (1997) Placing text labels on maps and diagrams using genetic
+
+algorithms with masking. INFORMS J Comput 9(3):266–275. doi:10.1287/ijoc.9.3.266
+
+74. Williams LG (1967) The effects of target specification on objects fixated during visual search. Acta Psychol
+
+27:355–360. doi:10.3758/BF03207398
+
+75. Wojtach WT (2009) Reconsidering perceptual content. Philos Sci 76(1):22–43
+76. Wolff A, Knipping L, van Kreveld M, Strijk T, Agarwal PK (2001) A Simple and Efficient Algorithm for
+High-Quality Line Labeling. Technical Report UU-CS-2001-44, Department of Computer Science, Utrecht
+University.
+
+77. Wolff A, Strijk T (2009) A map labeling bibliography. Available at http://i11www.iti.uni-karlsruhe.de/
+
+~awolff/map-labeling/bibliography
+
+78. Wood CH (1994) Effects of brightness difference on specific map-analysis tasks: an empirical analysis.
+
+Cartog Geogr Inf Sci 21(1):15–30. doi:10.1559/152304094782564019
+
+79. Wood CH (2000) Descriptive and illustrated guide for type placement on small scale maps. Cartogr J 37(1):
+
+5–18. doi:10.1179/000870400787320851
+
+80. Yamamoto M, Camara G, Lorena LAN (2002) Tabu search heuristic for point-feature cartographic label
+
+placement. Geophys J R Astron Soc 6(1):77–90. doi:10.1023/A:1013720231747
+
+81. Yoeli P (1972) The logic of automated map lettering. Cartogr J 9(2):99–108. doi:10.1179/
+
+000870472787352505
+
+82. Zhang Q, Harrie L (2006) Real-time map labelling for mobile applications. Comput Environ Urban Syst
+
+30(6):773–783. doi:10.1016/j.compenvurbsys.2006.02.004
+
+83. Zhang Q, Harrie L (2006) Placing text and icon labels simultaneously: a real-time method. Cartogr Geogr Inf
+
+Sci 33(1):53–64. doi:10.1559/152304006777323127
+
+84. Zoraster S (1986) Integer programming applied to the map label placement problem. Cartographica 23(3):
+
+16–27. doi:10.3138/9258-63QL-3988-110H
+
+Maxim A. Rylov Maxim A. Rylov studied Applied Mathematics and Computer Science at Kyrgyz-Russian
+Slavic University. After his graduation he worked as a research scientist at Data-Computing Center of Kyrgyz-
+Russian Slavic University and dealt with research in the field of automated CAD (computer-aided design)
+systems for open-pit mining. Currently he works at GIScience Research Group, Institute of Geography,
+Heidelberg University as a PhD Student. His main research interests are digital and web cartography, automated
+label placement, computational geometry, GIS mapping.
+
+Geoinformatica
+
+Andreas W. Reimer Andreas W. Reimer studied geography, cartography and geomatics at Humboldt University
+and Freie Universität Berlin. After a stay at the German Research Centre for Geosciences GFZ Potsdam he now
+works at Heidelberg University. His preceding work includes military mapping and pedestrian navigation with
+the main focus in recent years on automated schematization and generalization using methods from computa-
+tional geometry. Research interests are automated thematic mapping and scale in geographic modeling &
+thought.
+
+

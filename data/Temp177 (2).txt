@@ -1,0 +1,5021 @@
+Geoinformatica (2010) 14:163–200
+DOI 10.1007/s10707-009-0081-8
+
+Efﬁcient evaluation of continuous spatio-temporal
+queries on moving objects with uncertain velocity
+
+Yuan-Ko Huang · Chiang Lee
+
+Received: 19 August 2008 / Revised: 6 February 2009 /
+Accepted: 24 March 2009 / Published online: 23 April 2009
+© Springer Science + Business Media, LLC 2009
+
+Abstract Continuous Range (CR) query and Continuous K-Nearest Neighbor
+(CKNN) query are two important types of spatio-temporal queries. Given a time
+interval [ts, te] and a moving query object q, a CR query is to ﬁnd the moving objects
+whose Euclidean distances to q are within a user-given distance at each time instant
+within [ts, te]. A CKNN query is to retrieve the K-Nearest Neighbors (KNNs) of
+this query object q at each time instant within [ts, te]. In this paper, we investigate
+how to process these spatio-temporal queries efﬁciently under the situation that
+the velocity of each object is not ﬁxed. This uncertainty on the velocity of object
+inevitably results in high complexity in processing spatio-temporal queries. We will
+discuss the complications incurred by this uncertainty and propose two algorithms,
+namely the Possibility-based possible within objects searching algorithm and the
+Possibility-based possible KNN searching algorithm, for the CR query and the CKNN
+query, respectively. A Possibility-based model is designed accordingly to quantify
+the possibility of each object being the result of a CR query or a CKNN query.
+Comprehensive experiments are performed to demonstrate the effectiveness and the
+efﬁciency of the proposed approaches.
+
+Keywords Continuous range query · Continuous K-nearest neighbor query ·
+Spatio-temporal queries · Moving objects
+
+Y.-K. Huang · C. Lee (B)
+
+Department of Computer Science and Information Engineering,
+National Cheng-Kung University, Tainan, Taiwan, Republic of China
+e-mail: leec@mail.ncku.edu.tw
+
+Y.-K. Huang
+e-mail: hyk@dblab.csie.ncku.edu.tw
+
+164
+
+1 Introduction
+
+Geoinformatica (2010) 14:163–200
+
+With the fast advances of positioning techniques in mobile systems, spatio-temporal
+databases that aim at efﬁciently managing moving objects are becoming more
+powerful and hence attract more attention than ever. Many applications, such as
+mobile communication systems, trafﬁc control systems, geographical information
+systems, and multimedia applications, can beneﬁt from efﬁcient processing of spatio-
+temporal queries. Continuous Range (CR) query and Continuous K-Nearest Neigh-
+bor (CKNN) query are two types of essential spatio-temporal queries. A CR query
+is to ﬁnd the moving objects whose Euclidean distances to the moving query object
+are within a distance dwithin at each time instant within a time interval [ts, te], where
+both dwithin and [ts, te] are the user-given parameters. As for the CKNN query, it can
+be utilized to retrieve the query object’s K-Nearest Neighbors (KNNs) at each time
+instant within [ts, te]. Two real-world examples of CR query and CKNN query for
+moving objects are presented as follows.
+
+Example 1.1 Consider a ﬂeet of warships on the sea that is ﬁghting an enemy
+squadron. In order to immediately support a warship in case it is under attack, a
+CKNN query may be issued to ﬁnd the friendly warships that are close to the warship
+requiring to be supported for the next 30 min. In addition, a warship may issue a CR
+query to monitor its surrounding enemy warships for the next 30 min so as to avoid
+the possible attack.
+
+Example 1.2 Consider a number of users (e.g., pedestrians or cabs) that move con-
+tinuously on a road network. A user may want to share his/her data (e.g., information
+about the trafﬁc conditions that will be encountered en route) with other users
+through the mobile devices (e.g., cellular phones or PDAs) for the next 10 min. Due
+to the high signal attenuation and energy consumption for long distances, the user
+should transmit data to his/her vicinity and then rely on them to forward data. As
+such, the transmitting user can utilize a CR query (or a CKNN query) to retrieve
+the users whose distances to him/her are within a short distance (or his/her K nearest
+neighbors).
+
+Due to the movement of each object, the query results inevitably change with time
+so that these spatio-temporal queries must be evaluated continuously. This would
+incur a high query re-evaluation cost, especially for a large user-given time interval
+[ts, te]. As a result, reducing the overhead of repeatedly performing the same query
+is a major concern for efﬁciently processing spatio-temporal queries.
+
+Previous works that focus on providing efﬁcient techniques for processing spatio-
+temporal queries can be classiﬁed into two categories according to how the velocity
+of a moving object is treated. In order to predict the future locations of moving
+objects, work in the ﬁrst category assumes the velocity of each object is ﬁxed
+[1–8]. Under this assumption, the motion of each object can be precisely determined
+so that the complexity for processing a spatio-temporal query is reduced. However,
+the velocity of a moving object is actually not ﬁxed in the real world. Once object’s
+velocity is updated in the database, the queries have to be executed again, which
+incurs the high re-execution cost problem. Work of the second category does not
+
+Geoinformatica (2010) 14:163–200
+
+165
+
+make any assumption on object movement patterns [9–14]. Under this circumstance,
+the exact moving trajectory is impossible to achieve. Most current approaches choose
+to re-evaluate the snapshot query at those time instants where updates occur. In
+each re-evaluation, the processing may beneﬁt from the previous result of the last
+evaluation so that the overhead incurred by repeatedly processing the same query
+can be reduced. However, the re-evaluation cost may still be too high compared to
+the approaches in the ﬁrst category.
+
+To remedy the shortcomings of the approaches in both categories, we develop
+in this paper an efﬁcient method which not only determines the query result for
+each time instant but is also suitable for an environment whose objects change
+their velocities freely. Using the proposed method, we are able to ﬁnd the result at
+each time instant of the user-given time interval [ts, te] by evaluating the query only
+once. This method keeps the advantages of both categories (i.e., one-time execution
+in the ﬁrst category and the more practical assumption of varying velocity) while
+avoids their shortcomings. But the price to pay in our method is that uncertainty is
+introduced. That is, the result is not a sure answer but with a possibility to describe
+its accuracy.
+
+We relax the ﬁxed-velocity assumption by allowing the velocity of object to vary
+within a known range so as to adapt to the real-world situation. We observe that
+most moving objects (e.g., warships or cabs) follow two moving behaviors under most
+occasions. The ﬁrst one is that they generally move towards a direction for a signif-
+icant period of time, such as warship sailing on the sea or cab moving on the road,
+before they make a turn. The second one is that even though they may accelerate or
+decelerate (i.e., its moving velocity changes) due to different trafﬁc conditions, their
+velocity normally varies within a range, such as the maximum and minimum speed
+limits of the route. This range can be computed by the location server, depending
+on factors such as the historical object information (e.g., location and velocity), the
+trafﬁc condition, and the location update frequency, and then is sent to each object.
+As each object is aware of its velocity range, an object update occurs only when
+the object’s velocity changes out of this range. Larger velocity range results in fewer
+object updates, but inevitably increases the location/velocity uncertainty of object.
+Therefore, the main focus of this paper is devoted to developing specialized methods
+to efﬁciently process the CR and CKNN queries even though object’s location and
+velocity are uncertain.
+
+This uncertainty on velocity and location of an object results in a problem that
+the distance between a moving object and the query object cannot be determined
+precisely, which leads to uncertain (or possible) solution that inevitably complicates
+the process of evaluating the CR and the CKNN queries. For instance, Fig. 1 shows
+that objects move with uncertain velocities. Object a moves toward east with a
+starting location at (1,7), and its velocity lies in between 1 and 2 m/s (i.e., the velocity
+of a is within the range [1, 2]). Similarly, object b moves toward north with starting
+location at (8,8), and its velocity is within [1, 2]. For ease of illustration, query
+object q is stationary at location (8,7) (note that this is however not required in
+our technique). Segments Sa and Sb in the ﬁgure represent the possible locations
+of objects a and b, respectively, which are obtained from the velocities of the moving
+objects. In other words, the location of a (or b) can be at any point of Sa (or Sb).
+Assume that a CR query is issued to ﬁnd the objects whose distances to q are within
+4 m for the next 4 s. At t = 2, if a and b are located at (5,7) and (8,10), respectively,
+
+166
+
+y
+
+Geoinformatica (2010) 14:163–200
+
+a(1,7)
+
+b(8,8)
+q(8,7)
+
+4 m
+
+Sb
+
+q
+
+Sa
+
+(8,12)
+
+Sb
+
+(8,10)
+
+(3,7)
+
+Sa
+
+q
+
+(5,7)
+
+Sb
+
+Sa
+
+q
+
+y
+
+x
+
+y
+
+x
+
+y
+
+x
+
+t = 0
+
+t = 1.5
+
+t = 2
+
+t = 3
+
+x
+
+Fig. 1 Example of spatio-temporal queries
+
+then these two objects should be included in the CR query result. However, if a and b
+are at (3,7) and (8,12), respectively, which is as likely to occur as in the other case,
+then no object should be returned. Consider another example of ﬁnding 1NN of q for
+the next 4 s (i.e., a CKNN query). At t = 2, if the locations of objects a and b are
+(3,7) and (8,10), respectively, then the 1NN of q is b. However, in another possible
+case that a and b are at (5,7) and (8,12), respectively, then the 1NN of q is a. From
+this ﬁgure, we see that all “possible” locations of each object should be taken into
+account in processing the spatio-temporal queries so as to guarantee that all possible
+answers will be included in the result. The possible answers for a CR query and a
+CKNN query are named the possible within objects (PWOs) and the possible KNNs
+(PKNNs), respectively. Efﬁciently identifying the PWOs and the PKNNs for every
+time instant is a complicated issue as it involves many possible solutions.
+
+One complication factor is that the possibility of each PWO (or PKNN) being the
+query result is different. For instance, at t = 3 both a and b are the P1NN of query
+object q. The distance between a and q is more than 1 m but less than 4 m, and the
+distance between b and q is within 4 m to 7 m. Obviously, the possibility of a being
+the 1NN of q at t = 3 is higher than the possibility of b being the 1NN of q. When the
+number of PWOs or PKNNs increases, the situation becomes more complicated and
+it becomes very hard to choose the most appropriate objects. Therefore, a possibility
+model must be built to reasonably provide probabilistic answers to CR and CKNN
+queries. Note that designing a possibility model for CKNN queries is much more
+difﬁcult than for CR queries. For CR queries, the possibility for each PWO can
+be determined independent of the other PWOs (i.e., its possibility depends only
+upon its distance to the query object). However, for CKNN queries, the possibility
+of each PKNN being the KNN is greatly inﬂuenced by the distances between the
+other PKNNs and the query object. In this paper, we present a novel distance-based
+possibility model that provides reasonable answers to CR and CKNN queries. For
+instance, the CR query result that is returned to the user may consist of three tuples
+< [0, 1.5], {(b, 1)} >, < [1.5, 3], {(a, 0.57), (b, 0.26)} >, and < [3, 4], {(a, 1)} >, which
+means that within the time interval [0, 1.5] (or [3, 4]) object b (or a) is the only
+PWO with a possibility of 1, and within the time interval [1.5, 3] both a and b can
+be the PWO with however different possibilities of 0.57 and 0.26, respectively. For
+the CKNN query, the output is < [0, 1.5], {(b , 1)} >, < [1.5, 3], {(a, 0.5), (b, 0.5)} >,
+and < [3, 4], {(a, 1)} > for the same reason. Beneﬁted from this possibility model,
+a mobile information system is able to determine which object is more proper than
+
+Geoinformatica (2010) 14:163–200
+
+167
+
+the others to be the answer, and thus provide useful information to the user. We
+summarize the major contributions of this paper as follows.
+
+• Our work remedies the major drawbacks of the past related work and provides
+
+more practical and efﬁcient methods to process spatio-temporal queries.
+
+• The uncertain distance between moving objects at each time instant is properly
+dealt with so that the spatio-temporal queries can be answered efﬁciently.
+• We develop a data-partitioning index, called the TPRe-tree, to index moving
+objects with uncertain velocity. In order to greatly reduce the CPU and I/O cost
+required for processing spatio-temporal queries, an effective pruning strategy
+combined with the TPRe-tree is devised to avoid reading the entire dataset.
+• Two cost-effective approaches, namely the Possibility-based PWO (P2WO)
+searching algorithm and the Possibility-based PKNN (P2KNN) searching algo-
+rithm, are presented to determine the PWOs and the PKNNs of query object
+from ts to te, respectively. Furthermore, each PWO (or PKNN) is associated with
+a possibility to represent that possibility of being the query result.
+
+• A comprehensive empirical performance study of the P2WO and P2KNN search-
+ing algorithms is reported. The performance results manifest that our approaches
+are scalable and more efﬁcient in terms of the CPU and I/O cost in comparison
+to their competitors.
+
+The rest of this paper is organized as follows. In Section 2, we discuss some related
+works on processing spatio-temporal queries, and modeling and querying the data
+with uncertainty. In Section 3, we address the issue of how to represent the distance
+between objects at each time instant. Section 4 describes how to effectively prune
+unnecessary objects through a data-partitioning index. The P2WO searching algo-
+rithm and the P2KNN searching algorithm are presented in Sections 5 and 6,
+respectively. Section 7 shows extensive experiments on the performance of our
+methods. Section 8 concludes the paper with directions on future work.
+
+2 Related work
+
+With the emergence of applications in mobile computing environment, efﬁcient
+processing of spatio-temporal queries has attracted a lot attention. In this section,
+we ﬁrst overview the existing methods for processing spatio-temporal queries on
+moving objects, in which the Euclidean distance between two objects is considered
+as the metric of spatial closeness. Then, we discuss the related work that investigates
+how to answer the spatio-temporal queries in spatial networks (i.e., in road distance).
+Finally, we survey some related work that focuses on modeling and querying moving
+objects with uncertainty.
+
+2.1 Spatio-temporal queries in Euclidean space
+
+Sistla et al. [15] ﬁrst identify the importance of the spatio-temporal queries and
+describe modeling methods and query languages for the expression of these queries.
+They further attempt to build a database of moving objects, called the DOMINO
+[16], on top of existing DBMSs. The main focus of DOMINO is to support new kinds
+of spatio-temporal attributes and query language for moving objects. Other research
+
+168
+
+Geoinformatica (2010) 14:163–200
+
+works [17, 18] also make their efforts on integrating the spatio-temporal data into
+existing DBMSs. However, the issues of processing the spatio-temporal queries are
+not exclusively addressed by the above works. Recently, several methods have been
+designed to efﬁciently process the spatio-temporal queries over moving objects. The
+methods can be classiﬁed into two categories according to how the velocity of a
+moving object is treated.
+
+Papers in the ﬁrst category assume the velocity of a moving object is ﬁxed [1–8].
+Under this assumption, the trajectory of a moving object can be precisely determined.
+Kalashnikov et al. [3] propose a method operated with R-tree [19] and Quadtree [20]
+to efﬁciently process a CR query. However, this method is limited to processing static
+range query (i.e., the stationary query object) over moving objects. Tao et al. [7]
+propose a repetitive query processing approach with a TPR-tree [21] for answering
+the CR and CKNN queries. Then, they propose another method [8] to overcome
+the high-cost problems of the repetitive query processing approach, but the method
+mainly focuses on solving the CKNN queries over static objects. Benetis et al. [1]
+develop an approach to ﬁnd the nearest neighbor through a depth-ﬁrst traversal of
+TPR-tree. Although their approach can be used to search for a NN that is moving
+with a ﬁxed velocity, it is limited to answering only 1NN (K = 1). Recently, another
+method is proposed by Benetis et al. [2] for overcoming the 1NN limitation. They
+also designed a result maintenance mechanism to incrementally update the query
+result. To adapt to moving objects and reduce computational cost, Lee et al. [4]
+and Raptopoulou et al. [6] propose efﬁcient methods that process a CKNN query
+by tracing the change of the K-th nearest neighbor. Iwerks et al. [5] answer a CKNN
+query through a method that a CR query is ﬁrst processed and then KNNs are deter-
+mined among the objects contained in the CR query result. If the number of objects
+that satisfy the CR query is greater than K, the answer to the CKNN query can be
+obtained from these objects. In highly dynamic environments, the performance of
+these techniques would signiﬁcantly degrade because the frequently changed velocity
+of each object inevitably results in more query re-evaluation cost.
+
+Papers of the second category do not make any assumption on object movement
+patterns. Under this circumstance, the exact moving trajectory is impossible to
+achieve. Most current approaches assume that the location of every object is updated
+repeatedly so as to learn the trajectory of a moving object and to process spatio-
+temporal queries [9–14]. Song et al. [12] propose an approach in which the snapshot
+KNN query is re-evaluated at each time instant at which the moving query object
+location is updated. Their method is restricted in processing the CKNN queries over
+static data objects. This seriously limits the number of moving objects allowed in the
+system. Mokbel et al. [10] and Nehme et al. [11] extend the approach presented in
+[12] to adapt to moving object datasets. They utilize the concepts of shared execution
+and incremental evaluation to process CR query on moving objects. Recently, the
+technique of incremental evaluation is further adopted by Mouratidis et al. [9], Xiong
+et al. [13], and Yu et al. [14] to answer CKNN query. These approaches suffer from
+a problem that the query re-evaluation cost is high. Hence, optimization techniques
+taking advantage of incremental updates were designed.
+
+Huang et al. [22] present another approach to remedy the shortcomings of the
+above categories of approaches. However, this approach focuses on processing a
+CKNN query only. The operation is performed without any index support, which
+is a major weakness in dealing with large datasets. To enhance the practicality and
+
+Geoinformatica (2010) 14:163–200
+
+169
+
+scalability of that work, in this paper we extend the method in [22] to be able
+to process not only a CKNN query but also a CR query. Moreover, we combine
+the proposed methods with a data-partitioning index to signiﬁcantly improve the
+performance of the CR and CKNN query processing.
+
+2.2 Spatio-temporal queries in spatial networks
+
+Güting et al. [23] extend the ADT approach by modeling spatial networks explicitly
+and providing data types for static and moving objects. Then, in [24] they present
+an extension to support uncertainty for moving objects with movement restricted
+to networks. Jensen et al. [25] propose a data model and a deﬁnition of abstract
+functionality required for KNN queries in spatial networks databases. To compute
+network distances, they adopt the Dijkstra’s algorithm for online evaluation of the
+shortest path. Papadias et al. [26] describe a framework that integrates network and
+Euclidean information, and answers static range and KNN queries. Kolahdouzan
+et al. [27] propose a solution-based approach for static KNN queries in spatial
+networks. Their approach, called VN3, precalculates the network Voronoi polygons
+(NVPs) and some network distances, and then processes the KNN queries based on
+the properties of the Network Voronoi diagrams.
+
+Recently, efﬁcient processing of CKNN queries in spatial networks has also been
+studied. Kolahdouzan et al. [28] and Cho et al. [29] develop different effective tech-
+niques, UBA and UNICONS, to reduce the number of KNN evaluations by allowing
+the KNN result to be valid for a time interval. However, the techniques are ade-
+quately designed to deal with CKNN queries over static objects. Mouratidis et al.
+[30] ﬁrst address the issue of continuous monitoring KNNs on moving objects and
+propose an incremental monitoring algorithm (IMA) to re-evaluate query at those
+time instants at which updates occur.
+
+The above CKNN methods are developed for the spatial networks where the
+distance between objects is computed depending on the connectivity of the network
+rather than the objects’ locations. However, these methods are inapplicable to those
+real-world applications that are given in the previous section in which the determi-
+nation of the KNNs needs to be based on the Euclidean distance.
+
+2.3 Probabilistic queries over uncertain data
+
+Previous work on managing objects with uncertainty can be divided into two cate-
+gories according to the deﬁnition of uncertainty. In the ﬁrst category [31, 32], the
+uncertainty of an object refers to the existency of an object, while in the second
+category [33–38] the focus is on the uncertainty of an object location. As our focus is
+on processing spatio-temporal queries over moving objects with uncertain location,
+we only discuss the work of the second category as follows.
+
+One popular uncertainty model for moving objects is that at any time instant,
+the actual location of each object is within a certain bound of its last reported
+location [33, 34]. Based on the uncertainty model, Cheng et al. [35] propose efﬁcient
+algorithms for evaluating probabilistic range and nearest neighbor queries, in which
+the location of the query object is precise. Then, they [36] further address the issue
+of providing probability guarantees for probabilistic queries when the query object’s
+location is also uncertain. However, they focus only on probabilistic range query.
+
+170
+
+Geoinformatica (2010) 14:163–200
+
+Another important study on the issues of uncertainty for moving objects is
+described by Pfoser et al. [37]. They introduced a framework to represent moving
+objects with uncertainty which occurs during the sampling of objects’ locations.
+Assuming the maximum velocity of an object is known, they prove that all possible
+locations of an object between two consecutive samples lie on an error ellipse. A
+complete trajectory of any object is obtained by using linear interpolation between
+two samples. By using the error ellipse, they demonstrate how to process probabilistic
+range query for trajectories. Processing probabilistic range query for trajectories was
+also considered by Trajcevski et al. [38].
+
+To the best of our knowledge, there has not been any study on designing probabi-
+listic methods for continuous range queries and continuous KNN queries as proposed
+in this paper.
+
+3 Uncertain distance model
+
+The uncertain distance model provides a foundation for processing the spatio-
+temporal queries over moving objects with uncertain velocity. This model is also used
+in [22] for processing CKNN queries. However, to make this paper self-contained,
+we brieﬂy present the key idea of this model here. The reader may refer to [22] for
+the details.
+
+, o.vmy
+
+) and a maximal velocity (o.vMx
+
+The distance between two objects in our model is represented in Euclidean
+distance. We assume that the moving direction of an object o is ﬁxed and its velocity
+is between a minimal velocity (o.vmx
+).
+In the case that object o moves with the minimal velocity (o.vmx
+), its location
+at time t, denoted as om(t), can be represented as om(t) = o.(cid:2)s + o.(cid:2)v × (t − t0), where
+o.(cid:2)s = (o.x0, o.y0) is the start location, o.(cid:2)v = (o.vmx
+, o.vmy
+), and t0 is the start time.
+) (i.e., o moves with the maximal
+, o.vMy
+In another case where o’s velocity is (o.vMx
+velocity), the location of o at time t, denoted as oM(t), can be obtained from the
+above equation by substituting (o.vMx
+). At any time t, object
+, o.vMy
+o should be a point on the line segment oM(t)om(t), where oM(t) and om(t) are two
+endpoints of the line segment. Note that the possible location of object o is assumed
+to be uniformly distributed on the line segment oM(t)om(t). As object o moves, line
+segment oM(t)om(t) moves too and the length of oM(t)om(t) will grow over time.
+
+) for (o.vmx
+
+, o.vMy
+
+, o.vmy
+
+, o.vmy
+
+Given two moving objects o and q, the distance between these two objects is
+bounded by a minimal and a maximal distance. The minimal and the maximal dis-
+tances between objects o and q vary over time because the two objects move
+continuously. We use two functions, do,q(t) and Do,q(t), to represent at every time
+instant the minimal and the maximal distances, respectively. The two functions do,q(t)
+and Do,q(t) can be obtained by using the relationship of the line segments oM(t)om(t)
+and qM(t)qm(t). We describe them as follows.
+
+3.1 The minimal distance function do,q(t)
+
+At time instant t, the two line segments oM(t)om(t) and qM(t)qm(t) may or may
+not intersect each other. If oM(t)om(t) intersects qM(t)qm(t) (e.g., in Fig. 2, the two
+segments intersect at time t2), the minimal distance between them is equal to 0.
+
+Geoinformatica (2010) 14:163–200
+
+171
+
+o tm( )
+
+o tM( )
+
+o tM( )
+
+o tM( )
+
+q tM( ) q tm( )
+
+q tM( )
+
+q tM( )
+
+q tM( )
+
+q tm( )
+
+q tM( )
+
+o tm( )
+
+o tM( )
+
+0
+
+t3
+
+o tm( )
+
+t4
+
+q tm( )
+
+o tm( )
+
+t5
+
+q tm( )
+
+o tm( )
+
+d o t q t q t
+
+( ),
+
+( )
+
+( ))
+
+(
+
+M
+
+m
+
+m
+
+d o t q t
+( ),
+
+( ))
+
+(
+
+m
+
+m
+
+d o t q t
+( ),
+
+( ))
+
+(
+
+M
+
+M
+
+te
+
+d
+
+t
+o q, ( ):
+
+t1
+
+d o t q t
+( ),
+
+( ))
+
+(
+
+M
+
+M
+
+d o t q t q t
+
+( ),
+
+( )
+
+( ))
+
+(
+
+M
+
+M
+
+m
+
+t2
+
+D t
+
+o q, ( ):
+
+ts
+
+d o t q t
+( ),
+
+( ))
+
+(
+
+m
+
+m
+
+Fig. 2 The minimal and maximal distances at different time instants
+
+Otherwise, the minimal distance between oM(t)om(t) and qM(t)qm(t) would be equal
+to one of the following distances.
+
+1. The perpendicular distance from an endpoint of one segment to another segment.
+For example, in Fig. 2 the minimal distance at time t1 is equal to the perpendicular
+distance d(oM(t), qM(t)qm(t)) from the endpoint oM(t) to the segment qM(t)qm(t).
+In this case, the minimal distance function do,q(t) is represented as
+
+d(oM(t), qM(t)qm(t))
+
+(cid:2)
+q.vmy
+
+=
+
+× oM(t).x − q.vmx
+
+(cid:2)
+q.y0 × q.vmx
+
+− q.x0 × q.vmy
+
+(cid:3)(cid:3)
+2
+
+.
+
+× oM(t).y +
+q.v2
+my
+
++ q.v2
+mx
+
+(1)
+
+2. The distance between two endpoints of the two segments. As shown in Fig. 2, at
+time ts the distance d(oM(t), qM(t)) between the two endpoints oM(t) and qM(t) is
+the minimal distance. As such, do,q(t) is
+
+d(oM(t), qM(t)) = (oM(t).x − qM(t).x)2 + (oM(t).y − qM(t).y)2.
+
+(2)
+
+Notice that the results of the above equations are the squares of the Euclidean
+distances, rather than the actual distances. As the user request is to ﬁnd “the K
+nearest neighbors”, this simpliﬁcation (of using the square distance) would not affect
+the query result.
+
+From the above discussion, we know that the minimal distance between two
+segments at any time instant could be equal to (1) 0, (2) the perpendicular distance
+from an endpoint to a segment, or (3) the distance between two endpoints. Because
+of the movements of segments oM(t)om(t) and qM(t)qm(t), the minimal distance
+between them varies over time. Therefore, the minimal distance function do,q(t)
+may be composed of multiple equations described above. Let us consider again the
+example in Fig. 2, where oM(t)om(t) ﬁrst moves toward qM(t)qm(t), then intersects,
+and ﬁnally leaves qM(t)qm(t). Within the subinterval [ts, t1], as the minimal distance
+between oM(t)om(t) and qM(t)qm(t) is equal to the distance between endpoints oM(t)
+and qM(t), the minimal distance function do,q(t) is represented as d(oM(t), qM(t)) from
+ts to t1. Then, because the perpendicular distance from endpoint oM(t) to segment
+
+172
+
+Geoinformatica (2010) 14:163–200
+
+qM(t)qm(t) becomes the minimal distance within [t1, t2], do,q(t) = d(oM(t), qM(t)qm(t)).
+Formally, the minimal distance function do,q(t) is composed of ﬁve equations
+as follows.
+
+do,q(t) =
+
+⎧
+
+⎪⎪⎪⎪⎪⎨
+⎪⎪⎪⎪⎪⎩
+
+d(oM(t), qM(t))
+∀t ∈ [ts, t1],
+d(oM(t), qM(t)qm(t)) ∀t ∈ [t1, t2],
+∀t ∈ [t2, t4],
+0
+d(om(t), qM(t)qm(t)) ∀t ∈ [t4, t5],
+d(om(t), qm(t))
+∀t ∈ [t5, te].
+
+(3)
+
+The time instants at which do,q(t) switches to a different function are termed as the
+function-switching time points (tFSTP) (e.g., t1, t2, t4, and t5). Within two consecu-
+tive function-switching time points, the minimal distance function do,q(t) remains
+the same.
+
+3.2 The maximal distance function Do,q(t)
+
+By inspecting the example in Fig. 2, we observe that at any time instant t the maxi-
+mal distance between segments oM(t)om(t) and qM(t)qm(t) must be equal to the
+distance between two endpoints (e.g., the maximal distance at time ts is equal to the
+distance between endpoints om(t) and qm(t)). As such, the maximal distance can be
+found among the four distances d(om(t), qm(t)), d(oM(t), qm(t)), d(om(t), qM(t)), and
+d(oM(t), qM(t)).
+
+Similar to the minimal distance function do,q(t), the maximal distance function
+Do,q(t) would be composed of different equations because segments oM(t)om(t)
+and qM(t)qm(t) move over time. To acquire Do,q(t), the function-switching time
+points tFSTP are ﬁrst determined. Then, by using the tFSTP, the time interval [ts, te]
+can be divided into several subintervals within which Do,q(t) remains unchanged.
+Continuing the example in Fig. 2, there exists one tFSTP (i.e., t3) at which the maximal
+
+Fig. 3 The possible region
+in the time–distance space
+
+dista nce
+
+D t
+o q, ( )
+
+d
+
+t
+o q, ( )
+
+tFSTP of d
+
+t
+o,q( )
+
+tFSTP of D t
+o,q( )
+
+d(om(t),qm(t))
+
+d(o M(t),q M(t))
+
+d(o M(t),q M(t))
+
+d(om(t),qm(t))
+
+d(o M(t),q M(t)q m(t)) d(om(t),q M(t)qm(t))
+
+ts
+
+t1
+
+t2
+
+t3
+
+t4
+
+t5
+
+te
+
+time
+
+Geoinformatica (2010) 14:163–200
+
+distance function Do,q(t) changes from d(om(t), qm(t)) to d(oM(t), qM(t)). Therefore,
+the maximal distance function Do,q(t) can be represented as follows.
+
+(cid:8)
+
+Do,q(t) =
+
+d(om(t), qm(t)) ∀t ∈ [ts, t3],
+d(oM(t), qM(t)) ∀t ∈ [t3, te].
+
+173
+
+(4)
+
+With the minimal distance function do,q(t) and the maximal distance function
+Do,q(t), the possible distance between objects o and q in the Euclidean space can
+be represented in the time–distance space as shown in Fig. 3. The region bounded
+by the distance functions Do,q(t) and do,q(t) (illustrated as the shaded region) gives
+the possible-region in which each point in this region is a possible distance between
+o and q.
+
+4 Pruning by the support of a data-partitioning index
+
+When a database is large, it is crucial to avoid reading the entire dataset in identifying
+the PWOs and PKNNs so as to upgrade the system performance. To reduce I/O
+and CPU costs, we develop an effective pruning strategy operated with a data-
+partitioning index to ﬁlter out those objects that are impossible to be the query result.
+We use an enhanced TPR-tree [21] as the underlying index structure. We call it the
+TPRe-tree, where e stands for an enhanced version.
+
+4.1 Pruning strategy
+
+The main idea of our pruning strategy is to ﬁnd a pruning distance, denoted as dpruning,
+to ensure that if an object o whose do,q(t) is greater than dpruning at any time instant t
+from the query time interval [ts, te], then o is impossible to be the PWO (or PKNN) of
+q and thus can be safely pruned. When a CR query is issued to ﬁnd the objects whose
+distances to q are within the distance dwithin, the pruning distance dpruning can be set
+within. This is because the value of an object o’s minimal distance function do,q(t)
+to d2
+at time t refers to the square of the minimal Euclidean distance between this object
+o and the query object q. As such, to determine whether o can be pruned by using its
+do,q(t), the pruning distance dpruning has to set to the square of dwithin. If there exists
+at least one time instant t ∈ [ts, te] at which do,q(t) is less than or equal to dpruning
+(i.e., d2
+within), o is a candidate of the CR query. Otherwise, o can never be within
+the query range between [ts, te] and is pruned. For processing a CKNN query, we
+determine the pruning distance dpruning based on the following requirement: at least
+K objects whose Do,q(t) are less than or equal to dpruning can be found. The objects
+whose do,q(t) are greater than dpruning cannot be the PKNNs because at least K objects
+are closer to q than these objects are.
+
+Two parameters are used in our pruning strategy. One is the global minimal
+distance between an object o and the query object q, denoted as dmino,q , within the
+query time interval [ts, te]. Another is the global maximal distance between o and
+q, denoted as dmaxo,q , within the query time interval [ts, te]. For the global minimal
+distance dmino,q , it can be estimated by utilizing the function-switching time points
+tFSTP of the minimal distance function do,q(t). Recall that the query time interval
+
+174
+
+Geoinformatica (2010) 14:163–200
+
+[ts, te] can be divided into n subintervals according to tFSTP of do,q(t). Hence, we have
+dmino,q
+
+}, where 1 ≤ i ≤ n and
+
+= min{dmi
+
+⎧
+⎨
+
+⎩
+
+=
+
+dmi
+
+ci − b2
+if ti < − bi
+i
+4ai
+2ai
+min{do,q(ti), do,q(ti+1)} otherwise,
+
+< ti+1,
+
+(5)
+
+where do,q(t) is represented in the form ai ×t2 + bi ×t + ci (referring to Eq. 1 in
+Section 3) within the subinterval [ti, ti+1], and t1 = ts and tn+1 = te.
+
+As for the second parameter dmaxo,q ,
+
+it can be estimated by utilizing the
+function-switching time points tFSTP of the maximal distance function Do,q(t). Simi-
+larly, the time interval [ts, te] can be divided into m subintervals according to
+tFSTP of Do,q(t). Then, we have dmaxo,q
+=
+max{Do,q(t j), Do,q(t j+1)}, and Do,q(t) is represented in the form aj × t2 + b j × t + cj
+within the subinterval [t j, t j+1], and t1 = ts and tm+1 = te.
+
+}, where 1 ≤ j ≤ m and dM j
+
+= max{dM j
+
+Our strategy for pruning those objects that are impossible to be the PWOs is to
+compare the pruning distance dpruning with the global minimal distance dmino,q of each
+object. If the global minimal distance dmino,q of object o is greater than dpruning, object
+o can be pruned. Otherwise, object o is a candidate for the CR query. To design
+the pruning strategy for the CKNN query, the pruning distance dpruning should be
+determined. The way of determining dpruning is to ﬁrst compute the global maximal
+distance dmaxo,q of each object o. Objects are then sorted in ascending order according
+to their dmaxo,q . Finally, the pruning distance dpruning is set to dmaxo,q of the Kth object,
+because there are K objects whose maximal distances are less than or equal to
+dpruning. After deriving the pruning distance dpruning, whether each object o can be
+pruned or not is determined by comparing its global minimal distance dmino,q and the
+pruning distance dpruning. If the global minimal distance dmino,q of object o is greater
+than dpruning, object o is pruned. Otherwise, object o is possible to be the PKNN.
+Notice that although the pruning strategy for the CR query or the CKNN query
+can be used to ﬁlter out those distant objects, it inevitably incurs signiﬁcant I/O cost
+because each object is loaded from disk to memory for computing its dmino,q and
+dmaxo,q . For saving CPU and I/O costs, the pruning strategy operates by the support
+of the TPRe-tree to avoid unnecessary reading of the distant datasets.
+
+4.2 The TPRe-tree structure
+
+The TPRe-tree is a height-balanced indexing structure, which is built to efﬁciently
+index moving objects with uncertain velocity. In a TPRe-tree, objects are recursively
+grouped in a bottom-up manner according to their locations (o.x0, o.y0), minimal
+velocities (o.vmx , o.vmy
+). For instance, Fig. 4a
+), and maximal velocities (o.vMx , o.vMy
+gives a two-dimensional example where eleven objects a to k move with uncertain
+velocity. At time 0, these objects are grouped according to their locations and velocity
+vectors into four leaf nodes E3 to E6. Then, nodes E3 to E6 are recursively grouped
+into nodes E1 and E2, that become the entries of the root. The corresponding
+TPRe-tree is shown in Fig. 4b.
+
+Each entry of a leaf node of a TPRe-tree has the structure (o.(cid:2)s, o.(cid:2)v, o. ptr),
+where o.(cid:2)s and o.(cid:2)v represent the start location and the velocity vector of object o,
+
+Geoinformatica (2010) 14:163–200
+
+175
+
+y
+
+2
+
+b
+
+a
+E3
+
+c
+
+E1
+
+d
+E4
+
+e
+
+f
+
+-2
+
+-2
+
+2
+
+q
+
+-2
+
+minimal distance
+
+minimal distance
+
+E1
+
+a
+
+b
+c
+
+E3
+
+q
+
+2
+
+i
+
+E6
+
+E 4
+
+e
+
+d
+
+f
+
+maximal distance
+
+maximal distance
+
+E5
+
+h
+
+E 2
+
+g
+E5
+
+h
+
+k
+
+E2
+
+At time 0
+
+At time 1
+
+y
+
+j
+
+x
+
+i
+
+E6
+
+j
+
+k
+
+x
+
+Entry in an internal node:
+
+MBRE
+
+E.v
+
+E.c E.ptr
+
+Entry in a leaf node:
+
+o.s
+
+o.v
+
+o.ptr
+
+R
+
+E1 E2
+
+g
+
+E1
+
+E3 E 4
+
+E 2
+
+E5 E 6
+
+Internal node
+
+E3
+
+E4
+
+E5
+
+E6
+
+Leaf node
+
+a
+
+b
+
+c
+
+d
+
+e
+
+f
+
+g
+
+h
+
+i
+
+j
+
+k
+
+(a) A set of objects with uncertain velocity
+
+(b) A TPR -tree
+
+e
+
+Fig. 4 a, b Representations of entries in the TPRe-tree
+
+respectively, and o. ptr is a pointer to the actual object tuple in the database. The
+velocity vector o.(cid:2)v of object o is associated with a minimal velocity (o.vmx, o.vmy) and
+a maximal velocity (o.vMx, o.vMy). Each entry of an internal node has the structure
+(MBRE, E.(cid:2)v, E.c, E. ptr), where MBRE is the minimum bounding rectangle (MBR)
+that encloses all the objects in the child node E of this internal node, E.(cid:2)v represents
+the velocity vector of MBRE, E.c refers to the number of objects enclosed by MBRE
+(i.e., the cardinality of node E), and E. ptr is a pointer to node E. Let the velocity
+vector E.(cid:2)v be decomposed to four components (E.v(cid:6), E.v(cid:7), E.v⊥, E.v(cid:9)), which
+represent the velocities of the left edge, the right edge, the lower edge, and the upper
+edge of MBRE, respectively. Then E.(cid:2)v is determined as follows: (i) E.v(cid:6) (E.v(cid:7)) is
+the minimum (maximum) among all velocities of the objects enclosed by MBRE on
+x dimension; (ii) E.v⊥ (E.v(cid:9)) is the minimum (maximum) among all velocities of the
+objects enclosed by MBRE on y dimension. For the example in Fig. 4, the velocity
+of each object is assumed to be within the range [1, 2], and the arrow associated
+with each object indicates the moving direction of that object. As MBRE3 encloses
+three objects a, b, and c (i.e., E3.c = 3), its velocity vector E3.(cid:2)v is determined by
+the velocities of the three objects and represented as (−2, 2, 0, 2). The ﬁrst two
+numbers correspond to the minimum and the maximum among the objects’ velocities
+on x dimension, respectively, and the last two correspond to that on y dimension.
+Note that in this representation the velocity towards the negative direction of the
+coordinate axis is negative. Similarly, the velocity vectors of the other MBRs can be
+derived according to the velocities of the objects enclosed by those MBRs. With the
+velocity vector, the extent of each MBR at time t, deﬁned as MBR(t), need not be
+stored explicitly. Instead, MBR(t) can be obtained from MBR(0) (which represents
+its extent at time when the index is built) and the velocity vector. For instance, the
+(0) and the velocity
+(t) at time 1 can be obtained from MBRE3
+extent of MBRE3
+vector (−2, 2, 0, 2), and is depicted as the dashed rectangle. From this example, we
+also see that the possible locations (which constitute a line segment) of objects a, b,
+(t). Therefore, we know that if a moving
+and c are still inside the obtained MBRE3
+object o with an uncertain velocity is grouped into a node E, then all the possible
+locations of o will still be inside MBRE(t) at any time t. Note that as the TPRe-tree is
+basically an enhanced version of the TPR-tree, the index maintenance mechanisms
+(i.e., when and how to update the index tree) of the TPR-tree can be directly applied
+to the TPRe-tree.
+
+176
+
+Geoinformatica (2010) 14:163–200
+
+4.3 Pruning objects using the TPRe-tree
+
+Let segments oM(t)om(t) and qM(t)qm(t) be the possible locations of the object o
+and the query object q at time t, respectively, and segment oM(t)om(t) is enclosed
+by MBRE(t). Then, at time t, (i) the minimal distance do,q(t) between o and q is
+greater than or equal to the minimal distance dE,q(t) between MBRE(t) and q,
+i.e., do,q(t) ≥ dE,q(t), and (ii) the maximal distance Do,q(t) between o and q is
+less than or equal to the maximal distance DE,q(t) between MBRE(t) and q, i.e.,
+Do,q(t) ≤ DE,q(t). If the minimal distance dE,q(t) of MBRE(t) at any time t ∈ [ts, te]
+is greater than the pruning distance dpruning, then the objects enclosed by MBRE(t)
+can never be the result of CR query (or CKNN query) because their distances to
+q within [ts, te] are all greater than dpruning. These objects (enclosed by MBRE(t))
+should not be loaded from disk to memory so as to save CPU and I/O costs.
+
+Two parameters are utilized to determine whether the objects enclosed by
+MBRE(t) can be pruned or not. The ﬁrst one is the global minimal distance between
+MBRE(t) and the query object q, denoted as dminE,q , within the time interval [ts, te].
+The second one is the global maximal distance between MBRE(t) and the query
+object q, denoted as dmaxE,q , within the query time interval [ts, te]. The following
+property that relates MBRE(t) to segment qM(t)qm(t) is exploited to obtain the global
+minimal distance dminE,q .
+
+Proposition 4.1 At time t, the minimal distance dE,q(t) between MBRE(t) and the
+query object q can be equal to (1) 0, (2) the minimal distance from one endpoint
+of segment qM(t)qm(t) to MBRE(t), or (3) the minimal distance from one corner of
+MBRE(t) to segment qM(t)qm(t).
+
+As shown in Fig. 4a, the minimal distance dE1,q(t) at time 0 is equal to the perpen-
+(t) and the minimal distance
+dicular distance from q to the right edge of MBRE1
+dE2,q(t) is equal to the distance between q and the upper-left corner of MBRE2
+(t),
+which correspond to case (2) in Property 4.1. At time 1, dE1,q(t) is equal to 0 because
+(t) (corresponding to case (1)), and dE2,q(t) is equal to
+qM(t)qm(t) intersects MBRE1
+(t) to qM(t)qm(t)
+the perpendicular distance from the upper-left corner of MBRE2
+(corresponding to case (3)).
+
+Based on Property 4.1, the global minimal distance dminE,q is equal to 0 if MBRE(t)
+
+intersects or encloses segment qM(t)qm(t) at time t ∈ [ts, te]. Otherwise,
+
+dminE,q
+
+= min
+
+dminE,qM
+
+, dminE,qm
+
+, dminEul
+
+,q
+
+, dminEur ,q
+
+, dminEdl
+
+,q
+
+, dminEdr
+
+,q
+
+(6)
+
+(cid:10)
+
+.
+
+(cid:9)
+
+and dminE,qm are the global minimal distances
+In this equation, parameters dminE,qM
+from two endpoints of qM(t)qm(t) to MBRE(t) within [ts, te], respectively. Efﬁcient
+methods for the computation of the minimal distance between a moving point and
+a moving rectangle have been discussed in previous work [1], which can be used to
+derive the global minimal distances dminE,qM
+and dminE,qm . The other four parameters
+represent the global minimal distances between the four corners of MBRE(t) and
+segment qM(t)qm(t), respectively. The derivation of the minimal distance between
+a moving point and a moving line segment has already been discussed in Section 3.
+Hence, these four parameters can also be obtained.
+
+Geoinformatica (2010) 14:163–200
+
+177
+
+To illustrate how to obtain the global maximal distance dmaxE,q , let us consider
+again the example in Fig. 4. We observe that at any time t the maximal distance
+DE,q(t) between MBRE(t) and the query object q is equal to the maximum of
+the distances between two endpoints of segment qM(t)qm(t) and four corners of
+MBRE(t). As such, the global maximal distance dmaxE,q can be represented as
+max{d pi, pj
+(t) refers to the distance
+between two points pi and pj at time t, and Pi is the set of two endpoints of qM(t)qm(t)
+and Pj is the set of four corners of MBRE(t). Note that d pi, pj
+(t) is a quadratic
+equation (i.e., represented as a parabola in the Euclidean space) so that its global
+maximum within [ts, te] must be at either ts or te. For ease of reference, Table 1
+summarizes the parameters that have been introduced.
+
+(t)|∀ pi ∈ Pi ∧ ∀ pj ∈ Pj ∧ ∀t ∈ {ts, te}}, where d pi, pj
+
+In the following, we ﬁrst introduce some pruning criteria used in processing a
+CR query and then employ a branch-and-bound traversal on TPRe-tree to prune
+the search space with these criteria. Similarly, in Section 4.3.2 we present how the
+pruning technique is operated with the TPRe-tree for processing the CKNN query.
+
+4.3.1 Pruning technique for CR query
+
+Recall that when object o is enclosed by MBRE(t) at any time t, the inequalities
+do,q(t) ≥ dE,q(t) and Do,q(t) ≤ DE,q(t) always hold. It is clear that for each object o
+enclosed by MBRE(t), its global minimal distance dmino,q is greater than or equal to
+≤ dmaxE,q .
+dminE,q of MBRE(t) (i.e., dmino,q
+Hence, we have the following criteria for pruning objects.
+1. Pruning MBRs. If dminE,q of MBRE(t) is greater than the pruning distance
+dpruning, then the objects enclosed by MBRE(t) are pruned because their dis-
+tances to q are always greater than dwithin within [ts, te].
+
+≥ dminE,q ). Similarly, we know that dmaxo,q
+
+2. Pruning objects. If dmino,q of an object o is greater than dpruning, then object o can
+
+be pruned because o can never be inside the query range within [ts, te].
+The pruning procedure begins with the TPRe-tree root node and proceeds down
+the tree. During the traversal of the TPRe-tree, an unsorted list L is utilized to keep
+the information about the entries of the nodes visited so far. When an internal node
+
+Table 1 Summary of
+parameters
+
+Meaning
+
+Parameter
+do,q(t)
+Do,q(t)
+dE,q(t)
+
+The minimal distance between objects o and q at t
+The maximal distance between objects o and q at t
+The minimal distance between MBRE(t)
+
+and object q at t
+
+DE,q(t)
+
+The maximal distance between MBRE(t)
+
+dpruning
+dmino,q
+
+dmaxo,q
+
+dminE,q
+
+dmaxE,q
+
+and object q at t
+The pruning distance
+The global minimal distance between objects o
+
+The global maximal distance between objects o
+
+and q within [ts, te]
+
+and q within [ts, te]
+
+The global minimal distance between MBRE(t)
+
+and object q within [ts, te]
+
+The global maximal distance between MBRE(t)
+
+and object q within [ts, te]
+
+178
+
+Geoinformatica (2010) 14:163–200
+
+of the TPRe-tree is visited, the global minimal distance dminE,q of each entry E of
+this internal node is computed. Then, the pruning criterion 1 is utilized to determine
+which entries can be pruned (Lines 6 to 8 in Algorithm 1). If the global minimal
+distance dminE,q of entry E is less than or equal to dpruning, then E is inserted into L.
+Otherwise, E can be pruned. When a leaf node is checked, the pruning criterion 2 is
+imposed on the entries (i.e., objects) of this leaf node (Lines 9 to 11 in Algorithm 1).
+Only the objects whose dmino,q are less than or equal to dpruning are the candidates for
+CR query (i.e., those objects whose dmino,q are greater than dpruning are pruned). The
+pruning procedure proceeds in this manner until L is empty.
+
+We use the example in Fig. 5, which shows a set of 16 objects in a two-dimensional
+space and the corresponding TPRe-tree (where each entry label is followed by its
+dminE,q (or dmino,q ) enclosed in parentheses), to illustrate how to employ a branch-
+and-bound traversal of the TPRe-tree to prune the objects that are impossible to
+2 (i.e., the CR query is to retrieve
+be the PWOs. In this example, dwithin is set to
+√
+2). and the query range is illustrated
+the objects whose distances to q are within
+as the shaded region. When the root node R of the TPRe-tree is visited, the global
+minimal distances dminE1
+,q , dminE2
+,q are computed, and only E1 is inserted
+into L because dminE1
+≤ 2 (i.e., dpruning). Notice that dmino,q of these objects d to r
+need not be computed so as to save the CPU and I/O costs. Next, the entries of E5
+> 2. Finally, two objects a and b
+(i.e., objects f and g) can be pruned because dminE5
+are the candidates and will be further veriﬁed (whether they are the PWOs or not).
+
+,q , and dminE3
+
+√
+
+,q
+
+,q
+
+4.3.2 Pruning technique for CKNN query
+
+As mentioned in Section 4.1, the idea of our pruning strategy is to ﬁnd the pruning
+distance dpruning. If the distance between an object o and the query object q is greater
+than dpruning at any time instant t ∈ [ts, te], then o can be pruned. Determining the
+pruning distance dpruning for a CKNN query is more complex than that for a CR query
+because the distances between all objects and the query object should be considered
+(however, for a CR query, dpruning can simply be d2
+within). To avoid computing the
+distances of all objects to the query object so as to reduce CPU and I/O costs, we
+adopt an incremental approach operated with the TPRe-tree to derive the pruning
+
+Geoinformatica (2010) 14:163–200
+
+179
+
+y
+
+r
+E10
+p
+
+E3
+
+n
+
+j
+
+E9
+m
+l
+E8
+
+k
+
+y
+
+x
+
+E7
+
+h
+E2
+
+q
+
+e
+
+E6
+d
+dwithin
+
+dminE ,q7
+
+i
+
+a
+E4
+
+b
+
+c
+
+dmin E ,q5
+
+E1
+
+f
+
+E5
+
+g
+
+At time ts
+
+R
+E1 (1) E 2(3) E 3(12)
+
+r
+E10
+
+p
+
+E3
+
+n
+E9
+
+E8
+j
+
+m
+
+l
+
+k
+
+dmax E ,q1
+
+dmaxa,q
+
+dminE ,q3
+
+i
+
+E 7
+
+h
+
+E 2
+
+q
+
+E1
+
+a
+
+E4
+
+b
+
+c
+
+g
+
+f
+
+E 5
+
+At time te
+
+E1
+
+E2
+
+E4(1)
+
+E5 (7)
+
+E6 E7
+
+E8 E9 E10
+
+E 6
+
+E7
+
+E8
+
+E9
+
+E 10
+
+d
+
+e
+
+h
+
+i
+
+m
+
+n
+
+p
+
+r
+
+E3
+
+j
+
+k
+
+l
+
+E 6
+d
+
+e
+
+E4
+
+E 5
+
+f
+g
+
+a (1)
+
+b (2)
+
+c (5)
+
+dmine,q
+
+Visit R
+
+Visit E1
+
+= E{
+
+}1
+
+prune
+
+,E E2
+
+3
+
+  = E{
+
+}4
+
+prune E 5
+
+Visit E4 O
+
+= a b
+candidate { , }
+
+prune c
+
+x
+
+Fig. 5 Pruning objects in processing CR query
+
+distance dpruning. During the course of determining dpruning, the following criteria are
+utilized to prune objects that are impossible to be the PKNNs.
+• Pruning by MBRs. If there exist n MBRs whose dmaxE,q are less than dminEi
+(t) and the total number of objects enclosed by these n MBRs
+of MBREi
+(t)
+(i.e., the sum of their cardinalities) is greater than or equal to K, then MBREi
+is pruned. This is because at least K objects whose dmaxo,q are less than dminEi
+,q of
+(t) must not be the
+MBREi
+result. Similarly, if dmino,q of an object o is greater than dmaxE,q of these n MBRs,
+then o can be safely pruned.
+
+(t) can be found so that objects enclosed by MBREi
+
+• Pruning by objects. If at least K objects whose dmaxo,q are less than dminE,q of
+MBRE(t) are found, then MBRE(t) is pruned. The reason is that at least K
+objects are closer to q than those objects enclosed by MBRE(t) are. Similarly,
+if dmino,q of an object o is greater than dmaxo,q of the other K objects, then o
+is pruned.
+
+,q
+
+, dmine,q
+
+Similar to the pruning procedure of CR query, a linked list L is used to keep the
+information about the entries of the nodes visited so far. Each element e of L
+stores the information of either an index node or an object and has the structure
+(e.c, dmaxe,q
+). If e stores the information of an index node E, then e.c cor-
+responds to the number of objects enclosed by MBRE(t) (i.e., the cardinality of
+node E), and dmaxe,q and dmine,q refer to the global maximal distance dmaxE,q and
+the global minimal distance dminE,q , respectively. Otherwise, e stores the information
+of an object o. As such, e.c is equal to 1, and dmaxe,q (dmine,q ) refers to the global
+maximal (minimal) distance dmaxo,q (dmino,q ). Note that the elements of L are sorted
+in ascending order according to their dmaxe,q , and initially L only contains root node
+information of the TPRe-tree.
+
+Algorithm 2 gives the details for pruning objects using the TPRe-tree. In each
+iteration, the ﬁrst element eindex of L which stores the information of an index
+node (i.e., the element whose dmaxe,q is the smallest among the elements storing the
+information of index nodes) will be retrieved and the corresponding index node E
+is visited (Line 4). During visiting E, the information e.c, dmaxe,q , and dmine,q of each
+entry of E is inserted into L, and then the element eindex is deleted from L (Lines 5
+to 12). Next, the pruning criteria described above are imposed on the elements of L
+(Lines 13 to 21). Here we divide the procedure of pruning elements into two cases
+according to whether all of the ﬁrst K elements of L store the information of objects
+
+180
+
+Geoinformatica (2010) 14:163–200
+
+or not. In case each of the ﬁrst K elements stores the information of an object, the
+pruning distance dpruning is set to dmaxe,q of the K-th element (Line 19). It means that
+there exist K objects whose global maximal distances to the query object q are less
+than or equal to dpruning. Based on the pruning criterion 2, the elements (which may
+store the information of an index node or of an object) whose dmine,q are greater than
+dpruning can be safely deleted from L (Lines 20 to 21). In another case where one of the
+ﬁrst K elements stores the information of an index node, the pruning distance dpruning
+j=1 ej.c
+is equal to dmaxe,q of the i-th element ei, which results in
+(that is, ei is the leftmost element where the sum of e1.c to ei.c is greater than or
+equal to K) (Lines 14 to 15). Based on the pruning criterion 1, the elements whose
+dmine,q are greater than dpruning can be deleted (Lines 16 to 17). The above process
+proceeds until there is not any element storing the information of an index node (i.e.,
+each element stores the information of an object). At the end of the process, only the
+objects kept in L can be the candidates for CKNN query because their dmine,q are less
+than or equal to dpruning (Lines 22 to 23).
+
+i−1
+j=1 ej.c < K ≤
+
+(cid:11)
+i
+
+(cid:11)
+
+Consider again the example in Fig. 5, where a set of 16 objects move in a two-
+dimensional space. The corresponding TPRe-tree is illustrated in Fig. 6, and each
+entry label is followed by its e.c, dmaxe,q , and dmine,q enclosed in parentheses. Assume
+that two NNs are to be found during [ts, te] (i.e., K = 2). Initially, e.c, dmaxe,q , and
+dmine,q information of the entries E1, E2, and E3 of the root node R are inserted
+into L and sorted in ascending order of their dmaxe,q . Because the number of objects
+enclosed by E1 is greater than K (i.e., E1.c > K), the pruning distance dpruning is equal
+,q . Based on the pruning criterion 1, the objects enclosed by E3 (i.e., objects
+to dmaxE1
+
+Geoinformatica (2010) 14:163–200
+
+181
+
+R
+
+E2
+
+E6
+
+E1
+
+E4
+
+E5
+
+f
+
+g
+
+a (1,5,1)
+
+b (1,4,2)
+
+c (1,6,5)
+
+E1 (5,10,1) E2 (4,11,3) E3 (7,16,12)
+
+E4(3,7,1)
+
+E5 (2,10,7)
+
+E6 (2,7,4)
+
+E7 (2,9,7)
+
+E8
+
+E9
+
+E10
+
+Visit E1
+
+  = E E E
+
+{
+
+,
+
+,
+
+}
+
+2
+
+dpruning = 7
+
+Visit R
+
+  = E E E
+
+{
+
+,
+
+,
+
+}
+
+3
+
+d pruning = 10
+
+prune E3
+
+1
+
+4
+
+2
+
+5
+
+d (1,5,4)
+
+e (1,7,6)
+
+E7
+
+h
+
+i
+
+E8
+
+E9
+
+E10
+
+m
+
+n
+
+p
+
+r
+
+Visit E4
+
+= b a c E E
+,
+
+{ ,
+
+,
+
+,
+
+}
+
+2
+
+dpruning = 5
+
+prune E5
+
+Visit E2
+
+= b a c E E
+,
+
+{ ,
+
+,
+
+,
+
+}
+
+7
+
+dpruning = 5
+
+prune E7
+
+ 
+
+5
+
+6
+
+Visit E6
+
+= b a d c e
+,
+
+{ ,
+
+, }
+
+,
+
+d pruning = 5
+
+prune e
+
+E3
+
+j
+
+k
+
+l
+
+Fig. 6 Pruning objects in processing CKNN query
+
+,q
+
+> dmaxE1
+j to r) can be pruned because dminE3
+,q . Next, the ﬁrst element which stores
+the information of the index node E1 is retrieved from L, and then the entries E4 and
+E5 of the index node E1 are inserted into L. After visiting the index node E4, objects
+a, b, and c are inserted and the pruning distance dpruning is set to dmaxa,q because object
+a corresponds to the K-th element. By comparing dminE5
+,q and dmaxa,q , objects f and
+g enclosed by E5 are pruned without computing their dmaxe,q and dmine,q according to
+the pruning criterion 2. Similarly, objects h and i enclosed by E7 can also be pruned.
+Finally, four objects a to d remain in L and will be further veriﬁed.
+
+5 P2WO searching algorithm
+
+The goal of the Possibility-based PWO (P2WO) searching algorithm is to ﬁnd the
+PWOs at every time instant within the given time interval [ts, te]. Each of the PWOs
+is associated with a conﬁdence value, which refers to the possibility that the distance
+between a PWO and the query object is within dwithin. Figure 7a gives a ﬂowchart of
+the P2WO searching algorithm. The pruning technique mentioned in Section 4.3.1
+is ﬁrst used to ﬁlter the non-qualifying objects and then the CR query result can
+be determined by executing the following two phases: (1) a PWO-distilling phase:
+determines the subintervals where the query object has the same PWOs within each
+of these subintervals, and ﬁnds their corresponding PWOs, and (2) a PWO-ranking
+phase: calculates a conﬁdence value for each PWO. In the following, we present the
+two phases of the algorithm in detail.
+
+Fig. 7 a, b Overview of
+the CR approach and the
+CKNN approach
+
+A set of objects
+
+A set of objects
+
+Pruning objects by
+
+traversing TPR -tree
+
+e
+
+Pruning objects by
+
+traversing TPR -tree
+
+e
+
+A set of candidates
+
+A set of candidates
+
+PWO-distilling phase
+
+PKNN-distilling phase
+
+A set of PWOs
+
+A set of PKNNs
+
+PWO-ranking phase
+
+PKNN-ranking phase
+
+CR query result
+
+CKNN query result
+
+2
+
+(a) P WO searching algorithm
+
+(b) P NN searching algorithm
+
+2K
+
+182
+
+Geoinformatica (2010) 14:163–200
+
+5.1 PWO-distilling phase
+
+within. Hence, those objects whose do,q(t) are less than or equal to d2
+
+At time instant t, an object o could be within the query range (i.e., a circle centered
+at the query object q with radius dwithin) if its minimal distance do,q(t) is less than or
+equal to d2
+within
+are the PWOs of q and need to be retrieved. However, repeatedly processing the
+snapshot range query to determine the PWOs at each time instant of the time interval
+[ts, te] would inevitably result in high computation cost, especially for a large query
+time interval. To overcome this problem, the PWO-distilling phase is designed to
+avoid this repetitive processing of snapshot queries at each time instant.
+
+The idea of the PWO-distilling phase can be illustrated by using the example
+shown in Fig. 8a, which shows the maximal distance functions (depicted as solid
+curves) and the minimal distance functions (depicted as dotted curves) of two objects
+a and b in the time–distance space. In addition, the distances d2
+within at all time instants
+within [ts, te] form an answer-curve (depicted as a bold line) in the time–distance
+space. Before time t1, the minimal distance function db ,q(t) of object b is below the
+answer-curve. It means that the minimal distance of b to q is less than dwithin so that
+b is a PWO of q. However, after time t1 object b is no longer part of the query
+result because its minimal distance function db ,q(t) is above the answer-curve (i.e., the
+query result changes at t1). Here, we see that the query result would change at certain
+time points (illustrated as the white points in the ﬁgure) at which the minimal distance
+function of an object intersects the answer-curve. We refer to the time points at which
+the query result changes as the result-changing time points (tRCT P). An important
+characteristic of the result-changing time points is that the PWOs in between two
+consecutive result-changing time points remain the same. Based on this characteristic,
+the problem of repetitively processing snapshot range queries can be greatly reduced
+to ﬁnding all result-changing time points and their corresponding PWOs.
+
+The result-changing time points between [ts, te] can be derived based on the
+relationship between the minimal distance function of each object and the answer-
+curve (Lines 1 to 5 in Algorithm 3). This relationship can be classiﬁed into two cases.
+The ﬁrst one is that the minimal distance function do,q(t) of object o is completely
+
+answer-curve
+
+t
+
+RCTP
+
+distance
+
+Db,q(t)
+Da,q(t)
+dwithin
+db,q(t)
+
+2
+
+da,q(t)
+
+possible-region
+
+Db,q(t)
+Da,q(t)
+dwithin
+db,q(t)
+
+2
+
+da,q(t)
+
+time
+
+Db,q(t)
+Da,q(t)
+dwithin
+db,q(t)
+
+2
+
+da,q(t)
+
+Pa([ts, t1]) =
+
+ts
+
+t1
+
+t2
+
+te
+
+ts
+
+t1
+
+ts
+
+t1
+
+(a)  PWO-distilling phase
+
+(b)  PWO-ranking phase
+
+Fig. 8 a, b An illustration of CR query processing
+
+Geoinformatica (2010) 14:163–200
+
+183
+
+below the answer-curve for the entire [ts, te]. That is, the inequality do,q(t) ≤ d2
+within
+holds for any time t ∈ [ts, te]. This means that object o can be one of the PWOs
+for the entire [ts, te]. In this case, object o does not cause any result-changing time
+point within [ts, te]. The second one is that object o’s minimal distance function do,q(t)
+intersects the answer-curve at somewhere in [ts, te]. At the time point that do,q(t) and
+the answer-curve intersect, object o is added to or removed from the set of PWOs
+(Lines 8 to 16 in Algorithm 3). In this case, the query result changes at this time
+point, i.e., a result-changing time point. This result-changing time point is obtained
+by solving the equation do,q(t) = d2
+within. Consider again the example in Fig. 8a, the
+minimal distance functions of objects b and a are above the answer-curve after the
+result-changing time points t1 and t2, respectively. Hence, we know that between
+[ts, t1] both objects a and b are the PWOs but only a is the PWO between [t1, t2]
+because db ,q(t) is above the answer-curve after t1.
+
+5.2 PWO-ranking phase
+
+After the PWO-distilling phase, a set of tuples in the form of < [ti, t j], OPW Os > is
+derived, where OPW Os is the set of objects that are possible to be inside the query
+range (i.e., the PWOs) between the sub-interval [ti, t j]. In order to provide more
+useful information to the user, the PWO-ranking phase is designed to reasonably
+give each PWO a possibility of being inside the query range. For each sub-interval
+[ti, t j], the possibility of a PWO o being inside the query range, denoted as Po([ti, t j]),
+is calculated based on the proportion of the area bounded by do,q(t) and the answer-
+curve to the area of the possible-region of o (i.e., the area bounded by do,q(t) and
+Do,q(t)). The greater the proportion, the higher the possibility that the exact distance
+
+184
+
+Geoinformatica (2010) 14:163–200
+
+between o and q is less than or equal to dwithin, which implies that o has a higher
+chance to be within the query range. Formally, Po([ti, t j]) is represented as
+
+Po([ti, t j]) =
+
+⎧
+⎪⎨
+
+⎪⎩
+
+(cid:12)
+
+t j
+ti
+t j
+ti
+
+(cid:12)
+
+1
+
+− do,q(t)dt
+d2
+within
+Do,q(t) − do,q(t)dt
+
+if Do,q(t) > d2
+
+within
+
+, ∀t ∈ [ti, t j],
+
+(7)
+
+otherwise.
+
+For instance, in Fig. 8b both objects a and b are the PWOs between the sub-
+interval [ts, t1]. The possibility of object a being inside the query range (i.e.,
+Pa([ts, t1])) is obtained by the area bounded by da,q(t) and the answer-curve (depicted
+as a light grey region) divided by the area of the possible-region of object a (depicted
+as a dark grey region). Similarly, Pb ([ts, t1]) can be calculated according to the
+possible-region of b and the area bounded by db ,q(t) and the answer-curve.
+
+6 P2KNN searching algorithm
+
+Figure 7b gives a ﬂowchart of the P2KNN searching algorithm. Similar to the P2WO
+searching algorithm, the pruning technique discussed in Section 4.3.2 is utilized to
+prune the objects that are impossible to be the KNNs so as to reduce the unnecessary
+access of distant objects. After executing the pruning procedure, a set of candidates
+are chosen for further veriﬁcation. Then, our previous method in [22], which consists
+of the PKNN-distilling phase and the PKNN-ranking phase, can be used to ﬁnd the
+most appropriate KNNs (based on the possibility) among the candidates at each time
+instant within the time interval [ts, te]. As these two phases have been discussed in
+[22], we omit the details in this paper.
+
+Note that if the previous method is solely used to answer a CKNN query (i.e.,
+without the support of the TPRe-tree), the minimal distance function do,q(t) and the
+maximal distance function Do,q(t) of each object must be evaluated. This would incur
+a tremendous CPU and I/O overhead, especially for large datasets. By taking advan-
+tage of the pruning technique in Section 4.3.2, the majority of moving objects that
+are distant from the query object would be pruned. These pruned objects’ minimal
+and maximal distance functions need not be evaluated so that the main disadvantage
+of the previous method (i.e., the high CPU and I/O cost for large datasets) can
+be avoided. In the following section, our experimental results demonstrate that in
+general the P2KNN searching algorithm (with index support) improves the CPU and
+I/O cost by a factor of 5 to 20 compared to the previous method.
+
+7 Performance evaluation
+
+We conduct two sets of experiments for the P2WO searching algorithm and the
+P2KNN searching algorithm in this section. In the ﬁrst one, we compare the P2WO
+searching algorithm with another approach that utilizes the TPR-tree as the underly-
+ing index to enhance the performance of processing CR query. Also, we investigate
+the accuracy of the P2WO searching algorithm by evaluating the percentage of
+objects that are actually inside the query range and are retrieved through executing
+the PWO-ranking phase. In the second set of experiments, we demonstrate the
+
+Geoinformatica (2010) 14:163–200
+
+185
+
+efﬁciency of the P2KNN searching algorithm based on the comparison with another
+CKNN approach. Also, the accuracy of the P2KNN searching algorithm is evaluated.
+
+7.1 Experimental settings
+
+All experiments are performed on a PC with Intel Pentium IV 3.2GHz CPU and
+512MB RAM. The algorithms are implemented in JAVA 2 (j2sdk-1.4.0.01). One
+synthetic dataset and one real dataset are used in our simulation. The synthetic
+dataset consists of 100K moving objects whose start locations are uniformly spread
+over a region of 100,000 × 100,000 m. As for the real dataset, we use a geographi-
+cal 2D dataset, the CA ﬁle, from the Sequoia 2000 benchmark (http://s2k-ftp.cs.
+berkeley.edu:8000/sequoia/benchmark/) which is motivated by Earth Sciences and
+focuses on evaluating performance over large datasets of complex spatial objects.
+The CA ﬁle contains 62,556 objects which are on the road map of California.
+
+The minimal velocity of a moving object is randomly generated in between 0 and
+3 m per time unit. The maximal velocity is a multiple of the minimal velocity, where
+the multiple is randomly chosen from 1 to 10. The initial velocity of an object is
+randomly assigned to a value bounded by these two velocities. Each object changes
+its velocity in every 5 time units, and the assignment of the new velocity is the same as
+that of the initial velocity (i.e., a random value between the minimal and the maximal
+velocities). Note that the moving direction of an object is represented as a polar angle
+ranging in between [0, 2π ] and this angle remains unchanged for the whole query
+time interval. In this setting, the location of each object o at any time instant t will be
+on its corresponding line segment oM(t)om(t) (referring to Section 3) so that object
+o need not update its location and velocity to the server (that is, the query result
+remains valid). However, if the methods developed for moving objects with ﬁxed
+velocity are adopted, the query has to be re-evaluated because the change of velocity
+may affect the result. Based on the start locations, the minimal velocities, and the
+maximal velocities of moving objects, we build a TPRe-tree to index these objects.
+The disk page is set to 4K bytes, which results in about 200 entries per leaf node.
+
+In the experimental space, we generate 200 query objects whose minimal and
+maximal velocities are in the same ranges as those of the moving objects mentioned
+above. Each of these query objects issues a CR query and a CKNN query to the
+server, and the default length of a query time interval is 100 time units. In addition,
+the default distance dwithin for each CR query is set to 2% of the entire space, and the
+K nearest neighbors requested by each query object has a default value of 10 (i.e.,
+K = 10).
+
+The performance is measured by the average CPU time and the average number
+of node accesses in performing workloads of the 200 queries. We compare the
+P2WO searching algorithm with the TP algorithm proposed by Tao et al. [7] to
+investigate the performance of processing a CR query. As for a CKNN query, we
+compare the performance of the P2KNN searching algorithm against our previous
+method [22] and the NNS-CON algorithm proposed by Raptopoulou et al. [6]. As
+both the TP algorithm and the NNS-CON algorithm are developed for processing
+spatio-temporal queries over moving objects with ﬁxed velocity, the query has to be
+re-evaluated using these algorithms at time instants at which objects change their
+velocities (i.e., every 5 time units). This is because the change of velocity may affect
+the query result. Both of the two competitors are performed with a TPR-tree to
+
+186
+
+Table 2 Summary of
+algorithms
+
+Geoinformatica (2010) 14:163–200
+
+Algorithm
+P2WO
+P2KNN-
+
+w/-index
+
+P2KNN-
+
+w/o-index
+
+Query processing
+
+Used index
+TPRe-tree
+Executing CR query only once
+Executing CKNN query only once TPRe-tree
+
+Executing CKNN query only once without index
+
+TP
+
+Executing CR query whenever
+
+TPR-tree
+
+NNS-CON Executing CKNN query whenever TPR-tree
+
+object changes velocity
+
+object changes velocity
+
+speed up the query processing, and the implementation of the TPR-tree is based
+on [21]. We summarize the difference between the proposed algorithms and their
+competitors in the following table (Table 2).
+
+7.2 Efﬁciency of P2WO searching algorithm
+
+We ﬁrst compare the P2WO searching algorithm with the TP algorithm using the
+synthetic dataset and the CA dataset. Three experiments are conducted to inves-
+tigate the effects of three important factors on the performance of processing CR
+query. These important factors are the length of query time interval, the size of query
+range, and the uncertain velocity range of each moving object.
+
+Figure 9 evaluates the CPU cost and the number of node accesses (abbreviated as
+NA) for the P2WO searching algorithm and the TP algorithm under various query
+interval lengths. Note that Fig. 9b, d use a logarithmic scale for the y-axis. As we
+can see, the difference between the P2WO searching algorithm and the TP algorithm
+is large, no matter in the CPU cost or the NA comparison. This is mainly because
+in the TP method repetitive executions of the algorithm are required as the query
+length increases, whereas the P2WO searching algorithm is executed only once in
+spite of the increase of the query length. The experimental results also reveal that
+the performance (both CPU cost and NA) of the P2WO searching algorithm slightly
+degrades with the increasing query length. The reason is that a greater query length
+would result in more remaining objects after the pruning procedure (i.e., larger
+number of node accesses) and more time spent on identifying the query result from
+these objects (i.e., higher CPU cost). Taking advantage of this one-time processing
+of the P2WO searching algorithm, our method is much less sensitive to the query
+interval length compared to the TP method.
+
+Figure 10 studies the impact of the query range (i.e., the value of dwithin) on the
+performance of executing a CR query. In the experiments, we vary the value of dwithin
+from 1% to 5% of the experimental space and measure the CPU cost and the NA
+for the P2WO searching algorithm and the TP algorithm. Figure 10a, c show that for
+both algorithms, the CPU cost increases with the increase of dwithin. This is because
+a greater dwithin (i.e., a wider query range) would inevitably allow more objects to be
+inside the query range so that the time spent on identifying the query result increases.
+In both sets of experimental data, the P2WO searching algorithm outperforms the
+TP algorithm throughout the entire range of dwithin. In terms of the number of node
+accesses, Fig. 10b, d illustrate that the P2WO searching algorithm is almost one order
+of magnitude better than the TP algorithm. The experiments conﬁrm again that using
+
+Geoinformatica (2010) 14:163–200
+
+187
+
+70
+
+30
+
+50
+
+10
+120
+Query interval length (time units)
+(a) CPU cost (synthetic dataset)
+
+100
+
+10
+
+50
+
+70
+
+30
+
+120
+Query interval length (time units)
+(b) NA (synthetic dataset)
+
+100
+
+P2WO
+TP
+
+P2WO
+TP
+
+ 2.5
+
+)
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+ 
+
+U
+P
+C
+
+ 2
+
+ 1.5
+
+ 1
+
+ 0.5
+
+ 0
+
+)
+c
+e
+s
+(
+ 
+
+e
+m
+
+i
+t
+ 
+
+U
+P
+C
+
+ 1.2
+
+ 1
+
+ 0.8
+
+ 0.6
+
+ 0.4
+
+ 0.2
+
+ 0
+
+ 1000
+
+P2WO
+TP
+
+)
+g
+o
+l
+(
+ 
+s
+e
+s
+s
+e
+c
+c
+a
+ 
+e
+d
+o
+N
+
+)
+g
+o
+l
+(
+ 
+s
+e
+s
+s
+e
+c
+c
+a
+e
+d
+o
+N
+
+ 
+
+ 100
+
+ 10
+
+ 100
+
+ 10
+
+ 1000
+
+P2WO
+TP
+
+30
+
+10
+120
+Query interval length (time units)
+
+100
+
+70
+
+50
+
+10
+
+30
+
+120
+Query interval length (time units)
+
+100
+
+70
+
+50
+
+(c) CPU cost (CA dataset)
+
+(d) NA (CA dataset)
+
+Fig. 9 a–d CR query performance vs. query interval length
+
+the P2WO searching algorithm to reduce the overhead of repeatedly performing the
+same query can dramatically improve the CPU and I/O performance of a CR query
+processing.
+
+In Fig. 11, we measure the CPU time and the NA under different uncertain
+velocity ranges of moving objects. As the uncertain velocity range is determined
+by the maximal velocity and the minimal velocity, we investigate the performance
+of the P2WO searching algorithm and the TP algorithm by varying the multiple
+(i.e., the maximal velocity divided by the minimal velocity) from 1 to 10. Similar to
+the previous experimental results, the P2WO searching algorithm has a signiﬁcantly
+better performance on both the CPU cost and the NA compared to the TP algorithm.
+When the multiple is 1 (i.e., the minimal velocity is the same as the maximal velocity),
+the performances of the two algorithms are about the same. This is because each
+object in this situation moves with a ﬁxed velocity. The repeated execution problem
+which heavily degrades the performance of the TP algorithm can be avoided so
+that the TP algorithm has similar performance to the P2WO searching algorithm.
+However, when the multiple increases to 2 (i.e., object’s velocity becomes uncertain),
+the curves for the TP algorithm grow rapidly. The experiments illustrate that our
+method is suitable for dealing with a highly dynamic environment in which objects
+change their velocities frequently.
+
+In the following, we investigate the accuracy of the P2WO searching algorithm
+by evaluating the percentage of objects that are actually inside the query range and
+are retrieved through executing the PWO-ranking phase. We utilize precision and
+recall, which are commonly used to gauge the quality of answer sets in Information
+
+188
+
+Geoinformatica (2010) 14:163–200
+
+P2WO
+TP
+
+ 1000
+
+P2WO
+TP
+
+)
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+ 
+
+U
+P
+C
+
+ 5
+
+ 4
+
+ 3
+
+ 2
+
+ 1
+
+ 0
+
+)
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+ 
+
+U
+P
+C
+
+ 3.5
+
+ 3
+
+ 2.5
+
+ 2
+
+ 1.5
+
+ 1
+
+ 0.5
+
+ 0
+
+ 2.5
+
+ 1.5
+
+ 2
+
+ 1
+
+ 0.5
+
+)
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+ 
+
+U
+P
+C
+
+)
+c
+e
+s
+(
+ 
+
+e
+m
+
+i
+t
+ 
+
+U
+P
+C
+
+ 1.5
+
+ 2
+
+ 1
+
+ 0.5
+
+)
+g
+o
+l
+(
+ 
+s
+e
+s
+s
+e
+c
+c
+a
+ 
+e
+d
+o
+N
+
+)
+g
+o
+l
+(
+ 
+s
+e
+s
+s
+e
+c
+c
+a
+
+ 
+
+e
+d
+o
+N
+
+)
+g
+o
+l
+(
+ 
+s
+e
+s
+s
+e
+c
+c
+a
+
+ 
+
+e
+d
+o
+N
+
+)
+g
+o
+l
+(
+ 
+s
+e
+s
+s
+e
+c
+c
+a
+ 
+e
+d
+o
+N
+
+ 100
+
+ 10
+
+ 100
+
+ 10
+
+1
+
+ 100
+
+ 10
+
+1
+
+ 100
+
+ 10
+
+1
+
+2
+
+1
+
+3
+dwithin (%)
+(a) CPU cost (synthetic dataset)
+
+5
+
+4
+
+2
+
+1
+
+3
+dwithin (%)
+(b) NA (synthetic dataset)
+
+4
+
+5
+
+P2WO
+TP
+
+ 1000
+
+P2WO
+TP
+
+1
+
+2
+
+4
+
+3
+dwithin (%)
+(c) CPUcost (CA dataset)
+
+5
+
+4
+
+2
+
+3
+dwithin (%)
+(d) NA (CA dataset)
+
+5
+
+Fig. 10 a–d CR query performance vs. query range
+
+P2WO
+TP
+
+ 1000
+
+P2WO
+TP
+
+ 0
+
+1
+
+2
+
+5
+
+10
+
+multiple
+(a) CPU cost (synthetic dataset)
+
+2
+
+5
+
+10
+
+multiple
+(b) NA (synthetic dataset)
+
+P2WO
+TP
+
+ 1000
+
+P2WO
+TP
+
+ 0
+
+1
+
+2
+
+5
+
+10
+
+multiple
+(c) CPU cost (CA dataset)
+
+2
+
+5
+multiple
+(d) NA (CA dataset)
+
+10
+
+Fig. 11 a–d CR query performance vs. uncertain velocity range
+
+Geoinformatica (2010) 14:163–200
+
+Retrieval [39], to evaluate the accuracy of the P2WO searching algorithm. Let
+W Oranking be the set of objects retrieved by executing the PWO-ranking phase. Note
+that only the objects whose possibility of being inside the query range are greater
+than or equal to a system parameter threshold are retrieved. Also, we let W Oreal be
+the set of objects whose real locations are inside the query range. Then, precision
+and recall are represented as follows.
+
+precision =
+
+recall =
+
+#(W Oranking ∩ W Oreal)
+#W Oranking
+#(W Oranking ∩ W Oreal)
+#W Oreal
+
+× 100%,
+
+× 100%.
+
+189
+
+(8)
+
+Note that the real location of each object is obtained based on the object’s start
+location and velocity. The location of the query object is obtained in the same way.
+Then, the set W Oreal can be found by comparing the distance dwithin and the exact
+distance between each object and the query object. Since in the TP method the CR
+query is re-evaluated whenever objects change their velocity, the query result can
+be precisely determined. That is, both precision and recall of the TP method reach
+100%. However, the price to pay in the TP method is the high CPU and I/O cost
+incurred by the repetitive execution of queries. As precision and recall of the TP
+method remain at 100% at different time instants, we choose not to show them in the
+following experiments for the sake of clarity of a ﬁgure.
+
+Here, we study how this system parameter threshold (varying from 0.8 to 1.0)
+affects the accuracy (i.e., precision and recall) of the P2WO searching algorithm.
+Figure 12a, b evaluate precision at different time instants for the synthetic and the
+CA datasets, respectively. From the ﬁgures, we see that for threshold = 0.8, 0.9,
+and 1.0, precision of the P2WO searching algorithm always reaches above 90%
+at each time instant. When the threshold is set to 1.0, precision can even reach
+100%. This is because when the threshold is 1.0, only the objects whose possibilities
+are equal to 1 are retrieved. These objects must be inside the query range so that
+precision reaches 100%. The high precision indicates that for a higher threshold, the
+possibility calculated by executing the PWO-ranking phase can appropriately reﬂect
+the possibility of each object being inside the query range. In Fig. 12c, d, we measure
+recall at different time instants for the synthetic and the CA datasets, respectively. As
+we can see, recall for threshold = 1.0 is signiﬁcantly lower than the others, especially
+for the later time instants. The reason is that a higher threshold makes more objects
+whose possibilities are less than the threshold to be ﬁltered by the server. Because
+these ﬁltered objects may still be inside the query range, recall certainly decreases.
+From the above experiments, we know that a high threshold would increase precision
+but decrease recall of the P2WO searching algorithm. For an application that is
+interested in retrieving as precise as possible the objects inside the query range (that
+is, achieving a higher precision), the system would set threshold to a higher value.
+For an application that attempts to ﬁnd more possible objects being inside the query
+range (i.e., a higher recall), a lower threshold is preferable.
+
+In the next set of experiments, we measure precision and recall of the P2WO
+searching algorithm for different uncertain velocity ranges (i.e., different values of
+multiple) using the synthetic and the CA datasets. In these experiments, the default
+threshold is set to 0.9. As we can see from Fig. 13, precision and recall of the P2WO
+
+190
+
+Geoinformatica (2010) 14:163–200
+
+)
+
+%
+
+ 90
+
+ 80
+
+ 100
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+ 
+n
+o
+s
+c
+e
+ 50
+r
+10p
+
+ 70
+
+ 60
+
+i
+
+i
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+ 
+l
+l
+
+a
+c
+e
+r
+
+ 90
+ 80
+ 70
+ 60
+ 50
+ 40
+ 30
+ 20
+ 10
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+
+ 
+
+ 100
+
+ 90
+
+ 80
+
+ 70
+
+i
+
+i
+
+ 60
+
+n
+o
+s
+c
+e
+r
+10p
+
+ 50
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+
+t
+
+n
+e
+c
+r
+e
+p
+ 
+l
+l
+
+a
+c
+e
+r
+
+ 100
+ 90
+ 80
+ 70
+ 60
+ 50
+ 40
+ 30
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+ 
+n
+o
+s
+c
+e
+r
+p
+
+i
+
+i
+
+ 100
+
+ 90
+
+ 80
+
+ 70
+
+ 60
+
+ 50
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+ 
+l
+l
+
+a
+c
+e
+r
+
+ 90
+ 80
+ 70
+ 60
+ 50
+ 40
+ 30
+ 20
+ 10
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+
+ 
+
+ 100
+
+ 90
+
+ 80
+
+ 70
+
+i
+
+i
+
+ 60
+
+n
+o
+s
+c
+ 50
+e
+r
+10p
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+
+t
+
+n
+e
+c
+r
+e
+p
+ 
+l
+l
+
+a
+c
+e
+r
+
+ 100
+ 90
+ 80
+ 70
+ 60
+ 50
+ 40
+ 30
+
+threshold = 0.8
+threshold = 0.9
+threshold = 1.0
+
+threshold = 0.8
+threshold = 0.9
+threshold = 1.0
+
+70
+
+50
+
+30
+Time instant (time unit)
+(a) precision (synthetic dataset)
+
+100
+
+120
+
+10
+
+70
+
+50
+
+30
+Time instant (time unit)
+(b) precision (CA dataset)
+
+100
+
+120
+
+threshold = 0.8
+threshold = 0.9
+threshold = 1.0
+
+threshold = 0.8
+threshold = 0.9
+threshold = 1.0
+
+10
+
+50
+
+70
+
+30
+
+100
+Time instant (time unit)
+(c) recall (synthetic dataset)
+
+120
+
+10
+
+30
+
+50
+
+70
+
+100
+Time instant (time unit)
+(d) recall (CA dataset)
+
+120
+
+Fig. 12 a–d Accuracy for different threshold
+
+multiple = 1
+multiple = 5
+multiple = 10
+
+multiple = 1
+multiple = 5
+multiple = 10
+
+30
+
+50
+
+70
+
+100
+Time instant (time unit)
+(a) precision (synthetic dataset)
+
+120
+
+30
+
+70
+
+50
+
+100
+Time instant (time unit)
+(b) precision (CA dataset)
+
+120
+
+multiple = 1
+multiple = 5
+multiple = 10
+
+multiple = 1
+multiple = 5
+multiple = 10
+
+10
+
+70
+
+30
+
+50
+
+100
+Time instant (time unit)
+(c) recall (synthetic dataset)
+
+120
+
+10
+
+50
+
+70
+
+30
+
+100
+Time instant (time unit)
+(d) recall (CA dataset)
+
+120
+
+Fig. 13 a–d Accuracy for different uncertain velocity ranges
+
+Geoinformatica (2010) 14:163–200
+
+191
+
+searching algorithm for multiple = 1 are equal to 100% at various time instants,
+respectively. This is because the location of each object can be precisely determined
+when multiple = 1 (i.e., each object’s velocity is ﬁxed) so that the objects retrieved
+by executing the P2WO searching algorithm must be inside the query range. The
+decrease of precision and recall is rapid in the extreme case when multiple = 10
+(that is, the maximal velocity is 10 times more than the minimal velocity, which is a
+very wide uncertain velocity range). The reason is that a wider range of uncertain
+velocity would result in more obscure location, and hence reduces the accuracy
+of the P2WO searching algorithm. Nevertheless, precision and recall of the P2WO
+searching algorithm are still above 90% and 50% for multiple = 10.
+
+Finally in this subsection, we further study how the accuracy of the P2WO search-
+ing algorithm is affected when objects change their moving directions within the
+query time interval (120 time units). To investigate the effect of the changing object
+directions, we implement two methods based on the P2WO searching algorithm,
+called P2WO-w/-update and P2WO-w/o-update, to process CR queries. For the
+P2WO-w/-update method, a CR query is re-evaluated using the P2WO searching
+algorithm once objects change moving directions. However, for the P2WO-w/o-
+update method, the P2WO searching algorithm would not be re-executed no matter
+whether object directions change. Figure 14 evaluates the accuracy (i.e., precision
+and recall) of the P2WO-w/-update and the P2WO-w/o-update methods at different
+time instants, where each object would change moving direction every 30 time units
+and the threshold is 0.9. The experimental results show that although precision
+(or recall) of the P2WO-w/o-update method drops over time, it remains above 85%
+(or 50%) in all cases. As for the P2WO-w/-update method, its curve shown in the
+experiments is wavy. The reason is that all objects need to update their locations
+and velocities every 30 time units (because their moving directions are changed) and
+therefore the P2WO searching algorithm is re-evaluated in every 30 time units. As
+a result, precision and recall can reach 100%, when object updates occur (e.g., at
+time 30).
+
+7.3 Efﬁciency of P2KNN searching algorithm
+
+To exploit the efﬁciency of the proposed P2KNN searching algorithm in process-
+ing CKNN query, we compare the P2KNN searching algorithm with our previous
+method [22] (that operates without the support of the TPRe-tree) and the NNS-CON
+algorithm (which assumes that the velocity of moving object is ﬁxed), in terms of the
+CPU overhead and the number of node accesses. For ease of presentation, we call
+the P2KNN searching algorithm and the previous method [22] the P2KNN-w/-index
+algorithm and the P2KNN-w/o-index algorithm, respectively. We study the impacts of
+different factors on the performance of processing CKNN query. These factors are
+the query interval length, the number of nearest neighbors (i.e., the value of K), and
+the uncertain velocity range of each object.
+
+Figure 15 illustrates the performance of the P2KNN-w/-index algorithm, the
+P2KNN-w/o-index algorithm, and the NNS-CON algorithm as a function of the
+query interval length (ranging from 10 to 120 time units) using the synthetic and
+the CA datasets. For the P2KNN-w/-index and the P2KNN-w/o-index algorithms, as
+the query result can be completely determined by executing the algorithms only once
+instead of repeatedly, the required CPU time and NA remain about the same with
+
+192
+
+Geoinformatica (2010) 14:163–200
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+ 
+n
+o
+s
+c
+e
+r
+p
+
+i
+
+i
+
+ 100
+
+ 95
+
+ 90
+
+ 85
+
+ 80
+
+ 75
+
+ 70
+
+ 100
+
+ 90
+
+ 80
+
+ 70
+
+ 60
+
+ 50
+
+ 40
+
+ 30
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+ 
+l
+l
+
+a
+c
+e
+r
+
+)
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+ 
+
+U
+P
+C
+
+ 4.5
+ 4
+ 3.5
+ 3
+ 2.5
+ 2
+ 1.5
+ 1
+ 0.5
+ 0
+
+ 3
+
+ 2.5
+
+ 2
+
+ 1.5
+
+ 1
+
+ 0.5
+
+)
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+ 
+
+U
+P
+C
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+ 
+n
+o
+s
+c
+e
+r
+p
+
+i
+
+i
+
+ 100
+
+ 95
+
+ 90
+
+ 85
+
+ 80
+
+ 75
+
+ 70
+
+ 100
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+ 
+l
+l
+
+a
+c
+e
+r
+
+ 90
+
+ 80
+
+ 70
+
+ 60
+
+ 50
+
+ 40
+
+ 30
+
+ 1000
+
+ 100
+
+ 10
+
+ 1000
+
+ 100
+
+)
+g
+o
+l
+(
+ 
+s
+e
+s
+s
+e
+c
+c
+a
+ 
+e
+d
+o
+N
+
+)
+g
+o
+l
+(
+ 
+s
+e
+s
+s
+e
+c
+c
+a
+ 
+e
+d
+o
+N
+
+P2WO-w/-update
+P2WO-w/o-update
+
+P2WO-w/-update
+P2WO-w/o-update
+
+30
+
+60
+Time instant (time unit)
+(a) precision (synthetic dataset)
+
+120
+
+90
+
+90
+
+30
+
+60
+Time instant (time unit)
+(b) precision (CA dataset)
+
+120
+
+P2WO-w/-update
+P2WO-w/o-update
+
+P2WO-w/-update
+P2WO-w/o-update
+
+30
+
+60
+Time instant (time unit)
+(c) recall (synthetic dataset)
+
+120
+
+90
+
+90
+
+30
+
+60
+Time instant (time unit)
+(d) recall (CA dataset)
+
+120
+
+Fig. 14 a–d Effect of changing object directions on accuracy
+
+P2KNN-w/-index
+P2KNN-w/o-index
+NNS-CON
+
+30
+
+70
+
+50
+
+10
+120
+Query interval length (time units)
+(a) CPU cost (synthetic dataset)
+
+100
+
+30
+
+50
+
+70
+
+10
+120
+Query interval length (time units)
+(b) NA (synthetic dataset)
+
+100
+
+P2KNN-w/-index
+P2KNN-w/o-index
+NNS-CON
+
+P2KNN-w/-index
+P2KNN-w/o-index
+NNS-CON
+
+ 0
+
+10
+
+30
+
+50
+
+70
+
+100
+
+120
+
+ 10
+
+10
+
+Query interval length (time units)
+(c) CPU cost (CA dataset)
+
+Query interval length (time units)
+(d) NA (CA dataset)
+
+P2KNN-w/-index
+P2KNN-w/o-index
+NNS-CON
+50
+70
+
+30
+
+100
+
+120
+
+Fig. 15 a–d CKNN query performance vs. query interval length
+
+Geoinformatica (2010) 14:163–200
+
+193
+
+the increasing query interval length. Nevertheless, the P2KNN-w/-index algorithm
+clearly outperforms the P2KNN-w/o-index algorithm on both the CPU cost and the
+NA for various query interval lengths. This is mainly because most evaluations of the
+minimal and maximal distance functions of moving objects can be avoided by using
+the P2KNN-w/-index algorithm, but these evaluations are necessary for the P2KNN-
+w/o-index algorithm. For the NNS-CON algorithm, a short query interval length is
+favorable because the frequency of velocity change of each object is low so that less
+repetitive processing of queries are required (i.e., less CPU time and NA). On the
+other hand, the performance of the NNS-CON algorithm signiﬁcantly degrades as
+the query interval length increases.
+
+Figure 16 demonstrates the effect of various numbers of nearest neighbors
+(i.e., varying K) on the performance of the P2KNN-w/-index, the P2KNN-w/o-index,
+and the NNS-CON algorithms. Figure 16a, c investigate the CPU cost for the
+synthetic dataset and the CA dataset, respectively, by varying K from 1 to 20. When
+K increases, the CPU overhead for all algorithms grows. The reason is that as K
+becomes greater, the number of qualifying objects increases so that more distance
+comparisons between these qualifying objects are required. The experimental results
+show that the P2KNN-w/-index algorithm outperforms its competitors signiﬁcantly in
+all cases. This is because (1) for the P2KNN-w/o-index algorithm, each of the index
+nodes needs to be accessed so as to evaluate the distance functions of each object,
+while the P2KNN-w/-index algorithm needs only a small number of node accesses
+and evaluations of distance functions, and (2) the NNS-CON algorithm needs to
+be evaluated again once objects change their velocities, while the re-evaluation of
+the P2KNN-w/-index algorithm is unnecessary as the changed objects’ velocities are
+still within the corresponding ranges. In Fig. 16b, d, which evaluate the NA for the
+synthetic and the CA datasets respectively, all curves remain stable with the increase
+of K. From this, we know that for all methods the number of node accesses required
+for processing a CKNN query is insensitive to different K values.
+
+Figure 17 shows the CPU time and the NA of processing a CKNN query under
+different uncertain velocity ranges of moving objects. Similar to the experiments
+shown in Fig. 11, we vary the multiple from 1 to 10 to investigate the effect of the
+uncertain velocity range. As the multiple is equal to 1, that is, each moving object
+has a ﬁxed velocity, the performance of the P2KNN-w/-index algorithm is as good
+as that of the NNS-CON algorithm. On the other hand, when the objects’ velocities
+are uncertain (i.e., the multiple is greater than 1), the P2KNN-w/-index algorithm
+outperforms the NNS-CON algorithm by a factor of 2 to 8 in terms of the CPU
+cost. In addition, the P2KNN-w/-index algorithm reduces the NA by almost one
+order of magnitude compared to the NNS-CON algorithm. The improvement is due
+to the fact that the P2KNN-w/-index algorithm performs only a single traversal on
+the dataset to retrieve the query result. However, the NNS-CON algorithm must be
+repeatedly evaluated as long as objects change velocity.
+
+The following experiments demonstrate the accuracy of the P2KNN-w/-index
+
+algorithm in terms of precision and recall, which are represented as follows.
+
+precision =
+
+recall =
+
+#(KN Nranking ∩ KN Nreal)
+#KN Nranking
+#(KN Nranking ∩ KN Nreal)
+#KN Nreal
+
+× 100%,
+
+× 100%,
+
+(9)
+
+ 5
+
+ 4
+
+ 3
+
+ 2
+
+ 1
+
+)
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+ 
+
+U
+P
+C
+
+ 3
+
+ 2.5
+
+ 2
+
+ 1.5
+
+ 1
+
+ 0.5
+
+)
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+ 
+
+U
+P
+C
+
+ 0
+
+1
+
+)
+c
+e
+s
+(
+ 
+e
+m
+
+i
+t
+ 
+
+U
+P
+C
+
+ 4
+ 3.5
+ 3
+ 2.5
+ 2
+ 1.5
+ 1
+ 0.5
+ 0
+
+ 3
+
+)
+c
+e
+s
+(
+ 
+
+e
+m
+
+i
+t
+ 
+
+U
+P
+C
+
+ 2.5
+
+ 2
+
+ 1.5
+
+ 1
+
+ 0.5
+
+194
+
+Geoinformatica (2010) 14:163–200
+
+P2KNN-w/-index
+P2KNN-w/o-index
+NNS-CON
+
+P 2KNN-w/-index
+P 2KNN-w/o-index
+NNS-CON
+
+ 0
+
+1
+
+5
+
+10
+
+20
+
+K
+(a) CPU cost (synthetic dataset)
+
+ 10
+
+1
+
+5
+
+10
+
+20
+
+K
+(b) NA (synthetic dataset)
+
+P2KNN-w/-index
+P2KNN-w/o-index
+NNS-CON
+
+P2KNN-w/-index
+P2KNN-w/o-index
+NNS-CON
+
+5
+
+10
+
+20
+
+K
+(c) CPU cost (CA dataset)
+
+5
+
+10
+
+20
+
+K
+(d) NA (CA dataset)
+
+Fig. 16 a–d CKNN query performance vs. number of nearest neighbors
+
+P2KNN-w/-index
+P2KNN-w/o-index
+NNS-CON
+
+P 2KNN-w/-index
+P 2KNN-w/o-index
+NNS-CON
+
+1
+
+2
+
+5
+
+10
+
+multiple
+(a) CPU cost (synthetic dataset)
+
+ 10
+
+1
+
+2
+
+5
+
+10
+
+multiple
+(b) NA (synthetic dataset)
+
+P 2KNN-w/-index
+P 2KNN-w/o-index
+
+NNS-CON
+
+ 0
+
+1
+
+2
+
+5
+
+10
+
+multiple
+(c) CPU cost (CA dataset)
+
+P2KNN-w/-index
+P2KNN-w/o-index
+NNS-CON
+
+2
+
+5
+
+10
+
+multiple
+(d) NA (CA dataset)
+
+Fig. 17 a–d CKNN query performance vs. uncertain velocity range
+
+)
+g
+o
+l
+(
+ 
+s
+e
+s
+s
+e
+c
+c
+a
+ 
+e
+d
+o
+N
+
+)
+g
+o
+l
+(
+ 
+s
+e
+s
+s
+e
+c
+c
+a
+ 
+e
+d
+o
+N
+
+)
+g
+o
+l
+(
+ 
+s
+e
+s
+s
+e
+c
+c
+a
+ 
+
+e
+d
+o
+N
+
+)
+g
+o
+l
+(
+ 
+s
+e
+s
+s
+e
+c
+c
+a
+
+ 
+
+e
+d
+o
+N
+
+ 1000
+
+ 100
+
+ 1000
+
+ 100
+
+ 10
+
+1
+
+ 1000
+
+ 100
+
+ 1000
+
+ 100
+
+ 10
+
+1
+
+Geoinformatica (2010) 14:163–200
+
+195
+
+where KN Nranking refers to the set of objects retrieved by executing the P2KNN-w/-
+index algorithm and KN Nreal is the set of real KNNs. Note that only the K higher-
+possibility objects are retrieved, and the generation of the set KN Nreal is the same
+as W Oreal mentioned in Section 7.2. As #KN Nranking = #KN Nreal = K, precision
+would be equal to recall. Similar to the TP algorithm, both precision and recall of the
+NNS-CON algorithm achieve 100% because the CKNN query has to be re-evaluated
+once object changes velocity so that the KNN result can be precisely determined. As
+such, precision and recall of the NNS-CON algorithm are not shown in the following
+experiments for the sake of clarity.
+
+Figure 18a, b show precision of the P2KNN-w/-index algorithm at different time
+instants for the synthetic and the CA datasets, respectively. As we can see, for
+K = 1, 5, and 10, precision of the P2KNN-w/-index algorithm is above 85% at earlier
+time instants. The precision decreases slightly as time passes, but basically it is still
+over 70%. Figure 18c, d illustrate recall of the P2KNN-w/-index algorithm for the
+synthetic and the CA datasets, respectively. Since recall is equal to precision, we
+omit the discussion on the experiments in Fig. 18c, d for space considerations. The
+experimental results demonstrate that the P2KNN-w/-index algorithm is reliable and
+very helpful for choosing the most appropriate KNNs.
+
+Figure 19a, b investigate the effect of the uncertain velocity range on precision
+of the P2KNN-w/-index algorithm for the synthetic and CA datasets respectively, in
+which the default value of K is equal to 5. Note that the experimental results also
+show recall of the P2KNN-w/-index algorithm because precision is equal to recall.
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+ 
+n
+o
+s
+c
+e
+r
+p
+
+i
+
+i
+
+ 100
+
+ 90
+
+ 80
+
+ 70
+
+ 60
+
+ 50
+
+ 40
+
+ 30
+
+)
+
+%
+
+(
+ 
+
+t
+
+e
+g
+a
+n
+e
+c
+r
+e
+p
+
+ 
+l
+l
+
+a
+c
+e
+r
+
+ 100
+
+ 90
+
+ 80
+
+ 70
+
+ 60
+
+ 50
+
+ 40
+
+ 30
+
+70
+
+50
+
+10
+
+30
+
+100
+Time instant (time unit)
+(a) precision (synthetic dataset)
+
+120
+
+30
+
+70
+
+50
+
+100
+Time instant (time unit)
+(b) precision (CA dataset)
+
+120
+
+)
+
+%
+
+ 100
+
+ 80
+
+ 90
+
+ 70
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+ 
+n
+o
+s
+c
+e
+ 30
+r
+10p
+
+ 50
+
+ 40
+
+ 60
+
+i
+
+i
+
+)
+
+%
+
+(
+ 
+
+t
+
+e
+g
+a
+n
+e
+c
+r
+e
+p
+
+ 
+l
+l
+
+a
+c
+e
+r
+
+ 100
+
+ 90
+
+ 80
+
+ 70
+
+ 60
+
+ 50
+
+ 40
+
+ 30
+
+K = 1
+K = 5
+K = 10
+
+K = 1
+K = 5
+K = 10
+
+K = 1
+K = 5
+K = 10
+
+K = 1
+K = 5
+K = 10
+
+10
+
+70
+
+30
+
+50
+
+100
+Time instant (time unit)
+(c) recall (synthetic dataset)
+
+120
+
+10
+
+50
+
+70
+
+30
+
+100
+Time instant (time unit)
+(d) recall (CA dataset)
+
+120
+
+Fig. 18 a–d Accuracy for different K
+
+196
+
+Geoinformatica (2010) 14:163–200
+
+multiple = 1
+multiple = 5
+multiple = 10
+
+multiple = 1
+multiple = 5
+multiple = 10
+
+10
+
+50
+
+30
+
+70
+
+100
+Time instant (time unit)
+(a) precision (synthetic dataset)
+
+120
+
+30
+
+50
+
+70
+
+100
+Time instant (time unit)
+(b) precision (CA dataset)
+
+120
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+ 
+n
+o
+s
+c
+e
+r
+p
+
+i
+
+i
+
+ 100
+ 90
+ 80
+ 70
+ 60
+ 50
+ 40
+ 30
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+ 
+n
+o
+s
+c
+e
+r
+p
+
+i
+
+i
+
+ 100
+
+ 95
+
+ 90
+
+ 85
+
+ 80
+
+ 75
+
+ 70
+
+)
+
+%
+
+ 100
+(
+ 
+e
+ 90
+g
+a
+ 80
+t
+n
+e
+ 70
+c
+r
+e
+ 60
+p
+ 
+ 50
+n
+o
+ 40
+s
+c
+e
+ 30
+r
+10p
+
+i
+
+i
+
+)
+
+%
+
+(
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+p
+ 
+n
+o
+s
+c
+e
+r
+p
+
+i
+
+i
+
+ 100
+ 95
+ 90
+ 85
+ 80
+ 75
+ 70
+ 65
+ 60
+
+P2KNN-w/-update
+P 2KNN-w/o-update
+
+P2KNN-w/-update
+
+P 2KNN-w/o-update
+
+30
+
+60
+Time instant (time unit)
+(c) precision (synthetic dataset)
+
+120
+
+90
+
+30
+
+60
+Time instant (time unit)
+(d) precision (CA dataset)
+
+90
+
+120
+
+Fig. 19 a–d Effects of uncertain velocity ranges and changing object directions on accuracy
+
+As the exact location of each object can be determined when multiple = 1, in all
+experiments precision (and also recall) of the P2KNN-w/-index algorithm remain
+at 100% at different time instants. From this, we know that the P2KNN-w/-index
+algorithm can be directly applied to processing CKNN query over moving objects
+with ﬁxed velocity. As for multiple = 5 and 10, precision of the P2KNN-w/-index
+algorithm degrades over time because of the increasing uncertainty of velocity range,
+but it still reaches 70% at later time instants.
+
+The last set of experiments studies the impact of changing object directions on the
+accuracy of the P2KNN searching algorithm by comparing the P2KNN-w/o-update
+with the P2KNN-w/-update method, both of which are implemented to process
+CKNN queries based on the P2KNN searching algorithm. Similar to the experiments
+conducted in Fig. 14, each object changes the moving direction every 30 time units
+and the default value of K is equal to 5. As shown in Fig. 19c, d, precision of the
+P2KNN-w/-update method reaches 100% at the time instants the objects update
+their locations and velocities (i.e., at time 30, 60, and 90), and then precision slightly
+drops till the next object updates occur. Basically, precision of the P2KNN-w/-update
+method remains above 85% at each time instant. As for the P2KNN-w/o-update
+method, precision keeps decreasing. This is because the changing object directions
+would increase the uncertainty of locations so that the accuracy is reduced. The
+experimental results show that object updates increase the accuracy of the P2KNN
+searching algorithm. However, it decreases the query performance (i.e., incurring
+high CPU and I/O cost due to repetitively processing queries).
+
+Geoinformatica (2010) 14:163–200
+
+197
+
+8 Conclusions and future work
+
+In this paper, we focused on processing the Continuous Range (CR) query and the
+Continuous K-Nearest Neighbor (CKNN) query for moving objects with uncertain
+velocity. We utilized an uncertain distance model to formulate the uncertain distance
+between moving objects. Based on this model, we developed the P2WO searching
+algorithm and the P2KNN searching algorithm to efﬁciently process a CR query and
+a CKNN query, respectively. To enhance the performance of these two algorithms,
+an effective pruning strategy operated with a TPRe-tree index is also designed to
+ﬁlter out those objects that are impossible to be the query result. Comprehensive
+experiments have demonstrated the effectiveness and the efﬁciency of the proposed
+approaches and revealed that the proposed methods are suitable for a highly dynamic
+environment where objects change their velocities frequently.
+
+There are several interesting avenues for the future extensions of this work. One
+important research direction is to address the issue of efﬁciently handling updates
+of objects’ velocity ranges. Consider that the uncertainty on each object’s location
+increases as time progresses. It is inevitable that each object updates its correspond-
+ing velocity range so as to decrease the uncertainty. Such updates can potentially
+outdate the previous query result so that the query result needs to be re-evaluated
+by using our methods. To alleviate this problem, the server needs to ﬁrst examine
+whether the updates affect the result and then evaluate the new result if necessary.
+Therefore, our next step is to study how to quickly determine which updates inﬂuence
+the query result and rapidly evaluate the new result by utilizing the previous result.
+Another important extension is to study the possibility of relieving the assumption
+of moving direction that is required in the past research by allowing each object
+changes its moving direction. More complicated issues will be introduced because
+of this change. In addition, we would like to extend our proposed methods to process
+the spatio-temporal queries in road networks. Also, we intend to extend the P2KNN
+approach to cope with other variations of KNN queries, such as the reverse KNN
+query [1, 2], the group KNN query [40], and the aggregate KNN query [41]. A further
+extension is to utilize the proposed methods to answer the spatio-temporal queries
+when the objects’ movements are mutually dependent rather than independent.
+Finally, implementation of some of these works in an existing DBMS would certainly
+be another challenging issue.
+
+Acknowledgements This work was supported by National Science Council of Taiwan (R.O.C.)
+under Grants NSC96-2221-E-006-260-MY2 and NSC96-2221-E-006-261-MY2.
+
+References
+
+1. Benetis R, Jensen CS, Karciauskas G, Saltenis S (2002) Nearest neighbor and reverse nearest
+neighbor queries for moving objects. In: Proceedings of the international database engineering
+and applications symposium, Canada, 17–19 July 2002, pp 44–53
+
+2. Benetis R, Jensen CS, Karciauskas G, Saltenis S (2006) Nearest neighbor and reverse nearest
+
+neighbor queries for moving objects. VLDB J 15(3):229–249
+
+3. Kalashnikov DV, Prabhakar S, Hambrusch S, Aref W (2002) Efﬁcient evaluation of continuous
+range queries on moving objects. In: Proceedings of the 13th international conference on data-
+base and expert systems applications, Aix en Provence, France, 2–6 September 2002, pp 731–740
+
+198
+
+Geoinformatica (2010) 14:163–200
+
+4. Lee KCK, Leong HV, Zhou J, Si A (2005) An efﬁcient algorithm for predictive continuous near-
+est neighbor query processing and result maintenance. In: Proceedings of the 6th international
+conference on mobile data management, Ayia Napa, Cyprus, 2005, pp 178–182
+
+5. Iwerks G, Samet H, Smith K (2003) Continuous k-nearest neighbor queries for continuously
+moving points with updates. In: Proceedings of the international conference on very large data
+bases, Berlin, Germany, 9–12 September 2003, pp 512–523
+
+6. Raptopoulou K, Papadopoulos A, Manolopoulos Y (2003) Fast nearest-neighbor query process-
+
+ing in moving-object databases. GeoInformatica 7(2):113–137
+
+7. Tao Y, Papadias D (2002) Time parameterized queries in spatio-temporal databases.
+
+In: Proceedings of the ACM SIGMOD, Madison, Wisconsin, pp 322–333
+
+8. Tao Y, Papadias D, Shen Q (2002) Continuous nearest neighbor search. In: Proceedings of
+the international conference on very large data bases, Hong Kong, China, 20–23 August 2002,
+pp 287–298
+
+9. Mouratidis K, Hadjieleftheriou M, Papadias D, (2005) Conceptual partitioning: an efﬁcient
+method for continuous nearest neighbor monitoring. In Proceedings of the ACM SIGMOD,
+pp 634–645
+
+10. Mokbel MF, Xiong X, Aref WG (2004) Sina: scalable incremental processing of continuous
+
+queries in spatio-temporal databases. In: Proceedings of the ACM SIGMOD, pp 623–634
+
+11. Nehme RV, Rundensteiner EA (2006) Scuba: scalable cluster-based algorithm for evaluating
+continuous spatio-temporal queries on moving objects. In Proceedings of the EDBT, pp 1001–
+1019
+
+12. Song Z, Roussopoulos N (2001) K-nearest neighbor search for moving query point. In: Proceed-
+ings of 7th international symposium on advances in spatial and temporal databases, Redondo
+Beach, CA, USA, 12–15 July 2001, pp 79–96
+
+13. Xiong X, Mokbel MF, Aref WG (2005) Sea-cnn: scalable processing of continuous k-nearest
+neighbor queries in spatio-temporal databases. In: Proceedings of the international conference
+on data engineering, pp 643–654
+
+14. Yu X, Pu KQ, Koudas N (2005) Monitoring k-nearest neighbor queries over moving objects.
+
+In: Proceedings of the international conference on data engineering, pp 631–642
+
+15. Sistla AP, Wolfson O, Chamberlain S, Dao S (1997) Modeling and querying moving objects.
+
+In: International conference on data engineering, pp 422–432
+
+16. Wolfson O, Sistla P, Xu B, Zhou J, Chamberlain S, Yesha T, Rishe N (1999) Tracking
+moving objects using database technology in domino. In: Proceedings of the fourth workshop
+on next generation information technologies and systems, Zikhron-Yaakov, Israel, July 1999,
+pp 112–119
+
+17. Dieker S, Guting RH (2000) Plug and play with query algebras: Secondo-a generic dbms devel-
+opment environment. In: Proceedings of the international database engineering and applications
+symposium, pp 380–392
+
+18. Rigaux P, Scholl M, Segouﬁn L, Grumbach S (2003) Building a constraint-based spatial database
+
+system: model, languages, and implementation. Inf Syst 28(6):563–595
+
+19. Guttman A (1984) R-trees: a dynamic index structure for spatial searching. In: ACM SIGMOD
+
+conf, pp 47–57
+
+20. Samet H (1990) Application of spatial data structure. Addison-Wesley, Reading
+21. Saltenis S, Jensen CS, Leutenegger ST, Lopez MA (2000) Indexing the positions of continuously
+
+moving objects. In: Proceedings of the ACM SIGMOD, pp 331–342
+
+22. Huang Y-K, Chen, C-C, Lee C (2009) Continuous k-nearest neighbor query for moving objects
+
+with uncertain velocity. GeoInformatica 13:(1):1–25
+
+23. Guting H, de Almeida T, Ding Z (2006) Modeling and querying moving objects in networks.
+
+VLDB J 15(2):165–190
+
+24. de Almeida VT, Güting RH (2005) Supporting uncertainty in moving objects in network data-
+bases. In: Proceedings of the 13th annual ACM international workshop on geographic informa-
+tion systems, pp 31–40
+
+25. Jensen CS, Koláˇrvr J, Pedersen TB, Timko I (2003) Nearest neighbor queries in road networks.
+In: Proceedings of the 11th ACM international symposium on advances in geographic informa-
+tion systems, New York, NY, USA, pp 1–8
+
+26. Papadias D, Zhang J, Mamoulis N, Tao Y (2003) Query processing in spatial network data-
+bases. In: Proceedings of the 29th international conference on very large data bases, Berlin,
+Germany, 9–12 September 2003, pp 802–813
+
+Geoinformatica (2010) 14:163–200
+
+199
+
+27. Kolahdouzan M, Shahabi C (2004) Voronoi-based k nearest neighbor search for spatial network
+databases. In: Proceedings of the thirtieth international conference on very large data bases,
+pp 840–851
+
+28. Kolahdouzan MR, Shahabi C (2004) Continuous k-nearest neighbor queries in spatial network
+databases. In: Proceedings of the 2nd international workshop on spatio-temporal database
+management, pp 33–40
+
+29. Cho H-J, Chung C-W (2005) An efﬁcient and scalable approach to cnn queries in a road network.
+
+In: Proceedings of the 31st international conference on very large data bases, pp 865–876
+
+30. Mouratidis K, Yiu ML, Papadias D, Mamoulis N (2006) Continuous nearest neighbor monitoring
+in road networks. In: Proceedings of the 32nd international conference on very large data bases,
+pp 43–54
+
+31. Dai X, Yiu ML, Mamoulis N, Tao Y, Vaitis M (2005) Probabilistic spatial queries on existentially
+
+uncertain data. In: Proceedings. International conference on SSTD, pp 400–417
+
+32. Ljosa V, Singh AK (2008) Top-k spatial joins of probabilistic objects. In: International confer-
+
+ence on ICDE
+
+33. Wolfson O, Chamberlain S, Dao S, Jiang L, Mendez G (1998) Cost and imprecision in modeling
+the position of moving objects. In: Proceedings of the international conference on innovative
+data systems research, pp 588–596
+
+34. Wolfson O, Sistla AP, Chamberlain S, Yesha Y (1999) Updating and querying databases that
+
+track mobile units. Distributed and Parallel Databases 7(3):257–387
+
+35. Cheng R, Kalashnikov DV, Prabhakar S (2004) Querying imprecise data in moving object
+
+environments. IEEE Trans Knowl Data Eng 16(9):1112–1127
+
+36. Chen J, Cheng R (2007) Efﬁcient evaluation of
+
+imprecise location-dependent queries.
+
+In: Proceedings of the international conference on data engineering, pp 586–595
+
+37. Pfoser D, Jensen CS (1999) Capturing the uncertainty of moving-object representations.
+In: Proceedings of the international conference on scientiﬁc and statistical database management,
+pp 111–132
+
+38. Trajcevski G, Wolfson O, Zhang F, Chamberlain S (2002) The geometry of uncertainty in
+moving objects databases. In: Proceedings of the international conference on extending database
+technology, pp 233–250
+
+39. Baeza-Yates R, Ribeiro-Neto B (1999) Modern information retrieval. Addison-Wesley, Reading
+40. Papadias D, Shen Q, Tao Y, Mouratidis K (2004) Group nearest neighbor queries. In: Proceed-
+
+ings of the international conference on data engineering, pp 301–312
+
+41. Papadias D, Tao Y, Mouratidis K, Hui CK (2005) Aggregate nearest neighbor queries in spatial
+
+databases. ACM Trans Database Syst 30(2):529–576
+
+Yuan-Ko Huang is a PhD student in the Department of Computer Science and Information
+Engineering at National Cheng-Kung University, Taiwan. His research interests include databases,
+mobile computing, and sensor networks.
+
+200
+
+Geoinformatica (2010) 14:163–200
+
+Chiang Lee received the BS degree from National Cheng-Kung University, Taiwan, in 1980 and
+the ME and PhD degrees in electrical engineering from the University of Florida, Gainesville, in
+1986 and 1989, respectively. He joined IBM Mid-Hudson Laboratories, Kingston, New York, in
+1989 and participated in a project working on the design and performance analysis of a parallel
+and distributed database system. He joined the faculty of National Cheng-Kung University in 1990
+and is currently a professor of the Department of Computer Science and Information Engineering.
+His research interests are in the areas of mobile and sensor data management, bioinformatics, and
+integration of databases. He has published many papers in major database journals and conferences,
+and has been invited as an author of a chapter for several technical books. Dr. Lee has served as a
+steering committee member of the DASFAA International Conference from 1996 to 1998. He has
+also served on organizing and program committees for major international conferences, including the
+IEEE International Conference on Data Engineering, the International Conference on Very Large
+Data Bases, and others.
+
+
