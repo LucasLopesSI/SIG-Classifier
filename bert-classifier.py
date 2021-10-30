@@ -103,60 +103,22 @@ print("Size of abstract test set: ",len(abstractTestSentences),"\n")
 print("Size of abstract+title train set: ",len(trainingSentences))
 
 ########################################################################
-## train tokenizer
-########################################################################
-
-from pathlib import Path
-
-from tokenizers import ByteLevelBPETokenizer
-
-paths = [str(x) for x in Path("./data/").glob("**/*.txt")]
-
-# Initialize a tokenizer
-tokenizer = ByteLevelBPETokenizer()
-
-# Customize training
-tokenizer.train(files=paths, vocab_size=30522, min_frequency=2, special_tokens=[
-    "<s>",
-    "<pad>",
-    "</s>",
-    "<unk>",
-    "<mask>",
-])
-
-# Save files to disk
-tokenizer.save_model(".", "sigbert")
-
-from tokenizers.implementations import ByteLevelBPETokenizer
-from tokenizers.processors import BertProcessing
-
-tokenizer = ByteLevelBPETokenizer(
-    "./sigbert-vocab.json",
-    "./sigbert-merges.txt",
-)
-tokenizer._tokenizer.post_processor = BertProcessing(
-    ("</s>", tokenizer.token_to_id("</s>")),
-    ("<s>", tokenizer.token_to_id("<s>")),
-)
-tokenizer.enable_truncation(max_length=512)
-
-########################################################################
 import torch
 import tensorflow as tf
 import time
 from transformers import AutoModel
 from transformers import AutoTokenizer
 
-#tokenizer = AutoTokenizer.from_pretrained('allenai/scibert_scivocab_cased', do_lower_case=False)
-model = AutoModel.from_pretrained('bert-base-multilingual-cased')
+tokenizer = AutoTokenizer.from_pretrained('bert-base-multilingual-cased', do_lower_case=False)
+model = AutoModel.from_pretrained('fine-tuned-mlm-as-pre-trained')
 
 tokenizations_time_metrics = []
 
 ## Aqui ele pega o texto original e gera os tokens
 def convertSentenceToBERTEmbedding(sentence):
   try:
-    input_ids = torch.tensor([tokenizer.encode(sentence).ids])
-    #input_ids = tokenizer.encode(sentence, return_tensors='pt')
+    # input_ids = torch.tensor([tokenizer.encode(sentence).ids])
+    input_ids = tokenizer.encode(sentence, return_tensors='pt')
     with torch.no_grad():
         start_time = time.time()
         outs = model(input_ids)
