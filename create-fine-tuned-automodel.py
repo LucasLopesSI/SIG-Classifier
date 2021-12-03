@@ -106,7 +106,9 @@ mlm.train()
 optim = AdamW(mlm.parameters(), lr=5e-5)
 
 def optimizeMlmModel(trainingSentences, percentageOfMaskedTokens):
+  optim.zero_grad()
   inputs = None
+  
   for sentence in trainingSentences:
     if (inputs is None):
       inputs = tokenizer.encode(sentence, return_tensors='pt', max_length=512, truncation=True, padding='max_length')
@@ -132,7 +134,14 @@ def optimizeMlmModel(trainingSentences, percentageOfMaskedTokens):
   outputs = mlm(masks,labels=inputs)
   loss = outputs.loss
   print(loss)
+  loss.backward()
+  # update parameters
+  optim.step()
+  print(loss.item())
 
-optimizeMlmModel(abstractTrainingSentences[:1000], 0.1)
+cont = 0
+while cont < 2000:
+  optimizeMlmModel(abstractTrainingSentences[cont:cont+1], 0.2)
+  cont+=1
 
 mlm.save_pretrained('fine-tuned-mlm-as-pre-trained')

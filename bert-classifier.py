@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu Sep 30 17:20:04 2021
-
 @author: Lucas
 """
 
@@ -185,7 +184,7 @@ from sklearn import metrics
 
 tuned_ocsvm = svm.OneClassSVM()
 nus = [0.1]
-gammas = [0.001, 0.01, 0.1, 0.12, 1]
+gammas = [0.001, 0.01, 0.1, 0.12, 0.15, 0.2, 0.25, 1]
 scores = ['recall']
 tuned_parameters = {'kernel' : ['rbf'], 'gamma' : gammas, 'nu': nus}
 
