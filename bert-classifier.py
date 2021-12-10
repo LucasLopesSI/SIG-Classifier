@@ -177,78 +177,91 @@ print(len(trainingEmbeddingsFiltered))
 ########################################################################
 ## Find hyperparameters for SVM One Class
 ########################################################################
-
 from sklearn import svm
 from sklearn.model_selection import ParameterGrid
 from sklearn import metrics
 
-tuned_ocsvm = svm.OneClassSVM()
-nus = [0.1]
-gammas = [0.001, 0.01, 0.1, 0.12, 0.15, 0.2, 0.25, 1]
-scores = ['recall']
-tuned_parameters = {'kernel' : ['rbf'], 'gamma' : gammas, 'nu': nus}
-
-bestAbstractAccuracy = 0
-bestAbstractRecall = []
-bestAbstractParameter = None
-predictionsOfBestAbstractClassification = []
-
-bestTitleAccuracy = 0
-bestTitleRecall = []
-bestTitleParameter = None
-predictionsOfBestTitleClassification = []
-
 svm_time_metrics = []
 start_time = time.time()
 
-def classifyAndPrintMetricsInTest(validation_input,validation_labels,test_description):
-    predicted_labels = tuned_ocsvm.predict(validation_input)
-    print(predicted_labels)
-    metrics = getMetrics(validation_labels, predicted_labels)
+def fineTuneSVMOneClass(gammas):
+  bestAbstractAccuracy = 0
+  bestAbstractRecall = []
+  bestAbstractParameter = None
+  predictionsOfBestAbstractClassification = []
 
-    print(test_description," accuracy: ",metrics[0]," recall: ",metrics[1])
-    return predicted_labels
+  bestTitleAccuracy = 0
+  bestTitleRecall = []
+  bestTitleParameter = None
+  predictionsOfBestTitleClassification = []
 
-def getMetrics(validation_labels, predicted_labels):
+  def classifyAndPrintMetricsInTest(validation_input,validation_labels,test_description):
+      predicted_labels = tuned_ocsvm.predict(validation_input)
+      print(predicted_labels)
+      metrics = getMetrics(validation_labels, predicted_labels)
+
+      print(test_description," accuracy: ",metrics[0]," recall: ",metrics[1])
+      return predicted_labels
+
+  def getMetrics(validation_labels, predicted_labels):
     accuracy = metrics.accuracy_score(validation_labels, predicted_labels, normalize=True, sample_weight=None)
     recall = metrics.recall_score(validation_labels, predicted_labels, labels=None, pos_label=1, average=None, sample_weight=None, zero_division='warn')
 
     return [accuracy,recall]
 
-for z in ParameterGrid(tuned_parameters):
-    print(z)
-    tuned_ocsvm.set_params(**z)
-    tuned_ocsvm.fit(trainingEmbeddingsFiltered, trainingLabelsFiltered)
+  tuned_ocsvm = svm.OneClassSVM()
+  nus = [0.1]
+  scores = ['recall']
+  tuned_parameters = {'kernel' : ['rbf'], 'gamma' : gammas, 'nu': nus}
 
-    abstractPredictedLabels = classifyAndPrintMetricsInTest(abstractTestEmbeddings, abstractTestLabels, "Classifying abstracts: ")
-    abstractMetrics = getMetrics(abstractTestLabels, abstractPredictedLabels)
-    abstractAccuracy = abstractMetrics[0]
-    abstractRecall = abstractMetrics[1]
+  for z in ParameterGrid(tuned_parameters):
+      print(z)
+      tuned_ocsvm.set_params(**z)
+      tuned_ocsvm.fit(trainingEmbeddingsFiltered, trainingLabelsFiltered)
 
-    if(abstractAccuracy > bestAbstractAccuracy):
-      bestAbstractAccuracy = abstractAccuracy
-      bestAbstractRecall = abstractRecall
-      bestAbstractParameter = z
-      predictionsOfBestAbstractClassification = abstractPredictedLabels
+      abstractPredictedLabels = classifyAndPrintMetricsInTest(abstractTestEmbeddings, abstractTestLabels, "Classifying abstracts: ")
+      abstractMetrics = getMetrics(abstractTestLabels, abstractPredictedLabels)
+      abstractAccuracy = abstractMetrics[0]
+      abstractRecall = abstractMetrics[1]
 
-    titlePredictedLabels = classifyAndPrintMetricsInTest(titleTestEmbeddings, titleTestLabels, "Classifying titles: ")
-    titleMetrics = getMetrics(titleTestLabels, titlePredictedLabels)
-    titleAccuracy = titleMetrics[0]
-    titleRecall = titleMetrics[1]
+      if(abstractAccuracy > bestAbstractAccuracy):
+        bestAbstractAccuracy = abstractAccuracy
+        bestAbstractRecall = abstractRecall
+        bestAbstractParameter = z
+        predictionsOfBestAbstractClassification = abstractPredictedLabels
 
-    if(titleAccuracy > bestTitleAccuracy):
-      bestTitleAccuracy = titleAccuracy
-      bestTitleRecall = titleRecall
-      bestTitleParameter = z
-      predictionsOfBestTitleClassification = titlePredictedLabels
-    
-    print("\n")
+      titlePredictedLabels = classifyAndPrintMetricsInTest(titleTestEmbeddings, titleTestLabels, "Classifying titles: ")
+      titleMetrics = getMetrics(titleTestLabels, titlePredictedLabels)
+      titleAccuracy = titleMetrics[0]
+      titleRecall = titleMetrics[1]
+
+      if(titleAccuracy > bestTitleAccuracy):
+        bestTitleAccuracy = titleAccuracy
+        bestTitleRecall = titleRecall
+        bestTitleParameter = z
+        predictionsOfBestTitleClassification = titlePredictedLabels
+      
+  print("\n")
+  print("Best found accuracy for abstracts: ",bestAbstractAccuracy," Best recall ",bestAbstractRecall," for parameters ",bestAbstractParameter)
+  print("\n")
+  print("Best found accuracy for titles: ",bestTitleAccuracy," Best recall ",bestTitleRecall," for parameters ",bestTitleParameter)
+  return [bestAbstractAccuracy, bestAbstractRecall, bestAbstractParameter, predictionsOfBestAbstractClassification]
+
+gammas = [0.01,0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1]
+classifications = fineTuneSVMOneClass(gammas)
+predictionsOfBestAbstractClassification = classifications[3]
+bestParameters = classifications[2]
+bestGamma = bestParameters['gamma']
+gammas1 = [bestGamma - (i/100) for i in range(1,5)  if (bestGamma - (i/100)) > 0]
+gammas2 = [bestGamma + (i/100) for i in range(1,5)]
+gammas = gammas1 + [bestGamma] + gammas2
+print(bestGamma,' ',gammas)
+classifications = fineTuneSVMOneClass(gammas)
+predictionsOfBestAbstractClassification = classifications[3]
+bestParameters = classifications[2]
+bestGamma = bestparameters['gamma']
 
 svm_time_metrics.append([len(trainingEmbeddings),(time.time() - start_time)])
-
-print("Best found accuracy for abstracts: ",bestAbstractAccuracy," Best recall ",bestAbstractRecall," for parameters ",bestAbstractParameter)
-print("\n")
-print("Best found accuracy for titles: ",bestTitleAccuracy," Best recall ",bestTitleRecall," for parameters ",bestTitleParameter)
 
 ############################################################################################################
 ###### Merge classification results with indexes of test articles
