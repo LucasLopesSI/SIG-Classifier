@@ -108,8 +108,8 @@ import time
 from transformers import AutoModel
 from transformers import AutoTokenizer
 
-tokenizer = AutoTokenizer.from_pretrained('bert-base-multilingual-cased', do_lower_case=False)
-model = AutoModel.from_pretrained('fine-tuned-mlm-as-pre-trained')
+tokenizer = AutoTokenizer.from_pretrained('bert-large-cased', do_lower_case=False)
+model = AutoModel.from_pretrained('bert-large-cased')
 
 tokenizations_time_metrics = []
 
@@ -259,7 +259,7 @@ print(bestGamma,' ',gammas)
 classifications = fineTuneSVMOneClass(gammas)
 predictionsOfBestAbstractClassification = classifications[3]
 bestParameters = classifications[2]
-bestGamma = bestparameters['gamma']
+bestGamma = bestParameters['gamma']
 
 svm_time_metrics.append([len(trainingEmbeddings),(time.time() - start_time)])
 
