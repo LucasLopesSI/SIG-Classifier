@@ -174,7 +174,7 @@ def optimizeMlmModel(trainingSentences, percentageOfMaskedTokens):
   print(loss.item())
 
 cont = 0
-while cont < 3:
+while cont < 8600:
   optimizeMlmModel(abstractTrainingSentences[cont:cont+1], 0.2)
   cont+=1
 
