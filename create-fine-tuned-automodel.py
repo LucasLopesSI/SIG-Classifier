@@ -89,16 +89,50 @@ print("Size of abstract test set: ",len(abstractTestSentences),"\n")
 
 print("Size of abstract+title train set: ",len(trainingSentences))
 
-from transformers import AutoTokenizer
+
 from transformers import BertForMaskedLM
+mlm = BertForMaskedLM.from_pretrained('bert-large-cased')
 
-tokenizer = AutoTokenizer.from_pretrained('bert-base-multilingual-cased', do_lower_case=False)
-mlm = BertForMaskedLM.from_pretrained('bert-base-multilingual-cased')
+######################## Fine Tune tokenizer ###################################
+from pathlib import Path
+from tokenizers import ByteLevelBPETokenizer
 
-#mlmTrainingTensors = convertListOfSentencesToListOfTokensEmbeddings(abstractTrainingSentences[:10])
+paths = [str(x) for x in Path("./data/").glob("**/*.txt")]
+
+# Initialize a tokenizer
+tokenizer = ByteLevelBPETokenizer()
+
+# Customize training
+tokenizer.train(files=paths, vocab_size=30522, min_frequency=2, special_tokens=[
+    "<s>",
+    "<pad>",
+    "</s>",
+    "<unk>",
+    "<mask>",
+])
+
+# Save files to disk
+tokenizer.save_model(".", "sigbert")
+
+############################## Load Fine tuned tokenizer #######################################
+
+from tokenizers.implementations import ByteLevelBPETokenizer
+from tokenizers.processors import BertProcessing
+
+tokenizer = ByteLevelBPETokenizer(
+    "./sigbert-vocab.json",
+    "./sigbert-merges.txt",
+)
+tokenizer._tokenizer.post_processor = BertProcessing(
+    ("</s>", tokenizer.token_to_id("</s>")),
+    ("<s>", tokenizer.token_to_id("<s>")),
+)
+tokenizer.enable_truncation(max_length=512)
+
+################################################################################################
+############################### Fine Tune BERT Model ###########################################
 
 from transformers import AdamW
-
 
 # activate training mode
 mlm.train()
@@ -111,9 +145,9 @@ def optimizeMlmModel(trainingSentences, percentageOfMaskedTokens):
   
   for sentence in trainingSentences:
     if (inputs is None):
-      inputs = tokenizer.encode(sentence, return_tensors='pt', max_length=512, truncation=True, padding='max_length')
+      inputs = torch.tensor([tokenizer.encode(sentence).ids])
     else:
-      inputs_ids = tokenizer.encode(sentence, return_tensors='pt', max_length=512, truncation=True, padding='max_length')
+      inputs_ids = torch.tensor([tokenizer.encode(sentence).ids])
       inputs = torch.cat((inputs, inputs_ids), 0)
 
   masks = inputs.clone()
@@ -140,7 +174,7 @@ def optimizeMlmModel(trainingSentences, percentageOfMaskedTokens):
   print(loss.item())
 
 cont = 0
-while cont < 8600:
+while cont < 3:
   optimizeMlmModel(abstractTrainingSentences[cont:cont+1], 0.2)
   cont+=1
 

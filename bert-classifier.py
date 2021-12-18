@@ -108,16 +108,31 @@ import time
 from transformers import AutoModel
 from transformers import AutoTokenizer
 
-tokenizer = AutoTokenizer.from_pretrained('bert-large-cased', do_lower_case=False)
-model = AutoModel.from_pretrained('bert-large-cased')
+############################# load fine tuned tokenizer ###################
+from tokenizers.implementations import ByteLevelBPETokenizer
+from tokenizers.processors import BertProcessing
+
+tokenizer = ByteLevelBPETokenizer(
+    "./sigbert-vocab.json",
+    "./sigbert-merges.txt",
+)
+tokenizer._tokenizer.post_processor = BertProcessing(
+    ("</s>", tokenizer.token_to_id("</s>")),
+    ("<s>", tokenizer.token_to_id("<s>")),
+)
+tokenizer.enable_truncation(max_length=512)
+
+###########################################################################
+
+model = AutoModel.from_pretrained('fine-tuned-mlm-as-pre-trained')
 
 tokenizations_time_metrics = []
 
 ## Aqui ele pega o texto original e gera os tokens
 def convertSentenceToBERTEmbedding(sentence):
   try:
-    # input_ids = torch.tensor([tokenizer.encode(sentence).ids])
-    input_ids = tokenizer.encode(sentence, return_tensors='pt')
+    input_ids = torch.tensor([tokenizer.encode(sentence).ids])
+    #input_ids = tokenizer.encode(sentence, return_tensors='pt')
     with torch.no_grad():
         start_time = time.time()
         outs = model(input_ids)
