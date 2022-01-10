@@ -108,8 +108,8 @@ import time
 from transformers import AutoModel
 from transformers import AutoTokenizer
 
-tokenizer = AutoTokenizer.from_pretrained('bert-large-cased', do_lower_case=False)
-model = AutoModel.from_pretrained('bert-large-cased')
+tokenizer = AutoTokenizer.from_pretrained('bert-large-uncased', do_lower_case=True)
+model = AutoModel.from_pretrained('fine-tuned-mlm-as-pre-trained')
 
 tokenizations_time_metrics = []
 

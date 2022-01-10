@@ -48,6 +48,33 @@ validation_df = pd.read_csv("codigos_vs_articulos.csv", delimiter=',')
 print('Number of training sentences: {:,}\n'.format(training_df.shape[0]))
 print('Number of test sentences: {:,}\n'.format(validation_df.shape[0]))
 
+
+################################## Read complete articles Files ############################################
+def read_text_file(file_path):
+  lines = None
+  validlines = []
+  with open(file_path, 'r') as f:
+    lines = f.readlines()
+  if lines is not None:
+    for line in lines:
+      if len(line) > 10:
+        validlines.append(line.replace('\n',''))
+  return validlines
+  
+# Folder Path
+mypath = "./data"
+
+from os import listdir
+from os.path import isfile, join
+full_text_files = [str(mypath+'/'+f) for f in listdir(mypath) if isfile(join(mypath, f))]
+
+sentences_of_full_texts = []
+for full_text_file_path in full_text_files:
+  inner_sentences = read_text_file(full_text_file_path)
+  sentences_of_full_texts = sentences_of_full_texts + inner_sentences
+
+########################################################################################################################
+
 # Get the lists of sentences and their labels.
 import numpy as np
 
@@ -89,16 +116,17 @@ print("Size of abstract test set: ",len(abstractTestSentences),"\n")
 
 print("Size of abstract+title train set: ",len(trainingSentences))
 
+mlm_training_sentences = np.concatenate([np.array(sentences_of_full_texts),abstractTrainingSentences])
+
 from transformers import AutoTokenizer
 from transformers import BertForMaskedLM
 
-tokenizer = AutoTokenizer.from_pretrained('bert-base-multilingual-cased', do_lower_case=False)
-mlm = BertForMaskedLM.from_pretrained('bert-base-multilingual-cased')
+tokenizer = AutoTokenizer.from_pretrained('bert-large-uncased', do_lower_case=True)
+mlm = BertForMaskedLM.from_pretrained('bert-large-uncased')
 
 #mlmTrainingTensors = convertListOfSentencesToListOfTokensEmbeddings(abstractTrainingSentences[:10])
 
 from transformers import AdamW
-
 
 # activate training mode
 mlm.train()
@@ -140,8 +168,8 @@ def optimizeMlmModel(trainingSentences, percentageOfMaskedTokens):
   print(loss.item())
 
 cont = 0
-while cont < 8600:
-  optimizeMlmModel(abstractTrainingSentences[cont:cont+1], 0.2)
+while cont < len(mlm_training_sentences) - 1:
+  optimizeMlmModel(mlm_training_sentences[cont:cont+1], 0.2)
   cont+=1
 
 mlm.save_pretrained('fine-tuned-mlm-as-pre-trained')
