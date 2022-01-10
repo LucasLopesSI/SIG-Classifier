@@ -169,7 +169,7 @@ def optimizeMlmModel(trainingSentences, percentageOfMaskedTokens):
 
 cont = 0
 while cont < len(mlm_training_sentences) - 1:
-  optimizeMlmModel(mlm_training_sentences[cont:cont+1], 0.2)
+  optimizeMlmModel(mlm_training_sentences[cont:cont+1], 0.15)
   cont+=1
 
 mlm.save_pretrained('fine-tuned-mlm-as-pre-trained')
