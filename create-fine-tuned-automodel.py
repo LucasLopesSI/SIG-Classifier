@@ -56,9 +56,17 @@ def read_text_file(file_path):
   with open(file_path, 'r') as f:
     lines = f.readlines()
   if lines is not None:
+    composedLine = ''
+    composedLineCount = 0
     for line in lines:
       if len(line) > 10:
-        validlines.append(line.replace('\n',''))
+        if composedLineCount < 10:
+          composedLineCount+=1
+          composedLine+= line
+        else:
+          validlines.append(composedLine.replace('\n',' '))
+          composedLine = line
+          composedLineCount = 1
   return validlines
   
 # Folder Path
@@ -168,8 +176,18 @@ def optimizeMlmModel(trainingSentences, percentageOfMaskedTokens):
   print(loss.item())
 
 cont = 0
-while cont < len(mlm_training_sentences) - 1:
-  optimizeMlmModel(mlm_training_sentences[cont:cont+1], 0.2)
+while cont < len(abstractTrainingSentences) - 1:
+  optimizeMlmModel(abstractTrainingSentences[cont:cont+1], 0.2)
   cont+=1
 
+print('finished tunning with abstracts')
+
+cont = 0
+while cont < len(full_text_files) -1:
+  inner_sentences = read_text_file(full_text_files[cont])
+  print(len(inner_sentences))
+  for cont2 in range(0,len(inner_sentences)-1):
+    optimizeMlmModel(inner_sentences[cont2:cont2+1], 0.2)
+  cont+=1
+  
 mlm.save_pretrained('fine-tuned-mlm-as-pre-trained')
